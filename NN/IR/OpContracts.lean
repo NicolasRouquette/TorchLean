@@ -43,24 +43,6 @@ namespace ShapeUtil
 def flattenOutShape (s : Shape) : Shape :=
   .dim (Spec.Shape.size s) .scalar
 
-/--
-If `s` has rank at least two, return the shape obtained by swapping its first two axes.
-
-Example: `(a, b, rest)` becomes `(b, a, rest)`.
--/
-def swapFirstTwoShape? : Shape → Option Shape
-  | .dim a (.dim b rest) => some (.dim b (.dim a rest))
-  | _ => none
-
-/--
-If `s` has shape `(a, b, c)` (rank three with scalar base), return `(a, c, b)`.
-
-This is the common “transpose the last two axes” pattern for batched matrices.
--/
-def transpose3dLastTwoShape? : Shape → Option Shape
-  | .dim a (.dim b (.dim c .scalar)) => some (.dim a (.dim c (.dim b .scalar)))
-  | _ => none
-
 end ShapeUtil
 
 namespace OpContracts
@@ -85,6 +67,22 @@ def checkPositive (tag param : String) (n : Nat) : Except String Unit := do
     throw s!"{tag}: {param} must be > 0"
   else
     pure ()
+
+/-- Axis permutation that swaps `axis₁` and `axis₂` and leaves every other axis fixed. -/
+def transposePerm (rank axis₁ axis₂ : Nat) : Except String (Array Nat) := do
+  if axis₁ ≥ rank then
+    throw s!"transpose: axis {axis₁} out of range for rank {rank}"
+  if axis₂ ≥ rank then
+    throw s!"transpose: axis {axis₂} out of range for rank {rank}"
+  pure <| (Array.range rank).map fun axis =>
+    if axis = axis₁ then axis₂ else if axis = axis₂ then axis₁ else axis
+
+/-- Infer the shape obtained by swapping two arbitrary axes. -/
+def inferTransposeOutShape (axis₁ axis₂ : Nat) (parent : Shape) : Except String Shape := do
+  let perm ← transposePerm (Spec.Shape.rank parent) axis₁ axis₂
+  match Spec.Shape.permute? parent perm.toList with
+  | some output => pure output
+  | none => throw s!"transpose: internal invalid permutation {repr perm} for {repr parent}"
 
 /--
 Reconstruct the proof object required by the typed tensor broadcast primitive.
@@ -147,61 +145,29 @@ def layerNormMatrixDims (axis : Nat) (s : Shape) : Except String (Nat × Nat) :=
   pure (seqLen, embedDim)
 
 /--
-Check that `axis` refers to the **last** axis of `s`.
-
-This is a convenience predicate for passes/backends that restrict an op to last-axis behavior.
-For example, some verification bounds are implemented only for last-axis `softmax`/`layernorm` and
-use this check to fail fast with a readable error.
--/
-def checkLastAxis (tag : String) (axis : Nat) (s : Shape) : Except String Unit := do
-  checkAxisValid axis s
-  if axis + 1 = Spec.Shape.rank s then
-    pure ()
-  else
-    throw s!"{tag}: only last-axis is supported (axis={axis}, rank={Spec.Shape.rank s})"
-
-/--
-Compute the inverse of a permutation list.
+Compute the inverse of a permutation array.
 
 If `perm` is a permutation of `[0,1,...,r-1]` (where `r = perm.length`), then the inverse `inv`
 satisfies $\mathrm{inv}[\mathrm{perm}[i]]=i$.
 -/
-def inversePerm (perm : List Nat) : Except String (List Nat) := do
-  let r := perm.length
-  let mut inv : List (Option Nat) := List.replicate r none
-
-  let rec setOnce (xs : List (Option Nat)) (axis j : Nat) (val : Nat) : Except String (List (Option
-    Nat)) := do
-    match xs, j with
-    | [], _ =>
-        throw s!"permute: internal error: index {j} out of range for invLen={r}"
-    | none :: rest, 0 =>
-        pure (some val :: rest)
-    | some _ :: _, 0 =>
-        throw s!"permute: duplicate axis {axis} in {repr perm}"
-    | x :: rest, Nat.succ k =>
-        pure (x :: (← setOnce rest axis k val))
-
-  let rec getOpt : List (Option Nat) → Nat → Option (Option Nat)
-    | [], _ => none
-    | x :: _, 0 => some x
-    | _ :: xs, Nat.succ k => getOpt xs k
-
+def inversePerm (perm : Array Nat) : Except String (Array Nat) := do
+  let r := perm.size
+  let mut inv : Array (Option Nat) := Array.replicate r none
   let mut i : Nat := 0
   for p in perm do
-    if p < r then
-      inv ← setOnce inv p p i
-    else
+    unless p < r do
       throw s!"permute: axis {p} out of range for rank {r} in {repr perm}"
+    if inv[p]!.isSome then
+      throw s!"permute: duplicate axis {p} in {repr perm}"
+    inv := inv.set! p (some i)
     i := i + 1
 
-  let mut outRev : List Nat := []
+  let mut out : Array Nat := #[]
   for j in [0:r] do
-    match getOpt inv j with
-    | some (some idx) => outRev := idx :: outRev
-    | some none => throw s!"permute: missing axis {j} in {repr perm}"
-    | none => throw s!"permute: internal error: missing inv[{j}]"
-  pure outRev.reverse
+    match inv[j]! with
+    | some idx => out := out.push idx
+    | none => throw s!"permute: missing axis {j} in {repr perm}"
+  pure out
 
 /--
 Permutation (0-based axes) that moves `axis` to the **last** position, preserving the relative
@@ -209,10 +175,10 @@ order of the other axes.
 
 Example: rank four with `axis` set to `1` yields `[0,2,3,1]`.
 -/
-def permMoveAxisToLast (axis : Nat) (s : Shape) : Except String (List Nat) := do
+def permMoveAxisToLast (axis : Nat) (s : Shape) : Except String (Array Nat) := do
   checkAxisValid axis s
   let r := Spec.Shape.rank s
-  pure <| (List.range r).erase axis ++ [axis]
+  pure <| ((Array.range r).filter (· != axis)).push axis
 
 /--
 Permutation (0-based axes) that moves `axis` to the **first** position, preserving the relative
@@ -220,118 +186,64 @@ order of the other axes.
 
 Example: rank four with `axis` set to `2` yields `[2,0,1,3]`.
 -/
-def permMoveAxisToFront (axis : Nat) (s : Shape) : Except String (List Nat) := do
+def permMoveAxisToFront (axis : Nat) (s : Shape) : Except String (Array Nat) := do
   checkAxisValid axis s
   let r := Spec.Shape.rank s
-  pure <| axis :: (List.range r).erase axis
+  pure <| #[axis] ++ (Array.range r).filter (· != axis)
 
 /--
 Infer the output shape for `matmul` from the two parent shapes.
 
-Supported cases:
-- 2D: `(m×n) · (n×p) → (m×p)`
-- limited 3D “batched matmul”: `(b×m×n) · (b×n×p) → (b×m×p)`
+Both inputs must have rank at least two and exactly the same leading shape. The final two axes
+follow the usual matrix rule: `(...×m×n) · (...×n×p) → (...×m×p)`.
 -/
 def inferMatmulOutShape (a b : Shape) : Except String Shape := do
-  match a, b with
-  | .dim m (.dim n .scalar), .dim n' (.dim p .scalar) =>
-      if _h : n = n' then
-        pure (.dim m (.dim p .scalar))
-      else
-        throw s!"matmul: inner dims mismatch: {n} vs {n'}"
-  | .dim batch (.dim m (.dim n .scalar)), .dim batch' (.dim n' (.dim p .scalar)) =>
-      if _hb : batch = batch' then
-        if _hn : n = n' then
-          pure (.dim batch (.dim m (.dim p .scalar)))
+  match a.toList.reverse, b.toList.reverse with
+  | n :: m :: leadingRev, p :: n' :: leadingRev' =>
+      if _hLeading : leadingRev = leadingRev' then
+        if _hInner : n = n' then
+          pure <| Shape.ofList (leadingRev.reverse ++ [m, p])
         else
           throw s!"matmul: inner dims mismatch: {n} vs {n'}"
       else
-        throw s!"matmul: batch dims mismatch: {batch} vs {batch'}"
+        throw s!"matmul: leading dimensions mismatch: {repr a} vs {repr b}"
   | _, _ =>
-      throw s!"matmul: unsupported shapes: {repr a} · {repr b}"
+      throw s!"matmul: expected rank≥2 inputs, got {repr a} and {repr b}"
 
-/-- Check that every concat parent has the expected rank. -/
-def checkConcatRanks (expected : Nat) : List Shape → Except String Unit
-  | [] => .ok ()
-  | shape :: shapes =>
-      if Spec.Shape.rank shape != expected then
-        throw <|
-          s!"concat: rank mismatch: expected {expected}, got {Spec.Shape.rank shape} ({repr shape})"
+/-- Merge one concat input into the accumulated dimensions. -/
+def mergeConcatDims (axis : Nat) : Nat → List Nat → List Nat → Except String (List Nat)
+  | _, [], [] => pure []
+  | index, expected :: expecteds, actual :: actuals => do
+      let rest ← mergeConcatDims axis (index + 1) expecteds actuals
+      if index = axis then
+        pure ((expected + actual) :: rest)
+      else if actual = expected then
+        pure (expected :: rest)
       else
-        checkConcatRanks expected shapes
+        throw s!"concat: non-axis dim mismatch at axis {index}: expected {expected}, got {actual}"
+  | _, _, _ => throw "concat: rank mismatch"
+
+/-- Fold compatible concat inputs into the accumulated output dimensions. -/
+def foldConcatDims (axis : Nat) : List Nat → List Shape → Except String (List Nat)
+  | dimensions, [] => pure dimensions
+  | dimensions, shape :: shapes => do
+      let dimensions ← mergeConcatDims axis 0 dimensions shape.toList
+      foldConcatDims axis dimensions shapes
 
 /--
-Infer leading-axis concat after the first input has fixed the common tail and initial dimension.
+Infer the output shape for `concat` from an array of parent shapes.
+
+Every parent must have the same rank, the selected axis must exist, and all dimensions other than
+that axis must agree. The selected dimensions are summed. Both the axis and the tensor rank are
+arbitrary.
 -/
-def inferConcatLeadingAxis (expectedTail : Shape) : Nat → List Shape → Except String Shape
-  | total, [] => .ok (.dim total expectedTail)
-  | total, shape :: shapes =>
-      match shape with
-      | .dim size tail =>
-          if tail != expectedTail then
-            throw <|
-              s!"concat: axis=0 expects matching tail shapes, got {repr expectedTail} and " ++
-                s!"{repr tail}"
-          else
-            inferConcatLeadingAxis expectedTail (total + size) shapes
-      | _ =>
-          throw s!"concat: axis=0 expects rank≥1 inputs, got {repr shape}"
-
-/--
-Infer the output shape for `concat` from the parent shapes.
-
-All parents must:
-- have the same rank,
-- agree on every dimension except `axis`, and
-- have `axis` in bounds.
-
-The output shape matches the parents except at `axis`, where the dimension is the sum of the input
-dimensions.
-
-PyTorch analogy: `torch.cat(xs, dim=axis)` for a list `xs` of tensors.
--/
-def inferConcatOutShape (axis : Nat) (parents : List Shape) : Except String Shape := do
-  let k := parents.length
-  if k < 2 then
-    throw s!"concat: expected at least 2 inputs, got {k}"
-  let s0 ←
-    match parents with
-    | [] => throw "concat: internal error"
-    | s :: _ => pure s
-  checkAxisValid axis s0
-  let r0 := Spec.Shape.rank s0
-  checkConcatRanks r0 parents
-
-  let rec go (axis : Nat) (shs : List Shape) : Except String Shape := do
-    match axis, shs with
-    | 0, [] =>
-        throw "concat: internal error"
-    | 0, s :: rest =>
-        match s with
-        | .dim n0 tail0 =>
-            inferConcatLeadingAxis tail0 n0 rest
-        | _ =>
-            throw s!"concat: axis=0 expects rank≥1 inputs, got {repr s}"
-    | Nat.succ _, [] =>
-        throw "concat: internal error"
-    | Nat.succ a, s :: rest =>
-        match s with
-        | .dim n0 tail0 =>
-            let mut tailsRev : List Shape := [tail0]
-            for t in rest do
-              match t with
-              | .dim n tail =>
-                  if n != n0 then
-                    throw s!"concat: non-axis dim mismatch: expected {n0}, got {n}"
-                  tailsRev := tail :: tailsRev
-              | _ =>
-                  throw s!"concat: axis out of range for input shape {repr t}"
-            let outTail ← go a tailsRev.reverse
-            pure (.dim n0 outTail)
-        | _ =>
-            throw s!"concat: axis out of range for input shape {repr s}"
-
-  go axis parents
+def inferConcatOutShape (axis : Nat) (parents : Array Shape) : Except String Shape := do
+  match parents.toList with
+  | first :: second :: rest =>
+      checkAxisValid axis first
+      let dimensions ← foldConcatDims axis first.toList (second :: rest)
+      pure (Shape.ofList dimensions)
+  | _ => throw s!"concat: expected at least 2 inputs, got {parents.size}"
 
 /-!
 ## Sliding-window shape arithmetic
@@ -350,6 +262,44 @@ def slideOut (inLen k stride : Nat) : Nat :=
   1`. -/
 def slideOutPad (inLen k stride padding : Nat) : Nat :=
   Shape.slidingWindowOutDim inLen k stride padding
+
+/-- Effective kernel width for a dilated window. -/
+def effectiveKernel (kernel dilation : Nat) : Nat :=
+  if kernel = 0 then 0 else dilation * (kernel - 1) + 1
+
+/-- Output length for a dilated window with independent low/high padding. -/
+def slideOutDilated (input kernel stride dilation paddingBefore paddingAfter : Nat) : Nat :=
+  let effective := effectiveKernel kernel dilation
+  let padded := input + paddingBefore + paddingAfter
+  if effective = 0 || stride = 0 || padded < effective then
+    0
+  else
+    (padded - effective) / stride + 1
+
+/-- Infer dilated convolution dimensions from one parameter per spatial axis. -/
+def inferConvDims (tag : String) (axisNames : List String)
+    (inputs kernels strides dilations paddingBefore paddingAfter : List Nat) :
+    Except String (List Nat) :=
+  go axisNames inputs kernels strides dilations paddingBefore paddingAfter
+where
+  go : List String → List Nat → List Nat → List Nat → List Nat → List Nat →
+      List Nat → Except String (List Nat)
+    | [], [], [], [], [], [], [] => pure []
+    | axis :: axes, input :: inputs, kernel :: kernels, stride :: strides,
+        dilation :: dilations, low :: lows, high :: highs => do
+      checkPositive tag s!"{axis} kernel" kernel
+      checkPositive tag s!"{axis} stride" stride
+      checkPositive tag s!"{axis} dilation" dilation
+      let effective := effectiveKernel kernel dilation
+      let padded := input + low + high
+      if padded < effective then
+        throw <|
+          s!"{tag}: {axis} window does not fit padded input: input={input}, " ++
+            s!"padding=({low}, {high}), effectiveKernel={effective}"
+      let rest ← go axes inputs kernels strides dilations lows highs
+      pure (slideOutDilated input kernel stride dilation low high :: rest)
+    | _, _, _, _, _, _, _ =>
+      throw s!"{tag}: spatial metadata ranks must agree"
 
 /--
 Reject sliding-window shapes where the kernel has no valid placement.
@@ -390,8 +340,8 @@ where
 /--
 Infer pooling output lengths while enforcing the same basic window checks as graph validation.
 
-Unlike convolution, pooling uses `poolOutDim`, which assigns an empty output to empty input
-axes and to padding outside the pooling domain.
+Pooling uses `poolOutDim`, which assigns an empty output to an empty input axis, an oversized
+window, or padding outside the pooling domain. Kernels and strides must still be positive.
 -/
 def inferPoolingDims (tag : String) (axisNames : List String)
     (inputs kernels strides paddings : List Nat) : Except String (List Nat) :=
@@ -403,65 +353,136 @@ where
         padding :: paddings => do
         checkPositive tag s!"{axis} kernel" kernel
         checkPositive tag s!"{axis} stride" stride
-        checkWindowFits tag axis input kernel padding
         let rest ← go axes inputs kernels strides paddings
         pure (poolOutDim input kernel stride padding :: rest)
     | _, _, _, _, _ =>
         throw s!"{tag}: axis-name, input, kernel, stride, and padding ranks must agree"
 
-/-- Infer a channel-first pooling shape for an arbitrary number of spatial dimensions. -/
-def inferPoolOutShape (tag : String) (axisNames : List String) (kernels strides paddings : List Nat)
-    (parent : Shape) : Except String Shape := do
-  match parent.toList with
-  | [] => throw s!"{tag}: expected a channel axis followed by spatial axes, got scalar"
-  | channels :: inputs =>
-      let outputs ← inferPoolingDims tag axisNames inputs kernels strides paddings
-      pure (Shape.ofList (channels :: outputs))
+/-- Validated shape information for pooling over a tensor suffix.
+
+The plan is the common boundary between shape inference, denotational evaluation, and executable
+lowering. It carries the exact split and positivity evidence required by the typed pooling
+operators, so those passes cannot silently disagree about which axes are spatial. -/
+structure PoolPlan (config : WindowConfig) (parent : Shape) where
+  /-- Axes preserved before the pooled suffix. -/
+  leading : Shape
+  /-- Input extents along the pooled axes. -/
+  spatial : Spec.Tensor Nat [config.spatialRank]
+  /-- The prefix and spatial suffix reconstruct the parent shape. -/
+  concat_eq : leading.concat (Shape.ofList spatial.toList) = parent
+  /-- Every kernel extent is nonzero. -/
+  kernelNonzero : ∀ axis : Fin config.spatialRank, config.kernel.getScalar axis ≠ 0
+  /-- Every stride is nonzero. -/
+  strideNonzero : ∀ axis : Fin config.spatialRank, config.stride.getScalar axis ≠ 0
+
+namespace PoolPlan
+
+/-- Output shape computed by a validated pooling plan. -/
+def outShape {config : WindowConfig} {parent : Shape} (plan : PoolPlan config parent) : Shape :=
+  plan.leading.concat <|
+    Shape.ofList
+      (Spec.poolOutSpatialPad plan.spatial config.kernel config.stride config.padding).toList
+
+end PoolPlan
+
+/-- Validate and plan pooling over a spatial suffix of arbitrary rank.
+
+Every preceding axis is preserved, so one operation handles unbatched tensors, ordinary batches,
+and tensors with several leading batch dimensions.
+-/
+def planPool (tag : String) (config : WindowConfig) (parent : Shape) :
+    Except String (PoolPlan config parent) := do
+  checkPositive tag "spatial rank" config.spatialRank
+  if hRank : config.spatialRank ≤ parent.rank then
+    let split := Shape.splitSuffix parent config.spatialRank hRank
+    let spatial := Tensor.ofArrayExact split.suffix.toArray (by simpa using split.suffix_length)
+    if hKernel : ∀ axis : Fin config.spatialRank, config.kernel.getScalar axis ≠ 0 then
+      if hStride : ∀ axis : Fin config.spatialRank, config.stride.getScalar axis ≠ 0 then
+        let leadingRank := split.leading.rank
+        let axisNames :=
+          (List.range config.spatialRank).map fun axis => s!"axis {leadingRank + axis}"
+        let _ ← inferPoolingDims tag axisNames split.suffix config.kernel.toList
+          config.stride.toList config.padding.toList
+        pure
+          { leading := split.leading
+            spatial := spatial
+            concat_eq := by simpa [spatial] using split.concat_eq
+            kernelNonzero := hKernel
+            strideNonzero := hStride }
+      else
+        throw s!"{tag}: stride extents must be nonzero"
+    else
+      throw s!"{tag}: kernel extents must be nonzero"
+  else
+    throw s!"{tag}: kernel rank {config.spatialRank} exceeds input rank {parent.rank}"
+
+/-- Infer the output shape of an arbitrary-rank pooling operation. -/
+def inferPoolOutShape (tag : String) {spatialRank : Nat}
+    (kernels strides paddings : Spec.Tensor Nat [spatialRank]) (parent : Shape) : Except String Shape := do
+  let config : WindowConfig :=
+    { spatialRank := spatialRank, kernel := kernels, stride := strides, padding := paddings }
+  let plan ← planPool tag config parent
+  pure plan.outShape
+
+/-- Infer the output shape for the full parameterized convolution configuration. -/
+def inferConvConfigOutShape (tag : String) (config : ConvConfig) (parent : Shape) :
+    Except String Shape := do
+  checkPositive tag "inChannels" config.inChannels
+  checkPositive tag "outChannels" config.outChannels
+  checkPositive tag "groups" config.groups
+  if config.inChannels % config.groups != 0 then
+    throw s!"{tag}: in_channels={config.inChannels} is not divisible by groups={config.groups}"
+  if config.outChannels % config.groups != 0 then
+    throw s!"{tag}: out_channels={config.outChannels} is not divisible by groups={config.groups}"
+  checkAxisValid config.channelAxis parent
+  let dims := parent.toList
+  let some actualChannels := dims[config.channelAxis]?
+    | throw s!"{tag}: internal missing channel axis {config.channelAxis} in {repr parent}"
+  if actualChannels != config.inChannels then
+    throw s!"{tag}: input-channel mismatch: op={config.inChannels} vs input={actualChannels}"
+  let inputs := dims.drop (config.channelAxis + 1)
+  if inputs.length != config.spatialRank then
+    throw <|
+      s!"{tag}: kernel rank {config.spatialRank} does not match the {inputs.length} spatial axes " ++
+        s!"after channel axis {config.channelAxis}"
+  let axisNames :=
+    (List.range config.spatialRank).map fun axis => s!"axis {config.channelAxis + 1 + axis}"
+  let outputs ← inferConvDims tag axisNames inputs config.kernel.toList
+    config.stride.toList config.dilation.toList config.padding.toList config.paddingAfter.toList
+  pure (Shape.ofList (dims.take config.channelAxis ++ config.outChannels :: outputs))
 
 /--
-Infer a channel-first convolution shape for an arbitrary number of spatial dimensions.
+Infer dense, unit-dilation convolution output geometry for an arbitrary spatial rank.
 
-The declared input-channel count is checked against the leading input axis. The output-channel
-count becomes the leading output axis; all remaining axes are inferred by
-`inferSlidingWindowDims`.
+This is the ordinary convolution specialization of `inferConvConfigOutShape`; keeping one checker
+prevents the default and parameterized APIs from assigning different shapes to the same operation.
 -/
-def inferConvOutShape (tag : String) (inChannels outChannels : Nat)
-    (axisNames : List String) (kernels strides paddings : List Nat) (parent : Shape) :
-    Except String Shape := do
-  checkPositive tag "inChannels" inChannels
-  match parent.toList with
-  | [] => throw s!"{tag}: expected a channel axis followed by spatial axes, got scalar"
-  | actualInChannels :: inputs =>
-      if inChannels != actualInChannels then
-        throw s!"{tag}: input-channel mismatch: op={inChannels} vs input={actualInChannels}"
-      let outputs ← inferSlidingWindowDims tag axisNames inputs kernels strides paddings
-      pure (Shape.ofList (outChannels :: outputs))
-
-/-- Infer the output of the current two-dimensional pooling IR operators. -/
-def inferPool2dOutShape (tag : String) (kH kW stride padding : Nat) (parent : Shape) :
+def inferConvOutShape (tag : String) (channelAxis inChannels outChannels : Nat)
+    {spatialRank : Nat} (kernels strides paddings : Spec.Tensor Nat [spatialRank]) (parent : Shape) :
     Except String Shape :=
-  inferPoolOutShape tag ["height", "width"] [kH, kW] [stride, stride] [padding, padding] parent
+  inferConvConfigOutShape tag
+    { spatialRank := spatialRank
+      kernel := kernels
+      stride := strides
+      padding := paddings
+      dilation := Spec.fill 1 [spatialRank]
+      paddingAfter := paddings
+      groups := 1
+      channelAxis := channelAxis
+      inChannels := inChannels
+      outChannels := outChannels }
+    parent
 
-/-- Infer the output of the current two-dimensional convolution IR operator. -/
-def inferConv2dOutShape (inC outC kH kW stride padding : Nat) (parent : Shape) :
-    Except String Shape :=
-  inferConvOutShape "conv2d" inC outC ["height", "width"] [kH, kW]
-    [stride, stride] [padding, padding] parent
-
-/-- Output shape for eval-mode BatchNorm2d on NCHW tensors. -/
-def inferBatchNorm2dNchwEvalOutShape (channels : Nat) (parent : Shape) : Except String Shape := do
-  checkPositive "batch_norm2d_nchw_eval" "channels" channels
-  match parent with
-  | .dim n (.dim c (.dim h (.dim w .scalar))) =>
-      checkPositive "batch_norm2d_nchw_eval" "batch" n
-      checkPositive "batch_norm2d_nchw_eval" "height" h
-      checkPositive "batch_norm2d_nchw_eval" "width" w
-      if channels = c then
-        pure parent
-      else
-        throw s!"batch_norm2d_nchw_eval: channel mismatch: op={channels} vs input={c}"
-  | s =>
-      throw s!"batch_norm2d_nchw_eval: expected input shape (N,C,H,W), got {repr s}"
+/-- Check eval-mode BatchNorm metadata against an arbitrary channel axis. -/
+def inferBatchNormEvalOutShape (channelAxis channels : Nat) (parent : Shape) : Except String Shape := do
+  checkPositive "batch_norm_eval" "channels" channels
+  checkAxisValid channelAxis parent
+  let some actualChannels := parent.toList[channelAxis]?
+    | throw s!"batch_norm_eval: internal missing channel axis {channelAxis} in {repr parent}"
+  if channels = actualChannels then
+    pure parent
+  else
+    throw s!"batch_norm_eval: channel mismatch: op={channels} vs input={actualChannels}"
 
 end OpContracts
 

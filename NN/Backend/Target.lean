@@ -77,7 +77,7 @@ structure Target where
   os : OperatingSystem := .unknown
   arch : Architecture := .unknown
   accelerator : Accelerator := .none
-  features : List BuildFeature := []
+  features : Array BuildFeature := #[]
   deriving Repr
 
 namespace BuildFeature
@@ -118,14 +118,14 @@ end Accelerator
 namespace Target
 
 /-- Device set exposed by the target. CPU/reference remains available unless a caller filters it. -/
-def devices (t : Target) : List Device :=
+def devices (t : Target) : Array Device :=
   match t.accelerator.device? with
-  | none => [.cpu]
-  | some d => [.cpu, d]
+  | none => #[.cpu]
+  | some d => #[.cpu, d]
 
 /-- Providers exposed by the target and its compiled/discovered features. -/
-def providers (t : Target) : List Provider :=
-  [.reference, .torchLean] ++ t.features.filterMap BuildFeature.provider?
+def providers (t : Target) : Array Provider :=
+  #[.reference, .torchLean] ++ t.features.filterMap BuildFeature.provider?
 
 /-- Convert a target declaration to planner capabilities; this does not probe the current machine. -/
 def declaredAvailability (t : Target) : Availability :=
@@ -135,7 +135,7 @@ def declaredAvailability (t : Target) : Availability :=
 /-- Portable CPU/reference target. -/
 def portableCpu (os : OperatingSystem := .unknown)
     (arch : Architecture := .unknown) : Target :=
-  { os, arch, accelerator := .none, features := [] }
+  { os, arch, accelerator := .none, features := #[] }
 
 /-- Linux CPU/reference target. -/
 def linuxCpu (arch : Architecture := .x86_64) : Target :=
@@ -155,8 +155,8 @@ def linuxCuda (enableLibTorch : Bool := false) : Target :=
     arch := .x86_64
     accelerator := .cuda
     features :=
-      [.nativeCuda, .cuBLAS, .cuFFT] ++
-        (if enableLibTorch then [.libTorch] else []) }
+      #[.nativeCuda, .cuBLAS, .cuFFT] ++
+        (if enableLibTorch then #[.libTorch] else #[]) }
 
 /-- Windows CUDA target shape. Native support depends on the future Windows build/test pass. -/
 def windowsCuda (enableLibTorch : Bool := false) : Target :=
@@ -164,53 +164,53 @@ def windowsCuda (enableLibTorch : Bool := false) : Target :=
     arch := .x86_64
     accelerator := .cuda
     features :=
-      [.nativeCuda, .cuBLAS, .cuFFT] ++
-        (if enableLibTorch then [.libTorch] else []) }
+      #[.nativeCuda, .cuBLAS, .cuFFT] ++
+        (if enableLibTorch then #[.libTorch] else #[]) }
 
 /-- Linux ROCm target shape for future AMD/HIP capsules. -/
 def linuxRocm : Target :=
   { os := .linux
     arch := .x86_64
     accelerator := .rocm
-    features := [] }
+    features := #[] }
 
 /-- macOS target for future Metal/MPS capsules. -/
 def macOSMetal : Target :=
   { os := .macOS
     arch := .aarch64
     accelerator := .metal
-    features := [.mps] }
+    features := #[.mps] }
 
 /-- WASM target for browser or WASI-style execution. -/
 def wasm : Target :=
   { os := .wasi
     arch := .wasm32
     accelerator := .wasm
-    features := [.webGpu] }
+    features := #[.webGpu] }
 
 /-- TPU/XLA target shape for future accelerator capsules. -/
 def linuxTpu : Target :=
   { os := .linux
     arch := .x86_64
     accelerator := .tpu
-    features := [.xla] }
+    features := #[.xla] }
 
 /-- AWS Trainium/Neuron target shape for future accelerator capsules. -/
 def linuxTrainium : Target :=
   { os := .linux
     arch := .x86_64
     accelerator := .trainium
-    features := [.neuron] }
+    features := #[.neuron] }
 
 /-- Target shape for a first-party or lab-specific accelerator with its own capsule provider. -/
 def customChip (os : OperatingSystem := .linux)
     (arch : Architecture := .unknown) : Target :=
-  { os, arch, accelerator := .custom, features := [.customChip] }
+  { os, arch, accelerator := .custom, features := #[.customChip] }
 
 /-- Target shape for a caller-supplied accelerator provider. -/
 def external (os : OperatingSystem := .unknown)
     (arch : Architecture := .unknown) : Target :=
-  { os, arch, accelerator := .external, features := [.externalProvider] }
+  { os, arch, accelerator := .external, features := #[.externalProvider] }
 
 end Target
 

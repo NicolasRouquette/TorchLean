@@ -36,6 +36,16 @@ def permuteAffineOut {inDim outDim : Nat}
     { A := Tensor.dim (fun i => rows (perm i))
       c := Tensor.dim (fun i => cvec (perm i)) }
 
+/-- Exactly transport affine bounds through a valid axis permutation. -/
+def permuteFlatAffineBounds? (sourceShape : Shape) (perm : Array Nat)
+    (bounds : FlatAffineBounds α) : Option (FlatAffineBounds α) := do
+  let flatPerm ← flatAxisPermutation? sourceShape perm bounds.outDim
+  pure
+    { inDim := bounds.inDim
+      outDim := bounds.outDim
+      loAff := permuteAffineOut (α := α) flatPerm bounds.loAff
+      hiAff := permuteAffineOut (α := α) flatPerm bounds.hiAff }
+
 /-- Conservative CROWN-style affine bounds for softmax along the last tensor axis. -/
 def propagateSoftmaxBoundsLastAxis
   (s : Shape) (preB : FlatBox α) (xB : FlatAffineBounds α) (hout : xB.outDim = preB.dim) :
@@ -49,21 +59,21 @@ def propagateSoftmaxBoundsLastAxis
     { inDim := xB.inDim, outDim := preB.dim, loAff := xLo, hiAff := xHi }
   else if m = 1 then
     -- Each last-axis slice has length 1, so softmax is identically 1.
-    let ones : Tensor α (.dim preB.dim .scalar) := Spec.fill (α := α) Numbers.one (.dim preB.dim
+    let ones : Tensor α [preB.dim] := Spec.fill (α := α) Numbers.one (.dim preB.dim
       .scalar)
     boundsConst (α := α) (inputDim := xB.inDim) (outDim := preB.dim) ones ones
   else
     let dim := preB.dim
     if dim % m = 0 then
-      let expLo : Tensor α (.dim dim .scalar) := Tensor.expSpec preB.lo
-      let expHi : Tensor α (.dim dim .scalar) := Tensor.expSpec preB.hi
+      let expLo : Tensor α [dim] := Tensor.expSpec preB.lo
+      let expHi : Tensor α [dim] := Tensor.expSpec preB.hi
       let groups : Nat := dim / m
-      let totalExpLo : Tensor α (.dim groups .scalar) :=
+      let totalExpLo : Tensor α [groups] :=
         Tensor.dim (fun g =>
           let base := g.val * m
           let sum : α := (List.range m).foldl (fun acc j => acc + getAtOrZero expLo [base + j]) 0
           Tensor.scalar sum)
-      let totalExpHi : Tensor α (.dim groups .scalar) :=
+      let totalExpHi : Tensor α [groups] :=
         Tensor.dim (fun g =>
           let base := g.val * m
           let sum : α := (List.range m).foldl (fun acc j => acc + getAtOrZero expHi [base + j]) 0
@@ -71,7 +81,7 @@ def propagateSoftmaxBoundsLastAxis
       let flo := getDimScalarFn (α := α) preB.lo
       let fhi := getDimScalarFn (α := α) preB.hi
       -- Upper bound via logistic with C = Σ_{j≠i} exp(lo_j)
-      let slopes_hi : Tensor α (.dim dim .scalar) :=
+      let slopes_hi : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           match flo i, fhi i with
@@ -85,7 +95,7 @@ def propagateSoftmaxBoundsLastAxis
               Tensor.scalar aHi
             else
               Tensor.scalar Numbers.zero)
-      let bias_hi : Tensor α (.dim dim .scalar) :=
+      let bias_hi : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           match flo i, fhi i with
@@ -100,7 +110,7 @@ def propagateSoftmaxBoundsLastAxis
             else
               Tensor.scalar Numbers.one)
       -- Lower bound via logistic with C = Σ_{j≠i} exp(hi_j)
-      let slopes_lo : Tensor α (.dim dim .scalar) :=
+      let slopes_lo : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           match flo i, fhi i with
@@ -114,7 +124,7 @@ def propagateSoftmaxBoundsLastAxis
               Tensor.scalar aLo
             else
               Tensor.scalar Numbers.zero)
-      let bias_lo : Tensor α (.dim dim .scalar) :=
+      let bias_lo : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           match flo i, fhi i with
@@ -133,8 +143,8 @@ def propagateSoftmaxBoundsLastAxis
       { inDim := xB.inDim, outDim := dim, loAff := loAff, hiAff := hiAff }
     else
       -- Shape mismatch: fall back to trivial [0,1] bounds.
-      let zeros : Tensor α (.dim dim .scalar) := Spec.fill (α := α) Numbers.zero (.dim dim .scalar)
-      let ones : Tensor α (.dim dim .scalar) := Spec.fill (α := α) Numbers.one (.dim dim .scalar)
+      let zeros : Tensor α [dim] := Spec.fill (α := α) Numbers.zero (.dim dim .scalar)
+      let ones : Tensor α [dim] := Spec.fill (α := α) Numbers.one (.dim dim .scalar)
       boundsConst (α := α) (inputDim := xB.inDim) (outDim := dim) zeros ones
 
 /-- Conservative affine bounds for layer normalization over the last tensor axis. -/
@@ -150,7 +160,7 @@ def propagateLayernormBoundsLastAxis
     { inDim := xB.inDim, outDim := preB.dim, loAff := xLo, hiAff := xHi }
   else if m = 1 then
     -- Each slice has length 1: (x - mean)/sqrt(var+eps) = 0.
-    let zeros : Tensor α (.dim preB.dim .scalar) := Spec.fill (α := α) Numbers.zero (.dim preB.dim
+    let zeros : Tensor α [preB.dim] := Spec.fill (α := α) Numbers.zero (.dim preB.dim
       .scalar)
     boundsConst (α := α) (inputDim := xB.inDim) (outDim := preB.dim) zeros zeros
   else
@@ -159,32 +169,32 @@ def propagateLayernormBoundsLastAxis
       let groups : Nat := dim / m
       let mA : α := (m : Nat)
       let denLo : α := MathFunctions.sqrt Numbers.epsilon
-      let muLoG : Tensor α (.dim groups .scalar) :=
+      let muLoG : Tensor α [groups] :=
         Tensor.dim (fun g =>
           let base := g.val * m
           let sumLo : α := (List.range m).foldl (fun acc j => acc + getAtOrZero preB.lo [base +
             j]) 0
           Tensor.scalar (sumLo / mA))
-      let muHiG : Tensor α (.dim groups .scalar) :=
+      let muHiG : Tensor α [groups] :=
         Tensor.dim (fun g =>
           let base := g.val * m
           let sumHi : α := (List.range m).foldl (fun acc j => acc + getAtOrZero preB.hi [base +
             j]) 0
           Tensor.scalar (sumHi / mA))
-      let denHiG : Tensor α (.dim groups .scalar) :=
+      let denHiG : Tensor α [groups] :=
         Tensor.dim (fun g =>
           let base := g.val * m
           let muLo := getAtOrZero muLoG [g.val]
           let muHi := getAtOrZero muHiG [g.val]
-          let loSlice : Tensor α (.dim m .scalar) :=
+          let loSlice : Tensor α [m] :=
             Tensor.dim (fun j => Tensor.scalar (getAtOrZero preB.lo [base + j.val]))
-          let hiSlice : Tensor α (.dim m .scalar) :=
+          let hiSlice : Tensor α [m] :=
             Tensor.dim (fun j => Tensor.scalar (getAtOrZero preB.hi [base + j.val]))
           let varHi := idealLayerNormVarianceUpper (α := α) loSlice hiSlice muLo muHi
           Tensor.scalar (MathFunctions.sqrt (varHi + Numbers.epsilon)))
       let flo := getDimScalarFn (α := α) preB.lo
       let fhi := getDimScalarFn (α := α) preB.hi
-      let slopes_hi : Tensor α (.dim dim .scalar) :=
+      let slopes_hi : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           let muLo := getAtOrZero muLoG [g]
@@ -202,7 +212,7 @@ def propagateLayernormBoundsLastAxis
             let denx := u - l
             let a := if denx > Numbers.epsilon then (uU - uL) / denx else Numbers.zero
             Tensor.scalar a)
-      let bias_hi : Tensor α (.dim dim .scalar) :=
+      let bias_hi : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           let muLo := getAtOrZero muLoG [g]
@@ -223,7 +233,7 @@ def propagateLayernormBoundsLastAxis
               Tensor.scalar (uL - a * l)
             else
               Tensor.scalar (if uL > uU then uL else uU))
-      let slopes_lo : Tensor α (.dim dim .scalar) :=
+      let slopes_lo : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           let muHi := getAtOrZero muHiG [g]
@@ -241,7 +251,7 @@ def propagateLayernormBoundsLastAxis
             let denx := u - l
             let a := if denx > Numbers.epsilon then (lU - lL) / denx else Numbers.zero
             Tensor.scalar a)
-      let bias_lo : Tensor α (.dim dim .scalar) :=
+      let bias_lo : Tensor α [dim] :=
         Tensor.dim (fun i =>
           let g := i.val / m
           let muHi := getAtOrZero muHiG [g]
@@ -394,7 +404,7 @@ def propagateMatmulBounds
             let yU := getAtOrZero bHi.c [bIdx]
             aXpos * xL + aXneg * xU + aYpos * yL + aYneg * yU + off
 
-          let A_hi : Tensor α (.dim outDim (.dim inDim .scalar)) :=
+          let A_hi : Tensor α [outDim, inDim] :=
             Tensor.dim (fun outI =>
               let t := outI.val
               let bi := t / block
@@ -409,7 +419,7 @@ def propagateMatmulBounds
                     acc + termUpperCoeff (baseA + i * k + kk) (baseB + kk * n + j) inJ.val
                   ) 0
                 Tensor.scalar coeff))
-          let c_hi : Tensor α (.dim outDim .scalar) :=
+          let c_hi : Tensor α [outDim] :=
             Tensor.dim (fun outI =>
               let t := outI.val
               let bi := t / block
@@ -424,7 +434,7 @@ def propagateMatmulBounds
                 ) 0
               Tensor.scalar coeff)
 
-          let A_lo : Tensor α (.dim outDim (.dim inDim .scalar)) :=
+          let A_lo : Tensor α [outDim, inDim] :=
             Tensor.dim (fun outI =>
               let t := outI.val
               let bi := t / block
@@ -439,7 +449,7 @@ def propagateMatmulBounds
                     acc + termLowerCoeff (baseA + i * k + kk) (baseB + kk * n + j) inJ.val
                   ) 0
                 Tensor.scalar coeff))
-          let c_lo : Tensor α (.dim outDim .scalar) :=
+          let c_lo : Tensor α [outDim] :=
             Tensor.dim (fun outI =>
               let t := outI.val
               let bi := t / block
@@ -480,8 +490,8 @@ def propagateMulElemBounds
       let n := Bx.dim
       let hyo : yB.outDim = n := Eq.trans houtY (Eq.symm hdim)
       let hBy : By.dim = n := by simpa [n] using (Eq.symm hdim)
-      let ByLo : Tensor α (.dim n .scalar) := castDimScalar (α:=α) (n:=By.dim) (n':=n) hBy By.lo
-      let ByHi : Tensor α (.dim n .scalar) := castDimScalar (α:=α) (n:=By.dim) (n':=n) hBy By.hi
+      let ByLo : Tensor α [n] := castDimScalar (α:=α) (n:=By.dim) (n':=n) hBy By.lo
+      let ByHi : Tensor α [n] := castDimScalar (α:=α) (n:=By.dim) (n':=n) hBy By.hi
 
       let xLo : AffineVec α xB.inDim n :=
         castAffineOut (α:=α) (n:=xB.inDim) (m:=xB.outDim) (m':=n) (by simpa [n] using houtX)

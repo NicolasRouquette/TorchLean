@@ -27,7 +27,7 @@ variable {α : Type} [Context α]
 
 /-- PCA module specification following `Spec.Module`. -/
 def pca {inDim outDim : Nat} (m : PCASpec α inDim outDim) :
-  Spec.Module α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  Spec.Module α ([inDim]) ([outDim]) :=
   { forward := pcaForwardSpec m
     kind := "PCA"
     -- Centering contributes the affine bias `-components * mean`.

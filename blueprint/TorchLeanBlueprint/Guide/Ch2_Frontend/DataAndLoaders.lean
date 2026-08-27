@@ -20,7 +20,7 @@ every step whether a row had the right number of columns.
 The trainer-facing type is:
 
 ```
-Trainer.DataSource inputShape targetShape
+Trainer.Dataset inputShape targetShape
 ```
 
 It describes one training item. The scalar type is intentionally absent. Its `build` field
@@ -32,25 +32,23 @@ This lets the same host-`Float` data source feed several scalar runtimes while k
 conversion visible at materialization. It also means a proof-level real tensor is not accidentally
 passed to an IO training loop.
 
-The relevant field is small enough to read directly:
+For tensors already in memory, the public constructor shows how the sample shapes are inferred:
 
 ```
-structure Trainer.DataSource (σ τ : Shape) where
-  build :
-    {α : Type} →
-    [Context α] →
-    [Runtime.FromFloat α] →
-    IO (Training.Dataset (Sample.Supervised α σ τ))
+Data.tensorDataset
+    (inputs : Tensor Float (sampleCount :: inputShape))
+    (targets : Tensor Float (sampleCount :: targetShape)) :
+    Trainer.Dataset inputShape targetShape
 ```
 
-The `IO` is doing real work. A dataset may open a file, parse text, allocate arrays, or discover a
-bad row. The shape indices describe each accepted sample; they do not claim that file access is
-pure or that every source record is valid.
+The common leading dimension is the number of samples. It is removed from the dataset's input and
+target types, so the caller does not repeat `[2]` and `[1]` after those shapes are already known
+from tensors of shape `[4, 2]` and `[4, 1]`. File-backed datasets use the same type but construct
+their samples in `IO`, where opening a file, parsing values, and reporting a malformed row belong.
 
 # When The Checks Happen
 
-I find data bugs much easier to diagnose when I write down the boundary at which each fact becomes
-known:
+Data failures are easier to diagnose when each fact is tied to the boundary where it becomes known:
 
 :::table +header
 *
@@ -95,7 +93,7 @@ The XOR table is small enough to see in full:
 import NN.API
 open TorchLean
 
-def xs : Tensor Float (shape![4, 2]) :=
+def xs : Tensor Float [4, 2] :=
   tensor! [
     [0.0, 0.0],
     [0.0, 1.0],
@@ -103,11 +101,10 @@ def xs : Tensor Float (shape![4, 2]) :=
     [1.0, 1.0]
   ]
 
-def ys : Tensor Float (shape![4, 1]) :=
+def ys : Tensor Float [4, 1] :=
   tensor! [[0.0], [1.0], [1.0], [0.0]]
 
-def xorData : Trainer.DataSource (shape![2]) (shape![1]) :=
-  Data.tensorDataset xs ys
+def xorData := Data.tensorDataset xs ys
 ```
 
 The leading dimension of `xs` and `ys` is the sample count. `Data.tensorDataset` checks that both
@@ -121,13 +118,18 @@ whole target tensor   [4, 1]
 one target sample        [1]
 ```
 
-Try changing the target annotation to `shape![3,1]` while leaving four rows in the literal. The
+Lean infers `xorData : Trainer.Dataset [2] [1]`. Write that annotation on a public function when
+it helps readers, but it is not required at the construction site. This matches the role of
+PyTorch's `TensorDataset(xs, ys)`, with the additional benefit that TorchLean records each sample
+shape in the resulting type.
+
+Try changing the target annotation to `[3,1]` while leaving four rows in the literal. The
 literal itself fails to elaborate. If the mismatch instead arrives from runtime files, the loader
 returns an error before constructing the dataset.
 
-`Data.samples`, `Data.singleton`, and `Data.floatSamples` serve list-backed or generated data.
+`Data.samples`, `Data.singleton`, and `Data.floatSamples` serve array-backed or generated data.
 The running MLP constructs a deterministic input grid with `Data.Synthetic.squareGrid`, maps its
-target over the leading axis with `Tensor.mapLeading`, and passes both tensors to
+target over the sample axis with `Tensor.mapEach`, and passes both tensors to
 `Data.tensorDataset`.
 
 # A Real CSV Run
@@ -177,6 +179,8 @@ let data :=
 
 The arguments `2` and `1` state how many columns belong to the input and target. Malformed numbers,
 wrong column counts, missing files, or too few rows become explicit `IO` errors when `build` runs.
+For manual stream code, `Data.TabularSupervisedSource` is the corresponding public description of
+a CSV whose rows contain input columns followed by target columns.
 
 # Break The File Boundary Deliberately
 
@@ -202,7 +206,34 @@ has the structure requested by the model.
 # NPY And Other Numeric Sources
 
 NPY preserves numeric dtype and array dimensions, making it a cleaner boundary for already prepared
-numeric tensors:
+numeric tensors. File-backed code starts from one of four public source descriptions:
+
+:::table +header
+*
+  * Artifact
+  * Public source
+*
+  * one numeric tensor
+  * `Data.TensorSource`
+*
+  * paired input and target tensors
+  * `Data.SupervisedSource`
+*
+  * input tensors and integer labels
+  * `Data.LabeledSource`
+*
+  * one CSV with input and target columns
+  * `Data.TabularSupervisedSource`
+:::
+
+`TensorSource.loadFloat` validates one file against its declared dimensions. The other three source
+types describe training data: `SupervisedSource.load` pairs two leading-axis tensors,
+`LabeledSource.load` one-hot encodes checked labels, and `TabularSupervisedSource.load` splits each
+CSV row at the declared input width. Trainer code normally uses `Data.supervisedDataset`,
+`Data.labeledDataset`, or `Data.tabularCsvDataset` to add scalar selection and batching. The NPY and
+CSV parser functions underneath these sources are implementation details.
+
+A paired NPY dataset is declared as:
 
 ```
 def source : Data.SupervisedSource :=
@@ -214,7 +245,7 @@ def source : Data.SupervisedSource :=
     [2]
     [1]
 
-def data : Trainer.DataSource (shape![2]) (shape![1]) :=
+def data : Trainer.Dataset [2] [1] :=
   Data.supervisedDataset source
 ```
 
@@ -226,8 +257,8 @@ The source declares:
 - one-sample input dimensions;
 - one-sample target dimensions.
 
-`Data.supervisedNpyDataset` is the convenience constructor. `Data.LabeledSource` reads integer
-labels and constructs one-hot targets for classification.
+`Data.supervisedDataset` turns the source into a trainer dataset. The source remains the record of
+the file paths, sample count, and per-sample dimensions.
 
 TorchLean does not maintain a second parser for every ecosystem format. `.pt`, `.pth`, `.npz`,
 image folders, and specialized scientific containers can be converted with Python into a small
@@ -251,7 +282,7 @@ y_i=(t_{i+1},\ldots,t_{i+L}).
 `
 
 The shapes may both be `[batch,L]`, but the one-position shift is the learning problem. TorchLean's
-text helpers make integer tokens and window construction explicit. A tokenizer file or vocabulary
+text helpers make bounded tokens and window construction explicit. A tokenizer file or vocabulary
 mapping should be stored with the run because changing it changes the meaning of every integer in
 the dataset.
 
@@ -333,9 +364,6 @@ projection of at most 512 observed GPT-2 ids; ids outside that retained set map 
 id. It exercises real file parsing, tokenization, shifted-window construction, training, and decode
 plumbing, but it is neither GPT-2-small nor evidence of checkpoint-level tokenizer equivalence.
 
-That completes the text-specific detour. The rest of the chapter returns to a question shared by
-numeric, image, and text datasets: what a batch means and when it is materialized.
-
 # Two Meanings Of “Batch Size”
 
 TorchLean uses “batch size” for two related operations:
@@ -346,7 +374,7 @@ TorchLean uses “batch size” for two related operations:
 
 ```
 def batched :
-    Trainer.DataSource (shape![2, 2]) (shape![2, 1]) :=
+    Trainer.Dataset [2, 2] [2, 1] :=
   Data.batchDataset 2 xorData
     (shuffle := true)
     (seed := 42)
@@ -389,17 +417,17 @@ Dropping is one policy, not a law of machine learning. Alternatives include:
 Each alternative changes the data contract. TorchLean refuses to silently change the shape of the
 last item.
 
-# Materialized Loaders And Epoch State
+# Manual Streams And Epoch State
 
-`Trainer.DataSource` delays scalar choice. Lower-level manual code may already own a
-materialized:
+`Trainer.Dataset` delays scalar choice. Lower-level manual code may already own a lazily indexed
+stream at one selected scalar type:
 
 ```
-Data.Dataset α inputShape targetShape
+Data.SampleStream (Sample.Supervised α inputShape targetShape)
 ```
 
-`Data.batchLoader` constructs a loader whose batch size appears in its type.
-`Data.BatchLoader.epoch name loader` returns both:
+`Data.supervisedEpochs` constructs typed epoch state whose batch size appears in its type.
+`Data.SupervisedEpochs.epoch name loader` returns both:
 
 - the full typed batches for this epoch;
 - updated deterministic shuffle state for the next epoch.
@@ -473,7 +501,7 @@ let trained ← trainer.train data
 The log is an execution artifact. It can support debugging and reproducibility, but it is not a
 certificate of convergence or generalization.
 
-# Continue With Training
+# Run The Minibatch Example
 
 The complete minibatch example is runnable as:
 
@@ -483,8 +511,7 @@ lake exe torchlean quickstart_minibatch_mlp \
 ```
 
 It exercises CSV parsing, deterministic shuffling, fixed-size typed batching, model execution,
-autograd, Adam, and prediction. The next chapter opens the training loop and explains what state
-changes at each optimizer step.
+autograd, Adam, and prediction.
 
 Sources:
 

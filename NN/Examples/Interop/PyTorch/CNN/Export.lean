@@ -10,15 +10,15 @@ public import NN.Runtime.PyTorch.Export.Core
 public import NN.Spec.Models.Cnn
 
 /-!
-# CNN PyTorch Reference Export
+# Convolutional PyTorch Reference Export
 
-PyTorch exporter for the 2-block ConvNet round-trip reference model.
+PyTorch exporter for the two-block convolutional round-trip reference model.
 
-This exporter is meant to mirror the "reference CNN example" shape that shows up in many TorchLean
-examples: two `Conv2d + ReLU + MaxPool2d` blocks, then `Flatten`, then a single `Linear` head.
+The Lean configuration is rank-parametric. PyTorch itself exposes separate `Conv1d`, `Conv2d`, and
+`Conv3d` classes, so that distinction is introduced only while rendering the external Python code.
 
-Instead of taking a long positional list of naturals, we use small configuration records so call
-sites stay readable and it's easy to extend the shape later.
+The generated model has two convolution, ReLU, and max-pool blocks followed by `Flatten` and one
+`Linear` head.
 -/
 
 @[expose] public section
@@ -33,78 +33,89 @@ open Spec.Module
 open Models
 open Export.PyTorch
 
-/-- Configuration for a PyTorch `nn.Conv2d` layer. -/
-structure Conv2dCfg where
+/-- Rank-parametric configuration for a PyTorch convolution layer. -/
+structure ConvCfg (spatialRank : Nat) where
   /-- Input channels (`in_channels`). -/
   inChannels : Nat
   /-- Output channels (`out_channels`). -/
   outChannels : Nat
-  /-- Kernel height. -/
-  kernelH : Nat
-  /-- Kernel width. -/
-  kernelW : Nat
-  /-- Stride (applied to both spatial dims). -/
-  stride : Nat
-  /-- Zero-padding (applied to both spatial dims). -/
-  padding : Nat
+  /-- Kernel extent along each spatial axis. -/
+  kernel : Spec.Tensor Nat [spatialRank]
+  /-- Stride along each spatial axis. -/
+  stride : Spec.Tensor Nat [spatialRank]
+  /-- Zero-padding along each spatial axis. -/
+  padding : Spec.Tensor Nat [spatialRank]
 
-/-- Configuration for a PyTorch `nn.MaxPool2d` layer. -/
-structure MaxPool2dCfg where
-  /-- Pool kernel height. -/
-  kernelH : Nat
-  /-- Pool kernel width. -/
-  kernelW : Nat
-  /-- Pool stride (applied to both spatial dims). -/
-  stride : Nat
+/-- Rank-parametric configuration for a PyTorch max-pooling layer. -/
+structure MaxPoolCfg (spatialRank : Nat) where
+  /-- Pooling-window extent along each spatial axis. -/
+  kernel : Spec.Tensor Nat [spatialRank]
+  /-- Stride along each spatial axis. -/
+  stride : Spec.Tensor Nat [spatialRank]
+  /-- Zero-padding along each spatial axis. -/
+  padding : Spec.Tensor Nat [spatialRank]
 
 /-- Configuration for the 2-block CNN exporter. -/
-structure CnnStackConfig where
+structure CnnStackConfig (spatialRank : Nat) where
   /-- Class name to use in the generated Python. -/
   className : String := "CNN"
-  /-- Input image channels. -/
+  /-- Input channels. -/
   inputC : Nat
-  /-- Input image height. -/
-  inputH : Nat
-  /-- Input image width. -/
-  inputW : Nat
-  /-- conv 1. -/
-  conv1 : Conv2dCfg
-  /-- pool 1. -/
-  pool1 : MaxPool2dCfg
-  /-- conv 2. -/
-  conv2 : Conv2dCfg
-  /-- pool 2. -/
-  pool2 : MaxPool2dCfg
-  /-- flat Size. -/
+  /-- Input extent along each spatial axis. -/
+  inputSpatial : Spec.Tensor Nat [spatialRank]
+  /-- First convolution. -/
+  conv1 : ConvCfg spatialRank
+  /-- First pooling layer. -/
+  pool1 : MaxPoolCfg spatialRank
+  /-- Second convolution. -/
+  conv2 : ConvCfg spatialRank
+  /-- Second pooling layer. -/
+  pool2 : MaxPoolCfg spatialRank
+  /-- Flattened feature count consumed by the linear head. -/
   flatSize : Nat
-  /-- fc Out. -/
+  /-- Output width of the linear head. -/
   fcOut : Nat
 
-/-- Render the 2-block CNN as a Python `nn.Module` class definition. -/
-def generateCnnStackPyTorchClass (cfg : CnnStackConfig) : String :=
+/-- Render a list of dimensions as a Python tuple. -/
+def natListToPyTuple (dims : List Nat) : String :=
+  "(" ++ ", ".intercalate (dims.map toString) ++ (if dims.length = 1 then "," else "") ++ ")"
+
+/-- Select the rank-specific class name required by PyTorch's public API. -/
+def spatialClassName (base : String) (spatialRank : Nat) : Except String String :=
+  match spatialRank with
+  | 1 => .ok s!"{base}1d"
+  | 2 => .ok s!"{base}2d"
+  | 3 => .ok s!"{base}3d"
+  | rank => .error s!"PyTorch provides {base} only for spatial ranks 1, 2, and 3; got {rank}"
+
+/-- Render the two-block CNN as a Python `nn.Module` class definition. -/
+def generateCnnStackPyTorchClass {spatialRank : Nat}
+    (cfg : CnnStackConfig spatialRank) : Except String String := do
+  let convClass ← spatialClassName "Conv" spatialRank
+  let poolClass ← spatialClassName "MaxPool" spatialRank
   let className := cfg.className
-  joinLines <|
-    [generatePyTorchImports, ""] ++
-    [
+  let tuple := fun (v : Spec.Tensor Nat [spatialRank]) => natListToPyTuple v.toList
+  let inputShape := natListToPyTuple (cfg.inputC :: cfg.inputSpatial.toList)
+  pure <| joinLines <|
+    #[generatePyTorchImports, ""] ++
+    #[
       s!"class {className}(nn.Module):",
-      indentTwo "\"\"\"2-block ConvNet (Conv2d → ReLU → MaxPool2d) × 2, then Flatten → Linear.\"\"\"",
+      indentTwo s!"\"\"\"Two {convClass} / ReLU / {poolClass} blocks, then Flatten / Linear.\"\"\"",
       indentTwo "",
       indentTwo "def __init__(self):",
       indentFour "super().__init__()",
-      indentFour (s!"self.conv1 = nn.Conv2d({cfg.conv1.inChannels}, " ++
-        s!"{cfg.conv1.outChannels}, kernel_size=({cfg.conv1.kernelH}, " ++
-        s!"{cfg.conv1.kernelW}), stride={cfg.conv1.stride}, " ++
-        s!"padding={cfg.conv1.padding})"),
+      indentFour (s!"self.conv1 = nn.{convClass}({cfg.conv1.inChannels}, " ++
+        s!"{cfg.conv1.outChannels}, kernel_size={tuple cfg.conv1.kernel}, " ++
+        s!"stride={tuple cfg.conv1.stride}, padding={tuple cfg.conv1.padding})"),
       indentFour "self.relu1 = nn.ReLU()",
-      indentFour (s!"self.pool1 = nn.MaxPool2d(kernel_size=({cfg.pool1.kernelH}, " ++
-        s!"{cfg.pool1.kernelW}), stride={cfg.pool1.stride})"),
-      indentFour (s!"self.conv2 = nn.Conv2d({cfg.conv2.inChannels}, " ++
-        s!"{cfg.conv2.outChannels}, kernel_size=({cfg.conv2.kernelH}, " ++
-        s!"{cfg.conv2.kernelW}), stride={cfg.conv2.stride}, " ++
-        s!"padding={cfg.conv2.padding})"),
+      indentFour (s!"self.pool1 = nn.{poolClass}(kernel_size={tuple cfg.pool1.kernel}, " ++
+        s!"stride={tuple cfg.pool1.stride}, padding={tuple cfg.pool1.padding})"),
+      indentFour (s!"self.conv2 = nn.{convClass}({cfg.conv2.inChannels}, " ++
+        s!"{cfg.conv2.outChannels}, kernel_size={tuple cfg.conv2.kernel}, " ++
+        s!"stride={tuple cfg.conv2.stride}, padding={tuple cfg.conv2.padding})"),
       indentFour "self.relu2 = nn.ReLU()",
-      indentFour (s!"self.pool2 = nn.MaxPool2d(kernel_size=({cfg.pool2.kernelH}, " ++
-        s!"{cfg.pool2.kernelW}), stride={cfg.pool2.stride})"),
+      indentFour (s!"self.pool2 = nn.{poolClass}(kernel_size={tuple cfg.pool2.kernel}, " ++
+        s!"stride={tuple cfg.pool2.stride}, padding={tuple cfg.pool2.padding})"),
       indentFour "self.flatten = nn.Flatten()",
       indentFour s!"self.fc = nn.Linear({cfg.flatSize}, {cfg.fcOut})",
       indentTwo "",
@@ -121,7 +132,7 @@ def generateCnnStackPyTorchClass (cfg : CnnStackConfig) : String :=
       indentTwo "",
       indentTwo "@property",
       indentTwo "def input_shape(self):",
-      indentFour s!"return ({cfg.inputC}, {cfg.inputH}, {cfg.inputW})",
+      indentFour s!"return {inputShape}",
       indentTwo "",
       indentTwo "@property",
       indentTwo "def output_shape(self):",
@@ -133,8 +144,8 @@ def generateCnnStackPyTorchClass (cfg : CnnStackConfig) : String :=
       indentTwo "",
       indentTwo "@property",
       indentTwo "def operation_types(self):",
-      indentFour ("return [\"Conv2d\", \"ReLU\", \"MaxPool2d\", \"Conv2d\", \"ReLU\", " ++
-        "\"MaxPool2d\", \"Flatten\", \"Linear\"]"),
+      indentFour (s!"return [\"{convClass}\", \"ReLU\", \"{poolClass}\", \"{convClass}\", " ++
+        s!"\"ReLU\", \"{poolClass}\", \"Flatten\", \"Linear\"]"),
       indentTwo ""
     ]
     ++ generateGetModelInfoMethodLines className
@@ -144,25 +155,12 @@ def generateCnnStackPyTorchClass (cfg : CnnStackConfig) : String :=
 This is mainly used for examples: you can paste JSON/Lean-rendered weight arrays into Python and run
 the model without writing an extra serializer.
 -/
-def generateCNNWithWeights (convW1 convB1 convW2 convB2 linearW linearB : String)
-    (inC outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolstride1 poolstride2
-      flatSize : Nat)
-    (className : String := "CNN") : String :=
-  let cfg : CnnStackConfig :=
-    { className := className
-      inputC := inC
-      inputH := inH
-      inputW := inW
-      conv1 := { inChannels := inC, outChannels := outC, kernelH := kH, kernelW := kW, stride :=
-        stride1, padding := padding1 }
-      pool1 := { kernelH := poolKH, kernelW := poolKW, stride := poolstride1 }
-      conv2 := { inChannels := outC, outChannels := outC, kernelH := kH, kernelW := kW, stride :=
-        stride2, padding := padding2 }
-      pool2 := { kernelH := poolKH, kernelW := poolKW, stride := poolstride2 }
-      flatSize := flatSize
-      fcOut := outC }
-  joinLines [
-    generateCnnStackPyTorchClass cfg,
+def generateCNNWithWeights {spatialRank : Nat} (cfg : CnnStackConfig spatialRank)
+    (convW1 convB1 convW2 convB2 linearW linearB : String) : Except String String := do
+  let classCode ← generateCnnStackPyTorchClass cfg
+  let batchInputShape := natListToPyTuple (1 :: cfg.inputC :: cfg.inputSpatial.toList)
+  pure <| joinLines #[
+    classCode,
     "",
     "# Weight initialization functions",
     "def get_cnn_state_dict():",
@@ -182,9 +180,9 @@ def generateCNNWithWeights (convW1 convB1 convW2 convB2 linearW linearB : String
     indentTwo "",
     "# Usage example",
     "if __name__ == \"__main__\":",
-    indentTwo s!"model = {className}()",
+    indentTwo s!"model = {cfg.className}()",
     indentTwo "model = load_cnn_weights(model)",
-    indentTwo s!"x = torch.randn(1, {inC}, {inH}, {inW})  # batch_size=1, channels, height, width",
+    indentTwo s!"x = torch.randn{batchInputShape}",
     indentTwo "y = model(x)",
     indentTwo "print(f\"Input shape: {x.shape}\")",
     indentTwo "print(f\"Output shape: {y.shape}\")",

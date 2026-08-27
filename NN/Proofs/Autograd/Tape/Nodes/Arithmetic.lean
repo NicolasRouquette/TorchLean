@@ -42,7 +42,7 @@ map `A` and bias vector `b`.
 def affine {Γ : List Shape} {sIn sOut : Shape}
     (idx : Idx Γ sIn) (A : Vec (Spec.Shape.size sIn) →L[ℝ] Vec (Spec.Shape.size sOut))
     (b : Vec (Spec.Shape.size sOut)) : Node Γ sOut :=
-  Node.ofVec (Γ := Γ) (τ := sOut)
+  Node.ofFn (Γ := Γ) (τ := sOut)
     (f := fun x => A (CtxVec.get (Γ := Γ) (s := sIn) idx x) + b)
     (jvp := fun _x dx => A (CtxVec.get (Γ := Γ) (s := sIn) idx dx))
     (vjp := fun _x δ => CtxVec.single (Γ := Γ) (s := sIn) idx (A.adjoint δ))
@@ -73,11 +73,11 @@ def affineFderiv {Γ : List Shape} {sIn sOut : Shape}
           funext x
           simp [CtxVec.getCLM_apply, ContinuousLinearMap.comp_apply]
         exact h.congr_of_eventuallyEq hfun.eventuallyEq
-      simpa [affine, Node.forwardVec_ofVec, ContinuousLinearMap.comp_apply] using
+      simpa [affine, Node.forwardVec_ofFn, ContinuousLinearMap.comp_apply] using
         hlin.const_add b
     jvp_eq := by
       intro xV dxV
-      simp [affine, Node.jvpVec_ofVec, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply] }
+      simp [affine, Node.jvpVec_ofFn, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply] }
 
 -- ---------------------------------------------------------------------------
 -- Shape-generic binary ops on context entries
@@ -85,7 +85,7 @@ def affineFderiv {Γ : List Shape} {sIn sOut : Shape}
 
 /-- Add two same-shaped context entries. -/
 def add {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun x => (CtxVec.get (Γ := Γ) (s := s) a x) + (CtxVec.get (Γ := Γ) (s := s) b x))
     (jvp := fun _x dx => (CtxVec.get (Γ := Γ) (s := s) a dx) + (CtxVec.get (Γ := Γ) (s := s) b dx))
     (vjp := fun _x δ => (CtxVec.single (Γ := Γ) (s := s) a δ) + (CtxVec.single (Γ := Γ) (s := s) b
@@ -114,14 +114,14 @@ def addFderiv {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
       ((CtxVec.getCLM (Γ := Γ) (s := s) a) +
         (CtxVec.getCLM (Γ := Γ) (s := s) b)).hasFDerivAt (x := xV)
     have hderiv := h.congr_of_eventuallyEq hfun.eventuallyEq
-    simpa [add, Node.forwardVec_ofVec] using hderiv
+    simpa [add, Node.forwardVec_ofFn] using hderiv
   jvp_eq := by
     intro xV dxV
-    simp [add, Node.jvpVec_ofVec, CtxVec.getCLM_apply] }
+    simp [add, Node.jvpVec_ofFn, CtxVec.getCLM_apply] }
 
 /-- Subtract two same-shaped context entries. -/
 def sub {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun x => (CtxVec.get (Γ := Γ) (s := s) a x) - (CtxVec.get (Γ := Γ) (s := s) b x))
     (jvp := fun _x dx => (CtxVec.get (Γ := Γ) (s := s) a dx) - (CtxVec.get (Γ := Γ) (s := s) b dx))
     (vjp := fun _x δ => (CtxVec.single (Γ := Γ) (s := s) a δ) - (CtxVec.single (Γ := Γ) (s := s) b
@@ -151,14 +151,14 @@ def subFderiv {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
       ((CtxVec.getCLM (Γ := Γ) (s := s) a) -
         (CtxVec.getCLM (Γ := Γ) (s := s) b)).hasFDerivAt (x := xV)
     have hderiv := h.congr_of_eventuallyEq hfun.eventuallyEq
-    simpa [sub, Node.forwardVec_ofVec] using hderiv
+    simpa [sub, Node.forwardVec_ofFn] using hderiv
   jvp_eq := by
     intro xV dxV
-    simp [sub, Node.jvpVec_ofVec, CtxVec.getCLM_apply] }
+    simp [sub, Node.jvpVec_ofFn, CtxVec.getCLM_apply] }
 
 /-- Scale a context entry by a constant scalar. -/
 def scale {Γ : List Shape} {s : Shape} (idx : Idx Γ s) (c : ℝ) : Node Γ s :=
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun x => c • (CtxVec.get (Γ := Γ) (s := s) idx x))
     (jvp := fun _x dx => c • (CtxVec.get (Γ := Γ) (s := s) idx dx))
     (vjp := fun _x δ => CtxVec.single (Γ := Γ) (s := s) idx (c • δ))
@@ -182,10 +182,10 @@ def scaleFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s) (c : ℝ) :
       simp [CtxVec.getCLM_apply]
     have h := (c • (CtxVec.getCLM (Γ := Γ) (s := s) idx)).hasFDerivAt (x := xV)
     have hderiv := h.congr_of_eventuallyEq hfun.eventuallyEq
-    simpa [scale, Node.forwardVec_ofVec] using hderiv
+    simpa [scale, Node.forwardVec_ofFn] using hderiv
   jvp_eq := by
     intro xV dxV
-    simp [scale, Node.jvpVec_ofVec, CtxVec.getCLM_apply] }
+    simp [scale, Node.jvpVec_ofFn, CtxVec.getCLM_apply] }
 
 /--
 Apply a fixed elementwise multiplier.
@@ -196,7 +196,7 @@ dropout). The randomness itself is not differentiated; it is represented by the 
 -/
 def fixedMaskScale {Γ : List Shape} {s : Shape} (idx : Idx Γ s) (coeff : Vec (Spec.Shape.size s)) :
     Node Γ s :=
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun x => vecOfFun (n := Spec.Shape.size s) fun i =>
       coeff i * CtxVec.get (Γ := Γ) (s := s) idx x i)
     (jvp := fun _x dx => vecOfFun (n := Spec.Shape.size s) fun i =>
@@ -248,13 +248,13 @@ def fixedMaskScaleFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s)
           fun x : CtxVec Γ => D x := by
         funext x
         ext i
-        simp [fixedMaskScale, Node.forwardVec_ofVec, D, CtxVec.getCLM_apply,
+        simp [fixedMaskScale, Node.forwardVec_ofFn, D, CtxVec.getCLM_apply,
           ContinuousLinearMap.comp_apply]
       exact hlin.congr_of_eventuallyEq hfun.eventuallyEq
     jvp_eq := by
       intro xV dxV
       ext i
-      simp [fixedMaskScale, Node.jvpVec_ofVec, D, CtxVec.getCLM_apply,
+      simp [fixedMaskScale, Node.jvpVec_ofFn, D, CtxVec.getCLM_apply,
         ContinuousLinearMap.comp_apply] }
 
 /-- Coefficients for inverted dropout from a fixed Boolean keep mask and scalar keep probability. -/
@@ -285,7 +285,7 @@ def fixedInvertedDropoutFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s)
 def mul {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
   let n : Nat := Spec.Shape.size s
   let hadamard : Vec n → Vec n → Vec n := fun u v => vecOfFun (n := n) fun i => u i * v i
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun x => hadamard (CtxVec.get (Γ := Γ) (s := s) a x) (CtxVec.get (Γ := Γ) (s := s) b x))
     (jvp := fun x dx =>
       hadamard (CtxVec.get (Γ := Γ) (s := s) a x) (CtxVec.get (Γ := Γ) (s := s) b dx) +
@@ -440,14 +440,14 @@ def mulFderiv {Γ : List Shape} {s : Shape} (a b : Idx Γ s) :
         (fun x : CtxVec Γ => vecOfFun (n := n) fun i : Fin n => (aFun x i) * (bFun x i)) := by
       funext x
       ext i
-      simp [mul, vecOfFun, aFun, bFun, Node.forwardVec_ofVec]
+      simp [mul, vecOfFun, aFun, bFun, Node.forwardVec_ofFn]
     exact hcomp.congr_of_eventuallyEq hEq.eventuallyEq
   jvp_eq := by
     intro xV dxV
     classical
     ext i
     -- Expand the JVP, then evaluate the `pi`-assembled derivative in coordinate `i`.
-    simp [mul, Node.jvpVec_ofVec, vecOfFun, ContinuousLinearMap.comp_apply,
+    simp [mul, Node.jvpVec_ofFn, vecOfFun, ContinuousLinearMap.comp_apply,
       evalCLM_apply, CtxVec.getCLM_apply]
 }
 
@@ -473,7 +473,7 @@ denominator is nonzero, which is the standard mathematical domain of the quotien
 -/
 def div {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
   let n : Nat := Spec.Shape.size s
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun x => vecOfFun (n := n) fun i =>
       CtxVec.get (Γ := Γ) (s := s) a x i / CtxVec.get (Γ := Γ) (s := s) b x i)
     (jvp := fun x dx => vecOfFun (n := n) fun i =>
@@ -597,7 +597,7 @@ def divFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec Γ)
                   (fun y : CtxVec Γ => (CtxVec.get (Γ := Γ) (s := s) b y i)⁻¹)) x)) := by
       funext x
       ext i
-      simp [div, vecOfFun, Node.forwardVec_ofVec, div_eq_mul_inv, euclideanEquiv]
+      simp [div, vecOfFun, Node.forwardVec_ofFn, div_eq_mul_inv, euclideanEquiv]
     rw [hEq]
     exact hcomp
   · intro dxV
@@ -606,7 +606,7 @@ def divFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec Γ)
       CtxVec.getCLM_apply (Γ := Γ) (s := s) a dxV
     have hgb : (CtxVec.getCLM (Γ := Γ) (s := s) b) dxV = CtxVec.get (Γ := Γ) (s := s) b dxV :=
       CtxVec.getCLM_apply (Γ := Γ) (s := s) b dxV
-    simp [div, Node.jvpVec_ofVec, vecOfFun, ContinuousLinearMap.comp_apply, evalCLM_apply,
+    simp [div, Node.jvpVec_ofFn, vecOfFun, ContinuousLinearMap.comp_apply, evalCLM_apply,
       hga, hgb]
     ring
 

@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Engine.TapeM
-public import NN.Runtime.Autograd.Train.Dataset
+public import NN.Data.SampleStream
 
 /-!
 # Training-facing TapeM helpers
@@ -20,7 +20,7 @@ The main helpers are:
 
 - `param` for trainable leaves (`requiresGrad := true`);
 - `const` for data or frozen leaves (`requiresGrad := false`);
-- `meanScalarOver`, `meanScalarOverArray`, and `meanScalarOverDataset` for averaged scalar losses.
+- `meanScalarOver` and `meanScalarOverDataset` for averaged scalar losses.
 
 ## Higher derivatives
 
@@ -70,52 +70,40 @@ Compute the mean of a dataset of scalar-valued losses.
 
 `lossOf x` must return a node id whose value has shape `.scalar`.
 -/
-/-- Mean reduction for a list of scalar-valued losses, written in `TapeM`.
+/-- Mean reduction for an array of scalar-valued losses, written in `TapeM`.
 
 This is a common pattern in training loops: compute a scalar loss per sample, sum, then scale by
 `1/N`.
 -/
 def meanScalarOver {a b : Type}
   [Add a] [Mul a] [Div a] [One a] [Coe Nat a] [DecidableEq Shape]
-  (tag : String) (xs : List b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
+  (tag : String) (xs : Array b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
   Runtime.Autograd.TapeM a Nat := do
-  match xs with
-  | [] =>
-      throw (tagError tag "empty dataset")
-  | x0 :: xs =>
+  match xs[0]? with
+  | none =>
+      throw s!"{tag}: empty dataset"
+  | some x0 =>
       let firstLossId ← lossOf x0
-      let sumLossId ← xs.foldlM (init := firstLossId) fun acc x => do
+      let sumLossId ← (xs.drop 1).foldlM (init := firstLossId) fun acc x => do
         let lossId ← lossOf x
         Runtime.Autograd.TapeM.add (s := Shape.scalar) acc lossId
-      let n : Nat := xs.length.succ
+      let n : Nat := xs.size
       let invN : a := (1 : a) / (n : a)
       Runtime.Autograd.TapeM.scale (s := Shape.scalar) sumLossId invN
 
 /--
-Mean reduction for an array-backed batch.
+Mean reduction for a finite `SampleStream`.
 
-Arrays are common at runtime boundaries, while `meanScalarOver` uses lists because `foldlM` over
-lists keeps the implementation and error behavior simple. This wrapper makes that conversion
-explicit and keeps call sites tidy.
--/
-def meanScalarOverArray {a b : Type}
-  [Add a] [Mul a] [Div a] [One a] [Coe Nat a] [DecidableEq Shape]
-  (tag : String) (xs : Array b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
-  Runtime.Autograd.TapeM a Nat :=
-  meanScalarOver (tag := tag) xs.toList lossOf
-
-/--
-Mean reduction for a `Dataset`.
-
-This is the natural bridge from `Train.Dataset` batches to a scalar loss node. It materializes the
-current dataset order as a list and delegates to `meanScalarOver`, without shuffling, batching, or
+This is the natural bridge from `TorchLean.Data.SampleStream` batches to a scalar loss node. It materializes the
+current dataset order as an array and delegates to `meanScalarOver`, without shuffling, batching, or
 mutating the dataset.
 -/
 def meanScalarOverDataset {a b : Type}
   [Add a] [Mul a] [Div a] [One a] [Coe Nat a] [DecidableEq Shape]
-  (tag : String) (xs : Dataset b) (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
+  (tag : String) (xs : TorchLean.Data.SampleStream b)
+  (lossOf : b -> Runtime.Autograd.TapeM a Nat) :
   Runtime.Autograd.TapeM a Nat :=
-  meanScalarOver (tag := tag) xs.toList lossOf
+  meanScalarOver (tag := tag) xs.toArray lossOf
 
 end TapeM
 end Train

@@ -36,9 +36,9 @@ namespace EagerSession
 def linear {α : Type} (s : EagerSession α) [Inhabited α] [Add α] [Mul α] [Zero α] [DecidableEq
   Shape]
   {inDim outDim : Nat}
-  (w : TensorRef α (.dim outDim (.dim inDim .scalar)))
-  (b : TensorRef α (.dim outDim .scalar))
-  (x : TensorRef α (.dim inDim .scalar)) : IO (TensorRef α (.dim outDim .scalar)) := do
+  (w : TensorRef α [outDim, inDim])
+  (b : TensorRef α [outDim])
+  (x : TensorRef α [inDim]) : IO (TensorRef α [outDim]) := do
   let cpu := do
     let t0 ← s.tape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.linear (t := t0)
@@ -51,10 +51,10 @@ def linear {α : Type} (s : EagerSession α) [Inhabited α] [Add α] [Mul α] [Z
       Runtime.Autograd.Cuda.Tape.linear (t := t0) (outDim := outDim) (inDim := inDim) w.id b.id x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .linear cpu cuda
+  dispatchCudaOpt (α := α) s .linear #[w.identity?, b.identity?, x.identity?] cpu cuda
 
 /-- Mean-squared-error loss returning a scalar. PyTorch: `torch.nn.functional.mse_loss`. -/
-def mseLoss {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
+def mseLoss {α : Type} [TensorTransfer α] (s : EagerSession α)
   [Inhabited α] [Add α] [Sub α] [Mul α] [Div α] [Zero α] [One α] [Coe Nat α] [DecidableEq Shape]
   {sh : Shape} (yhat target : TensorRef α sh) : IO (TensorRef α Shape.scalar) := do
   let cpu := do
@@ -68,17 +68,16 @@ def mseLoss {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α)
       Runtime.Autograd.Cuda.Tape.mseLoss (t := t0) (s := sh) yhat.id target.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .mseLoss cpu cuda
+  dispatchCudaOpt (α := α) s .mseLoss #[yhat.identity?, target.identity?] cpu cuda
 
 /-- Layer normalization over embedding dimension. PyTorch: `nn.LayerNorm` / `functional.layer_norm`.
   -/
 def layerNorm {α : Type} (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : embedDim > 0)
-  (x : TensorRef α (.dim seqLen (.dim embedDim .scalar)))
-  (gamma : TensorRef α (.dim embedDim .scalar))
-  (beta : TensorRef α (.dim embedDim .scalar)) : IO (TensorRef α (.dim seqLen (.dim embedDim
-    .scalar))) := do
+  (x : TensorRef α [seqLen, embedDim])
+  (gamma : TensorRef α [embedDim])
+  (beta : TensorRef α [embedDim]) : IO (TensorRef α [seqLen, embedDim]) := do
   let cpu := do
     let t0 ← s.tape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.layerNorm (t := t0)
@@ -93,47 +92,44 @@ def layerNorm {α : Type} (s : EagerSession α) [Context α]
       x.id gamma.id beta.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .layerNorm cpu cuda
+  dispatchCudaOpt (α := α) s .layerNorm #[x.identity?, gamma.identity?, beta.identity?] cpu cuda
 
-/-- BatchNorm for channel-first images `(C,H,W)` (no batch axis). PyTorch: `nn.BatchNorm2d`
-  (conceptually). -/
-def batchNormChannelFirst {α : Type} (s : EagerSession α) [Context α]
+/-- Batch normalization over every spatial axis of a channel-first tensor. -/
+def batchNorm {α : Type} (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-  {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
-  (x : TensorRef α (.dim channels (.dim height (.dim width .scalar))))
-  (gamma : TensorRef α (.dim channels .scalar))
-  (beta : TensorRef α (.dim channels .scalar)) : IO (TensorRef α (.dim channels (.dim height (.dim
-    width .scalar)))) := do
+  {channels : Nat} {sSpatial : Shape}
+  (hWellFormed : (Shape.dim channels sSpatial).wellFormed)
+  (x : TensorRef α (.dim channels sSpatial))
+  (gamma : TensorRef α [channels])
+  (beta : TensorRef α [channels]) : IO (TensorRef α (.dim channels sSpatial)) := do
   let cpu := do
     let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.batchNormChannelFirst (t := t0)
-      (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
-        h_w)
+    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.batchNorm (t := t0)
+      (channels := channels) (sSpatial := sSpatial) hWellFormed
       x.id gamma.id beta.id)
     s.tape.set t1
     pure { id := id }
-  let cuda := do
-    let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.batchNormChannelFirst (t := t0)
-      (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h)
-      (h_w := h_w)
-      x.id gamma.id beta.id)
-    s.cudaTape.set t1
-    pure (some { id := id })
-  dispatchCudaOpt (α := α) s .batchNorm cpu cuda
+  let cuda : IO (Option (TensorRef α (.dim channels sSpatial))) :=
+    do
+      let t0 ← s.cudaTape.get
+      let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.batchNorm (t := t0)
+        (channels := channels) (spatial := sSpatial) hWellFormed x.id gamma.id beta.id)
+      s.cudaTape.set t1
+      pure (some { id := id })
+  dispatchCudaOpt (α := α) s .batchNorm #[x.identity?, gamma.identity?, beta.identity?] cpu cuda
 
 /-- Multi-head self-attention (typed, proof-friendly). PyTorch: `nn.MultiheadAttention`
   (conceptually). -/
 def multiHeadAttention {α : Type} (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
-  (wq : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wk : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wv : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wo : TensorRef α (.dim (numHeads * headDim) (.dim dModel .scalar)))
-  (x : TensorRef α (.dim n (.dim dModel .scalar)))
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
-  IO (TensorRef α (.dim n (.dim dModel .scalar))) := do
+  (wq : TensorRef α [dModel, numHeads * headDim])
+  (wk : TensorRef α [dModel, numHeads * headDim])
+  (wv : TensorRef α [dModel, numHeads * headDim])
+  (wo : TensorRef α [numHeads * headDim, dModel])
+  (x : TensorRef α [n, dModel])
+  (mask : Option (Tensor Bool [n, n]) := none) :
+  IO (TensorRef α [n, dModel]) := do
   let cpu := do
     let t0 ← s.tape.get
     let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.multiHeadAttention (t := t0)
@@ -150,7 +146,8 @@ def multiHeadAttention {α : Type} (s : EagerSession α) [Context α]
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaCapsuleOpt (α := α) s .scaledDotProductAttention
-    [.nativeCuda, .torchLean, .libTorch] cpu cuda
+    #[wq.identity?, wk.identity?, wv.identity?, wo.identity?, x.identity?]
+    #[.nativeCuda, .torchLean, .libTorch] cpu cuda
 
 end EagerSession
 

@@ -68,9 +68,9 @@ def crownUBoundsBackward (g : Graph) (ps : ParamStore Float)
       match outputBox? ibp outId with
       | .ok B => B.dim
       | .error _ => 0
-    let objV : Tensor Float (.dim outDim .scalar) := Spec.fill (α := Float) 1.0 (.dim outDim
+    let objV : Tensor Float [outDim] := Spec.fill (α := Float) 1.0 (.dim outDim
       .scalar)
-    let obj : FlatVec Float := { n := outDim, v := objV }
+    let obj : FlatTensor Float := { n := outDim, v := objV }
     match backwardObjectiveBox? (α := Float) g ps ctx ibp inB outId obj with
     | .ok outB =>
         let ulo := Spec.Tensor.sumSpec outB.lo

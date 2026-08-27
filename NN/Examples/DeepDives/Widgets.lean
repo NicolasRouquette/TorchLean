@@ -12,8 +12,8 @@ import NN.IR.Semantics
 import NN.MLTheory.CROWN.Graph
 import NN.Runtime.Autograd.Engine.Core
 import NN.Spec.RL.Envs.GridWorld
+import NN.Tensor
 import NN.Widgets
-meta import NN.Spec.Core.TensorBridge
 
 /-!
 # Widget Gallery
@@ -31,7 +31,6 @@ open Spec
 open NN.IR
 open TorchLean.Floats.IEEE754
 open Runtime.Autograd
-open TensorBridge TensorArray
 
 /-!
 ## RL (GridWorld) widgets
@@ -183,23 +182,23 @@ private def sgdStep (p : Params) (x : FloatPair) (y : Float) : (Params × Float 
   let absErr := Float.abs err
   (p', loss, absErr)
 
-private def trainLoop : Nat → Params → List Float → List Float → (List Float × List Float)
-  | 0, _, losses, errs => (losses.reverse, errs.reverse)
+private def trainLoop : Nat → Params → Array Float → Array Float → (Array Float × Array Float)
+  | 0, _, losses, errs => (losses, errs)
   | Nat.succ k, p, losses, errs =>
       let idx : Fin tinyData.size := ⟨k % tinyData.size, Nat.mod_lt k tinyData_nonempty⟩
       let sample := tinyData[idx]
       let (x, y) := sample
       let (p', loss, absErr) := sgdStep p x y
-      trainLoop k p' (loss :: losses) (absErr :: errs)
+      trainLoop k p' (losses.push loss) (errs.push absErr)
 
 def mlpTrainLog : Runtime.Training.TrainLog :=
   let stepsN : Nat := 80
-  let (losses, errs) := trainLoop stepsN initParams [] []
+  let (losses, errs) := trainLoop stepsN initParams #[] #[]
   { title := "MLP SGD (real run, pure Lean)"
     steps := (Array.range stepsN).map (fun i => i)
     series := #[
-      { name := "mse_loss", values := losses.toArray, color := "#c44" }
-    , { name := "abs_err", values := errs.toArray, color := "#0a7" }
+      { name := "mse_loss", values := losses, color := "#c44" }
+    , { name := "abs_err", values := errs, color := "#0a7" }
     ]
     notes := #[
       "model: 2->2->1 ReLU MLP (scalar implementation for speed)"
@@ -216,14 +215,15 @@ def sampleConfusionMatrix : Runtime.Training.ConfusionMatrix :=
     , #[0, 1, 7]
     ] }
 
-def indexVector : Tensor Nat (shape![5]) :=
-  Tensor.dim (fun i => Tensor.scalar i.1)
+def indexTensor : Tensor Nat [5] :=
+  TorchLean.Tensor.generate [5] fun
+    | [i] => i
+    | _ => 0
 
-def rankThreeGrid : Tensor Nat (shape![2, 3, 4]) :=
-  Tensor.dim (fun i =>
-    Tensor.dim (fun j =>
-      Tensor.dim (fun k =>
-        Tensor.scalar (i.1 * 100 + j.1 * 10 + k.1))))
+def sampleGrid : Tensor Nat [2, 3, 4] :=
+  TorchLean.Tensor.generate [2, 3, 4] fun
+    | [i, j, k] => i * 100 + j * 10 + k
+    | _ => 0
 
 def decimalTenth : Float :=
   -- 0.1 as a binary64 literal (exact via bit pattern).
@@ -233,81 +233,60 @@ def oneThirdFloat : Float :=
   -- 1/3 as a binary64 literal.
   Float.ofBits 0x3fd5555555555555
 
-def floatVector : Tensor Float (shape![4]) :=
-  Tensor.dim (fun
-    | ⟨0, _⟩ => Tensor.scalar (Float.ofNat 1)
-    | ⟨1, _⟩ => Tensor.scalar (Float.ofNat 2)
-    | ⟨2, _⟩ => Tensor.scalar decimalTenth
-    | ⟨_, _⟩ => Tensor.scalar oneThirdFloat)
+def floatTensor : Tensor Float [4] :=
+  tensor! [1.0, 2.0, decimalTenth, oneThirdFloat]
 
-def ieeeVector : Tensor IEEE32Exec (shape![4]) :=
-  Tensor.dim (fun
-    | ⟨0, _⟩ => Tensor.scalar IEEE32Exec.posOne
-    | ⟨1, _⟩ => Tensor.scalar (IEEE32Exec.ofFloat (Float.ofNat 2))
-    | ⟨2, _⟩ => Tensor.scalar (IEEE32Exec.ofFloat decimalTenth)
-    | ⟨_, _⟩ => Tensor.scalar (IEEE32Exec.ofFloat oneThirdFloat))
+def ieeeTensor : Tensor IEEE32Exec [4] :=
+  TorchLean.Tensor.generate [4] fun
+    | [0] => IEEE32Exec.posOne
+    | [1] => IEEE32Exec.ofFloat 2.0
+    | [2] => IEEE32Exec.ofFloat decimalTenth
+    | _ => IEEE32Exec.ofFloat oneThirdFloat
 
-def ieeeCube : Tensor IEEE32Exec (shape![2, 2, 3]) :=
-  Tensor.dim (fun i =>
-    Tensor.dim (fun j =>
-      Tensor.dim (fun k =>
-        -- Small rank-3 tensor with values that make bit-patterns interesting.
-        let base : Float := Float.ofNat (i.1 * 100 + j.1 * 10 + k.1)
-        let x : Float := (base + decimalTenth) / 7.0
-        Tensor.scalar (IEEE32Exec.ofFloat x))))
+def ieeeCube : Tensor IEEE32Exec [2, 2, 3] :=
+  TorchLean.Tensor.generate [2, 2, 3] fun
+    | [i, j, k] =>
+        -- Small tensor whose values make the bit patterns interesting.
+        let base : Float := Float.ofNat (i * 100 + j * 10 + k)
+        IEEE32Exec.ofFloat ((base + decimalTenth) / 7.0)
+    | _ => IEEE32Exec.posZero
 
-def sampleMatrix : Tensor Int (shape![2, 4]) :=
-  Tensor.dim (fun i =>
-    Tensor.dim (fun j =>
-      Tensor.scalar (Int.ofNat (i.1 * 10 + j.1))))
+def sampleMatrix : Tensor Int [2, 4] :=
+  TorchLean.Tensor.generate [2, 4] fun
+    | [i, j] => Int.ofNat (i * 10 + j)
+    | _ => 0
 
-def anyMat : Spec.PackedTensor Int :=
-  Spec.PackedTensor.ofTensor sampleMatrix
-
-def anyF (x : Float) : Spec.PackedTensor Float :=
-  Spec.PackedTensor.ofTensor (Tensor.scalar x)
-
-def sampleRuntimeContext : Runtime.RuntimeContext Float :=
-  { bindings := [
-      ("w", anyF 3.0)
-    , ("x", anyF 2.0)
-    ]
-    gradients := [
-      ("w", anyF 0.1)
-    , ("x", anyF 0.0)
-    ]
-    nextId := 2 }
+def anyMat : Spec.SomeTensor Int :=
+  Spec.SomeTensor.ofTensor sampleMatrix
 
 def sampleGraph : NN.IR.Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input
-        outShape := (shape![2]) },
-      { id := 1, parents := []
-        kind := .const (shape![2])
-        outShape := (shape![2]) },
-      { id := 2, parents := [0, 1], kind := .add
-        outShape := (shape![2]) }
+      { id := 0, parents := #[], kind := .input
+        outShape := [2] },
+      { id := 1, parents := #[]
+        kind := .const [2]
+        outShape := [2] },
+      { id := 2, parents := #[0, 1], kind := .add
+        outShape := [2] }
     ] }
 
 def sampleGraphSub : NN.IR.Graph :=
   -- Same as `sampleGraph` but with `sub` instead of `add` at the output.
   { nodes := #[
-      { id := 0, parents := [], kind := .input
-        outShape := (shape![2]) },
-      { id := 1, parents := []
-        kind := .const (shape![2])
-        outShape := (shape![2]) },
-      { id := 2, parents := [0, 1], kind := .sub
-        outShape := (shape![2]) }
+      { id := 0, parents := #[], kind := .input
+        outShape := [2] },
+      { id := 1, parents := #[]
+        kind := .const [2]
+        outShape := [2] },
+      { id := 2, parents := #[0, 1], kind := .sub
+        outShape := [2] }
     ] }
 
-def pairTensor (x y : Float) : Tensor Float (shape![2]) :=
-  Tensor.dim (fun
-    | ⟨0, _⟩ => Tensor.scalar x
-    | ⟨_, _⟩ => Tensor.scalar y)
+def pairTensor (x y : Float) : Tensor Float [2] :=
+  tensor! [x, y]
 
-def sampleInput : Spec.PackedTensor Float :=
-  Spec.PackedTensor.ofTensor (pairTensor 0.60 (-0.20))
+def sampleInput : Spec.SomeTensor Float :=
+  Spec.SomeTensor.ofTensor (pairTensor 0.60 (-0.20))
 
 def samplePayload : NN.IR.Payload Float :=
   { const? := fun id =>
@@ -339,9 +318,9 @@ def samplePropState : NN.MLTheory.CROWN.Graph.PropState Float :=
   { inputId := 0
     inputDim := 2
     states := #[
-      { shape := (shape![2]), ibp? := some bIn, aff? := none }
-    , { shape := (shape![2]), ibp? := some bConst, aff? := none }
-    , { shape := (shape![2]), ibp? := some bOut, aff? := none }
+      { shape := [2], ibp? := some bIn, aff? := none }
+    , { shape := [2], ibp? := some bConst, aff? := none }
+    , { shape := [2], ibp? := some bOut, aff? := none }
     ] }
 
 def sampleTape : Tape Float :=
@@ -361,29 +340,14 @@ def sampleTape : Tape Float :=
   let _ := outId
   t3
 
-/-!
-Tensor basics / bridge example:
-
-Widgets are defined for `Spec.Tensor` (shape-indexed, spec-level tensors). If you have an
-array-backed `TensorArray.Tensor` (common at IO boundaries), you can convert it with
-`TensorBridge.to_tensor` and then use the same `#tensor_view` UI.
--/
-
-meta def taMat23 : TensorArray.Tensor Float [2, 3] :=
-  TensorArray.ofArray #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] [2, 3] (by simp)
-
-meta def taMat23_spec : Tensor Float (Shape.ofList [2, 3]) :=
-  toTensor taMat23
-
 -- Try hovering/cursoring on these commands in the editor.
-#tensor_view indexVector
-#tensor_view rankThreeGrid
-#tensor_view floatVector
-#tensor_view ieeeVector
+#tensor_view indexTensor
+#tensor_view sampleGrid
+#tensor_view floatTensor
+#tensor_view ieeeTensor
 #tensor_view ieeeCube
 #tensor_view sampleMatrix
-#tensor_view taMat23_spec
-#tensor_stats_view floatVector
+#tensor_stats_view floatTensor
 #tensor_stats_view (pairTensor 0.60 (-0.20))
 #ir_view sampleGraph
 #shape_infer_view sampleGraph
@@ -393,7 +357,6 @@ meta def taMat23_spec : Tensor Float (Shape.ofList [2, 3]) :=
 #float32_view qnan
 #float32_compare_view one, qnan
 #anytensor_view anyMat
-#runtime_ctx_view sampleRuntimeContext
 #ir_exec_trace_view sampleGraph, samplePayload, sampleInput
 #train_log_view mlpTrainLog
 #train_log_view sampleTrainLog

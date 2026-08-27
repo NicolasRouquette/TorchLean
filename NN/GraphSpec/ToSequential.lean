@@ -42,7 +42,7 @@ namespace GraphSpec
 namespace ToSequential
 
 open _root_.Spec
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 namespace Internal
 

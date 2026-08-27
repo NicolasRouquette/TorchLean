@@ -88,6 +88,10 @@ def parseArgs (args : List String) : Except String DatasetCheckOpts := do
   let (maxPts, args) ← TorchLean.CLI.takeNatFlagDefault args "max" 200
   let (strict, args) ← TorchLean.CLI.takeBoolFlagOnce args "strict"
   TorchLean.CLI.checkNoArgs args
+  unless eps.isFinite && eps ≥ 0.0 do
+    throw s!"--eps must be finite and nonnegative, got {eps}"
+  unless tol.isFinite && tol ≥ 0.0 do
+    throw s!"--tol must be finite and nonnegative, got {tol}"
   pure { weights := weights?
          dataset := dataset?
          eps := eps
@@ -99,7 +103,7 @@ def parseArgs (args : List String) : Except String DatasetCheckOpts := do
 def loadGraphAndParams (weightsPath? : Option String) : IO (Graph × ParamStore Float) := do
   match weightsPath? with
   | none =>
-    pure (buildGraph2D, seedParamsFloat2D)
+    pure (buildReferenceGraph 2, referenceParams 2)
   | some path =>
     let j ← NN.Verification.Json.readJsonFile path
     match Import.PINNPyTorch.loadPinnState j with
@@ -118,7 +122,9 @@ def checkSection
   let mut badCount : Nat := 0
   let mut maxAbsErr : Float := 0.0
   for point in pts do
-    let ps := seedInputFloat2D baseParams point.x point.yOrT opts.eps
+    let center : Spec.Tensor Float [2] :=
+      Spec.Tensor.dim fun i => Spec.Tensor.scalar <| if i.val = 0 then point.x else point.yOrT
+    let ps := seedInput baseParams center opts.eps
     let ibp := runIBP (α := Float) g ps
     let outB ←
       match NN.MLTheory.CROWN.Graph.outputBox? ibp outId with

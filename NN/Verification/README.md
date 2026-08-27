@@ -63,9 +63,9 @@ The theorem-level graph IBP/CROWN-family soundness results live under
 The TorchLean-to-IR proof API is separate. It covers the proved lowering fragment and local
 evaluator lemmas for supported imported operations. Current coverage includes elementwise
 arithmetic and activations, reshape/flatten/broadcast/sum, concat, axis reductions, supported
-transpose and permutation forms, rank-2/3 matrix multiplication, softmax through the evaluator's
-axis-permutation path, payload-backed constants, `linear`, no-dilation `conv2d`, eval-mode NCHW
-BatchNorm, CHW pooling, reshape-based LayerNorm, graph input/detach, and scalar MSE formulas used
+transpose and permutation forms, matrix and batched matrix multiplication, arbitrary-axis softmax,
+payload-backed constants, `linear`, arbitrary-rank no-dilation convolution, eval-mode
+channel-first BatchNorm, arbitrary-rank pooling, suffix-axis LayerNorm, graph input/detach, and scalar MSE formulas used
 by the PyTorch/ONNX path.
 
 For payload-backed imported ops, the bridge records both the helper evaluator contract and the

@@ -66,7 +66,7 @@ This design is described in the TorchLean paper appendix ("Appendix C (Numerical
 namespace TorchLean.Floats
 
 /--
-Executable float32 backend (bit-level IEEE-754 binary32).
+Executable model of the IEEE-754 binary32 operations implemented by `IEEE32Exec`.
 
 This is the scalar type you pick when you want runs inside Lean to have an explicit float32 meaning
 (including NaN/Inf and signed-zero behavior), rather than depending on the platform runtime.

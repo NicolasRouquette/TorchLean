@@ -89,38 +89,38 @@ end ObligationReport
 namespace KernelAudit
 
 /-- All contract obligations associated with a selected kernel. -/
-def obligationReports (a : KernelAudit) : List ObligationReport :=
-  [ { op := a.op
+def obligationReports (a : KernelAudit) : Array ObligationReport :=
+  #[{ op := a.op
       capsuleName := a.capsuleName
       obligation := .shape
       claim := a.shapeContract.claim
       evidence := a.shapeContract.evidence
-      disposition := a.shapeContract.evidence.disposition }
-  , { op := a.op
+      disposition := a.shapeContract.evidence.disposition },
+    { op := a.op
       capsuleName := a.capsuleName
       obligation := .layout
       claim := a.layoutContract.claim
       evidence := a.layoutContract.evidence
-      disposition := a.layoutContract.evidence.disposition }
-  , { op := a.op
+      disposition := a.layoutContract.evidence.disposition },
+    { op := a.op
       capsuleName := a.capsuleName
       obligation := .value
       claim := a.valueContract.claim
       evidence := a.valueContract.evidence
-      disposition := a.valueContract.evidence.disposition }
-  , { op := a.op
+      disposition := a.valueContract.evidence.disposition },
+    { op := a.op
       capsuleName := a.capsuleName
       obligation := .vjp
       claim := a.vjpContract.claim
       evidence := a.vjpContract.evidence
-      disposition := a.vjpContract.evidence.disposition } ]
+      disposition := a.vjpContract.evidence.disposition }]
 
 /-- Obligations without any recorded evidence. -/
-def missingObligations (a : KernelAudit) : List ContractObligation :=
+def missingObligations (a : KernelAudit) : Array ContractObligation :=
   (a.obligationReports.filter ObligationReport.isMissing).map (·.obligation)
 
 /-- Obligations discharged by a trusted boundary. -/
-def trustedBoundaryObligations (a : KernelAudit) : List ContractObligation :=
+def trustedBoundaryObligations (a : KernelAudit) : Array ContractObligation :=
   (a.obligationReports.filter ObligationReport.isTrusted).map (·.obligation)
 
 end KernelAudit
@@ -128,15 +128,15 @@ end KernelAudit
 namespace KernelPlanAudit
 
 /-- All recheck obligations for all selected kernels. -/
-def obligationReports (a : KernelPlanAudit) : List ObligationReport :=
-  a.kernels.foldr (fun k acc => k.obligationReports ++ acc) []
+def obligationReports (a : KernelPlanAudit) : Array ObligationReport :=
+  a.kernels.flatMap KernelAudit.obligationReports
 
 /-- Recheck obligations with no recorded evidence. -/
-def missingReports (a : KernelPlanAudit) : List ObligationReport :=
+def missingReports (a : KernelPlanAudit) : Array ObligationReport :=
   a.obligationReports.filter ObligationReport.isMissing
 
 /-- Recheck obligations discharged by trusted external boundaries. -/
-def trustedBoundaryReports (a : KernelPlanAudit) : List ObligationReport :=
+def trustedBoundaryReports (a : KernelPlanAudit) : Array ObligationReport :=
   a.obligationReports.filter ObligationReport.isTrusted
 
 /-- Whether every obligation has a non-missing audit classification. -/
@@ -152,11 +152,11 @@ def hasNoMissingEvidence (p : KernelPlan) : Bool :=
   p.audit.hasNoMissingEvidence
 
 /-- Missing recheck obligations for a selected plan. -/
-def missingReports (p : KernelPlan) : List ObligationReport :=
+def missingReports (p : KernelPlan) : Array ObligationReport :=
   p.audit.missingReports
 
 /-- Trusted-boundary recheck obligations for a selected plan. -/
-def trustedBoundaryReports (p : KernelPlan) : List ObligationReport :=
+def trustedBoundaryReports (p : KernelPlan) : Array ObligationReport :=
   p.audit.trustedBoundaryReports
 
 end KernelPlan

@@ -50,7 +50,7 @@ Unsupported axes or shape mismatches fall back to constant affine bounds derived
 
 /-- Constant affine bounds with zero coefficient matrix and explicit lower/upper offsets. -/
 @[expose]
-def boundsConst (inputDim outDim : Nat) (lo hi : Tensor α (.dim outDim .scalar)) :
+def boundsConst (inputDim outDim : Nat) (lo hi : Tensor α [outDim]) :
   FlatAffineBounds α :=
   let zA := Spec.fill (α:=α) 0 (.dim outDim (.dim inputDim .scalar))
   { inDim := inputDim
@@ -66,8 +66,8 @@ def materializeAffineVec {inDim outDim : Nat} (a : AffineVec α inDim outDim) : 
 /-- Propagate affine lower/upper bounds through an affine layer `W*x + b`. -/
 def propagateLinearBounds
   {n m : Nat}
-  (W : Tensor α (.dim m (.dim n .scalar)))
-  (b : Tensor α (.dim m .scalar))
+  (W : Tensor α [m, n])
+  (b : Tensor α [m])
   (xB : FlatAffineBounds α)
   (hout : xB.outDim = n) : FlatAffineBounds α := by
   -- Align parent affines to outDim=n.
@@ -105,7 +105,7 @@ def propagateLinearBounds
 
 /-- Compose an affine form with a diagonal affine relaxation `slope * x + bias`. -/
 def affApplyDiag {inDim outDim : Nat}
-  (slopes bias : Tensor α (.dim outDim .scalar))
+  (slopes bias : Tensor α [outDim])
   (aff : AffineVec α inDim outDim) : AffineVec α inDim outDim :=
   match slopes, bias, aff.A, aff.c with
   | .dim sF, .dim bF, .dim rows, .dim cF =>
@@ -124,7 +124,7 @@ def affApplyDiag {inDim outDim : Nat}
 
 /-- Apply a diagonal relaxation for an upper bound, selecting parent rows by slope sign. -/
 def affApplyDiagSignedUpper {inDim outDim : Nat}
-  (slopes bias : Tensor α (.dim outDim .scalar))
+  (slopes bias : Tensor α [outDim])
   (xLo xHi : AffineVec α inDim outDim) : AffineVec α inDim outDim :=
   match slopes, bias, xLo.A, xHi.A, xLo.c, xHi.c with
   | .dim sF, .dim bF, .dim rowsL, .dim rowsU, .dim cL, .dim cU =>
@@ -149,7 +149,7 @@ def affApplyDiagSignedUpper {inDim outDim : Nat}
 
 /-- Apply a diagonal relaxation for a lower bound, selecting parent rows by slope sign. -/
 def affApplyDiagSignedLower {inDim outDim : Nat}
-  (slopes bias : Tensor α (.dim outDim .scalar))
+  (slopes bias : Tensor α [outDim])
   (xLo xHi : AffineVec α inDim outDim) : AffineVec α inDim outDim :=
   match slopes, bias, xLo.A, xHi.A, xLo.c, xHi.c with
   | .dim sF, .dim bF, .dim rowsL, .dim rowsU, .dim cL, .dim cU =>

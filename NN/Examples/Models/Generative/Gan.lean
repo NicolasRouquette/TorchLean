@@ -52,24 +52,24 @@ def cfg : nn.models.DenseGenerative.Config :=
 def batch : Nat := 1
 
 /-- Latent-noise batch shape for the generator input. -/
-abbrev Z := cfg.latentShape (.dim batch .scalar)
+abbrev Z := cfg.latentShape [batch]
 
 /-- Flattened CIFAR image-vector batch shape. -/
-abbrev X := cfg.dataShape (.dim batch .scalar)
+abbrev X := cfg.dataShape [batch]
 
 /-- Discriminator score shape: one scalar score per batch row. -/
-abbrev S : Shape := cfg.scoreShape (.dim batch .scalar)
+abbrev S : List Nat := cfg.scoreShape [batch]
 
 namespace Internal
 
 /-- Deterministic example noise in `[lo, hi)`. -/
 def noise (dim seed salt : Nat) (lo hi : Float) :
-    Tensor Float (.dim batch (.dim dim .scalar)) :=
-  .dim fun bi => .dim fun j =>
-    let offset := bi.val * dim + j.val
+    Tensor Float [batch, dim] :=
+  Tensor.generate [batch, dim] fun coordinates =>
+    let offset := coordinates.getD 0 0 * dim + coordinates.getD 1 0
     let raw := (seed * 1103515245 + offset * 12345 + salt) % 997
     let unit := Float.ofNat raw / 997.0
-    .scalar (lo + (hi - lo) * unit)
+    lo + (hi - lo) * unit
 
 /-- Deterministic latent input used by the compact generator run. -/
 def latentNoise (seed : Nat) : Tensor Float Z :=
@@ -81,22 +81,22 @@ def dataNoise (seed : Nat) : Tensor Float X :=
 
 /-- Constant discriminator target. -/
 def scoreTarget (value : Float) : Tensor Float S :=
-  .dim fun _ => .dim fun _ => .scalar value
+  Tensor.full [batch, 1] value
 
 end Internal
 
 /-- Generator network mapping latent vectors to flattened image vectors. -/
 def mkGenerator : nn.Builder (nn.Sequential Z X) :=
-  nn.models.DenseGenerative.ganGenerator cfg (.dim batch .scalar)
+  nn.models.DenseGenerative.ganGenerator cfg [batch]
 
 /-- Discriminator network mapping flattened image vectors to scalar real/fake scores. -/
 def mkDiscriminator : nn.Builder (nn.Sequential X S) :=
-  nn.models.DenseGenerative.ganDiscriminator cfg (.dim batch .scalar)
+  nn.models.DenseGenerative.ganDiscriminator cfg [batch]
 
 /-- Mean-squared error for one supervised sample evaluated through a public prediction closure. -/
-def sampleMse {σ τ : Shape}
-    (predict : Tensor Float σ → IO (Tensor Float τ))
-    (sample : Sample.Supervised Float σ τ) : IO Float := do
+def sampleMse {inputShape targetShape : List Nat}
+    (predict : Tensor Float inputShape → IO (Tensor Float targetShape))
+    (sample : Sample.Supervised Float inputShape targetShape) : IO Float := do
   let yhat ← predict (Sample.x sample)
   pure (_root_.Spec.mseSpec yhat (Sample.y sample))
 
@@ -149,7 +149,7 @@ def trainCurve (opts : Options) (xPath yPath : System.FilePath)
   discTrainer.printInfoAs "discriminator"
   let trained ← genTrainer.trainPairStreams discTrainer opts
     (fun _ => genSample)
-    (fun _ => [discReal, discFake])
+    (fun _ => #[discReal, discFake])
     (fun predictGen predictDisc =>
       totalLoss predictGen predictDisc genSample discReal discFake)
     { steps := steps, log := .disabled }

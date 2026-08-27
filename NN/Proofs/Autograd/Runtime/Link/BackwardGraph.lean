@@ -39,12 +39,12 @@ accumulation semantics as the proved tape model.
 -/
 theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : Type} [DecidableEq Shape]
   [CommSemiring α]
-    {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TList α Γ) (d0 : Δ)
-    (seed : TList α (Γ ++ ss)) :
+    {Γ : List Shape} {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : _root_.TorchLean.TensorPack α Γ) (d0 : Δ)
+    (seed : _root_.TorchLean.TensorPack α (Γ ++ ss)) :
     Runtime.Autograd.Tape.backwardDenseFrom (t := (lowerGraphToTape (α := α) (Δ := Δ) (Γ := Γ) (ss := ss)
       g x d0).1)
-        (grads0 := TList.toPackedArray (α := α) (ss := Γ ++ ss) seed) =
-      .ok (TList.toPackedArray (α := α) (ss := Γ ++ ss)
+        (grads0 := _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ss) seed) =
+      .ok (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ss)
         (backpropAllCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed)) := by
   induction g with
   | nil =>
@@ -63,24 +63,24 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
           Runtime.Autograd.Tape.backwardDenseFromLoop
               (t := addLeaves (α := α) (t := Runtime.Autograd.Tape.empty (α := α)) (Γ := Γ) x)
               (addLeaves (α := α) (t := Runtime.Autograd.Tape.empty (α := α)) (Γ := Γ) x).nodes.size
-              (TList.toPackedArray (α := α) (ss := Γ) (TList.cast (α := α) (h := (List.append_nil Γ))
+              (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) (_root_.TorchLean.TensorPack.cast (α := α) (h := (List.append_nil Γ))
                 seed)) =
             Except.ok
-              (TList.toPackedArray (α := α) (ss := Γ)
-                (TList.cast (α := α) (h := (List.append_nil Γ)) seed)) := by
-        -- Put the tape in a convenient form: it's exactly the `leafNodeOfPacked` image of
-        -- `x.toPackedArray`.
+              (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ)
+                (_root_.TorchLean.TensorPack.cast (α := α) (h := (List.append_nil Γ)) seed)) := by
+        -- Put the tape in a convenient form: it's exactly the `leafNodeOfSomeTensor` image of
+        -- `x.toShapeErasedArray`.
         let t :=
           addLeaves (α := α) (t := Runtime.Autograd.Tape.empty (α := α)) (Γ := Γ) x
         have hnodes :
             t.nodes =
-              (TList.toPackedArray (α := α) (ss := Γ) x).map (leafNodeOfPacked (α := α)) := by
+              (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) x).map (leafNodeOfSomeTensor (α := α)) := by
           -- `nodes_addLeaves` for an empty prefix tape.
           simp [t, nodes_addLeaves, Runtime.Autograd.Tape.empty]
 
         -- The loop just runs identity steps in reverse order.
         let seedArr :=
-          TList.toPackedArray (α := α) (ss := Γ) (TList.cast (α := α) (h := List.append_nil Γ) seed)
+          _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) (_root_.TorchLean.TensorPack.cast (α := α) (h := List.append_nil Γ) seed)
         have htlen : t.nodes.size = Γ.length := by
           -- `t` is `addLeaves empty x`
           simpa [t] using hnsize.symm
@@ -101,53 +101,53 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                 Nat.le_trans (Nat.le_succ n) hnle
               have hidSeed : n < seedArr.size := by
                 have : n < Γ.length := by simpa [htlen] using hnlt
-                simpa [seedArr, TList.size_toPackedArray] using this
-              have hidX : n < (TList.toPackedArray (α := α) (ss := Γ) x).size := by
+                simpa [seedArr, _root_.TorchLean.TensorPack.size_toShapeErasedArray] using this
+              have hidX : n < (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) x).size := by
                 have : n < Γ.length := by simpa [htlen] using hnlt
-                simpa [TList.size_toPackedArray] using this
+                simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray] using this
 
               -- Identify the node at `n`: it is a leaf node.
               have hnode :
                   t.getNode? n =
                     some
-                      (leafNodeOfPacked (α := α)
-                        ((TList.toPackedArray (α := α) (ss := Γ) x)[n]'hidX)) := by
-                simp [Runtime.Autograd.Tape.getNode?, hnodes, Array.getElem?_map, leafNodeOfPacked,
-                  Array.getElem?_eq_getElem (xs := TList.toPackedArray (α := α) (ss := Γ) x) (i := n)
+                      (leafNodeOfSomeTensor (α := α)
+                        ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) x)[n]'hidX)) := by
+                simp [Runtime.Autograd.Tape.getNode?, hnodes, Array.getElem?_map, leafNodeOfSomeTensor,
+                  Array.getElem?_eq_getElem (xs := _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) x) (i := n)
                     hidX]
 
               -- Shape check at `n`: both entries have the same shape.
               have hshape :
                   (seedArr[n]'hidSeed).shape =
-                    ((TList.toPackedArray (α := α) (ss := Γ) x)[n]'hidX).shape := by
+                    ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) x)[n]'hidX).shape := by
                 let i : Fin Γ.length := ⟨n, by
                   have : n < Γ.length := by simpa [htlen] using hnlt
                   exact this⟩
                 have hx_s :
-                    ((TList.toPackedArray (α := α) (ss := Γ) x)[n]'hidX).shape = Γ.get i := by
-                  simpa [i, Spec.PackedTensor.ofTensor] using congrArg Spec.PackedTensor.shape
-                    (TList.get_toPackedArray (α := α) (ss := Γ) x i)
+                    ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ) x)[n]'hidX).shape = Γ.get i := by
+                  simpa [i, Spec.SomeTensor.ofTensor] using congrArg Spec.SomeTensor.shape
+                    (_root_.TorchLean.TensorPack.get_toShapeErasedArray (α := α) (ss := Γ) x i)
                 have hseed_s :
                     (seedArr[n]'hidSeed).shape = Γ.get i := by
-                  simpa [seedArr, i, Spec.PackedTensor.ofTensor] using congrArg Spec.PackedTensor.shape
-                    (TList.get_toPackedArray (α := α) (ss := Γ)
-                      (TList.cast (α := α) (h := List.append_nil Γ) seed) i)
+                  simpa [seedArr, i, Spec.SomeTensor.ofTensor] using congrArg Spec.SomeTensor.shape
+                    (_root_.TorchLean.TensorPack.get_toShapeErasedArray (α := α) (ss := Γ)
+                      (_root_.TorchLean.TensorPack.cast (α := α) (h := List.append_nil Γ) seed) i)
                 exact hseed_s.trans hx_s.symm
 
               have hstepn :
                   Runtime.Autograd.Tape.backwardDenseFromStep (t := t) seedArr n = Except.ok seedArr
                     := by
-                have hidSeed0 : n < (TList.toPackedArray (α := α) (ss := Γ ++ []) seed).size := by
+                have hidSeed0 : n < (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ []) seed).size := by
                   have : n < Γ.length := by simpa [htlen] using hnlt
-                  simpa [TList.size_toPackedArray] using this
-                -- unfold `backwardDenseFromStep`; `leafNodeOfPacked.backward = []`, so the step is the
+                  simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray] using this
+                -- unfold `backwardDenseFromStep`; `leafNodeOfSomeTensor.backward = []`, so the step is the
                 -- identity.
-                simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnode, leafNodeOfPacked, seedArr,
-                  Array.getElem?_eq_getElem (xs := (TList.toPackedArray (α := α) (ss := Γ ++ []) seed))
+                simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnode, leafNodeOfSomeTensor, seedArr,
+                  Array.getElem?_eq_getElem (xs := (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ []) seed))
                     (i := n) hidSeed0]
-                have hcond : seed.toPackedArray[n].shape = x.toPackedArray[n].shape := by
+                have hcond : seed.toShapeErasedArray[n].shape = x.toShapeErasedArray[n].shape := by
                   simpa [seedArr] using hshape
-                -- `leafNodeOfPacked.backward` contributes no parent gradients, so the fold is a no-op.
+                -- `leafNodeOfSomeTensor.backward` contributes no parent gradients, so the fold is a no-op.
                 -- After choosing the `if` branch via `hcond`, this is definitional.
                 simp [hcond]
                 rfl
@@ -163,7 +163,7 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
       -- `backpropAllCtx` is the identity in the nil case.
       -- Use the size check (`hnsize`) and rewrite away the `cast` on the seed array.
       simpa [lowerGraphToTape, backpropAllCtx, Runtime.Autograd.Tape.backwardDenseFrom, hnsize,
-        TList.toPackedArray_cast] using hloop
+        _root_.TorchLean.TensorPack.toShapeErasedArray_cast] using hloop
   | snoc g node ih =>
       rename_i ssPrev τ
       -- Unpack the lowering of the prefix graph.
@@ -179,31 +179,30 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
 
       -- Unpack the seed into `(seedPrev, seedOut)` matching the snoc structure.
       let assoc : (Γ ++ ssPrev) ++ [τ] = Γ ++ (ssPrev ++ [τ]) := List.append_assoc Γ ssPrev [τ]
-      let seed' : TList α ((Γ ++ ssPrev) ++ [τ]) := TList.cast (α := α) (h := assoc.symm) seed
-      let seedPrev : TList α (Γ ++ ssPrev) :=
-        (TList.unsnoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seed').1
+      let seed' : _root_.TorchLean.TensorPack α ((Γ ++ ssPrev) ++ [τ]) := _root_.TorchLean.TensorPack.cast (α := α) (h := assoc.symm) seed
+      let seedPrev : _root_.TorchLean.TensorPack α (Γ ++ ssPrev) :=
+        (_root_.TorchLean.TensorPack.unsnoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seed').1
       let seedOut : Tensor α τ :=
-        (TList.unsnoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seed').2
+        (_root_.TorchLean.TensorPack.unsnoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seed').2
       have hseed' :
-          TList.snoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seedPrev seedOut = seed' := by
-        simpa [seedPrev, seedOut] using
-          (TList.snoc_unsnoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) (xs := seed'))
+          _root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seedPrev seedOut = seed' := by
+        simp [seedPrev, seedOut]
 
       -- The output gradient seed is the last entry of the dense array.
-      let outPacked : Spec.PackedTensor α := Spec.PackedTensor.ofTensor seedOut
+      let outValue : Spec.SomeTensor α := Spec.SomeTensor.ofTensor seedOut
 
       -- Define the runtime tape for the snoc graph explicitly.
       let y := node.forward ctxPrev d0
       let runtimeNode : Runtime.Autograd.Node α :=
         { name := some "proof-carrying-graph"
-          value := Spec.PackedTensor.ofTensor y
+          value := Spec.SomeTensor.ofTensor y
           requiresGrad := true
-          parents := []
-          backward := fun dLdyPacked => by
-            if h : dLdyPacked.shape = τ then
-              let dLdy : Tensor α τ := dLdyPacked.cast h
+          parents := #[]
+          backward := fun dLdyValue => by
+            if h : dLdyValue.shape = τ then
+              let dLdy : Tensor α τ := dLdyValue.cast h
               let contribs := node.vjp ctxPrev d0 dLdy
-              exact .ok (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contribs 0)
+              exact .ok (_root_.TorchLean.TensorPack.toIndexedShapeErasedArray (α := α) (ss := Γ ++ ssPrev) contribs 0)
             else
               exact .error "autograd: upstream gradient shape mismatch"
         }
@@ -218,35 +217,35 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
 
       -- Rewrite the initial gradient array as a push of the prefix part plus `seedOut`.
       have hseedArr :
-          TList.toPackedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed =
-            (TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev).push outPacked := by
-        -- First rewrite `seed` to the assoc-cast form `seed'`, then use `toPackedArray_snoc`.
+          _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed =
+            (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev).push outValue := by
+        -- First rewrite `seed` to the assoc-cast form `seed'`, then use `toShapeErasedArray_snoc`.
         have hcast :
-            TList.toPackedArray (α := α) (ss := (Γ ++ ssPrev) ++ [τ]) seed' =
-              TList.toPackedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed := by
+            _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := (Γ ++ ssPrev) ++ [τ]) seed' =
+              _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed := by
           simp [seed']
         -- Replace the LHS by `seed'`, then rewrite `seed'` as a `snoc`.
         rw [← hcast]
         -- `seed' = snoc seedPrev seedOut`
-        have : seed' = TList.snoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seedPrev seedOut := by
+        have : seed' = _root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ssPrev) (τ := τ) seedPrev seedOut := by
           simpa using hseed'.symm
-        -- Now `toPackedArray_snoc` gives the pushed array.
-        simp [this, outPacked, TList.toPackedArray_snoc]
+        -- Now `toShapeErasedArray_snoc` gives the pushed array.
+        simp [this, outValue, _root_.TorchLean.TensorPack.toShapeErasedArray_snoc]
 
       -- From here on we unfold `backwardDenseFrom` into the loop+step decomposition.
       -- `backpropAllCtx` peels off the last seed and recurses on the prefix graph.
       have hsizeCheck :
-          (TList.toPackedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed).size = tNext.nodes.size :=
+          (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed).size = tNext.nodes.size :=
             by
         -- LHS: `(Γ ++ ssPrev ++ [τ]).length`, RHS: `tPrev.size + 1`.
-        simp [hseedArr, htNextSize, htPrevSize, TList.size_toPackedArray, Nat.add_assoc]
+        simp [hseedArr, htNextSize, htPrevSize, _root_.TorchLean.TensorPack.size_toShapeErasedArray, Nat.add_assoc]
 
       -- Expand both sides (`lowerGraphToTape`, `backpropAllCtx`, and `backwardDenseFrom`) and reduce to:
       -- 1) one runtime step for the last node (adding `vjp` contributions to the prefix),
       -- 2) then the IH on the prefix graph.
       let ctx := Graph.eval (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0
       let contrib := node.vjp ctx d0 seedOut
-      let seedPrev' := TList.add (α := α) (ss := Γ ++ ssPrev) seedPrev contrib
+      let seedPrev' := _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ssPrev) seedPrev contrib
       let gradsPrev := backpropAllCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0 seedPrev'
       -- Now compute the runtime `backwardDenseFrom` explicitly:
       -- 1) run one step for the last node, adding `contrib` into the prefix grads,
@@ -262,38 +261,38 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
         simp [lowerGraphToTape, hprev, tNext, y, runtimeNode]
 
       have hBackpropArr :
-          TList.toPackedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ]))
+          _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ]))
               (backpropAllCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev ++ [τ])
                 (.snoc (ss := ssPrev) (τ := τ) g node) x d0 seed) =
-            (TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) gradsPrev).push outPacked := by
-        -- unfold `backpropAllCtx` at the snoc constructor and use `toPackedArray_snoc`
-        simp [backpropAllCtx, seed', seedPrev, seedOut, ctx, contrib, seedPrev', gradsPrev, outPacked,
-          TList.toPackedArray_cast, TList.toPackedArray_snoc]
+            (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) gradsPrev).push outValue := by
+        -- unfold `backpropAllCtx` at the snoc constructor and use `toShapeErasedArray_snoc`
+        simp [backpropAllCtx, seed', seedPrev, seedOut, ctx, contrib, seedPrev', gradsPrev, outValue,
+          _root_.TorchLean.TensorPack.toShapeErasedArray_cast, _root_.TorchLean.TensorPack.toShapeErasedArray_snoc]
 
       -- Reduce the main goal to the loop over `tNext`.
       -- After rewriting, the goal is:
-      -- `tNext.backwardDenseFrom seedArr0 = .ok (gradsPrevArr.push outPacked)`.
+      -- `tNext.backwardDenseFrom seedArr0 = .ok (gradsPrevArr.push outValue)`.
       -- The size check passes by `hsizeCheck`.
       have hmain :
           Runtime.Autograd.Tape.backwardDenseFrom (t := tNext)
-              (grads0 := TList.toPackedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed) =
-            .ok ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) gradsPrev).push outPacked) := by
+              (grads0 := _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ (ssPrev ++ [τ])) seed) =
+            .ok ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) gradsPrev).push outValue) := by
         -- Rewrite the initial array into the pushed form.
         -- Also rewrite `backwardDenseFrom` to its core loop using the size check.
         simp [Runtime.Autograd.Tape.backwardDenseFrom, hseedArr, htNextSize, htPrevSize]
         -- Remaining proof: compute the loop body.
         -- Set up convenient shorthands for the prefix size and gradient arrays.
         let n : Nat := tPrev.nodes.size
-        let seedPrevArr : Array (Spec.PackedTensor α) :=
-          TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev
-        let seedPrevArr' : Array (Spec.PackedTensor α) :=
-          TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev'
-        let gradsPrevArr : Array (Spec.PackedTensor α) :=
-          TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) gradsPrev
+        let seedPrevArr : Array (Spec.SomeTensor α) :=
+          _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev
+        let seedPrevArr' : Array (Spec.SomeTensor α) :=
+          _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev'
+        let gradsPrevArr : Array (Spec.SomeTensor α) :=
+          _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) gradsPrev
 
         -- A small helper: the prefix gradient array has size `n`.
         have hsizeSeedPrevArr : seedPrevArr.size = n := by
-          simp [seedPrevArr, n, TList.size_toPackedArray, htPrevSize, List.length_append]
+          simp [seedPrevArr, n, _root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append]
 
         -- First, compute the last-node step (`id = n`), which just adds `contrib` into the prefix
         -- grads.
@@ -303,16 +302,16 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
             simp [htNextNodes, n]
           simpa [Runtime.Autograd.Tape.getNode?, tNext] using this
 
-        have haccLast : (seedPrevArr.push outPacked)[n]? = some outPacked := by
-          have : (seedPrevArr.push outPacked)[seedPrevArr.size]? = some outPacked := by
+        have haccLast : (seedPrevArr.push outValue)[n]? = some outValue := by
+          have : (seedPrevArr.push outValue)[seedPrevArr.size]? = some outValue := by
             simp
           simpa [hsizeSeedPrevArr] using this
 
-        have hshapeLast : outPacked.shape = runtimeNode.value.shape := by
+        have hshapeLast : outValue.shape = runtimeNode.value.shape := by
           rfl
 
-        -- Show the `addGradAll` fold for the last node matches `TList.add` on the prefix, leaving
-        -- `[outPacked]` untouched.
+        -- Show the `addGradAll` fold for the last node matches `_root_.TorchLean.TensorPack.add` on the prefix, leaving
+        -- `[outValue]` untouched.
         have hreqAll :
             ∀ i (hi : i < tPrev.nodes.size), (tPrev.nodes[i]'hi).requiresGrad = true := by
           -- Unfold the `let t := ...` binder in `lowerGraphToTape_requires_grad_true` and rewrite by
@@ -332,8 +331,8 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
               ∃ node : Runtime.Autograd.Node α,
                 tNext.getNode? id = some node ∧ node.requiresGrad = true ∧
                   node.value.shape =
-                    ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev)[i]'(by
-                        simpa [TList.size_toPackedArray] using hi)).shape := by
+                    ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev)[i]'(by
+                        simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray] using hi)).shape := by
           intro i hi
           have hiT : i < tPrev.nodes.size := by
             -- `tPrev.nodes.size = (Γ ++ ssPrev).length`
@@ -353,21 +352,21 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
           -- Shapes: both are the `i`th shape in `Γ ++ ssPrev`.
           have hseedShape :
               nodeAt.value.shape =
-                ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev)[i]'(by
-                    simpa [TList.size_toPackedArray] using hi)).shape := by
+                ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev)[i]'(by
+                    simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray] using hi)).shape := by
             let fi : Fin (Γ ++ ssPrev).length := ⟨i, hi⟩
-            -- `tPrev.nodes.map value = ctxPrev.toPackedArray`
+            -- `tPrev.nodes.map value = ctxPrev.toShapeErasedArray`
             have hvals :
                 tPrev.nodes.map (fun nd => nd.value) =
-                  TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev := by
+                  _root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev := by
               simpa [hprev] using
                 (lowerGraphToTape_values_eq (α := α) (Δ := Δ) (Γ := Γ) (ss := ssPrev) g x d0)
             have hvalOpt := congrArg (fun a => a[i]?) hvals
             -- Evaluate both sides at `i`.
             have hnodeVal :
-                nodeAt.value = (TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'(by
-                  -- `i < ctxPrev.toPackedArray.size` because it matches `tPrev.nodes.size`
-                  simpa [TList.size_toPackedArray, htPrevSize, List.length_append, Nat.add_assoc] using
+                nodeAt.value = (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'(by
+                  -- `i < ctxPrev.toShapeErasedArray.size` because it matches `tPrev.nodes.size`
+                  simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append, Nat.add_assoc] using
                     hiT) := by
               -- Left: map+index gives `some nodeAt.value`
               have hleft :
@@ -377,20 +376,20 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                 simp [Array.getElem?_map, this, nodeAt]
               -- Right: in-bounds `getElem?` is `some _`
               have hright :
-                  (TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]? =
-                    some ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'(by
-                      simpa [TList.size_toPackedArray, htPrevSize, List.length_append, Nat.add_assoc]
+                  (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]? =
+                    some ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'(by
+                      simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append, Nat.add_assoc]
                         using hiT)) := by
                 have hiCtx :
-                    i < (TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev).size := by
-                  simpa [TList.size_toPackedArray, htPrevSize, List.length_append, Nat.add_assoc] using
+                    i < (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev).size := by
+                  simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append, Nat.add_assoc] using
                     hiT
-                simp [Array.getElem?_eq_getElem (xs := (TList.toPackedArray (α := α) (ss := Γ ++
+                simp [Array.getElem?_eq_getElem (xs := (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++
                   ssPrev) ctxPrev)) (i := i) hiCtx]
               -- Combine and extract the value equality.
               have : some nodeAt.value =
-                  some ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'(by
-                    simpa [TList.size_toPackedArray, htPrevSize, List.length_append, Nat.add_assoc]
+                  some ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'(by
+                    simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append, Nat.add_assoc]
                       using hiT)) := by
                 -- rewrite both sides of `hvalOpt` using `hleft`/`hright`
                 simpa [hleft, hright] using hvalOpt
@@ -398,24 +397,24 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
             have hnode_s :
                 nodeAt.value.shape = (Γ ++ ssPrev).get fi := by
               have hiCtx :
-                  i < (TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev).size := by
-                simpa [TList.size_toPackedArray, htPrevSize, List.length_append, Nat.add_assoc] using
+                  i < (_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev).size := by
+                simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append, Nat.add_assoc] using
                   hiT
               have hctx_s :
-                  ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'hiCtx).shape =
+                  ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev)[i]'hiCtx).shape =
                     (Γ ++ ssPrev).get fi := by
                 -- `ctxPrev.get fi : Tensor α ((Γ ++ ssPrev).get fi)`, so the RHS shape is
                 -- definitional.
-                simpa [fi, Spec.PackedTensor.ofTensor] using
-                  congrArg Spec.PackedTensor.shape
-                    (TList.get_toPackedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev fi)
+                simpa [fi, Spec.SomeTensor.ofTensor] using
+                  congrArg Spec.SomeTensor.shape
+                    (_root_.TorchLean.TensorPack.get_toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) ctxPrev fi)
               -- rewrite the LHS using `hnodeVal`
               simpa [hnodeVal] using hctx_s
             have hseed_s :
-                ((TList.toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev)[i]'(by
-                    simpa [TList.size_toPackedArray] using hi)).shape = (Γ ++ ssPrev).get fi := by
-              simpa [fi, Spec.PackedTensor.ofTensor] using congrArg Spec.PackedTensor.shape
-                (TList.get_toPackedArray (α := α) (ss := Γ ++ ssPrev) seedPrev fi)
+                ((_root_.TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev)[i]'(by
+                    simpa [_root_.TorchLean.TensorPack.size_toShapeErasedArray] using hi)).shape = (Γ ++ ssPrev).get fi := by
+              simpa [fi, Spec.SomeTensor.ofTensor] using congrArg Spec.SomeTensor.shape
+                (_root_.TorchLean.TensorPack.get_toShapeErasedArray (α := α) (ss := Γ ++ ssPrev) seedPrev fi)
             exact hnode_s.trans hseed_s.symm
 
           refine ⟨nodeAt, ?_, ?_, ?_⟩
@@ -424,39 +423,39 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
           · simpa using hseedShape
 
         have hfoldLast :
-              (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contrib 0).foldlM
+              (_root_.TorchLean.TensorPack.toIndexedShapeErasedArray (α := α) (ss := Γ ++ ssPrev) contrib 0).foldlM
                   (fun acc2 (pid, pg) =>
                     Runtime.Autograd.Tape.addGradAll (t := tNext) acc2 pid pg)
-                  (seedPrevArr.push outPacked) =
-                .ok (seedPrevArr'.push outPacked) := by
-            -- Apply the generic fold lemma with `pref = #[]` and `suffix = #[outPacked]`.
+                  (seedPrevArr.push outValue) =
+                .ok (seedPrevArr'.push outValue) := by
+            -- Apply the generic fold lemma with `pref = #[]` and `suffix = #[outValue]`.
             have hfold :=
-              foldlM_addGradAll_toIndexedPackedList_eq_add (α := α) (t := tNext)
-                (pref := (#[] : Array (Spec.PackedTensor α)))
-                (seed := seedPrev) (contrib := contrib) (suffix := #[outPacked]) hnodes0
+              foldlM_addGradAll_toIndexedShapeErasedArray_eq_add (α := α) (t := tNext)
+                (pref := (#[] : Array (Spec.SomeTensor α)))
+                (seed := seedPrev) (contrib := contrib) (suffix := #[outValue]) hnodes0
             -- Simplify the array concatenations and rewrite `seedPrev'`.
             simpa [seedPrevArr, seedPrevArr', seedPrev', Array.append_assoc, Array.append_empty,
               Array.empty_append, Array.append_singleton] using hfold
 
         have hstepLast :
-              Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (seedPrevArr.push outPacked) n =
-                .ok (seedPrevArr'.push outPacked) := by
+              Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (seedPrevArr.push outValue) n =
+                .ok (seedPrevArr'.push outValue) := by
             -- Unfold the step: pick out the last node, check shapes, run `backward`, then fold
             -- `addGradAll`.
             -- Eliminate the shape equality so all casts become definitional.
             cases hshapeLast
             have hreqLast : runtimeNode.requiresGrad = true := by
               rfl
-            have hout : outPacked.shape = τ := by
+            have hout : outValue.shape = τ := by
               rfl
-            have hshapeNode : outPacked.shape = runtimeNode.value.shape := by
+            have hshapeNode : outValue.shape = runtimeNode.value.shape := by
               rfl
             have hbackLast :
                 runtimeNode.backward
                     { shape := runtimeNode.value.shape
-                      tensor := outPacked.cast hshapeNode } =
-                  .ok (TList.toIndexedPackedList (α := α) (ss := Γ ++ ssPrev) contrib 0) := by
-              simp [runtimeNode, outPacked, hctxPrev, ctx, contrib, Spec.PackedTensor.ofTensor]
+                      tensor := outValue.cast hshapeNode } =
+                  .ok (_root_.TorchLean.TensorPack.toIndexedShapeErasedArray (α := α) (ss := Γ ++ ssPrev) contrib 0) := by
+              simp [runtimeNode, outValue, hctxPrev, ctx, contrib, Spec.SomeTensor.ofTensor]
             -- Unfold the step and reduce the control flow (`getNode?`, `requiresGrad`, `acc[id]?`,
             -- shape check).
             simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnodeLast, hreqLast, haccLast]
@@ -466,10 +465,10 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
             -- Rewrite the `backward` call to its concrete list of contributions.
             rw [hbackLast]
             -- The remaining `foldlM` is exactly `hfoldLast`.
-            simpa [seedPrevArr, seedPrevArr', outPacked, Bind.bind, Except.bind, Pure.pure,
+            simpa [seedPrevArr, seedPrevArr', outValue, Bind.bind, Except.bind, Pure.pure,
               Except.pure] using hfoldLast
 
-        -- Run the remaining prefix loop (ids `< n`). This matches the IH on `g` and leaves `outPacked`
+        -- Run the remaining prefix loop (ids `< n`). This matches the IH on `g` and leaves `outValue`
         -- untouched.
         have ihPrev :
             Runtime.Autograd.Tape.backwardDenseFrom (t := tPrev) (grads0 := seedPrevArr') =
@@ -477,7 +476,7 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
           simpa [hprev, seedPrevArr', gradsPrevArr, gradsPrev] using (ih seedPrev')
 
         have hsizeSeedPrevArr' : seedPrevArr'.size = n := by
-          simp [seedPrevArr', n, TList.size_toPackedArray, htPrevSize, List.length_append]
+          simp [seedPrevArr', n, _root_.TorchLean.TensorPack.size_toShapeErasedArray, htPrevSize, List.length_append]
 
         have ihPrevLoop :
             Runtime.Autograd.Tape.backwardDenseFromLoop (t := tPrev) n seedPrevArr' =
@@ -488,11 +487,11 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
 
         -- Helper: `addGradAll` commutes with pushing an unused last slot.
         have haddGradAllPush :
-            ∀ (acc : Array (Spec.PackedTensor α)) (hacc : acc.size = n)
-              (pid : Nat) (pg : Spec.PackedTensor α),
+            ∀ (acc : Array (Spec.SomeTensor α)) (hacc : acc.size = n)
+              (pid : Nat) (pg : Spec.SomeTensor α),
               pid < n →
-              Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outPacked) pid pg =
-                Except.map (fun a => a.push outPacked)
+              Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outValue) pid pg =
+                Except.map (fun a => a.push outValue)
                   (Runtime.Autograd.Tape.addGradAll (t := tPrev) (grads := acc) pid pg) := by
           intro acc hacc pid pg hpid
           have hpidPrev : pid < tPrev.nodes.size := by
@@ -508,18 +507,18 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
 
           have hpidAcc : pid < acc.size := by
             simpa [hacc] using hpid
-          let existing : Spec.PackedTensor α := acc[pid]'hpidAcc
+          let existing : Spec.SomeTensor α := acc[pid]'hpidAcc
           have hgetPrev : acc[pid]? = some existing := by
             simp [existing]
-          have hgetNext : (acc.push outPacked)[pid]? = some existing := by
-            simpa [existing] using (Array.getElem?_push_lt (xs := acc) (x := outPacked) hpidAcc)
+          have hgetNext : (acc.push outValue)[pid]? = some existing := by
+            simpa [existing] using (Array.getElem?_push_lt (xs := acc) (x := outValue) hpidAcc)
 
           cases hreq : nodeAt.requiresGrad with
           | false =>
               -- If the node does not require grad, `addGradAll` is the identity.
               have hlhs :
-                  Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outPacked) pid pg =
-                    .ok (acc.push outPacked) := by
+                  Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outValue) pid pg =
+                    .ok (acc.push outValue) := by
                 simp [Runtime.Autograd.Tape.addGradAll, hnodeNext, hreq, throw, throwThe,
                   MonadExceptOf.throw]
                 rfl
@@ -540,23 +539,23 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                     have hcastExisting (h : existing.shape = nodeAt.value.shape) :
                         existing.cast h = existing.cast hex := by
                       rw [Subsingleton.elim h hex]
-                    let pg' : Spec.PackedTensor α := Spec.PackedTensor.ofTensor (pg.cast hshape)
-                    let existing' : Spec.PackedTensor α :=
-                      Spec.PackedTensor.ofTensor (existing.cast hex)
+                    let pg' : Spec.SomeTensor α := Spec.SomeTensor.ofTensor (pg.cast hshape)
+                    let existing' : Spec.SomeTensor α :=
+                      Spec.SomeTensor.ofTensor (existing.cast hex)
                     have hidPrev : pid < acc.size := hpidAcc
-                    have hidNext : pid < (acc.push outPacked).size := by
+                    have hidNext : pid < (acc.push outValue).size := by
                       simpa [Array.size_push] using Nat.lt_trans hidPrev (Nat.lt_succ_self acc.size)
-                    cases hadd : Runtime.Autograd.PackedTensor.add existing' pg' with
+                    cases hadd : Runtime.Autograd.SomeTensor.add existing' pg' with
                     | error e =>
                         have haddAny
                             (hex' : existing.shape = nodeAt.value.shape)
                             (hshape' : pg.shape = nodeAt.value.shape) :
-                            Runtime.Autograd.PackedTensor.add
+                            Runtime.Autograd.SomeTensor.add
                                 { shape := nodeAt.value.shape, tensor := existing.cast hex' }
                                 { shape := nodeAt.value.shape, tensor := pg.cast hshape' } =
                               .error e := by
                           rw [hcastExisting hex', hcastPg hshape']
-                          simpa only [existing', pg', Spec.PackedTensor.ofTensor] using hadd
+                          simpa only [existing', pg', Spec.SomeTensor.ofTensor] using hadd
                         have hprevRes :
                             Runtime.Autograd.Tape.addGradAll (t := tPrev) (grads := acc) pid pg =
                               .error e := by
@@ -565,7 +564,7 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                             MonadExceptOf.throw]
                           rfl
                         have hnextRes :
-                            Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outPacked)
+                            Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outValue)
                               pid pg =
                               .error e := by
                           simp [Runtime.Autograd.Tape.addGradAll, hnodeNext, hreq, hshape, hgetNext,
@@ -575,9 +574,9 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                         simp [hprevRes, hnextRes, Except.map]
                     | ok summed =>
                         have hadd' :
-                            Runtime.Autograd.PackedTensor.add
-                                (Spec.PackedTensor.ofTensor (existing.cast hex))
-                                (Spec.PackedTensor.ofTensor (pg.cast hshape)) =
+                            Runtime.Autograd.SomeTensor.add
+                                (Spec.SomeTensor.ofTensor (existing.cast hex))
+                                (Spec.SomeTensor.ofTensor (pg.cast hshape)) =
                               .ok summed := by
                           simpa only [existing', pg'] using hadd
                         have hpid_lt_succ : pid < acc.size + 1 :=
@@ -588,9 +587,9 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                           have hcond : acc[pid].shape = nodeAt.value.shape := by
                             simpa [existing] using hex
                           have haddAcc :
-                              Runtime.Autograd.PackedTensor.add
-                                  (Spec.PackedTensor.ofTensor (acc[pid].cast hcond))
-                                  (Spec.PackedTensor.ofTensor (pg.cast hshape)) =
+                              Runtime.Autograd.SomeTensor.add
+                                  (Spec.SomeTensor.ofTensor (acc[pid].cast hcond))
+                                  (Spec.SomeTensor.ofTensor (pg.cast hshape)) =
                                 .ok summed := by
                             simpa [existing, hcond] using hadd'
                           have hcastAcc (h : acc[pid].shape = nodeAt.value.shape) :
@@ -599,29 +598,29 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                           have haddAny
                               (haccShape : acc[pid].shape = nodeAt.value.shape)
                               (hpgShape : pg.shape = nodeAt.value.shape) :
-                              Runtime.Autograd.PackedTensor.add
+                              Runtime.Autograd.SomeTensor.add
                                   { shape := nodeAt.value.shape,
                                     tensor := acc[pid].cast haccShape }
                                   { shape := nodeAt.value.shape, tensor := pg.cast hpgShape } =
                                 .ok summed := by
                             rw [hcastAcc haccShape, hcastPg hpgShape]
-                            simpa only [Spec.PackedTensor.ofTensor] using haddAcc
+                            simpa only [Spec.SomeTensor.ofTensor] using haddAcc
                           simp [Runtime.Autograd.Tape.addGradAll, hnodePrev, hreq, hshape, hcond,
                             hcastPg, haddAny, hidPrev,
                             throw, throwThe, MonadExceptOf.throw]
                         have hnextRes :
-                            Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outPacked)
+                            Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outValue)
                               pid pg =
-                              .ok ((acc.set pid summed (h := hidPrev)).push outPacked) := by
-                          have hget : (acc.push outPacked)[pid] = acc[pid] := by
+                              .ok ((acc.set pid summed (h := hidPrev)).push outValue) := by
+                          have hget : (acc.push outValue)[pid] = acc[pid] := by
                             simpa using
-                              (Array.getElem_push_lt (xs := acc) (x := outPacked) (i := pid) hidPrev)
+                              (Array.getElem_push_lt (xs := acc) (x := outValue) (i := pid) hidPrev)
                           have hcond : acc[pid].shape = nodeAt.value.shape := by
                             simpa [existing] using hex
                           have haddAcc :
-                              Runtime.Autograd.PackedTensor.add
-                                  (Spec.PackedTensor.ofTensor (acc[pid].cast hcond))
-                                  (Spec.PackedTensor.ofTensor (pg.cast hshape)) =
+                              Runtime.Autograd.SomeTensor.add
+                                  (Spec.SomeTensor.ofTensor (acc[pid].cast hcond))
+                                  (Spec.SomeTensor.ofTensor (pg.cast hshape)) =
                                 .ok summed := by
                             simpa [existing, hcond] using hadd'
                           have hcastAcc (h : acc[pid].shape = nodeAt.value.shape) :
@@ -630,13 +629,13 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                           have haddAny
                               (haccShape : acc[pid].shape = nodeAt.value.shape)
                               (hpgShape : pg.shape = nodeAt.value.shape) :
-                              Runtime.Autograd.PackedTensor.add
+                              Runtime.Autograd.SomeTensor.add
                                   { shape := nodeAt.value.shape,
                                     tensor := acc[pid].cast haccShape }
                                   { shape := nodeAt.value.shape, tensor := pg.cast hpgShape } =
                                 .ok summed := by
                             rw [hcastAcc haccShape, hcastPg hpgShape]
-                            simpa only [Spec.PackedTensor.ofTensor] using haddAcc
+                            simpa only [Spec.SomeTensor.ofTensor] using haddAcc
                           simp [Runtime.Autograd.Tape.addGradAll, hnodeNext, hreq, hshape,
                             hcastPg, haddAny, hpid_lt_succ, Array.set_push, hidPrev,
                             hget, hcond, throw,
@@ -654,7 +653,7 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                       throwThe,
                       MonadExceptOf.throw]
                   have hnextRes :
-                      Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outPacked) pid
+                      Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc.push outValue) pid
                         pg =
                         .error "autograd: gradient contribution has wrong shape for parent" := by
                     simp [Runtime.Autograd.Tape.addGradAll, hnodeNext, hreq, hshape, throw,
@@ -664,10 +663,10 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
 
         -- Helper: `backwardDenseFromStep` commutes with pushing an unused last slot for ids `< n`.
         have hstepPush :
-            ∀ (id : Nat) (hid : id < n) (acc : Array (Spec.PackedTensor α)),
+            ∀ (id : Nat) (hid : id < n) (acc : Array (Spec.SomeTensor α)),
               acc.size = n →
-              Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (acc.push outPacked) id =
-                Except.map (fun a => a.push outPacked)
+              Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (acc.push outValue) id =
+                Except.map (fun a => a.push outValue)
                   (Runtime.Autograd.Tape.backwardDenseFromStep (t := tPrev) acc id) := by
           intro id hid acc hacc
           have hidPrev : id < tPrev.nodes.size := by
@@ -684,13 +683,13 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
             simpa [hacc] using hid
           have hgetAcc : acc[id]? = some (acc[id]'hidAcc) := by
             simp
-          have hgetAccPush : (acc.push outPacked)[id]? = some (acc[id]'hidAcc) := by
-            simpa using (Array.getElem?_push_lt (xs := acc) (x := outPacked) hidAcc)
+          have hgetAccPush : (acc.push outValue)[id]? = some (acc[id]'hidAcc) := by
+            simpa using (Array.getElem?_push_lt (xs := acc) (x := outValue) hidAcc)
           cases hreq : nodeAt.requiresGrad with
           | false =>
               have hlhs :
-                  Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (acc.push outPacked) id =
-                    .ok (acc.push outPacked) := by
+                  Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (acc.push outValue) id =
+                    .ok (acc.push outValue) := by
                 simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnodeNext, hreq, throw, throwThe,
                   MonadExceptOf.throw]
                 rfl
@@ -706,8 +705,8 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                 have hcastDLdy (h : (acc[id]'hidAcc).shape = nodeAt.value.shape) :
                     (acc[id]'hidAcc).cast h = (acc[id]'hidAcc).cast hshape := by
                   rw [Subsingleton.elim h hshape]
-                let dLdy : Spec.PackedTensor α :=
-                  Spec.PackedTensor.ofTensor ((acc[id]'hidAcc).cast hshape)
+                let dLdy : Spec.SomeTensor α :=
+                  Spec.SomeTensor.ofTensor ((acc[id]'hidAcc).cast hshape)
                 cases hback : nodeAt.backward dLdy with
                 | error e =>
                     have hbackAny
@@ -717,7 +716,7 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                               tensor := (acc[id]'hidAcc).cast hshape' } =
                           .error e := by
                       rw [hcastDLdy hshape']
-                      simpa only [dLdy, Spec.PackedTensor.ofTensor] using hback
+                      simpa only [dLdy, Spec.SomeTensor.ofTensor] using hback
                     simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnodePrev, hnodeNext, hreq,
                       hgetAcc, hgetAccPush,
                       hshape, hcastDLdy, hbackAny, Except.map, throw, throwThe,
@@ -731,9 +730,9 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                               tensor := (acc[id]'hidAcc).cast hshape' } =
                           .ok contribs := by
                       rw [hcastDLdy hshape']
-                      simpa only [dLdy, Spec.PackedTensor.ofTensor] using hback
+                      simpa only [dLdy, Spec.SomeTensor.ofTensor] using hback
                     have hpids :
-                          ∀ {pid : Nat} {pg : Spec.PackedTensor α}, (pid, pg) ∈ contribs → pid < id
+                          ∀ {pid : Nat} {pg : Spec.SomeTensor α}, (pid, pg) ∈ contribs → pid < id
                             := by
                         intro pid pg hmem
                         have hgetComp :
@@ -748,14 +747,14 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                               contribs hback hmem
 
                     have hfold_push :
-                        ∀ (cs : List (Nat × Spec.PackedTensor α))
-                          (acc0 : Array (Spec.PackedTensor α)),
+                        ∀ (cs : List (Nat × Spec.SomeTensor α))
+                          (acc0 : Array (Spec.SomeTensor α)),
                           acc0.size = n →
-                          (∀ {pid : Nat} {pg : Spec.PackedTensor α}, (pid, pg) ∈ cs → pid < n) →
+                          (∀ {pid : Nat} {pg : Spec.SomeTensor α}, (pid, pg) ∈ cs → pid < n) →
                           cs.foldlM (fun acc2 (pid, pg) => Runtime.Autograd.Tape.addGradAll (t :=
                             tNext) acc2 pid pg)
-                              (acc0.push outPacked) =
-                            Except.map (fun a => a.push outPacked)
+                              (acc0.push outValue) =
+                            Except.map (fun a => a.push outValue)
                               (cs.foldlM
                                 (fun acc2 (pid, pg) => Runtime.Autograd.Tape.addGradAll (t := tPrev)
                                   acc2 pid pg) acc0) := by
@@ -782,8 +781,8 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                           | ok acc1 =>
                               have hret' :
                                   Runtime.Autograd.Tape.addGradAll (t := tNext) (grads := acc0.push
-                                    outPacked) pid pg =
-                                    .ok (acc1.push outPacked) := by
+                                    outValue) pid pg =
+                                    .ok (acc1.push outValue) := by
                                 -- unfold `Except.map` in `hadd`
                                 simpa [Except.map, hret] using hadd
                               have hsize1 : acc1.size = n := by
@@ -792,7 +791,7 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                                   (grads' := acc1) (by simpa using hret)
                                 simpa [hsize] using this
                               have hpids_tl :
-                                  ∀ {pid : Nat} {pg : Spec.PackedTensor α}, (pid, pg) ∈ tl → pid < n
+                                  ∀ {pid : Nat} {pg : Spec.SomeTensor α}, (pid, pg) ∈ tl → pid < n
                                     := by
                                 intro pid pg hmem
                                 exact hpids (pid := pid) (pg := pg) (by simp [hmem])
@@ -803,19 +802,25 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                                 Pure.pure, Except.pure] using ih'
 
                     have hpids_n :
-                        ∀ {pid : Nat} {pg : Spec.PackedTensor α}, (pid, pg) ∈ contribs → pid < n :=
+                        ∀ {pid : Nat} {pg : Spec.SomeTensor α}, (pid, pg) ∈ contribs → pid < n :=
                           by
                       intro pid pg hmem
                       exact Nat.lt_trans (hpids (pid := pid) (pg := pg) hmem) hid
 
+                    have hpids_list :
+                        ∀ {pid : Nat} {pg : Spec.SomeTensor α},
+                          (pid, pg) ∈ contribs.toList → pid < n := by
+                      intro pid pg hmem
+                      exact hpids_n (by simpa using hmem)
+
                     -- Apply the fold lemma.
-                    have hfold := hfold_push contribs acc hacc hpids_n
+                    have hfold := hfold_push contribs.toList acc hacc hpids_list
                     -- Unfold the step and rewrite using the fold lemma.
                     simpa [Runtime.Autograd.Tape.backwardDenseFromStep, hnodePrev, hnodeNext, hreq,
                       hgetAcc, hgetAccPush,
                       hshape, hcastDLdy, hbackAny, Except.map, throw, throwThe,
                       MonadExceptOf.throw,
-                      Bind.bind, Except.bind, Pure.pure, Except.pure] using
+                      Bind.bind, Except.bind, Pure.pure, Except.pure, Array.foldlM_toList] using
                         hfold
               · -- shape mismatch
                 simp [Runtime.Autograd.Tape.backwardDenseFromStep, hnodePrev, hnodeNext, hreq,
@@ -824,10 +829,10 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
 
         -- The loop itself commutes with pushing an unused last slot.
         have hloopPush :
-              ∀ m (hm : m ≤ n) (acc : Array (Spec.PackedTensor α)),
+              ∀ m (hm : m ≤ n) (acc : Array (Spec.SomeTensor α)),
                 acc.size = n →
-                Runtime.Autograd.Tape.backwardDenseFromLoop (t := tNext) m (acc.push outPacked) =
-                  Except.map (fun a => a.push outPacked)
+                Runtime.Autograd.Tape.backwardDenseFromLoop (t := tNext) m (acc.push outValue) =
+                  Except.map (fun a => a.push outValue)
                     (Runtime.Autograd.Tape.backwardDenseFromLoop (t := tPrev) m acc) := by
             intro m hm acc hacc
             induction m generalizing acc with
@@ -845,9 +850,9 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                     rfl
                 | ok acc1 =>
                     have hstep' :
-                        Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (acc.push outPacked) m
+                        Runtime.Autograd.Tape.backwardDenseFromStep (t := tNext) (acc.push outValue) m
                           =
-                          .ok (acc1.push outPacked) := by
+                          .ok (acc1.push outValue) := by
                       simpa [Except.map, hret] using hstep
                     have hsize1 : acc1.size = n := by
                       have := backwardDenseFromStep_ok_size (t := tPrev) (acc := acc) (id := m)
@@ -860,16 +865,16 @@ theorem backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx {α : Type} {Δ : T
                       using ih'
 
         have hloopFinal :
-            Runtime.Autograd.Tape.backwardDenseFromLoop (t := tNext) n (seedPrevArr'.push outPacked) =
-              .ok (gradsPrevArr.push outPacked) := by
+            Runtime.Autograd.Tape.backwardDenseFromLoop (t := tNext) n (seedPrevArr'.push outValue) =
+              .ok (gradsPrevArr.push outValue) := by
           have h := hloopPush n (le_rfl) seedPrevArr' hsizeSeedPrevArr'
           simpa [ihPrevLoop, Except.map] using h
 
         -- Use `hstepLast` to reduce the initial step, then apply `hloopFinal`.
         have hloopAll :
             Runtime.Autograd.Tape.backwardDenseFromLoop (t := tNext) (n + 1) (seedPrevArr.push
-              outPacked) =
-              .ok (gradsPrevArr.push outPacked) := by
+              outValue) =
+              .ok (gradsPrevArr.push outValue) := by
           -- Unfold the loop one step, then rewrite the step result via `hstepLast`.
           -- The remaining goal is exactly `hloopFinal`.
           simp [Runtime.Autograd.Tape.backwardDenseFromLoop, hstepLast]

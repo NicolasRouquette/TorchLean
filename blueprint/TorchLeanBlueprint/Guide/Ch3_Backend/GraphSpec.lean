@@ -52,12 +52,12 @@ open Spec
 
 def mlpGraph (input hidden output : Nat) :
     Chain
-      [ shape![hidden, input], shape![hidden],
-        shape![output, hidden], shape![output] ]
-      (shape![input])
-      (shape![output]) :=
+      [ [hidden, input], [hidden],
+        [output, hidden], [output] ]
+      [input]
+      [output] :=
   Chain.linear input hidden >>>
-  Chain.relu (shape![hidden]) >>>
+  Chain.relu [hidden] >>>
   Chain.linear hidden output
 ```
 
@@ -168,8 +168,8 @@ the primitive's correctness theorem.
 # Current Primitive Adapters
 
 The minimal sequential vocabulary in `NN.GraphSpec.Core` is `linear`, `relu`, and `softmax`.
-`NN.GraphSpec.Primitives.Vision` adds CHW `conv2d`, `maxPool2d`, `flatten`, and channel-first
-BatchNorm. Each of these adapters supplies the same three pieces of information:
+`NN.GraphSpec.Primitives.Spatial` adds spatial-rank-polymorphic convolution and pooling, flattening,
+and BatchNorm with an explicit channel axis. Each adapter supplies the same three pieces of information:
 
 - the exact parameter-shape list;
 - a pure `specFwd` meaning;
@@ -180,6 +180,12 @@ DAG language and an explicit skip connection. These are implemented examples, no
 every layer under `NN.Spec` already has a GraphSpec adapter. `GraphSpec.ToSequential.toSeq` is also
 deliberately partial: it succeeds only when every primitive provides a corresponding layer
 constructor.
+
+The DAG matrix-multiplication primitive takes distinct left, right, and result batch prefixes plus
+checked broadcast evidence for both inputs. Shared and pairwise batched cases use that one
+primitive, with row reshapes for vector inputs. DAG multi-head attention follows the same
+rank-polymorphic convention as the public attention builder: any leading shape precedes the
+`[sequence, model]` suffix.
 
 # Run The Complete Lowering
 
@@ -245,7 +251,7 @@ GraphSpec can be evaluated without the trainer:
 Interp.spec mlpGraph params x
 ```
 
-Here `params` is a heterogeneous tensor list whose shape index is exactly
+Here `params` is a tensor pack whose shape index is exactly
 
 ```
 [[hidden, input], [hidden], [output, hidden], [output]].

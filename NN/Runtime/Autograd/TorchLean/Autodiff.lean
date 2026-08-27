@@ -8,6 +8,7 @@ module
 
 public import NN.Runtime.Autograd.TorchLean.Program
 public import NN.Runtime.Autograd.TorchLean.Dual
+public import NN.Tensor.ShapeErasure
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -62,53 +63,8 @@ def basisTensors {α : Type} [Context α] : (s : Shape) → Array (Tensor α s)
   | .dim n s =>
       let z : Tensor α s := Spec.zeros (α := α) s
       let sub : Array (Tensor α s) := basisTensors (α := α) s
-      let subL : List (Tensor α s) := sub.toList
-      let all : List (Tensor α (.dim n s)) :=
-        (List.finRange n).flatMap (fun i =>
-          subL.map (fun b => Tensor.dim (fun j => if j = i then b else z)))
-      all.toArray
-
-/--
-Append two typed tensor lists.
-
-This is a small helper for building `args : TList α (paramShapes ++ inputShapes)` in a way that
-keeps the shape indices explicit and type-correct.
--/
-abbrev tlistAppend {α : Type} :
-    {ss₁ ss₂ : List Shape} → TList α ss₁ → TList α ss₂ → TList α (ss₁ ++ ss₂) :=
-  _root_.Proofs.Autograd.Algebra.TList.append (α := α)
-
-/--
-Split a typed list indexed by `ss₁ ++ ss₂` back into `(ss₁, ss₂)` pieces.
-
-This is the inverse of `tlistAppend`.
--/
-abbrev tlistSplitAppend {α : Type} :
-    {ss₁ ss₂ : List Shape} → TList α (ss₁ ++ ss₂) → TList α ss₁ × TList α ss₂ :=
-  _root_.Proofs.Autograd.Algebra.TList.splitAppend (α := α)
-
-/--
-Cast a prefix of a dense gradient array into a typed list `TList α ss`.
-
-This is used when we ask the typed graph engine for a dense list of gradients with respect to all inputs and
-need to recover a shape-typed view.
--/
-def gradsPrefix {α : Type} [DecidableEq Shape] :
-    {ss : List Shape} → Array (Spec.PackedTensor α) → Nat → IO (TList α ss)
-  | [], _grads, _off => pure .nil
-  | s :: ss, grads, off => do
-      let any ← match grads[off]? with
-        | some v => pure v
-        | none => throw <| IO.userError "torchlean(hvp): gradient array too small"
-        if h : any.shape = s then
-          let g : Tensor α s := any.cast h
-          let gs ← gradsPrefix (α := α) (ss := ss) grads (off + 1)
-          pure (.cons g gs)
-        else
-          throw <| IO.userError <|
-            s!"torchlean(hvp): gradient shape mismatch at idx={off} (expected "
-              ++ s!"{Shape.pretty s}, got "
-              ++ s!"{Shape.pretty any.shape})"
+      (Array.range n).flatMap fun i =>
+        sub.map fun b => Tensor.dim fun j => if j.1 = i then b else z
 
 end Internal
 
@@ -158,19 +114,19 @@ def jacrevOutParams {α : Type} [Context α] [DecidableEq Shape]
     (f :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) τ)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes) :
-    IO (Array (TList α paramShapes)) := do
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes) :
+    IO (Array (_root_.TorchLean.TensorPack α paramShapes)) := do
   let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
   let seeds : Array (Tensor α τ) := basisTensors (α := α) τ
-  let rows : Array (TList α paramShapes) :=
+  let rows : Array (_root_.TorchLean.TensorPack α paramShapes) :=
     seeds.map (fun seedOut =>
-      let gAll : TList α Γ :=
+      let gAll : _root_.TorchLean.TensorPack α Γ :=
         _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ := τ) c args
           seedOut
-      (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1)
+      (TorchLean.TensorPack.split (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1)
   pure rows
 
 /-- Jacobian (reverse-mode) of a tensor output w.r.t. inputs, as an array of VJPs. -/
@@ -179,19 +135,19 @@ def jacrevOutInputs {α : Type} [Context α] [DecidableEq Shape]
     (f :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) τ)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes) :
-    IO (Array (TList α inputShapes)) := do
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes) :
+    IO (Array (_root_.TorchLean.TensorPack α inputShapes)) := do
   let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
   let seeds : Array (Tensor α τ) := basisTensors (α := α) τ
-  let rows : Array (TList α inputShapes) :=
+  let rows : Array (_root_.TorchLean.TensorPack α inputShapes) :=
     seeds.map (fun seedOut =>
-      let gAll : TList α Γ :=
+      let gAll : _root_.TorchLean.TensorPack α Γ :=
         _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ := τ) c args
           seedOut
-      (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2)
+      (TorchLean.TensorPack.split (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2)
   pure rows
 
 /--
@@ -228,16 +184,16 @@ def gradParams {α : Type} [Context α] [DecidableEq Shape]
     (loss :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes) :
-    IO (TList α paramShapes) := do
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes) :
+    IO (_root_.TorchLean.TensorPack α paramShapes) := do
   let c ← lowerScalarToTypedGraph (α := α)
     (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := Γ) c
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let gAll : _root_.TorchLean.TensorPack α Γ := _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := Γ) c
     args
-  pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1
+  pure (TorchLean.TensorPack.split (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1
 
 /-- Gradient of scalar loss w.r.t. inputs (reverse-mode). -/
 def gradInputs {α : Type} [Context α] [DecidableEq Shape]
@@ -245,16 +201,16 @@ def gradInputs {α : Type} [Context α] [DecidableEq Shape]
     (loss :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes) :
-    IO (TList α inputShapes) := do
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes) :
+    IO (_root_.TorchLean.TensorPack α inputShapes) := do
   let c ← lowerScalarToTypedGraph (α := α)
     (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := Γ) c
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let gAll : _root_.TorchLean.TensorPack α Γ := _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward (α := α) (Γ := Γ) c
     args
-  pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2
+  pure (TorchLean.TensorPack.split (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2
 
 /-- VJP of a tensor output w.r.t. parameters. -/
 def vjpOutParams {α : Type} [Context α] [DecidableEq Shape]
@@ -262,16 +218,16 @@ def vjpOutParams {α : Type} [Context α] [DecidableEq Shape]
     (f :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) τ)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes)
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes)
     (seedOut : Tensor α τ) :
-    IO (TList α paramShapes) := do
+    IO (_root_.TorchLean.TensorPack α paramShapes) := do
   let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let gAll : _root_.TorchLean.TensorPack α Γ := _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
     := τ) c args seedOut
-  pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1
+  pure (TorchLean.TensorPack.split (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).1
 
 /-- VJP of a tensor output w.r.t. inputs. -/
 def vjpOutInputs {α : Type} [Context α] [DecidableEq Shape]
@@ -279,16 +235,16 @@ def vjpOutInputs {α : Type} [Context α] [DecidableEq Shape]
     (f :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) τ)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes)
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes)
     (seedOut : Tensor α τ) :
-    IO (TList α inputShapes) := do
+    IO (_root_.TorchLean.TensorPack α inputShapes) := do
   let c ← lowerToTypedGraph (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) (τ := τ) f
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let gAll : TList α Γ := _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let gAll : _root_.TorchLean.TensorPack α Γ := _root_.Runtime.Autograd.Torch.TypedGraph.vjpWithSeed (α := α) (Γ := Γ) (τ
     := τ) c args seedOut
-  pure (tlistSplitAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2
+  pure (TorchLean.TensorPack.split (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) gAll).2
 
 /-- Directional derivative of scalar loss along `vparams` (forward-mode JVP). -/
 def jvpLossParams {α : Type} [Context α] [DecidableEq Shape]
@@ -296,18 +252,18 @@ def jvpLossParams {α : Type} [Context α] [DecidableEq Shape]
     (loss :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes)
-    (vparams : TList α paramShapes) :
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes)
+    (vparams : _root_.TorchLean.TensorPack α paramShapes) :
     IO α := do
   let c ← lowerScalarToTypedGraph (α := α)
     (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let zerosX : TList α inputShapes := TList.zero (α := α) (ss := inputShapes)
-  let dargs : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) vparams
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let zerosX : _root_.TorchLean.TensorPack α inputShapes := _root_.TorchLean.TensorPack.zero (α := α) (ss := inputShapes)
+  let dargs : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) vparams
     zerosX
-  let dl : Tensor α Shape.scalar := _root_.Runtime.Autograd.Torch.TypedScalarGraph.jvp (α := α) (Γ :=
+  let dl : Tensor α .scalar := _root_.Runtime.Autograd.Torch.TypedScalarGraph.jvp (α := α) (Γ :=
     Γ) c args dargs
   match dl with
   | .scalar a => pure a
@@ -318,17 +274,17 @@ def jvpLossInputs {α : Type} [Context α] [DecidableEq Shape]
     (loss :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes)
-    (vxs : TList α inputShapes) :
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes)
+    (vxs : _root_.TorchLean.TensorPack α inputShapes) :
     IO α := do
   let c ← lowerScalarToTypedGraph (α := α)
     (paramShapes := paramShapes) (inputShapes := inputShapes) loss
   let Γ : List Shape := paramShapes ++ inputShapes
-  let args : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let zerosP : TList α paramShapes := TList.zero (α := α) (ss := paramShapes)
-  let dargs : TList α Γ := tlistAppend (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) zerosP vxs
-  let dl : Tensor α Shape.scalar := _root_.Runtime.Autograd.Torch.TypedScalarGraph.jvp (α := α) (Γ :=
+  let args : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
+  let zerosP : _root_.TorchLean.TensorPack α paramShapes := _root_.TorchLean.TensorPack.zero (α := α) (ss := paramShapes)
+  let dargs : _root_.TorchLean.TensorPack α Γ := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) zerosP vxs
+  let dl : Tensor α .scalar := _root_.Runtime.Autograd.Torch.TypedScalarGraph.jvp (α := α) (Γ :=
     Γ) c args dargs
   match dl with
   | .scalar a => pure a
@@ -336,7 +292,7 @@ def jvpLossInputs {α : Type} [Context α] [DecidableEq Shape]
 /--
 Hessian-vector product (HVP) for a scalar loss w.r.t. *parameters*.
 
-This computes `d/dε (∇_params loss(params + ε*vparams)) |_{ε=0}` and returns a `TList` aligned
+This computes `d/dε (∇_params loss(params + ε*vparams)) |_{ε=0}` and returns a `_root_.TorchLean.TensorPack` aligned
 with `paramShapes`.
 
 Implementation: run reverse-mode AD over dual scalars (`Dual`), with parameter tangents set to
@@ -347,20 +303,20 @@ def hvpParams {α : Type} [Context α] [DecidableEq Shape]
     (loss :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes)
-    (vparams : TList α paramShapes) :
-    IO (TList α paramShapes) := do
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes)
+    (vparams : _root_.TorchLean.TensorPack α paramShapes) :
+    IO (_root_.TorchLean.TensorPack α paramShapes) := do
   let αD := Dual α
 
-  let paramsD : TList αD paramShapes :=
-    DualTensor.withTangentsTList (α := α) (ss := paramShapes) params vparams
-  let xsD : TList αD inputShapes :=
-    DualTensor.ofPrimalTList (α := α) (ss := inputShapes) xs
+  let paramsD : _root_.TorchLean.TensorPack αD paramShapes :=
+    DualTensor.withTangentsPack (α := α) (ss := paramShapes) params vparams
+  let xsD : _root_.TorchLean.TensorPack αD inputShapes :=
+    DualTensor.ofPrimalPack (α := α) (ss := inputShapes) xs
 
   let Γ : List Shape := paramShapes ++ inputShapes
-  let argsD : TList αD Γ :=
-    tlistAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) paramsD xsD
+  let argsD : _root_.TorchLean.TensorPack αD Γ :=
+    TorchLean.TensorPack.append (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) paramsD xsD
 
   let build : Runtime.Autograd.TypedGraph.GraphM.M αD Γ (Runtime.Autograd.TypedGraph.GraphM.Var
     Shape.scalar) := do
@@ -379,16 +335,18 @@ def hvpParams {α : Type} [Context α] [DecidableEq Shape]
     argsD
   let gradsAny ← okOrThrow (Runtime.Autograd.TypedGraph.backwardDenseAllFrom (α := αD) (Γ := Γ)
     (ss := ssFull) tape graph.output (Tensor.scalar (1 : αD)))
-  let gradsD : TList αD Γ := ← gradsPrefix (α := αD) (ss := Γ) gradsAny 0
-  let gradsParamsD : TList αD paramShapes :=
-    (tlistSplitAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) gradsD).1
+  let gradsD : _root_.TorchLean.TensorPack αD Γ ←
+    okOrThrow (_root_.TorchLean.TensorPack.ofShapeErasedArray
+      (α := αD) gradsAny (shapes := Γ))
+  let gradsParamsD : _root_.TorchLean.TensorPack αD paramShapes :=
+    (TorchLean.TensorPack.split (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) gradsD).1
 
-  pure (DualTensor.tangentTList (α := α) (ss := paramShapes) gradsParamsD)
+  pure (DualTensor.tangentPack (α := α) (ss := paramShapes) gradsParamsD)
 
 /--
 Hessian-vector product (HVP) for a scalar loss w.r.t. *inputs*.
 
-This computes `d/dε (∇_xs loss(xs + ε*vxs)) |_{ε=0}` and returns a `TList` aligned with
+This computes `d/dε (∇_xs loss(xs + ε*vxs)) |_{ε=0}` and returns a `_root_.TorchLean.TensorPack` aligned with
 `inputShapes`.
 
 Implementation: the same forward-over-reverse trick as `hvpParams`, but we attach tangents to
@@ -399,20 +357,20 @@ def hvpInputs {α : Type} [Context α] [DecidableEq Shape]
     (loss :
       ∀ {β : Type}, [Context β] → [DecidableEq Shape] →
         TorchLean.Program β (paramShapes ++ inputShapes) Shape.scalar)
-    (params : TList α paramShapes)
-    (xs : TList α inputShapes)
-    (vxs : TList α inputShapes) :
-    IO (TList α inputShapes) := do
+    (params : _root_.TorchLean.TensorPack α paramShapes)
+    (xs : _root_.TorchLean.TensorPack α inputShapes)
+    (vxs : _root_.TorchLean.TensorPack α inputShapes) :
+    IO (_root_.TorchLean.TensorPack α inputShapes) := do
   let αD := Dual α
 
-  let paramsD : TList αD paramShapes :=
-    DualTensor.ofPrimalTList (α := α) (ss := paramShapes) params
-  let xsD : TList αD inputShapes :=
-    DualTensor.withTangentsTList (α := α) (ss := inputShapes) xs vxs
+  let paramsD : _root_.TorchLean.TensorPack αD paramShapes :=
+    DualTensor.ofPrimalPack (α := α) (ss := paramShapes) params
+  let xsD : _root_.TorchLean.TensorPack αD inputShapes :=
+    DualTensor.withTangentsPack (α := α) (ss := inputShapes) xs vxs
 
   let Γ : List Shape := paramShapes ++ inputShapes
-  let argsD : TList αD Γ :=
-    tlistAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) paramsD xsD
+  let argsD : _root_.TorchLean.TensorPack αD Γ :=
+    TorchLean.TensorPack.append (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) paramsD xsD
 
   let build : Runtime.Autograd.TypedGraph.GraphM.M αD Γ (Runtime.Autograd.TypedGraph.GraphM.Var
     Shape.scalar) := do
@@ -431,11 +389,13 @@ def hvpInputs {α : Type} [Context α] [DecidableEq Shape]
     argsD
   let gradsAny ← okOrThrow (Runtime.Autograd.TypedGraph.backwardDenseAllFrom (α := αD) (Γ := Γ)
     (ss := ssFull) tape graph.output (Tensor.scalar (1 : αD)))
-  let gradsD : TList αD Γ := ← gradsPrefix (α := αD) (ss := Γ) gradsAny 0
-  let gradsInputsD : TList αD inputShapes :=
-    (tlistSplitAppend (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) gradsD).2
+  let gradsD : _root_.TorchLean.TensorPack αD Γ ←
+    okOrThrow (_root_.TorchLean.TensorPack.ofShapeErasedArray
+      (α := αD) gradsAny (shapes := Γ))
+  let gradsInputsD : _root_.TorchLean.TensorPack αD inputShapes :=
+    (TorchLean.TensorPack.split (α := αD) (ss₁ := paramShapes) (ss₂ := inputShapes) gradsD).2
 
-  pure (DualTensor.tangentTList (α := α) (ss := inputShapes) gradsInputsD)
+  pure (DualTensor.tangentPack (α := α) (ss := inputShapes) gradsInputsD)
 
 /--
 Full Hessian (as an array of columns) for a scalar function of a *single* tensor input.
@@ -453,7 +413,7 @@ def hessianInput {α : Type} [Context α] [DecidableEq Shape]
   let dirs : Array (Tensor α σ) := basisTensors (α := α) σ
   let cols : Array (Tensor α σ) ←
     dirs.mapM (fun dx => do
-      let hvp : TList α [σ] ←
+      let hvp : _root_.TorchLean.TensorPack α [σ] ←
         hvpInputs (α := α)
           (paramShapes := ([] : List Shape)) (inputShapes := [σ])
           (fun {β} _ _ => f (β := β)) .nil (.cons x .nil) (.cons dx .nil)

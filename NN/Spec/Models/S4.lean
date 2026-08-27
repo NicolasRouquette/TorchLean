@@ -36,9 +36,9 @@ open NN.Spec.Dynamics
 /-- Parameters for a diagonal S4-style sequence layer. -/
 structure DiagonalS4Spec (α : Type) (inputDim stateDim outputDim : Nat) where
   /-- Input projection from token/features into SSM state channels. -/
-  inProj : Tensor α (.dim inputDim (.dim stateDim .scalar))
+  inProj : Tensor α [inputDim, stateDim]
   /-- Output projection from SSM channels to token/features. -/
-  outProj : Tensor α (.dim stateDim (.dim outputDim .scalar))
+  outProj : Tensor α [stateDim, outputDim]
   /-- Diagonal recurrent state-space core. -/
   ssm : DiagonalSSM α stateDim
 
@@ -49,59 +49,41 @@ variable {inputDim stateDim outputDim : Nat}
 
 /-- Project an input token into state channels. -/
 def projectInput (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (x : Tensor α (.dim inputDim .scalar)) : Tensor α (.dim stateDim .scalar) :=
+    (x : Tensor α [inputDim]) : Tensor α [stateDim] :=
   vecMatMulSpec x m.inProj
 
 /-- Project state channels to output channels. -/
 def projectOutput (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (h : Tensor α (.dim stateDim .scalar)) : Tensor α (.dim outputDim .scalar) :=
+    (h : Tensor α [stateDim]) : Tensor α [outputDim] :=
   vecMatMulSpec h m.outProj
 
 /-- One recurrent S4-style token step, returning `(new_state, output)`. -/
 def step (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (h : Tensor α (.dim stateDim .scalar))
-    (x : Tensor α (.dim inputDim .scalar)) :
-    Tensor α (.dim stateDim .scalar) × Tensor α (.dim outputDim .scalar) :=
+    (h : Tensor α [stateDim])
+    (x : Tensor α [inputDim]) :
+    Tensor α [stateDim] × Tensor α [outputDim] :=
   let xState := m.projectInput x
   let h' := m.ssm.step h xState
   (h', m.projectOutput (m.ssm.readout h' xState))
 
-/-- Run a list of tokens through the recurrent layer. -/
-def runList (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar)) :
-    List (Tensor α (.dim inputDim .scalar)) →
-    Tensor α (.dim stateDim .scalar) × List (Tensor α (.dim outputDim .scalar))
-  | [] => (h0, [])
-  | x :: xs =>
-      let (h1, y) := m.step h0 x
-      let (hN, ys) := m.runList h1 xs
-      (hN, y :: ys)
+/-- Run an array of tokens through the recurrent layer. -/
+def runArray (m : DiagonalS4Spec α inputDim stateDim outputDim)
+    (h0 : Tensor α [stateDim])
+    (xs : Array (Tensor α [inputDim])) :
+    Tensor α [stateDim] × Array (Tensor α [outputDim]) :=
+  Spec.scanArray m.step h0 xs
 
-@[simp] theorem runList_nil (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar)) :
-    m.runList h0 [] = (h0, []) := by
-  rfl
-
-@[simp] theorem runList_cons (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar))
-    (x : Tensor α (.dim inputDim .scalar))
-    (xs : List (Tensor α (.dim inputDim .scalar))) :
-    m.runList h0 (x :: xs) =
-      let (h1, y) := m.step h0 x
-      let (hN, ys) := m.runList h1 xs
-      (hN, y :: ys) := by
+@[simp] theorem runArray_empty (m : DiagonalS4Spec α inputDim stateDim outputDim)
+    (h0 : Tensor α [stateDim]) :
+    m.runArray h0 #[] = (h0, #[]) := by
   rfl
 
 /-- A recurrent S4 pass emits one output token per input token. -/
-theorem runList_outputs_length (m : DiagonalS4Spec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar))
-    (xs : List (Tensor α (.dim inputDim .scalar))) :
-    (m.runList h0 xs).2.length = xs.length := by
-  induction xs generalizing h0 with
-  | nil =>
-      simp
-  | cons x rest ih =>
-      simp [runList_cons, ih]
+@[simp] theorem runArray_outputs_size (m : DiagonalS4Spec α inputDim stateDim outputDim)
+    (h0 : Tensor α [stateDim])
+    (xs : Array (Tensor α [inputDim])) :
+    (m.runArray h0 xs).2.size = xs.size := by
+  exact Spec.scanArray_outputs_size m.step h0 xs
 
 end DiagonalS4Spec
 

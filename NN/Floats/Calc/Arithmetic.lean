@@ -85,10 +85,5 @@ theorem toReal_ne_zero_of_mantissa_ne_zero {f : NeuralFloat β} (hf : f.mantissa
   unfold neuralToReal
   exact mul_ne_zero (by exact_mod_cast hf) (ne_of_gt (neuralBpow.pos β f.exponent))
 
-/-- Squaring the exact quantity supplied to `sqrtRounded` recovers a nonnegative input. -/
-theorem sq_sqrt_input (f : NeuralFloat β) (hf : 0 ≤ neuralToReal f) :
-    Real.sqrt (neuralToReal f) ^ 2 = neuralToReal f :=
-  Real.sq_sqrt hf
-
 end NeuralFloat
 end TorchLean.Floats

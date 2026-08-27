@@ -51,54 +51,10 @@ def reshape {α : Type} [Inhabited α] [DecidableEq Shape] {s₁ s₂ : Shape}
     (forward := fun x => reshapeSpec (α := α) (s₁ := s₁) (s₂ := s₂) x h)
     (backward := fun _x dLdz => reshapeSpec (α := α) (s₁ := s₂) (s₂ := s₁) dLdz h.symm)
 
-/-- Transpose a 2D matrix. PyTorch: `x.t()` / `x.transpose(0,1)`. -/
-def transpose2d {α : Type} [DecidableEq Shape] {m n : Nat}
-  (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
-  unary (α := α) (t := t) (σ := .dim m (.dim n .scalar)) (τ := .dim n (.dim m .scalar))
-    "transpose2d" xId
-    (forward := fun x => matrixTransposeSpec (α := α) x)
-    (backward := fun _x dLdz => matrixTransposeSpec (α := α) dLdz)
-
-/-- Permute a 3D tensor `(a,b,c) → (b,c,a)`. PyTorch: `x.permute(1,2,0)`. -/
-def transpose3dFirstToLast {α : Type} [DecidableEq Shape] {a b c : Nat}
-  (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
-  unary (α := α) (t := t)
-    (σ := .dim a (.dim b (.dim c .scalar)))
-    (τ := .dim b (.dim c (.dim a .scalar)))
-    "transpose3d_first_to_last" xId
-    (forward := fun x => Spec.Tensor.transpose3DFirstToLastSpec (α := α) (a := a) (b := b) (c
-      := c) x)
-    (backward := fun _x dLdz =>
-      Spec.Tensor.transpose3DLastToFirstSpec (α := α) (a := b) (b := c) (c := a) dLdz)
-
-/-- Permute a 3D tensor `(a,b,c) → (c,a,b)`. PyTorch: `x.permute(2,0,1)`. -/
-def transpose3dLastToFirst {α : Type} [DecidableEq Shape] {a b c : Nat}
-  (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
-  unary (α := α) (t := t)
-    (σ := .dim a (.dim b (.dim c .scalar)))
-    (τ := .dim c (.dim a (.dim b .scalar)))
-    "transpose3d_last_to_first" xId
-    (forward := fun x => Spec.Tensor.transpose3DLastToFirstSpec (α := α) (a := a) (b := b) (c
-      := c) x)
-    (backward := fun _x dLdz =>
-      Spec.Tensor.transpose3DFirstToLastSpec (α := α) (a := c) (b := a) (c := b) dLdz)
-
-/-- Swap the last two axes of a 3D tensor `(a,b,c) → (a,c,b)`. PyTorch: `x.transpose(1,2)`. -/
-def transpose3dLastTwo {α : Type} [DecidableEq Shape] {a b c : Nat}
-  (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
-  unary (α := α) (t := t)
-    (σ := .dim a (.dim b (.dim c .scalar)))
-    (τ := .dim a (.dim c (.dim b .scalar)))
-    "transpose3d_last_two" xId
-    (forward := fun x => Spec.Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c)
-      x)
-    (backward := fun _x dLdz =>
-      Spec.Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := c) (c := b) dLdz)
-
 /--
 Swap adjacent axes at a given depth inside a general `Shape`.
 
-This is a more general analogue of `transpose` operations.
+General permutations and arbitrary-axis transpose are lowered to this operation.
 -/
 def swapAdjacentAtDepth {α : Type} [DecidableEq Shape] {s : Shape}
   (t : Tape α) (depth : Nat) (xId : Nat) : Result (Tape α × Nat) :=
@@ -107,7 +63,7 @@ def swapAdjacentAtDepth {α : Type} [DecidableEq Shape] {s : Shape}
     (forward := fun x => Spec.Tensor.swapAdjacentAxes (tensor := x) depth)
     (backward := fun _x dLdz =>
       let dx' := Spec.Tensor.swapAdjacentAxes (tensor := dLdz) depth
-      Tensor.castShape dx' (by simpa using (Spec.Shape.swapAdjacentAtDepth_involutive s depth)))
+      Tensor.castShape dx' (by simp))
 
 /--
 Broadcast `x : s₁` to `s₂` using a proof `Shape.CanBroadcastTo s₁ s₂`.

@@ -6,23 +6,20 @@ Authors: TorchLean Team
 
 module
 
-import Init.Data.Vector.Lemmas
-
 public import NN.Spec.Core.TensorOps
 
 /-!
-# Conv (generic N-D, spec layer)
+# Convolution Specifications
 
 This file defines channels-first convolution and transpose convolution over an arbitrary spatial
 rank. The core specification handles one sample; batched interfaces map it over their leading
-dimensions. The familiar two-dimensional declarations near the end are adapters to this generic
-definition, not separate convolution semantics.
+dimensions.
 
-PyTorch analogy: this corresponds to `torch.nn.Conv{d}d` with:
+PyTorch analogy: the grouped, dilated core corresponds to `torch.nn.Conv{d}d` with:
 
-- `groups = 1`,
-- `dilation = 1`,
-- per-axis `stride` and `padding`,
+- arbitrary positive `groups`,
+- per-axis `dilation` and `stride`,
+- independent zero padding before and after each spatial axis,
 - and the usual output-size formula (floor division, like PyTorch):
 
 For each axis `a : Fin d`:
@@ -47,23 +44,17 @@ open Tensor
 
 variable {α : Type} [Context α]
 
-/-! ## Small generic helpers -/
+/-! ## Index helpers -/
 
 namespace Conv
 namespace Internal
 
-def tensorOfFnList {α : Type} (dims : List Nat) (f : List Nat → α) : Tensor α (Shape.ofList dims) :=
-  match dims with
-  | [] => Tensor.scalar (f [])
-  | _ :: ns => Tensor.dim (fun i => tensorOfFnList ns (fun is => f (i.val :: is)))
-
 def foldlIndices {β : Type} (dims : List Nat) (init : β) (f : β → List Nat → β) : β :=
-  let rec go (dims : List Nat) (prefixRev : List Nat) (acc : β) : β :=
-    match dims with
-    | [] => f acc prefixRev.reverse
-    | n :: ns =>
-        (List.finRange n).foldl (fun acc i => go ns (i.val :: prefixRev) acc) acc
-  go dims [] init
+  match dims with
+  | [] => f init []
+  | n :: ns =>
+      (List.finRange n).foldl
+        (fun acc i => foldlIndices ns acc (fun acc is => f acc (i.val :: is))) init
 
 /--
 Given:
@@ -88,6 +79,44 @@ def mkInputIdx?
         | none => none
         | some rest => some ((q - p) :: rest)
   | _, _, _, _ => none
+
+/-- Convolution input-index map with per-axis dilation. -/
+def mkDilatedInputIdx?
+    (outIdx kIdx stride dilation paddingBefore : List Nat) : Option (List Nat) :=
+  match outIdx, kIdx, stride, dilation, paddingBefore with
+  | [], [], [], [], [] => some []
+  | o :: os, k :: ks, s :: ss, d :: ds, p :: ps =>
+      let q := o * s + k * d
+      if _h : q < p then
+        none
+      else
+        match mkDilatedInputIdx? os ks ss ds ps with
+        | none => none
+        | some rest => some ((q - p) :: rest)
+  | _, _, _, _, _ => none
+
+/-- Unit dilation reduces the dilated convolution index map to the dense index map. -/
+theorem mkDilatedInputIdx?_replicate_one
+    (outIdx kernelIdx stride padding : List Nat) :
+    mkDilatedInputIdx? outIdx kernelIdx stride (List.replicate stride.length 1) padding =
+      mkInputIdx? outIdx kernelIdx stride padding := by
+  induction outIdx generalizing kernelIdx stride padding with
+  | nil =>
+      cases kernelIdx <;> cases stride <;> cases padding <;>
+        simp [mkDilatedInputIdx?, mkInputIdx?]
+  | cons out outIdx ih =>
+      cases kernelIdx with
+      | nil => cases stride <;> cases padding <;> simp [mkDilatedInputIdx?, mkInputIdx?]
+      | cons kernel kernelIdx =>
+          cases stride with
+          | nil => cases padding <;> simp [mkDilatedInputIdx?, mkInputIdx?]
+          | cons step stride =>
+              cases padding with
+              | nil => simp [mkDilatedInputIdx?, mkInputIdx?]
+              | cons pad padding =>
+                  simp only [List.length_cons, List.replicate_succ, mkDilatedInputIdx?,
+                    mkInputIdx?, mul_one]
+                  split <;> simp_all
 
 /--
 Given:
@@ -138,53 +167,258 @@ end Conv
 
 /-! ## Spec definition -/
 
-/-- Parameters for a generic N-D convolution (weights + bias), channels-first. -/
-structure ConvSpec (d inC outC : Nat) (kernel stride padding : Vector Nat d) (α : Type) where
+/-- Parameters for an arbitrary-rank dense convolution, in channels-first layout. -/
+structure ConvSpec (d inC outC : Nat) (kernel stride padding : Tensor Nat [d]) (α : Type) where
   /-- Kernel weights, shape `(outC, inC, kernel[0], ..., kernel[d-1])`. -/
   kernel : Tensor α (Shape.ofList (outC :: inC :: kernel.toList))
   /-- Bias, shape `(outC)`. -/
-  bias   : Tensor α (.dim outC .scalar)
+  bias   : Tensor α [outC]
 
-/-- Output spatial sizes (`Vector Nat d`). -/
-def convOutSpatial {d : Nat} (inSpatial kernel stride padding : Vector Nat d) : Vector Nat d :=
-  Vector.ofFn (fun a =>
+/-- Effective extent of a dilated kernel along one axis. -/
+def convEffectiveKernel (kernel dilation : Nat) : Nat :=
+  if kernel = 0 then 0 else dilation * (kernel - 1) + 1
+
+/-- Output extent of a dilated window with independent two-sided padding. -/
+def convOutDimDilated
+    (input kernel stride dilation paddingBefore paddingAfter : Nat) : Nat :=
+  let effective := convEffectiveKernel kernel dilation
+  let padded := input + paddingBefore + paddingAfter
+  if effective = 0 || stride = 0 || padded < effective then
+    0
+  else
+    (padded - effective) / stride + 1
+
+/-- Output spatial sizes for grouped/dilated convolution with asymmetric zero padding. -/
+def convOutSpatialDilated {d : Nat}
+    (inSpatial kernel stride dilation paddingBefore paddingAfter : Tensor Nat [d]) :
+    Tensor Nat [d] :=
+  Tensor.ofFn fun axis =>
+    convOutDimDilated (inSpatial.getScalar axis) (kernel.getScalar axis)
+      (stride.getScalar axis) (dilation.getScalar axis) (paddingBefore.getScalar axis)
+      (paddingAfter.getScalar axis)
+
+/-- Output spatial sizes, one extent for each spatial axis. -/
+def convOutSpatial {d : Nat} (inSpatial kernel stride padding : Tensor Nat [d]) : Tensor Nat [d] :=
+  Tensor.ofFn (fun a =>
     Shape.slidingWindowOutDim
-      (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+      (inSpatial.getScalar a) (kernel.getScalar a) (stride.getScalar a) (padding.getScalar a))
+
+/-- Dilated convolution geometry reduces to the symmetric, unit-dilation case. -/
+@[simp]
+theorem convOutSpatialDilated_one_symmetric {d : Nat}
+    (input kernel stride padding : Tensor Nat [d]) :
+    convOutSpatialDilated input kernel stride (fill 1 [d]) padding padding =
+      convOutSpatial input kernel stride padding := by
+  apply Tensor.ext_vector
+  intro i
+  simp only [convOutSpatialDilated, convOutSpatial, Tensor.getScalar_ofFn]
+  by_cases hk : kernel.getScalar i = 0
+  · simp [convOutDimDilated, convEffectiveKernel, Shape.slidingWindowOutDim, hk]
+  · have hkpos : 1 ≤ kernel.getScalar i := Nat.one_le_iff_ne_zero.mpr hk
+    simp [convOutDimDilated, convEffectiveKernel, Shape.slidingWindowOutDim, hk,
+      Nat.sub_add_cancel hkpos]
+    grind
 
 /-- A unit kernel with unit stride and no padding preserves every positive spatial extent. -/
-theorem convOutSpatial_unit {d : Nat} (spatial : Vector Nat d)
-    (hSpatial : ∀ i : Fin d, spatial.get i ≠ 0) :
-    convOutSpatial spatial (Vector.replicate d 1) (Vector.replicate d 1)
-      (Vector.replicate d 0) = spatial := by
-  apply Vector.ext
-  intro i hi
-  have hPos : 1 ≤ spatial.get ⟨i, hi⟩ :=
-    Nat.one_le_iff_ne_zero.mpr (hSpatial ⟨i, hi⟩)
-  have hZero : (Vector.replicate d 0).get ⟨i, hi⟩ = 0 := by
-    change (Vector.replicate d 0)[i] = 0
-    simp
-  have hOne : (Vector.replicate d 1).get ⟨i, hi⟩ = 1 := by
-    change (Vector.replicate d 1)[i] = 1
-    simp
-  have hPosElem : 1 ≤ spatial[i] := by simpa [Vector.get] using hPos
-  have hNonzero : spatial[i] ≠ 0 := Nat.ne_of_gt (Nat.lt_of_lt_of_le Nat.zero_lt_one hPosElem)
-  simpa [convOutSpatial, Shape.slidingWindowOutDim, Vector.get, hNonzero,
-    Nat.not_lt.mpr hPosElem] using
-    Nat.sub_add_cancel hPosElem
+theorem convOutSpatial_unit {d : Nat} (spatial : Tensor Nat [d])
+    (hSpatial : ∀ i : Fin d, spatial.getScalar i ≠ 0) :
+    convOutSpatial spatial (fill 1 [d]) (fill 1 [d])
+      (fill 0 [d]) = spatial := by
+  apply Tensor.ext_vector
+  intro i
+  have hPos : 1 ≤ spatial.getScalar i :=
+    Nat.one_le_iff_ne_zero.mpr (hSpatial i)
+  have hNonzero : spatial.getScalar i ≠ 0 := hSpatial i
+  simpa [convOutSpatial, Shape.slidingWindowOutDim, hNonzero,
+    Nat.not_lt.mpr hPos] using Nat.sub_add_cancel hPos
+
+/--
+Unit-stride convolution with an odd kernel and padding equal to the kernel radius preserves every
+positive spatial extent.
+-/
+theorem convOutSpatial_same {d : Nat} (spatial radius : Tensor Nat [d])
+    (hSpatial : ∀ i : Fin d, spatial.getScalar i ≠ 0) :
+    convOutSpatial spatial (radius.map fun p => 2 * p + 1) (fill 1 [d]) radius =
+      spatial := by
+  apply Tensor.ext_vector
+  intro i
+  have hNonzero : spatial.getScalar i ≠ 0 := hSpatial i
+  simp [convOutSpatial, Shape.slidingWindowOutDim, hNonzero]
+  grind
 
 /-- Output spatial shape `Shape.ofList [out0, ..., out(d-1)]`. -/
-def convOutShape {d : Nat} (inSpatial kernel stride padding : Vector Nat d) : Shape :=
+def convOutShape {d : Nat} (inSpatial kernel stride padding : Tensor Nat [d]) : Shape :=
   Shape.ofList (convOutSpatial inSpatial kernel stride padding).toList
 
 /-- Output shape including channels: `Shape.ofList (outC :: [out0, ..., out(d-1)])`. -/
-def convMultiOutShape {d : Nat} (_inC outC : Nat) (inSpatial kernel stride padding : Vector Nat d)
+def convMultiOutShape {d : Nat} (_inC outC : Nat) (inSpatial kernel stride padding : Tensor Nat [d])
     : Shape :=
   Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)
 
-/--
-Generic N-D convolution forward pass on a single channels-first input (no batch dimension).
+/-- The grouped bilinear contraction shared by arbitrary-rank convolutions. -/
+def Conv.Internal.convCoreWith
+    {d inC outC : Nat} {kernel inSpatial outSpatial : Tensor Nat [d]}
+    (channelsPerOutput : Nat)
+    (inputChannel : Fin outC → Fin channelsPerOutput → Nat)
+    (inputIndex? : List Nat → List Nat → Option (List Nat))
+    (weights : Tensor α (Shape.ofList (outC :: inC :: kernel.toList)))
+    (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor α (Shape.ofList (outC :: outSpatial.toList)) :=
+  Tensor.dim fun outChannel =>
+    Tensor.generate outSpatial.toList fun outIndex =>
+      (List.finRange channelsPerOutput).foldl (fun acc localChannel =>
+        let inChannel := inputChannel outChannel localChannel
+        Conv.Internal.foldlIndices kernel.toList acc fun acc kernelIndex =>
+          let inputValue : α :=
+            match inputIndex? outIndex kernelIndex with
+            | none => 0
+            | some inputIndex => getAtOrZero input (inChannel :: inputIndex)
+          let kernelValue : α :=
+            getAtOrZero weights (outChannel.val :: inChannel :: kernelIndex)
+          acc + inputValue * kernelValue) 0
 
- Mathematically, for output channel `oc` and output spatial index `o : Vector Nat d`:
+/-- The grouped, dilated contraction for an arbitrary-rank convolution. -/
+def groupedConvCoreSpec
+    {d inC outC : Nat}
+    {kernel stride dilation paddingBefore paddingAfter : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
+    (groups : Nat)
+    (weights : Tensor α (Shape.ofList (outC :: inC :: kernel.toList)))
+    (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor α (Shape.ofList (outC ::
+      (convOutSpatialDilated inSpatial kernel stride dilation paddingBefore paddingAfter).toList)) :=
+
+  let inChannelsPerGroup := inC / groups
+  let outChannelsPerGroup := outC / groups
+  Conv.Internal.convCoreWith inChannelsPerGroup
+    (fun outChannel localChannel =>
+      (outChannel.val / outChannelsPerGroup) * inChannelsPerGroup + localChannel.val)
+    (fun outIndex kernelIndex =>
+      Conv.Internal.mkDilatedInputIdx? outIndex kernelIndex stride.toList dilation.toList
+        paddingBefore.toList)
+    weights input
+
+/-- The bilinear kernel/input contraction underlying an arbitrary-rank dense convolution. -/
+def convCoreSpec
+    {d inC outC : Nat}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
+    (weights : Tensor α (Shape.ofList (outC :: inC :: kernel.toList)))
+    (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor α (Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)) :=
+  Conv.Internal.convCoreWith inC (fun _ inChannel => inChannel.val)
+    (fun outIndex kernelIndex =>
+      Conv.Internal.mkInputIdx? outIndex kernelIndex stride.toList padding.toList)
+    weights input
+
+/--
+The grouped convolution contraction reduces to dense convolution for one group, unit dilation,
+and symmetric padding. The explicit cast transports the dilated output shape across the geometric
+specialization theorem.
+ -/
+theorem castShape_groupedConvCoreSpec_one_symmetric
+    {d inC outC : Nat}
+    {kernel stride padding inSpatial : Tensor Nat [d]}
+    (weights : Tensor α (Shape.ofList (outC :: inC :: kernel.toList)))
+    (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor.castShape
+        (groupedConvCoreSpec (dilation := fill 1 [d]) (paddingBefore := padding)
+          (paddingAfter := padding) (stride := stride) 1 weights input)
+        (congrArg (fun spatial => Shape.ofList (outC :: spatial.toList))
+          (convOutSpatialDilated_one_symmetric inSpatial kernel stride padding)) =
+      convCoreSpec (stride := stride) (padding := padding) weights input := by
+  unfold groupedConvCoreSpec convCoreSpec
+  simp only [Nat.div_one]
+  have hStrideLength : stride.toList.length = d := by
+    simp [Shape.size]
+  have hFillStride : (fill 1 [d]).toList =
+      List.replicate stride.toList.length 1 := by
+    simp [hStrideLength, Shape.size]
+  have hInputIndex :
+      (fun outIndex kernelIndex =>
+          Conv.Internal.mkDilatedInputIdx? outIndex kernelIndex stride.toList
+            (fill 1 [d]).toList padding.toList) =
+        fun outIndex kernelIndex =>
+          Conv.Internal.mkInputIdx? outIndex kernelIndex stride.toList padding.toList := by
+    funext outIndex kernelIndex
+    rw [hFillStride]
+    exact Conv.Internal.mkDilatedInputIdx?_replicate_one
+      outIndex kernelIndex stride.toList padding.toList
+  have hInputChannel :
+      (fun (outChannel : Fin outC) (localChannel : Fin inC) =>
+          (outChannel.val / outC) * inC + localChannel.val) =
+        fun _ localChannel => localChannel.val := by
+    funext outChannel localChannel
+    simp [Nat.div_eq_of_lt outChannel.isLt]
+  apply Tensor.ext_getSpec
+  intro index
+  simp only [get_spec_castShape]
+  rw [convOutSpatialDilated_one_symmetric]
+  rw [Nat.div_one inC]
+  rw [hInputChannel, hInputIndex]
+
+/-- Broadcast one channel value over a supplied spatial shape. -/
+def Conv.Internal.convBiasBroadcastWith
+    {d outC : Nat} (outSpatial : Tensor Nat [d]) (bias : Tensor α [outC]) :
+    Tensor α (Shape.ofList (outC :: outSpatial.toList)) :=
+  Tensor.dim fun outChannel =>
+    Tensor.generate outSpatial.toList fun _ => getAtOrZero bias [outChannel.val]
+
+/-- Broadcast a convolution bias over every output spatial position. -/
+def convBiasBroadcastSpec
+    {d outC : Nat}
+    {kernel stride padding inSpatial : Tensor Nat [d]}
+    (bias : Tensor α [outC]) :
+    Tensor α (Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)) :=
+  Conv.Internal.convBiasBroadcastWith (convOutSpatial inSpatial kernel stride padding) bias
+
+/-- Add a channel bias to a dilated convolution output. -/
+def convBiasBroadcastDilatedSpec
+    {d outC : Nat}
+    {kernel stride dilation paddingBefore paddingAfter inSpatial : Tensor Nat [d]}
+    (bias : Tensor α [outC]) :
+    Tensor α (Shape.ofList (outC ::
+      (convOutSpatialDilated inSpatial kernel stride dilation paddingBefore paddingAfter).toList)) :=
+  Conv.Internal.convBiasBroadcastWith
+    (convOutSpatialDilated inSpatial kernel stride dilation paddingBefore paddingAfter) bias
+
+/-- Dilated-output bias broadcasting reduces to dense bias broadcasting in the symmetric case. -/
+theorem castShape_convBiasBroadcastDilatedSpec_one_symmetric
+    {d outC : Nat}
+    {kernel stride padding inSpatial : Tensor Nat [d]}
+    (bias : Tensor α [outC]) :
+    Tensor.castShape
+        (convBiasBroadcastDilatedSpec (kernel := kernel) (stride := stride)
+          (dilation := fill 1 [d]) (paddingBefore := padding) (paddingAfter := padding)
+          (inSpatial := inSpatial) bias)
+        (congrArg (fun spatial => Shape.ofList (outC :: spatial.toList))
+          (convOutSpatialDilated_one_symmetric inSpatial kernel stride padding)) =
+      convBiasBroadcastSpec (kernel := kernel) (stride := stride) (padding := padding)
+        (inSpatial := inSpatial) bias := by
+  apply Tensor.ext_getSpec
+  intro index
+  simp only [get_spec_castShape]
+  unfold convBiasBroadcastDilatedSpec convBiasBroadcastSpec
+  rw [convOutSpatialDilated_one_symmetric]
+
+/-- Numerical semantics for grouped, dilated convolution with asymmetric zero padding. -/
+def groupedConvSpec
+    {d inC outC : Nat}
+    {kernel stride dilation paddingBefore paddingAfter : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
+    (groups : Nat)
+    (weights : Tensor α (Shape.ofList (outC :: inC :: kernel.toList)))
+    (bias : Tensor α [outC])
+    (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor α (Shape.ofList (outC ::
+      (convOutSpatialDilated inSpatial kernel stride dilation paddingBefore paddingAfter).toList)) :=
+  addSpec (groupedConvCoreSpec groups weights input)
+    (convBiasBroadcastDilatedSpec bias)
+
+/--
+Arbitrary-rank dense convolution on a single channels-first input (no batch dimension).
+
+Mathematically, for output channel `oc` and output spatial index `o : Tensor Nat [d]`:
 
 `y[oc,o] = Σ_{ic, k} x_pad[ic, o*stride + k] * W[oc,ic,k] + b[oc]`
 
@@ -192,42 +426,50 @@ where `k` ranges over the kernel window and `x_pad` is `input` with zero-padding
 -/
 def convSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (layer : ConvSpec d inC outC kernel stride padding α)
     (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
     Tensor α (Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)) :=
+  addSpec (convCoreSpec layer.kernel input) (convBiasBroadcastSpec layer.bias)
 
-  let outSpatial := convOutSpatial inSpatial kernel stride padding
-  let outDims : List Nat := outSpatial.toList
-  let kDims : List Nat := kernel.toList
-  let strideDims : List Nat := stride.toList
-  let padDims : List Nat := padding.toList
+/-- Grouped convolution reduces to dense convolution for its canonical dense configuration. -/
+theorem castShape_groupedConvSpec_one_symmetric
+    {d inC outC : Nat}
+    {kernel stride padding inSpatial : Tensor Nat [d]}
+    (weights : Tensor α (Shape.ofList (outC :: inC :: kernel.toList)))
+    (bias : Tensor α [outC])
+    (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor.castShape
+        (groupedConvSpec (dilation := fill 1 [d]) (paddingBefore := padding)
+          (paddingAfter := padding) (stride := stride) 1 weights bias input)
+        (congrArg (fun spatial => Shape.ofList (outC :: spatial.toList))
+          (convOutSpatialDilated_one_symmetric inSpatial kernel stride padding)) =
+      convSpec (stride := stride) (padding := padding) { kernel := weights, bias := bias } input := by
+  unfold groupedConvSpec convSpec
+  rw [Tensor.castShape_addSpec]
+  rw [castShape_groupedConvCoreSpec_one_symmetric]
+  rw [castShape_convBiasBroadcastDilatedSpec_one_symmetric]
 
-  Tensor.dim (fun out_ch =>
-    Conv.Internal.tensorOfFnList outDims (fun outIdx =>
-      let total_sum : α :=
-        (List.finRange inC).foldl (fun acc in_ch =>
-          Conv.Internal.foldlIndices kDims acc (fun acc kIdx =>
-            let input_val : α :=
-              match Conv.Internal.mkInputIdx? outIdx kIdx strideDims padDims with
-              | none => 0
-              | some inIdx => getAtOrZero input (in_ch.val :: inIdx)
-            let kernel_val : α :=
-              getAtOrZero layer.kernel (out_ch.val :: in_ch.val :: kIdx)
-            acc + input_val * kernel_val
-          )
-        ) 0
-      total_sum + getAtOrZero layer.bias [out_ch.val]
-    )
-  )
+/-- Directional derivative formula for convolution in its kernel, bias, and input arguments. -/
+def convJvpSpec
+    {d inC outC : Nat}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
+    (layer tangentLayer : ConvSpec d inC outC kernel stride padding α)
+    (input tangentInput : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
+    Tensor α (Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)) :=
+  addSpec
+    (addSpec (convCoreSpec tangentLayer.kernel input)
+      (convCoreSpec layer.kernel tangentInput))
+    (convBiasBroadcastSpec tangentLayer.bias)
 
 
 /-- Gradient of convolution output w.r.t. the kernel weights (given `grad_output`). -/
 def convKernelDerivSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (_layer : ConvSpec d inC outC kernel stride padding α)
     (input : Tensor α (Shape.ofList (inC :: inSpatial.toList)))
     (grad_output :
@@ -243,7 +485,7 @@ def convKernelDerivSpec
 
   Tensor.dim (fun out_ch =>
     Tensor.dim (fun in_ch =>
-      Conv.Internal.tensorOfFnList kDims (fun kIdx =>
+      Tensor.generate kDims (fun kIdx =>
         let total_sum : α :=
           Conv.Internal.foldlIndices outDims 0 (fun acc outIdx =>
             let input_val : α :=
@@ -262,14 +504,14 @@ def convKernelDerivSpec
 /-- Gradient of convolution output w.r.t. the bias (sum over spatial positions). -/
 def convBiasDerivSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (_layer : ConvSpec d inC outC kernel stride padding α)
     (_input : Tensor α (Shape.ofList (inC :: inSpatial.toList)))
     (grad_output :
       Tensor α
         (Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)))
-    : Tensor α (.dim outC .scalar) :=
+    : Tensor α [outC] :=
 
   let outSpatial := convOutSpatial inSpatial kernel stride padding
   let outDims : List Nat := outSpatial.toList
@@ -290,8 +532,8 @@ This mirrors `conv{1,2,3}d_input_deriv_spec` but for arbitrary spatial rank `d`.
 -/
 def convInputDerivSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (layer : ConvSpec d inC outC kernel stride padding α)
     (_input : Tensor α (Shape.ofList (inC :: inSpatial.toList)))
     (grad_output :
@@ -305,7 +547,7 @@ def convInputDerivSpec
   let inDims : List Nat := inSpatial.toList
 
   Tensor.dim (fun in_ch =>
-    Conv.Internal.tensorOfFnList inDims (fun inIdx =>
+    Tensor.generate inDims (fun inIdx =>
       let total_sum : α :=
         (List.finRange outC).foldl (fun acc out_ch =>
           Conv.Internal.foldlIndices kDims acc (fun acc kIdx =>
@@ -327,8 +569,8 @@ def convInputDerivSpec
 /-- Convolution backward pass: returns `(dKernel, dBias, dInput)`. -/
 def convBackwardSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (layer : ConvSpec d inC outC kernel stride padding α)
     (input : Tensor α (Shape.ofList (inC :: inSpatial.toList)))
     (grad_output :
@@ -336,17 +578,17 @@ def convBackwardSpec
         (Shape.ofList (outC :: (convOutSpatial inSpatial kernel stride padding).toList)))
     :
     (Tensor α (Shape.ofList (outC :: inC :: kernel.toList)) ×
-     Tensor α (.dim outC .scalar) ×
+     Tensor α [outC] ×
      Tensor α (Shape.ofList (inC :: inSpatial.toList))) :=
   let d_kernel := convKernelDerivSpec layer input grad_output
   let d_bias := convBiasDerivSpec layer input grad_output
   let d_input := convInputDerivSpec layer input grad_output
   (d_kernel, d_bias, d_input)
 
-/-! ## ConvTranspose (generic N-D) -/
+/-! ## Transpose convolution -/
 
 /--
-Parameters for a generic N-D transpose convolution (weights + bias), channels-first.
+Parameters for an arbitrary-rank transpose convolution, in channels-first layout.
 
 PyTorch analogy: this is `torch.nn.ConvTranspose{d}d` with:
 
@@ -356,11 +598,11 @@ PyTorch analogy: this is `torch.nn.ConvTranspose{d}d` with:
 - per-axis `stride` and `padding`,
 - and weight layout `(inC, outC, k0, ..., k(d-1))`.
 -/
-structure ConvTransposeSpec (d inC outC : Nat) (kernel stride padding : Vector Nat d) (α : Type) where
+structure ConvTransposeSpec (d inC outC : Nat) (kernel stride padding : Tensor Nat [d]) (α : Type) where
   /-- Kernel weights, shape `(inC, outC, kernel[0], ..., kernel[d-1])`. -/
   kernel : Tensor α (Shape.ofList (inC :: outC :: kernel.toList))
   /-- Bias, shape `(outC)`. -/
-  bias   : Tensor α (.dim outC .scalar)
+  bias   : Tensor α [outC]
 
 /--
 Output size along one transpose-convolution axis with `output_padding = 0`.
@@ -377,25 +619,25 @@ def convTransposeOutDim (inDim kDim stride padding : Nat) : Nat :=
   else
     (inDim - 1) * stride + kDim - 2 * padding
 
-/-- Output spatial sizes (`Vector Nat d`) for transpose convolution (`output_padding = 0`). -/
-def convTransposeOutSpatial {d : Nat} (inSpatial kernel stride padding : Vector Nat d) :
-    Vector Nat d :=
-  Vector.ofFn (fun a =>
-    convTransposeOutDim (inSpatial.get a) (kernel.get a) (stride.get a) (padding.get a))
+/-- Output spatial sizes (`Tensor Nat [d]`) for transpose convolution (`output_padding = 0`). -/
+def convTransposeOutSpatial {d : Nat} (inSpatial kernel stride padding : Tensor Nat [d]) :
+    Tensor Nat [d] :=
+  Tensor.ofFn (fun a =>
+    convTransposeOutDim (inSpatial.getScalar a) (kernel.getScalar a) (stride.getScalar a) (padding.getScalar a))
 
 /-- Output spatial shape `Shape.ofList [out0, ..., out(d-1)]` (transpose convolution). -/
-def convTransposeOutShape {d : Nat} (inSpatial kernel stride padding : Vector Nat d) : Shape :=
+def convTransposeOutShape {d : Nat} (inSpatial kernel stride padding : Tensor Nat [d]) : Shape :=
   Shape.ofList (convTransposeOutSpatial inSpatial kernel stride padding).toList
 
 /-- Output shape including channels: `Shape.ofList (outC :: [out0, ..., out(d-1)])`. -/
 def convTransposeMultiOutShape {d : Nat} (_inC outC : Nat)
-    (inSpatial kernel stride padding : Vector Nat d) : Shape :=
+    (inSpatial kernel stride padding : Tensor Nat [d]) : Shape :=
   Shape.ofList (outC :: (convTransposeOutSpatial inSpatial kernel stride padding).toList)
 
 /--
-Generic N-D transpose convolution forward pass on a single channels-first input (no batch dim).
+Arbitrary-rank transpose convolution on a single channels-first input (no batch dimension).
 
- For output channel `oc` and output spatial index `o : Vector Nat d` we define:
+ For output channel `oc` and output spatial index `o : Tensor Nat [d]` we define:
 
 `y[oc,o] = Σ_{ic, k} x[ic, (o + padding - k) / stride] * W[ic,oc,k] + b[oc]`
 
@@ -403,8 +645,8 @@ where each axis must satisfy `out + padding ≥ k` and divisibility by `stride` 
 -/
 def convTransposeSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (layer : ConvTransposeSpec d inC outC kernel stride padding α)
     (input : Tensor α (Shape.ofList (inC :: inSpatial.toList))) :
     Tensor α
@@ -418,7 +660,7 @@ def convTransposeSpec
   let padDims : List Nat := padding.toList
 
   Tensor.dim (fun out_ch =>
-    Conv.Internal.tensorOfFnList outDims (fun outIdx =>
+    Tensor.generate outDims (fun outIdx =>
       let total_sum : α :=
         (List.finRange inC).foldl (fun acc in_ch =>
           Conv.Internal.foldlIndices kDims acc (fun acc kIdx =>
@@ -439,8 +681,8 @@ def convTransposeSpec
 /-- Gradient of transpose convolution output w.r.t. the kernel weights (given `grad_output`). -/
 def convTransposeKernelDerivSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (input : Tensor α (Shape.ofList (inC :: inSpatial.toList)))
     (grad_output :
       Tensor α
@@ -455,7 +697,7 @@ def convTransposeKernelDerivSpec
 
   Tensor.dim (fun in_ch =>
     Tensor.dim (fun out_ch =>
-      Conv.Internal.tensorOfFnList kDims (fun kIdx =>
+      Tensor.generate kDims (fun kIdx =>
         let total_sum : α :=
           Conv.Internal.foldlIndices inDims 0 (fun acc inIdx =>
             match Conv.Internal.mkInputIdx? inIdx kIdx strideDims padDims with
@@ -474,13 +716,13 @@ def convTransposeKernelDerivSpec
 /-- Gradient of transpose convolution output w.r.t. the bias (sum over spatial positions). -/
 def convTransposeBiasDerivSpec
     {d outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (grad_output :
       Tensor α
         (Shape.ofList
           (outC :: (convTransposeOutSpatial inSpatial kernel stride padding).toList)))
-    : Tensor α (.dim outC .scalar) :=
+    : Tensor α [outC] :=
 
   let outSpatial := convTransposeOutSpatial inSpatial kernel stride padding
   let outDims : List Nat := outSpatial.toList
@@ -497,8 +739,8 @@ def convTransposeBiasDerivSpec
 /-- Gradient of transpose convolution output w.r.t. the input (given `grad_output`). -/
 def convTransposeInputDerivSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (weights : Tensor α (Shape.ofList (inC :: outC :: kernel.toList)))
     (grad_output :
       Tensor α
@@ -512,7 +754,7 @@ def convTransposeInputDerivSpec
   let padDims : List Nat := padding.toList
 
   Tensor.dim (fun in_ch =>
-    Conv.Internal.tensorOfFnList inDims (fun inIdx =>
+    Tensor.generate inDims (fun inIdx =>
       let total_sum : α :=
         (List.finRange outC).foldl (fun acc out_ch =>
           Conv.Internal.foldlIndices kDims acc (fun acc kIdx =>
@@ -532,8 +774,8 @@ def convTransposeInputDerivSpec
 /-- Transpose convolution backward pass: returns `(dKernel, dBias, dInput)`. -/
 def convTransposeBackwardSpec
     {d inC outC : Nat}
-    {kernel stride padding : Vector Nat d}
-    {inSpatial : Vector Nat d}
+    {kernel stride padding : Tensor Nat [d]}
+    {inSpatial : Tensor Nat [d]}
     (layer : ConvTransposeSpec d inC outC kernel stride padding α)
     (input : Tensor α (Shape.ofList (inC :: inSpatial.toList)))
     (grad_output :
@@ -542,385 +784,11 @@ def convTransposeBackwardSpec
           (outC :: (convTransposeOutSpatial inSpatial kernel stride padding).toList)))
     :
     (Tensor α (Shape.ofList (inC :: outC :: kernel.toList)) ×
-     Tensor α (.dim outC .scalar) ×
+     Tensor α [outC] ×
      Tensor α (Shape.ofList (inC :: inSpatial.toList))) :=
   let d_kernel := convTransposeKernelDerivSpec input grad_output
   let d_bias := convTransposeBiasDerivSpec grad_output
   let d_input := convTransposeInputDerivSpec layer.kernel grad_output
   (d_kernel, d_bias, d_input)
-
-/-!
-## 2D specializations
-
-TorchLean exposes 2D convolution specs as first-class names because the model and proof layers use
-these shapes directly. They share the same indexing conventions as the generic N-D convolution spec
-above.
--/
-
-/-- Parameters for a 2D convolution: this is `ConvSpec` specialized to `d = 2`. -/
-abbrev Conv2dSpec (inC outC kH kW stride padding : Nat) (α : Type)
-    (h1 : inC ≠ 0) (h2 : kH ≠ 0) (h3 : kW ≠ 0) :=
-  (let _ := h1; let _ := h2; let _ := h3
-   ConvSpec (d := 2) (inC := inC) (outC := outC)
-     (kernel := ⟨#[kH, kW], by simp⟩)
-     (stride := ⟨#[stride, stride], by simp⟩)
-     (padding := ⟨#[padding, padding], by simp⟩) α)
-
-/-- Output spatial shape `(outH,outW)` for a Conv2d with given hyperparameters. -/
-def conv2dOutShape (inH inW kH kW stride padding : Nat) : Shape :=
-  let outH := Shape.slidingWindowOutDim inH kH stride padding
-  let outW := Shape.slidingWindowOutDim inW kW stride padding
-  .dim outH (.dim outW .scalar)
-
-/-- Output shape including channels: `(outC,outH,outW)`. -/
-def conv2dMultiOutShape (_inC outC inH inW kH kW stride padding : Nat) : Shape :=
-  let outH := Shape.slidingWindowOutDim inH kH stride padding
-  let outW := Shape.slidingWindowOutDim inW kW stride padding
-  .dim outC (.dim outH (.dim outW .scalar))
-
-theorem Conv.Internal.conv2d_multi_out_shape_eq
-    (outC inH inW kH kW stride padding : Nat) :
-    Shape.ofList
-        (outC ::
-          (convOutSpatial (d := 2) (#v[inH, inW]) (#v[kH, kW]) (#v[stride, stride])
-                (#v[padding, padding])).toList) =
-      .dim outC
-        (.dim (Shape.slidingWindowOutDim inH kH stride padding)
-          (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)) := by
-  simp [convOutSpatial, Shape.slidingWindowOutDim, Vector.get, Vector.toList, Shape.ofList]
-
-/--
-Conv2d forward pass on a single image `C×H×W` (no batch dimension).
-
-PyTorch note: this matches the usual `Conv2d` definition (cross-correlation form, i.e. the kernel
-is not spatially flipped).
--/
-def conv2dSpec {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
-    Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar))) := by
-  have _ := h1
-  have _ := h2
-  have _ := h3
-  let _ := layer
-  -- We *do not* define this as a `tensorCast` of the generic N-D `convSpec` output.
-  --
-  -- Reason: the generic shape is expressed via `Vector.toList`, which elaborates through
-  -- `Array.ofFn`; the cast proof `conv2d_multi_out_shape_eq` is therefore not definitionally
-  -- transparent. Downstream proofs pattern-match directly on `conv2dSpec`, so the specialized
-  -- tensor constructor keeps those matches at the expected shape.
-  --
-  -- Instead, we replay the same `mkInputIdx?`-based definition with explicit 2D dimension lists,
-  -- which makes the output tensor constructor-built at the expected `(outC,outH,outW)` shape.
-  let outH : Nat := Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Shape.slidingWindowOutDim inW kW stride padding
-  let strideDims : List Nat := [stride, stride]
-  let padDims : List Nat := [padding, padding]
-  -- We keep the loop structure explicit (`inC × kH × kW`) so it matches the Conv2d pointwise
-  -- reasoning lemmas directly.
-  exact Tensor.dim (fun out_ch =>
-    Tensor.dim (fun i =>
-      Tensor.dim (fun j =>
-        let total_sum : α :=
-          (List.finRange inC).foldl (fun acc in_ch =>
-            (List.finRange kH).foldl (fun acc di =>
-              (List.finRange kW).foldl (fun acc dj =>
-                let input_val : α :=
-                  match Conv.Internal.mkInputIdx? [i.val, j.val] [di.val, dj.val] strideDims padDims with
-                  | none => 0
-                  | some inIdx => getAtOrZero input (in_ch.val :: inIdx)
-                let kernel_val : α :=
-                  getAtOrZero layer.kernel [out_ch.val, in_ch.val, di.val, dj.val]
-                acc + input_val * kernel_val
-              ) acc
-            ) acc
-          ) 0
-        Tensor.scalar (total_sum + getAtOrZero layer.bias [out_ch.val]))))
-
-/-- Gradient of Conv2d output w.r.t. the kernel weights (given `grad_output`). -/
-def conv2dKernelDerivSpec
-    {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-    (grad_output :
-      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
-    Tensor α (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) := by
-  have _ := h1
-  have _ := h2
-  have _ := h3
-  let _ := layer
-  let _ := input
-  let outH : Nat := Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Shape.slidingWindowOutDim inW kW stride padding
-  let strideDims : List Nat := [stride, stride]
-  let padDims : List Nat := [padding, padding]
-  exact Tensor.dim (fun out_ch =>
-    Tensor.dim (fun in_ch =>
-      Tensor.dim (fun di =>
-        Tensor.dim (fun dj =>
-          let total_sum : α :=
-            (List.finRange outH).foldl (fun acc i =>
-              (List.finRange outW).foldl (fun acc j =>
-                let input_val : α :=
-                  match Conv.Internal.mkInputIdx? [i.val, j.val] [di.val, dj.val] strideDims padDims with
-                  | none => 0
-                  | some inIdx => getAtOrZero input (in_ch.val :: inIdx)
-                let grad_val : α := getAtOrZero grad_output [out_ch.val, i.val, j.val]
-                acc + input_val * grad_val) acc) 0
-          Tensor.scalar total_sum))))
-
-/-- Gradient of Conv2d output w.r.t. the bias (sum over spatial positions). -/
-def conv2dBiasDerivSpec
-    {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-    (grad_output :
-      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
-    Tensor α (.dim outC .scalar) := by
-  have _ := h1
-  have _ := h2
-  have _ := h3
-  let _ := layer
-  let _ := input
-  let outH : Nat := Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Shape.slidingWindowOutDim inW kW stride padding
-  exact Tensor.dim (fun out_ch =>
-    let total_sum : α :=
-      (List.finRange outH).foldl (fun acc i =>
-        (List.finRange outW).foldl (fun acc j =>
-          acc + getAtOrZero grad_output [out_ch.val, i.val, j.val]) acc) 0
-    Tensor.scalar total_sum)
-
-/-- Gradient of Conv2d output w.r.t. the input image. -/
-def conv2dInputDerivSpec
-    {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-    (grad_output :
-      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
-    Tensor α (.dim inC (.dim inH (.dim inW .scalar))) := by
-  have _ := h1
-  have _ := h2
-  have _ := h3
-  let _ := input
-  let outH : Nat := Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Shape.slidingWindowOutDim inW kW stride padding
-  exact Tensor.dim (fun in_ch =>
-    Tensor.dim (fun i =>
-      Tensor.dim (fun j =>
-        let total_sum : α :=
-          (List.finRange outC).foldl (fun acc out_ch =>
-            (List.finRange outH).foldl (fun acc out_i =>
-              (List.finRange outW).foldl (fun acc out_j =>
-                (List.finRange kH).foldl (fun acc di =>
-                  (List.finRange kW).foldl (fun acc dj =>
-                    let contrib : α :=
-                      if out_i.val * stride + di.val = i.val + padding ∧
-                          out_j.val * stride + dj.val = j.val + padding then
-                        let grad_val := getAtOrZero grad_output [out_ch.val, out_i.val, out_j.val]
-                        let kernel_val :=
-                          getAtOrZero layer.kernel [out_ch.val, in_ch.val, di.val, dj.val]
-                        grad_val * kernel_val
-                      else
-                        0
-                    acc + contrib) acc) acc) acc) acc) 0
-        Tensor.scalar total_sum)))
-
-/-- Conv2d backward pass: returns `(dKernel, dBias, dInput)`. -/
-def conv2dBackwardSpec
-    {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : Conv2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-    (grad_output :
-      Tensor α (.dim outC (.dim (Shape.slidingWindowOutDim inH kH stride padding) (.dim (Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) :
-    (Tensor α (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) ×
-     Tensor α (.dim outC .scalar) ×
-       Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) := by
-    have _ := h1
-    have _ := h2
-    have _ := h3
-    exact
-      (conv2dKernelDerivSpec (α := α) (layer := layer) (input := input) (grad_output := grad_output),
-        conv2dBiasDerivSpec (α := α) (layer := layer) (input := input) (grad_output := grad_output),
-        conv2dInputDerivSpec (α := α) (layer := layer) (input := input) (grad_output := grad_output))
-
-/-!
-## ConvTranspose2d specializations
-
-The transpose-convolution definitions below are the 2D specialization of the generic N-D transpose
-convolution spec above.
--/
-
-/-- Kernel layout for transpose-convolution: `(inC, outC, kH, kW)`. -/
-abbrev ConvTransposeKernel (outC inC kH kW : Nat) (α : Type) :=
-  Tensor α (.dim inC (.dim outC (.dim kH (.dim kW .scalar))))
-
-/-- Parameters for a 2D transpose convolution. -/
-structure ConvTranspose2dSpec (inC outC kH kW stride padding : Nat) (α : Type)
-    (h1 : inC > 0) (h2 : kH ≠ 0) (h3 : kW ≠ 0) where
-  /-- Transposed-convolution kernel tensor. -/
-  kernel : ConvTransposeKernel outC inC kH kW α
-  /-- Per-output-channel bias. -/
-  bias   : Tensor α (.dim outC .scalar)
-
-/-- Output spatial shape `(outH,outW)` for `ConvTranspose2d` (with `output_padding = 0`). -/
-def convTranspose2dOutShape (inH inW kH kW stride padding : Nat) : Shape :=
-  let outH := convTransposeOutDim inH kH stride padding
-  let outW := convTransposeOutDim inW kW stride padding
-  .dim outH (.dim outW .scalar)
-
-/-- Output shape including channels: `(outC,outH,outW)`. -/
-def convTranspose2dMultiOutShape (_inC outC inH inW kH kW stride padding : Nat) : Shape :=
-  let outH := convTransposeOutDim inH kH stride padding
-  let outW := convTransposeOutDim inW kW stride padding
-  .dim outC (.dim outH (.dim outW .scalar))
-
-theorem Conv.Internal.conv_transpose2d_multi_out_shape_eq
-    (outC inH inW kH kW stride padding : Nat) :
-    Shape.ofList
-        (outC ::
-          (convTransposeOutSpatial (d := 2) (#v[inH, inW]) (#v[kH, kW]) (#v[stride, stride])
-                (#v[padding, padding])).toList) =
-      .dim outC
-        (.dim (convTransposeOutDim inH kH stride padding)
-          (.dim (convTransposeOutDim inW kW stride padding) .scalar)) := by
-  simp [convTransposeOutSpatial, convTransposeOutDim, Vector.get, Vector.toList, Shape.ofList]
-
-/--
-ConvTranspose2d forward pass on a single image `C×H×W` (no batch dimension).
-
-This is written as an output-indexed sum (no in-place updates), matching the standard definition.
--/
-def convTranspose2dSpec {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC > 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : ConvTranspose2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
-    Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar))) := by
-  have _ := h1
-  have _ := h2
-  have _ := h3
-  let layer' :
-      ConvTransposeSpec (d := 2) (inC := inC) (outC := outC)
-        (kernel := ⟨#[kH, kW], by simp⟩)
-        (stride := ⟨#[stride, stride], by simp⟩)
-        (padding := ⟨#[padding, padding], by simp⟩) α :=
-    { kernel := layer.kernel, bias := layer.bias }
-  let y :=
-    convTransposeSpec (α := α) (d := 2)
-      (kernel := #v[kH, kW])
-      (stride := #v[stride, stride])
-      (padding := #v[padding, padding])
-      (inSpatial := #v[inH, inW])
-      layer' input
-  exact
-    tensorCast _ (Conv.Internal.conv_transpose2d_multi_out_shape_eq (outC := outC) (inH := inH) (inW := inW)
-      (kH := kH) (kW := kW) (stride := stride) (padding := padding)) y
-
-/-- Gradient of ConvTranspose2d output w.r.t. the kernel weights. -/
-def convTranspose2dWeightsDerivSpec {inC outC kH kW stride padding inH inW : Nat}
-    {_h1 : inC > 0} {_h2 : kH ≠ 0} {_h3 : kW ≠ 0}
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-    (grad_output :
-      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
-    ConvTransposeKernel outC inC kH kW α := by
-  let grad_output' :
-      Tensor α
-        (Shape.ofList
-          (outC ::
-            (convTransposeOutSpatial (d := 2) (#v[inH, inW]) (#v[kH, kW]) (#v[stride, stride])
-                  (#v[padding, padding])).toList)) :=
-    tensorCast _ (Conv.Internal.conv_transpose2d_multi_out_shape_eq (outC := outC) (inH := inH) (inW := inW)
-      (kH := kH) (kW := kW) (stride := stride) (padding := padding)).symm grad_output
-  exact
-    convTransposeKernelDerivSpec (α := α) (d := 2)
-      (kernel := #v[kH, kW])
-      (stride := #v[stride, stride])
-      (padding := #v[padding, padding])
-      (inSpatial := #v[inH, inW])
-      input grad_output'
-
-/-- Gradient of ConvTranspose2d output w.r.t. the bias (sum over spatial positions). -/
-def convTranspose2dBiasDerivSpec {_inC outC kH kW stride padding inH inW : Nat}
-    (grad_output :
-      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
-    Tensor α (.dim outC .scalar) := by
-  let grad_output' :
-      Tensor α
-        (Shape.ofList
-          (outC ::
-            (convTransposeOutSpatial (d := 2) (#v[inH, inW]) (#v[kH, kW]) (#v[stride, stride])
-                  (#v[padding, padding])).toList)) :=
-    tensorCast _ (Conv.Internal.conv_transpose2d_multi_out_shape_eq (outC := outC) (inH := inH) (inW := inW)
-      (kH := kH) (kW := kW) (stride := stride) (padding := padding)).symm grad_output
-  exact
-    convTransposeBiasDerivSpec (α := α) (d := 2)
-      (kernel := #v[kH, kW])
-      (stride := #v[stride, stride])
-      (padding := #v[padding, padding])
-      (inSpatial := #v[inH, inW])
-      grad_output'
-
-/-- Gradient of ConvTranspose2d output w.r.t. the input image. -/
-def convTranspose2dInputDerivSpec {inC outC kH kW stride padding inH inW : Nat}
-    {_h1 : inC > 0} {_h2 : kH ≠ 0} {_h3 : kW ≠ 0}
-    (weights : ConvTransposeKernel outC inC kH kW α)
-    (grad_output :
-      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
-    Tensor α (.dim inC (.dim inH (.dim inW .scalar))) := by
-  let grad_output' :
-      Tensor α
-        (Shape.ofList
-          (outC ::
-            (convTransposeOutSpatial (d := 2) (#v[inH, inW]) (#v[kH, kW]) (#v[stride, stride])
-                  (#v[padding, padding])).toList)) :=
-    tensorCast _ (Conv.Internal.conv_transpose2d_multi_out_shape_eq (outC := outC) (inH := inH) (inW := inW)
-      (kH := kH) (kW := kW) (stride := stride) (padding := padding)).symm grad_output
-  exact
-    convTransposeInputDerivSpec (α := α) (d := 2)
-      (kernel := #v[kH, kW])
-      (stride := #v[stride, stride])
-      (padding := #v[padding, padding])
-      (inSpatial := #v[inH, inW])
-      weights grad_output'
-
-/-- ConvTranspose2d backward pass: returns `(dKernel, dBias, dInput)`. -/
-def convTranspose2dBackwardSpec {inC outC kH kW stride padding inH inW : Nat}
-    {h1 : inC > 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-    (layer : ConvTranspose2dSpec inC outC kH kW stride padding α h1 h2 h3)
-    (input : Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-    (grad_output :
-      Tensor α (.dim outC (.dim (convTransposeOutDim inH kH stride padding) (.dim (convTransposeOutDim inW kW stride padding) .scalar)))) :
-    (ConvTransposeKernel outC inC kH kW α ×
-     Tensor α (.dim outC .scalar) ×
-     Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) := by
-  have _ := h1
-  have _ := h2
-  have _ := h3
-  let layer' :
-      ConvTransposeSpec (d := 2) (inC := inC) (outC := outC)
-        (kernel := ⟨#[kH, kW], by simp⟩)
-        (stride := ⟨#[stride, stride], by simp⟩)
-        (padding := ⟨#[padding, padding], by simp⟩) α :=
-    { kernel := layer.kernel, bias := layer.bias }
-  let grad_output' :
-      Tensor α
-        (Shape.ofList
-          (outC ::
-            (convTransposeOutSpatial (d := 2) (#v[inH, inW]) (#v[kH, kW]) (#v[stride, stride])
-                  (#v[padding, padding])).toList)) :=
-    tensorCast _ (Conv.Internal.conv_transpose2d_multi_out_shape_eq (outC := outC) (inH := inH) (inW := inW)
-      (kH := kH) (kW := kW) (stride := stride) (padding := padding)).symm grad_output
-  exact
-    convTransposeBackwardSpec (α := α) (d := 2)
-      (kernel := #v[kH, kW])
-      (stride := #v[stride, stride])
-      (padding := #v[padding, padding])
-      (inSpatial := #v[inH, inW])
-      layer' input grad_output'
 
 end Spec

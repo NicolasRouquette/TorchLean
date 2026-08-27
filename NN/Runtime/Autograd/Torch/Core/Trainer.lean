@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.Core.Trainer.Parameters
+public import NN.Tensor.ShapeErasure
 
 /-!
 # Torch Trainer Helpers
@@ -39,12 +40,12 @@ abbrev Internal.EagerM (α : Type) := ReaderT (Internal.EagerSession α) IO
 This interprets `Ops` primitives by immediately executing them against the hidden mutable tape in
 the current `Internal.EagerSession`.
 -/
-instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [DecidableEq Shape] :
+instance {α : Type} [Context α] [TensorTransfer α] [DecidableEq Shape] :
     Ops (Internal.EagerM α) α where
   Ref := fun s => TensorRef α s
-  NatTensorRef := fun s => Tensor Nat s
-  natTensorConst := fun x => x
-  mapNatTensor := fun f x => f x
+  DataRef := fun β s => Tensor β s
+  dataConst := fun x => x
+  mapData := fun f x => f x
   const := fun {s} t => fun sess => Internal.EagerSession.const (α := α) sess (sh := s) t
   add := fun {s} a b => fun sess => Internal.EagerSession.add (α := α) sess (sh := s) a b
   sub := fun {s} a b => fun sess => Internal.EagerSession.sub (α := α) sess (sh := s) a b
@@ -60,38 +61,23 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
     Internal.EagerSession.broadcastTo (α := α) sess (sh1 := s₁) (sh2 := s₂) cb x
   reshape := fun {s₁ s₂} x h => fun sess =>
     Internal.EagerSession.reshape (α := α) sess (sh1 := s₁) (sh2 := s₂) x h
-  transpose2d := fun {mDim nDim} x => fun sess =>
-    Internal.EagerSession.transpose2d (α := α) sess (m := mDim) (n := nDim) x
-  transpose3dFirstToLast := fun {a b c} x => fun sess =>
-    Internal.EagerSession.transpose3dFirstToLast (α := α) sess (a := a) (b := b) (c := c) x
-  transpose3dLastToFirst := fun {a b c} x => fun sess =>
-    Internal.EagerSession.transpose3dLastToFirst (α := α) sess (a := a) (b := b) (c := c) x
-  transpose3dLastTwo := fun {a b c} x => fun sess =>
-    Internal.EagerSession.transpose3dLastTwo (α := α) sess (a := a) (b := b) (c := c) x
   swapAdjacentAtDepth := fun {s} depth x => fun sess =>
     Internal.EagerSession.swapAdjacentAtDepth (α := α) sess (sh := s) depth x
   reduceSum := fun {s} axis => fun x => fun sess =>
     Internal.EagerSession.reduceSum (α := α) sess (sh := s) axis x
   reduceMean := fun {s} axis => fun x => fun sess =>
     Internal.EagerSession.reduceMean (α := α) sess (sh := s) axis x
-  gatherScalar := fun {n} x i => fun sess =>
-    Internal.EagerSession.gatherScalar (α := α) sess (n := n) x i
-  gatherRow := fun {rows cols} x i => fun sess =>
-    Internal.EagerSession.gatherRow (α := α) sess (rows := rows) (cols := cols) x i
-  gatherScalarNatOrZero := fun {n} x i => fun sess =>
-    Internal.EagerSession.gatherScalarNatOrZero (α := α) sess (n := n) x i
-  gatherVecNatOrZero := fun {n k} x idx => fun sess =>
-    Internal.EagerSession.gatherVecNatOrZero (α := α) sess (n := n) (k := k) x idx
-  gatherRowsNatOrZero := fun {rows cols k} x idx => fun sess =>
-    Internal.EagerSession.gatherRowsNatOrZero (α := α) sess (rows := rows) (cols := cols) (k := k) x idx
-  scatterAddVec := fun {n} x v i => fun sess =>
-    Internal.EagerSession.scatterAddVec (α := α) sess (n := n) x v i
-  scatterAddRow := fun {rows cols} x v i => fun sess =>
-    Internal.EagerSession.scatterAddRow (α := α) sess (rows := rows) (cols := cols) x v i
-  matmul := fun {mDim nDim pDim} a b => fun sess =>
-    Internal.EagerSession.matmul (α := α) sess (m := mDim) (n := nDim) (p := pDim) a b
-  bmm := fun {batch mDim nDim pDim} a b => fun sess =>
-    Internal.EagerSession.bmm (α := α) sess (batch := batch) (m := mDim) (n := nDim) (p := pDim) a b
+  select := fun {s} axis _axisInBounds x index => fun sess =>
+    Internal.EagerSession.select (α := α) sess (shape := s) axis x index
+  indexSelect := fun {s} axis count _axisInBounds x indices => fun sess =>
+    Internal.EagerSession.indexSelect (α := α) sess (shape := s) axis count x indices
+  scatterAdd := fun {s} axis count _axisInBounds base source indices => fun sess =>
+    Internal.EagerSession.scatterAdd (α := α) sess (shape := s) axis count base source indices
+  matmul := fun {batchA batchB batch : Shape} {mDim nDim pDim : Nat}
+      {broadcastA} {broadcastB} a b => fun sess =>
+    Internal.EagerSession.matmul (α := α) sess (batchA := batchA) (batchB := batchB)
+      (batch := batch) (m := mDim) (n := nDim) (p := pDim)
+      (broadcastA := broadcastA) (broadcastB := broadcastB) a b
   concatLeadingAxis := fun {nDim mDim} {s} a b => fun sess =>
     Internal.EagerSession.concatLeadingAxis (α := α) sess (n := nDim) (m := mDim) (sh := s) a b
   sliceLeadingAxisRange := fun {nDim} {s} start len h x => fun sess =>
@@ -108,34 +94,13 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       hKernel
       x
-  smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel} x beta => fun sess =>
+  smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel}
+      [_decidableEq : DecidableEq α] x beta => fun sess =>
     Internal.EagerSession.smoothMaxPool (α := α) sess
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel)
       x beta
-  maxPool2d := fun {kH kW inH inW inC stride} {h1 h2} x => fun sess =>
-    Internal.EagerSession.maxPool2d (α := α) sess
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-      (h1 := h1) (h2 := h2) x
-  maxPool2dPad := fun {kH kW inH inW inC stride padding} {h1 h2} x => fun sess =>
-    Internal.EagerSession.maxPool2dPad (α := α) sess
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-        padding)
-      (h1 := h1) (h2 := h2) x
-  smoothMaxPool2d := fun {kH kW inH inW inC stride} {h1 h2} x beta => fun sess =>
-    Internal.EagerSession.smoothMaxPool2d (α := α) sess
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-      (h1 := h1) (h2 := h2) x beta
-  avgPool2d := fun {kH kW inH inW inC stride} h1 h2 x => fun sess =>
-    Internal.EagerSession.avgPool2d (α := α) sess
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-      h1 h2 x
-  avgPool2dPad := fun {kH kW inH inW inC stride padding} h1 h2 x => fun sess =>
-    Internal.EagerSession.avgPool2dPad (α := α) sess
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-        padding)
-      h1 h2 x
   relu := fun {s} x => fun sess => Internal.EagerSession.relu (α := α) sess (sh := s) x
   sigmoid := fun {s} x => fun sess => Internal.EagerSession.sigmoid (α := α) sess (sh := s) x
   tanh := fun {s} x => fun sess => Internal.EagerSession.tanh (α := α) sess (sh := s) x
@@ -160,10 +125,9 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
   layerNorm := fun {seqLen embedDim} hSeq hEmb x gamma beta => fun sess =>
     Internal.EagerSession.layerNorm (α := α) sess (seqLen := seqLen) (embedDim := embedDim)
       (h_seq_pos := hSeq) (h_embed_pos := hEmb) x gamma beta
-  batchNormChannelFirst := fun {channels height width} hC hH hW x gamma beta => fun sess =>
-    Internal.EagerSession.batchNormChannelFirst (α := α) sess
-      (channels := channels) (height := height) (width := width) (h_c := hC) (h_h := hH) (h_w := hW)
-      x gamma beta
+  batchNorm := fun {channels sSpatial} hWellFormed x gamma beta => fun sess =>
+    Internal.EagerSession.batchNorm (α := α) sess
+      (channels := channels) (sSpatial := sSpatial) hWellFormed x gamma beta
   multiHeadAttention := fun {n numHeads dModel headDim} h1 wq wk wv wo x mask => fun sess =>
     Internal.EagerSession.multiHeadAttention (α := α) sess (n := n) (numHeads := numHeads)
       (dModel := dModel) (headDim := headDim) h1 wq wk wv wo x (mask := mask)
@@ -185,18 +149,6 @@ instance {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [Decidable
         (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
         (hInC := hInC) (hKernel := hKernel)
         w b x
-  conv2d := fun {inC outC kH kW stride padding inH inW} {h1 h2 h3} kernel bias input => fun sess =>
-    Internal.EagerSession.conv2d (α := α) sess (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-      (stride := stride) (padding := padding) (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 :=
-        h3)
-      kernel bias input
-  convTranspose2d := fun {inC outC kH kW stride padding inH inW} {h1 h2 h3} kernel bias input =>
-    fun sess =>
-      Internal.EagerSession.convTranspose2d (α := α) sess
-        (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-        (stride := stride) (padding := padding) (inH := inH) (inW := inW)
-        (h1 := h1) (h2 := h2) (h3 := h3)
-        kernel bias input
   randUniform := fun {s} seed => fun sess =>
     Internal.EagerSession.randUniform (α := α) sess (sh := s) seed
   bernoulliMask := fun {s} keepProb seed => fun sess =>
@@ -212,9 +164,9 @@ immediately. `Runtime.Autograd.TypedGraph.GraphM` builds the graph data;
 instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
     Ops (Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ) α where
   Ref := fun s => Runtime.Autograd.TypedGraph.GraphM.Var s
-  NatTensorRef := fun s => Δ → Tensor Nat s
-  natTensorConst := fun x _ => x
-  mapNatTensor := fun f x d => f (x d)
+  DataRef := fun β s => Δ → Tensor β s
+  dataConst := fun x _ => x
+  mapData := fun f x d => f (x d)
   const := fun {s} t => Runtime.Autograd.TypedGraph.GraphM.const (α := α) (Γ := Γ) (s := s) t
   add := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.add (α := α) (Γ := Γ) (s := s) a b
   sub := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.sub (α := α) (Γ := Γ) (s := s) a b
@@ -230,45 +182,26 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
     Runtime.Autograd.TypedGraph.GraphM.broadcastTo (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) cb x
   reshape := fun {s₁ s₂} x h =>
     Runtime.Autograd.TypedGraph.GraphM.reshape (α := α) (Γ := Γ) (s₁ := s₁) (s₂ := s₂) x h
-  transpose2d := fun {mDim nDim} x =>
-    Runtime.Autograd.TypedGraph.GraphM.transpose2d (α := α) (Γ := Γ) (m := mDim) (n := nDim) x
-  transpose3dFirstToLast := fun {a b c} x =>
-    Runtime.Autograd.TypedGraph.GraphM.transpose3dFirstToLast (α := α) (Γ := Γ) (a := a) (b := b)
-      (c := c) x
-  transpose3dLastToFirst := fun {a b c} x =>
-    Runtime.Autograd.TypedGraph.GraphM.transpose3dLastToFirst (α := α) (Γ := Γ) (a := a) (b := b)
-      (c := c) x
-  transpose3dLastTwo := fun {a b c} x =>
-    Runtime.Autograd.TypedGraph.GraphM.transpose3dLastTwo (α := α) (Γ := Γ) (a := a) (b := b) (c :=
-      c) x
   swapAdjacentAtDepth := fun {s} depth x =>
     Runtime.Autograd.TypedGraph.GraphM.swapAdjacentAtDepth (α := α) (Γ := Γ) (s := s) depth x
   reduceSum := fun {s} axis => fun x =>
     Runtime.Autograd.TypedGraph.GraphM.reduceSum (α := α) (Γ := Γ) (s := s) axis x
   reduceMean := fun {s} axis => fun x =>
     Runtime.Autograd.TypedGraph.GraphM.reduceMean (α := α) (Γ := Γ) (s := s) axis x
-  gatherScalar := fun {n} x i =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherScalar (α := α) (Γ := Γ) (n := n) x i
-  gatherRow := fun {rows cols} x i =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherRow (α := α) (Γ := Γ) (rows := rows) (cols := cols) x i
-  gatherScalarNatOrZero := fun {n} x i =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherScalarNatOrZero (α := α) (Γ := Γ) (n := n) x i
-  gatherVecNatOrZero := fun {n k} x idx =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherVecNatOrZero (α := α) (Γ := Γ) (n := n) (k := k) x idx
-  gatherRowsNatOrZero := fun {rows cols k} x idx =>
-    Runtime.Autograd.TypedGraph.GraphM.gatherRowsNatOrZero (α := α) (Γ := Γ) (rows := rows) (cols := cols)
-      (k := k) x idx
-  scatterAddVec := fun {n} x v i =>
-    Runtime.Autograd.TypedGraph.GraphM.scatterAddVec (α := α) (Γ := Γ) (n := n) x v i
-  scatterAddRow := fun {rows cols} x v i =>
-    Runtime.Autograd.TypedGraph.GraphM.scatterAddRow (α := α) (Γ := Γ) (rows := rows) (cols := cols)
-      x v i
-  matmul := fun {mDim nDim pDim} a b =>
-    Runtime.Autograd.TypedGraph.GraphM.matmul (α := α) (Γ := Γ) (m := mDim) (n := nDim) (p := pDim) a
-      b
-  bmm := fun {batch mDim nDim pDim} a b =>
-    Runtime.Autograd.TypedGraph.GraphM.bmm (α := α) (Γ := Γ) (batch := batch) (m := mDim) (n := nDim)
-      (p := pDim) a b
+  select := fun {s} axis _axisInBounds x index =>
+    Runtime.Autograd.TypedGraph.GraphM.select (α := α) (Γ := Γ) (s := s) axis x index
+  indexSelect := fun {s} axis count _axisInBounds x indices =>
+    Runtime.Autograd.TypedGraph.GraphM.indexSelect
+      (α := α) (Γ := Γ) (s := s) axis count x indices
+  scatterAdd := fun {s} axis count _axisInBounds base source indices =>
+    Runtime.Autograd.TypedGraph.GraphM.scatterAdd
+      (α := α) (Γ := Γ) (s := s) axis count base source indices
+  matmul := fun {batchA batchB batch : Shape} {mDim nDim pDim : Nat}
+      {broadcastA} {broadcastB} a b =>
+    Runtime.Autograd.TypedGraph.GraphM.matmul (α := α) (Γ := Γ)
+      (batchA := batchA) (batchB := batchB) (batch := batch)
+      (m := mDim) (n := nDim) (p := pDim)
+      (broadcastA := broadcastA) (broadcastB := broadcastB) a b
   concatLeadingAxis := fun {nDim mDim} {s} a b =>
     Runtime.Autograd.TypedGraph.GraphM.concatLeadingAxis (α := α) (Γ := Γ) (n := nDim) (m := mDim) (s := s)
       a b
@@ -287,34 +220,13 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel)
       x
-  smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel} x beta =>
+  smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel}
+      [_decidableEq : DecidableEq α] x beta =>
     Runtime.Autograd.TypedGraph.GraphM.smoothMaxPool (α := α) (Γ := Γ)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       (hKernel := hKernel)
       x beta
-  maxPool2d := fun {kH kW inH inW inC stride} {h1 h2} x =>
-    Runtime.Autograd.TypedGraph.GraphM.maxPool2d (α := α) (Γ := Γ)
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-      (h1 := h1) (h2 := h2) x
-  maxPool2dPad := fun {kH kW inH inW inC stride padding} {h1 h2} x =>
-    Runtime.Autograd.TypedGraph.GraphM.maxPool2dPad (α := α) (Γ := Γ)
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-        padding)
-      (h1 := h1) (h2 := h2) x
-  smoothMaxPool2d := fun {kH kW inH inW inC stride} {h1 h2} x beta =>
-    Runtime.Autograd.TypedGraph.GraphM.smoothMaxPool2d (α := α) (Γ := Γ)
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-      (h1 := h1) (h2 := h2) x beta
-  avgPool2d := fun {kH kW inH inW inC stride} h1 h2 x =>
-    Runtime.Autograd.TypedGraph.GraphM.avgPool2d (α := α) (Γ := Γ)
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-      h1 h2 x
-  avgPool2dPad := fun {kH kW inH inW inC stride padding} h1 h2 x =>
-    Runtime.Autograd.TypedGraph.GraphM.avgPool2dPad (α := α) (Γ := Γ)
-      (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-        padding)
-      h1 h2 x
   relu := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.relu (α := α) (Γ := Γ) (s := s) x
   sigmoid := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.sigmoid (α := α) (Γ := Γ) (s := s) x
   tanh := fun {s} x => Runtime.Autograd.TypedGraph.GraphM.tanh (α := α) (Γ := Γ) (s := s) x
@@ -341,10 +253,9 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
     Runtime.Autograd.TypedGraph.GraphM.layerNorm (α := α) (Γ := Γ) (seqLen := seqLen) (embedDim :=
       embedDim)
       (h_seq_pos := hSeq) (h_embed_pos := hEmb) x gamma beta
-  batchNormChannelFirst := fun {channels height width} hC hH hW x gamma beta =>
-    Runtime.Autograd.TypedGraph.GraphM.batchNormChannelFirst (α := α) (Γ := Γ)
-      (channels := channels) (height := height) (width := width) (h_c := hC) (h_h := hH) (h_w := hW)
-      x gamma beta
+  batchNorm := fun {channels sSpatial} hWellFormed x gamma beta =>
+    Runtime.Autograd.TypedGraph.GraphM.batchNorm (α := α) (Γ := Γ)
+      (channels := channels) (sSpatial := sSpatial) hWellFormed x gamma beta
   multiHeadAttention := fun {n numHeads dModel headDim} h1 wq wk wv wo x mask =>
     Runtime.Autograd.TypedGraph.GraphM.multiHeadAttention (α := α) (Γ := Γ) (n := n) (numHeads :=
       numHeads)
@@ -366,18 +277,6 @@ instance {α Δ : Type} [Context α] [DecidableEq Shape] {Γ : List Shape} :
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       (hInC := hInC) (hKernel := hKernel)
       w b x
-  conv2d := fun {inC outC kH kW stride padding inH inW} {h1 h2 h3} kernel bias input =>
-    Runtime.Autograd.TypedGraph.GraphM.conv2d (α := α) (Γ := Γ) (inC := inC) (outC := outC) (kH := kH)
-      (kW := kW)
-      (stride := stride) (padding := padding) (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 :=
-        h3)
-      kernel bias input
-  convTranspose2d := fun {inC outC kH kW stride padding inH inW} {h1 h2 h3} kernel bias input =>
-    Runtime.Autograd.TypedGraph.GraphM.convTranspose2d (α := α) (Γ := Γ)
-      (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-      (stride := stride) (padding := padding) (inH := inH) (inW := inW)
-      (h1 := h1) (h2 := h2) (h3 := h3)
-      kernel bias input
   randUniform := fun {s} seed => do
     Runtime.Autograd.TypedGraph.GraphM.randUniform (α := α) (Γ := Γ) (s := s) (seed := seed)
   bernoulliMask := fun {s} keepProb seed => do
@@ -408,29 +307,29 @@ This is the low-level trainer object used by module-backed execution:
 - `step` applies the update without requiring callers to read the loss,
 - `getState` reads the current parameters and persistent buffers.
 -/
-structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape)
-    (natInputShapes : List Shape := []) where
+structure ScalarTrainer (α δ : Type) (paramShapes inputShapes : List Shape)
+    (dataInputShapes : List Shape := []) where
   /-- Mutable module state. Entries marked `requiresGrad = false` are persistent buffers. -/
   state : ParamList α paramShapes
   /-- Compute the scalar loss for a curried input pack. -/
   loss :
     Curried.Fn α inputShapes
-      (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))
+      (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))
   /-- Compute the scalar loss and parameter gradients from one forward tape. -/
   lossAndGradState :
     Curried.Fn α inputShapes
-      (Curried.Fn Nat natInputShapes
-        (IO (Tensor α Shape.scalar × TList α paramShapes)))
+      (Curried.Fn δ dataInputShapes
+        (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes)))
   /-- Compute gradients aligned with `paramShapes` for a curried input pack. -/
   gradState :
     Curried.Fn α inputShapes
-      (Curried.Fn Nat natInputShapes (IO (TList α paramShapes)))
+      (Curried.Fn δ dataInputShapes (IO (_root_.TorchLean.TensorPack α paramShapes)))
   /-- Apply one SGD-style update and return the loss used to compute that update. -/
   stepWithLoss : α →
     Curried.Fn α inputShapes
-      (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))
+      (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))
   /-- Apply one SGD-style update for a curried input pack. -/
-  step : α → Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit))
+  step : α → Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))
   /--
   Optional Adam update path.
 
@@ -438,12 +337,12 @@ structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape)
   `none` and should use the generic optimizer wrappers.
   -/
   adamStep? : Option (α → α → α → α →
-    Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit))) := none
+    Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))) := none
   /-- CUDA-native Adam update that also returns the loss from its forward tape. -/
   adamStepWithLoss? :
     Option (α → α → α → α →
       Curried.Fn α inputShapes
-        (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))) := none
+        (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))) := none
   /--
   Optional AdamW update path.
 
@@ -451,24 +350,24 @@ structure ScalarTrainer (α : Type) (paramShapes inputShapes : List Shape)
   decay. Other backends expose `none` and should use the generic optimizer wrappers.
   -/
   adamWStep? : Option (α → α → α → α → α →
-    Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit))) := none
+    Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))) := none
   /-- CUDA-native AdamW update that also returns the loss from its forward tape. -/
   adamWStepWithLoss? :
     Option (α → α → α → α → α →
       Curried.Fn α inputShapes
-        (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))) := none
+        (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))) := none
   /-- Save and restore optimizer state retained inside the selected runtime backend. -/
   optimizerStateCheckpoint? : Option OptimizerStateCheckpoint := none
   /-- Read current module state, synchronizing device mirrors if needed. -/
-  getState : IO (TList α paramShapes)
+  getState : IO (_root_.TorchLean.TensorPack α paramShapes)
 
 namespace Internal
 
 /--
-Extract gradients (as a typed `TList`) for a list of eager `TensorRef`s from a dense gradient array.
+Extract gradients (as a typed `_root_.TorchLean.TensorPack`) for a list of eager `TensorRef`s from a dense gradient array.
 -/
 def gradsOfRefs {α : Type} [DecidableEq Shape] :
-    {ss : List Shape} → Array (Spec.PackedTensor α) → RefList (TensorRef α) ss → IO (TList α ss)
+    {ss : List Shape} → Array (Spec.SomeTensor α) → RefList (TensorRef α) ss → IO (_root_.TorchLean.TensorPack α ss)
   | [], _grads, .nil => pure .nil
   | s :: ss, grads, .cons r rs => do
       let g ← Internal.EagerSession.grad (α := α) (sh := s) grads r
@@ -481,7 +380,7 @@ Record all parameters as tape leaves in an eager session, returning their corres
 
 This is the eager analogue of "using" a parameter pack during a forward pass.
 -/
-def useParams {α : Type} [CudaBridge.TensorConv α] [DecidableEq Shape] :
+def useParams {α : Type} [TensorTransfer α] [DecidableEq Shape] :
     {ss : List Shape} → ParamList α ss → EagerM α (RefList (TensorRef α) ss)
   | [], .nil => pure .nil
   | s :: ss, .cons p ps => fun sess => do
@@ -493,8 +392,8 @@ def useParams {α : Type} [CudaBridge.TensorConv α] [DecidableEq Shape] :
 Record all input tensors as tape leaves in an eager session, returning their corresponding
   `TensorRef`s.
 -/
-def useInputs {α : Type} [CudaBridge.TensorConv α] [DecidableEq Shape] :
-    {ss : List Shape} → TList α ss → EagerM α (RefList (TensorRef α) ss)
+def useInputs {α : Type} [TensorTransfer α] [DecidableEq Shape] :
+    {ss : List Shape} → _root_.TorchLean.TensorPack α ss → EagerM α (RefList (TensorRef α) ss)
   | [], .nil => pure .nil
   | s :: ss, .cons x xs => fun sess => do
       let r ← Internal.EagerSession.input (α := α) (sh := s) sess x
@@ -510,24 +409,25 @@ Build a `ScalarTrainer` from an initial parameter pack and an operation-generic 
 `paramShapes ++ inputShapes`. Depending on `opts.execution`, TorchLean either records the loss once
 as a typed SSA graph or executes it immediately while building a dynamic tape.
 -/
-def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [DecidableEq Shape]
-    {paramShapes inputShapes natInputShapes : List Shape}
+def scalarTrainer {α δ : Type} [Context α] [TensorTransfer α]
+    [DecidableEq Shape] {paramShapes inputShapes dataInputShapes : List Shape}
     (opts : Options := {})
-    (initRequiresGrad : List Bool := List.replicate paramShapes.length true)
-    (validateNatInputs : TList Nat natInputShapes → Except String Unit := fun _ => pure ())
+    (initRequiresGrad : Array Bool := Array.replicate paramShapes.length true)
+    (validateDataInputs : _root_.TorchLean.TensorPack δ dataInputShapes → Except String Unit :=
+      fun _ => pure ())
     (loss :
       ∀ {m : Type → Type}, [Monad m] → [Ops (m := m) (α := α)] →
         CurriedRef (fun s => Ops.Ref (m := m) (α := α) s) (paramShapes ++ inputShapes)
-          (CurriedRef (fun s => Ops.NatTensorRef (m := m) (α := α) s) natInputShapes
+          (CurriedRef (fun s => Ops.DataRef (m := m) (α := α) δ s) dataInputShapes
             (m (Ops.Ref (m := m) (α := α) Shape.scalar)))) :
     Curried.Fn α paramShapes
-      (IO (ScalarTrainer α paramShapes inputShapes natInputShapes)) :=
+      (IO (ScalarTrainer α δ paramShapes inputShapes dataInputShapes)) :=
     Curried.curry (α := α) (ss := paramShapes)
-      (β := IO (ScalarTrainer α paramShapes inputShapes natInputShapes))
+      (β := IO (ScalarTrainer α δ paramShapes inputShapes dataInputShapes))
     (fun initParams => do
-    let ps ← ParamList.ofTListWithRequiresGrad (α := α) initParams initRequiresGrad
-    let validateNatInputsIO (inputs : TList Nat natInputShapes) : IO Unit :=
-      match validateNatInputs inputs with
+    let ps ← ParamList.ofPackWithRequiresGrad (α := α) initParams initRequiresGrad
+    let validateDataInputsIO (inputs : _root_.TorchLean.TensorPack δ dataInputShapes) : IO Unit :=
+      match validateDataInputs inputs with
       | .error message => throw <| IO.userError message
       | .ok () => pure ()
     match opts.execution with
@@ -536,17 +436,17 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           throw <| IO.userError
             s!"typed graph execution currently supports device `cpu`; requested `{opts.deviceName}`"
         let Γ : List Shape := paramShapes ++ inputShapes
-        let Δ : Type := TList Nat natInputShapes
+        let Δ : Type := _root_.TorchLean.TensorPack δ dataInputShapes
         let build : Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ
             (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar) := do
           let vs ← Runtime.Autograd.TypedGraph.GraphM.args (α := α) (Γ := Γ)
-          let withNatInputs :=
+          let withDataInputs :=
             CurriedRef.applyVarList (Γ := Γ)
-              (β := CurriedRef (fun s => Δ → Tensor Nat s) natInputShapes
+              (β := CurriedRef (fun s => Δ → Tensor δ s) dataInputShapes
                 (Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ
                   (Runtime.Autograd.TypedGraph.GraphM.Var Shape.scalar)))
               (loss (m := Runtime.Autograd.TypedGraph.GraphM.MWith α Δ Γ)) vs
-          CurriedRef.applyTListProjections (full := natInputShapes) id withNatInputs
+          CurriedRef.applyPackProjections (full := dataInputShapes) id withDataInputs
         let graph ← okOrThrow
           (lowerToTypedGraphWithData (α := α) (Δ := Δ) (Γ := Γ) (τ := Shape.scalar) build)
         let ssFull : List Shape := graph.nodeShapes
@@ -554,7 +454,7 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           graph.data
         let outId : Nat := graph.output.i.val
 
-        let getScalarFromTape (t : Runtime.Autograd.Tape α) : IO (Tensor α Shape.scalar) := do
+        let getScalarFromTape (t : Runtime.Autograd.Tape α) : IO (Tensor α .scalar) := do
           let any ← match t.getValue? outId with
             | some v => pure v
             | none => throw <| IO.userError "typed graph execution: missing output value in tape"
@@ -564,100 +464,86 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
             throw <| IO.userError
               s!"typed graph execution: output shape mismatch (expected scalar, got {Shape.pretty any.shape})"
 
-        let rec gradsPrefix :
-            {ss : List Shape} → Array (Spec.PackedTensor α) → Nat → IO (TList α ss)
-          | [], _grads, _off => pure .nil
-          | s :: ss, grads, off => do
-              let any ← match grads[off]? with
-                | some v => pure v
-                | none => throw <| IO.userError "typed graph execution: gradient array too small"
-              if h : any.shape = s then
-                let g : Tensor α s := any.cast h
-                let gs ← gradsPrefix (ss := ss) grads (off + 1)
-                pure (.cons g gs)
-              else
-                throw <| IO.userError <|
-                  s!"typed graph execution: gradient shape mismatch at idx={off} (expected "
-                    ++ s!"{Shape.pretty s}, got "
-                    ++ s!"{Shape.pretty any.shape})"
-
-        let runTape (xs : TList α inputShapes) (natInputs : Δ) :
+        let runTape (xs : _root_.TorchLean.TensorPack α inputShapes) (dataInputs : Δ) :
             IO (Runtime.Autograd.Tape α) := do
-          validateNatInputsIO natInputs
+          validateDataInputsIO dataInputs
           let pv ← ParamList.values (α := α) ps
-          let args := Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := paramShapes)
+          let args := TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes)
             (ss₂ := inputShapes) pv xs
           let (tape, _ctx) :=
             Proofs.Autograd.Algebra.Graph.lowerGraphDataToTape
-              (α := α) (Δ := Δ) (Γ := Γ) (ss := ssFull) fullGraph args natInputs
+              (α := α) (Δ := Δ) (Γ := Γ) (ss := ssFull) fullGraph args dataInputs
           pure tape
         let lossFn :
             Curried.Fn α inputShapes
-              (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) :=
+              (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (Tensor α Shape.scalar)) (fun natInputs =>
-                  runTape xs natInputs >>= getScalarFromTape))
+            (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (Tensor α .scalar)) (fun dataInputs =>
+                  runTape xs dataInputs >>= getScalarFromTape))
         let lossAndGradState :
-            Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes
-              (IO (Tensor α Shape.scalar × TList α paramShapes))) :=
+            Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes
+              (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes
-              (IO (Tensor α Shape.scalar × TList α paramShapes))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (Tensor α Shape.scalar × TList α paramShapes)) (fun natInputs => do
-                  let tape ← runTape xs natInputs
+            (β := Curried.Fn δ dataInputShapes
+              (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes)) (fun dataInputs => do
+                  let tape ← runTape xs dataInputs
                   let lossValue ← getScalarFromTape tape
                   let grads ← okOrThrow
                     (Runtime.Autograd.TypedGraph.backwardDenseAllFrom
                       (α := α) (Γ := Γ) (ss := ssFull) tape graph.output
                       (Tensor.scalar (1 : α)))
-                  let paramGrads ← gradsPrefix (ss := paramShapes) grads 0
+                  let paramGrads ← okOrThrow
+                    (TorchLean.TensorPack.ofShapeErasedArray
+                      (α := α) grads (shapes := paramShapes))
                   pure (lossValue, paramGrads)))
         let gradState :
             Curried.Fn α inputShapes
-              (Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) :=
+              (Curried.Fn δ dataInputShapes (IO (_root_.TorchLean.TensorPack α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (TList α paramShapes)) (fun natInputs => do
-                  let tape ← runTape xs natInputs
+            (β := Curried.Fn δ dataInputShapes (IO (_root_.TorchLean.TensorPack α paramShapes))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (_root_.TorchLean.TensorPack α paramShapes)) (fun dataInputs => do
+                  let tape ← runTape xs dataInputs
                   let grads ← okOrThrow
                     (Runtime.Autograd.TypedGraph.backwardDenseAllFrom
                       (α := α) (Γ := Γ) (ss := ssFull) tape graph.output
                       (Tensor.scalar (1 : α)))
-                  gradsPrefix (ss := paramShapes) grads 0))
+                  okOrThrow (TorchLean.TensorPack.ofShapeErasedArray
+                    (α := α) grads (shapes := paramShapes))))
         let stepWithLoss (lr : α) :
             Curried.Fn α inputShapes
-              (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) :=
+              (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
-                  let lossAndGradStateForNat :=
+            (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (Tensor α .scalar)) (fun dataInputs => do
+                  let lossAndGradStateForData :=
                     Curried.uncurry (α := α) (ss := inputShapes)
-                      (β := Curried.Fn Nat natInputShapes
-                        (IO (Tensor α Shape.scalar × TList α paramShapes)))
+                      (β := Curried.Fn δ dataInputShapes
+                        (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes)))
                       lossAndGradState xs
                   let (lossValue, grads) ←
-                    Curried.uncurry (α := Nat) (ss := natInputShapes)
-                      (β := IO (Tensor α Shape.scalar × TList α paramShapes))
-                      lossAndGradStateForNat natInputs
+                    Curried.uncurry (α := δ) (ss := dataInputShapes)
+                      (β := IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))
+                      lossAndGradStateForData dataInputs
                   ParamList.sgdStep (α := α) (ss := paramShapes) ps lr grads
                   pure lossValue))
         let step (lr : α) :
-            Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit)) :=
+            Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit)) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO Unit)) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes) (β := IO Unit)
-                (fun natInputs => do
-                  let stepForNat :=
+            (β := Curried.Fn δ dataInputShapes (IO Unit)) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes) (β := IO Unit)
+                (fun dataInputs => do
+                  let stepForData :=
                     Curried.uncurry (α := α) (ss := inputShapes)
-                      (β := Curried.Fn Nat natInputShapes
-                        (IO (Tensor α Shape.scalar))) (stepWithLoss lr) xs
-                  let _ ← Curried.uncurry (α := Nat) (ss := natInputShapes)
-                    (β := IO (Tensor α Shape.scalar)) stepForNat natInputs
+                      (β := Curried.Fn δ dataInputShapes
+                        (IO (Tensor α .scalar))) (stepWithLoss lr) xs
+                  let _ ← Curried.uncurry (α := δ) (ss := dataInputShapes)
+                    (β := IO (Tensor α .scalar)) stepForData dataInputs
                   pure ()))
         pure
           { state := ps
@@ -677,20 +563,20 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
         let adamStateRef ← IO.mkRef (Std.HashMap.emptyWithCapacity : Internal.EagerSession.CudaAdamState)
         let adamConfigRef ← IO.mkRef (none : Option Internal.EagerSession.CudaAdamConfig)
         let adamSchema : Internal.OptimizerCheckpoint.ParameterSchema :=
-          { shapes := paramShapes, requiresGrad := ParamList.requiresGradList ps }
+          { shapes := paramShapes.toArray, requiresGrad := ParamList.requiresGradArray ps }
         let lossEager := loss (m := Internal.EagerM α)
-        let recordLoss (xs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
+        let recordLoss (xs : _root_.TorchLean.TensorPack α inputShapes) (dataInputs : _root_.TorchLean.TensorPack δ dataInputShapes) :
             IO (TensorRef α Shape.scalar × RefList (TensorRef α) paramShapes) := do
-          validateNatInputsIO natInputs
+          validateDataInputsIO dataInputs
           sess.resetTape
           (do
             let pRefs ← Internal.useParams (α := α) (ss := paramShapes) ps
             let xRefs ← Internal.useInputs (α := α) (ss := inputShapes) xs
             let allRefs := RefList.append (ss₁ := paramShapes) (ss₂ := inputShapes) pRefs xRefs
-            let lossWithNat :=
+            let lossWithData :=
               CurriedRef.uncurry (ss := paramShapes ++ inputShapes) lossEager allRefs
             let lossRef ←
-              CurriedRef.uncurryTList (α := Nat) (ss := natInputShapes) lossWithNat natInputs
+              CurriedRef.uncurryPack (α := δ) (ss := dataInputShapes) lossWithData dataInputs
             pure (lossRef, pRefs)) |>.run sess
         let finishCudaStep : IO Unit := do
           Internal.EagerSession.releaseCudaTapeAfterOptimizerStep sess
@@ -700,22 +586,22 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           Internal.EagerSession.collectCudaAllocator
         let lossFn :
             Curried.Fn α inputShapes
-              (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) :=
+              (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
-                  let (lossRef, _) ← recordLoss xs natInputs
+            (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (Tensor α .scalar)) (fun dataInputs => do
+                  let (lossRef, _) ← recordLoss xs dataInputs
                   Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef))
         let lossAndGradState :
-            Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes
-              (IO (Tensor α Shape.scalar × TList α paramShapes))) :=
+            Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes
+              (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes
-              (IO (Tensor α Shape.scalar × TList α paramShapes))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (Tensor α Shape.scalar × TList α paramShapes)) (fun natInputs => do
-                  let (lossRef, pRefs) ← recordLoss xs natInputs
+            (β := Curried.Fn δ dataInputShapes
+              (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes)) (fun dataInputs => do
+                  let (lossRef, pRefs) ← recordLoss xs dataInputs
                   let lossValue ←
                     Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
                   let grads ← Internal.EagerSession.backwardScalarDenseAll (α := α) sess lossRef
@@ -723,23 +609,23 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                   pure (lossValue, paramGrads)))
         let gradState :
             Curried.Fn α inputShapes
-              (Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) :=
+              (Curried.Fn δ dataInputShapes (IO (_root_.TorchLean.TensorPack α paramShapes))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (TList α paramShapes)) (fun natInputs => do
-                  let (lossRef, pRefs) ← recordLoss xs natInputs
+            (β := Curried.Fn δ dataInputShapes (IO (_root_.TorchLean.TensorPack α paramShapes))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (_root_.TorchLean.TensorPack α paramShapes)) (fun dataInputs => do
+                  let (lossRef, pRefs) ← recordLoss xs dataInputs
                   let grads ← Internal.EagerSession.backwardScalarDenseAll (α := α) sess lossRef
                   Internal.gradsOfRefs (α := α) (ss := paramShapes) grads pRefs))
         let stepWithLoss (lr : α) :
             Curried.Fn α inputShapes
-              (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) :=
+              (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes)
-                (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
+            (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes)
+                (β := IO (Tensor α .scalar)) (fun dataInputs => do
                   if opts.usesCuda then
-                    let (lossRef, _) ← recordLoss xs natInputs
+                    let (lossRef, _) ← recordLoss xs dataInputs
                     let lossValue ←
                       Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
                     let gradsDev ←
@@ -749,46 +635,46 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
                     finishCudaStep
                     pure lossValue
                   else
-                    let lossAndGradStateForNat :=
+                    let lossAndGradStateForData :=
                       Curried.uncurry (α := α) (ss := inputShapes)
-                        (β := Curried.Fn Nat natInputShapes
-                          (IO (Tensor α Shape.scalar × TList α paramShapes)))
+                        (β := Curried.Fn δ dataInputShapes
+                          (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes)))
                         lossAndGradState xs
                     let (lossValue, grads) ←
-                      Curried.uncurry (α := Nat) (ss := natInputShapes)
-                        (β := IO (Tensor α Shape.scalar × TList α paramShapes))
-                        lossAndGradStateForNat natInputs
+                      Curried.uncurry (α := δ) (ss := dataInputShapes)
+                        (β := IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))
+                        lossAndGradStateForData dataInputs
                     ParamList.sgdStep (α := α) (ss := paramShapes) ps lr grads
                     pure lossValue))
         let step (lr : α) :
-            Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit)) :=
+            Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit)) :=
           Curried.curry (α := α) (ss := inputShapes)
-            (β := Curried.Fn Nat natInputShapes (IO Unit)) (fun xs =>
-              Curried.curry (α := Nat) (ss := natInputShapes) (β := IO Unit)
-                (fun natInputs => do
+            (β := Curried.Fn δ dataInputShapes (IO Unit)) (fun xs =>
+              Curried.curry (α := δ) (ss := dataInputShapes) (β := IO Unit)
+                (fun dataInputs => do
                   if opts.usesCuda then
-                    let (lossRef, _) ← recordLoss xs natInputs
+                    let (lossRef, _) ← recordLoss xs dataInputs
                     let gradsDev ←
                       Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
                     Internal.EagerSession.withCudaGradMap gradsDev fun gradsDev =>
                       Internal.EagerSession.sgdStepAllCudaMap (α := α) sess lr gradsDev
                     finishCudaStep
                   else
-                    let gradStateForNat :=
+                    let gradStateForData :=
                       Curried.uncurry (α := α) (ss := inputShapes)
-                        (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) gradState xs
-                    let g ← Curried.uncurry (α := Nat) (ss := natInputShapes)
-                      (β := IO (TList α paramShapes)) gradStateForNat natInputs
+                        (β := Curried.Fn δ dataInputShapes (IO (_root_.TorchLean.TensorPack α paramShapes))) gradState xs
+                    let g ← Curried.uncurry (α := δ) (ss := dataInputShapes)
+                      (β := IO (_root_.TorchLean.TensorPack α paramShapes)) gradStateForData dataInputs
                     ParamList.sgdStep (α := α) (ss := paramShapes) ps lr g))
         let adamStep? : Option (α → α → α → α →
-            Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit))) :=
+            Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))) :=
           if opts.usesCuda then
             some (fun lr beta1 beta2 epsilon =>
               Curried.curry (α := α) (ss := inputShapes)
-                (β := Curried.Fn Nat natInputShapes (IO Unit)) (fun xs =>
-                  Curried.curry (α := Nat) (ss := natInputShapes) (β := IO Unit)
-                    (fun natInputs => do
-                      let (lossRef, _) ← recordLoss xs natInputs
+                (β := Curried.Fn δ dataInputShapes (IO Unit)) (fun xs =>
+                  Curried.curry (α := δ) (ss := dataInputShapes) (β := IO Unit)
+                    (fun dataInputs => do
+                      let (lossRef, _) ← recordLoss xs dataInputs
                       let gradsDev ←
                         Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
                       Internal.EagerSession.withCudaGradMap gradsDev fun gradsDev =>
@@ -801,14 +687,14 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
         let adamStepWithLoss? :
             Option (α → α → α → α →
               Curried.Fn α inputShapes
-                (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))) :=
+                (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))) :=
           if opts.usesCuda then
             some (fun lr beta1 beta2 epsilon =>
               Curried.curry (α := α) (ss := inputShapes)
-                (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
-                  Curried.curry (α := Nat) (ss := natInputShapes)
-                    (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
-                      let (lossRef, _) ← recordLoss xs natInputs
+                (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) (fun xs =>
+                  Curried.curry (α := δ) (ss := dataInputShapes)
+                    (β := IO (Tensor α .scalar)) (fun dataInputs => do
+                      let (lossRef, _) ← recordLoss xs dataInputs
                       let lossValue ←
                         Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
                       let gradsDev ←
@@ -821,14 +707,14 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
           else
             none
         let adamWStep? : Option (α → α → α → α → α →
-            Curried.Fn α inputShapes (Curried.Fn Nat natInputShapes (IO Unit))) :=
+            Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))) :=
           if opts.usesCuda then
             some (fun lr weightDecay beta1 beta2 epsilon =>
               Curried.curry (α := α) (ss := inputShapes)
-                (β := Curried.Fn Nat natInputShapes (IO Unit)) (fun xs =>
-                  Curried.curry (α := Nat) (ss := natInputShapes) (β := IO Unit)
-                    (fun natInputs => do
-                      let (lossRef, _) ← recordLoss xs natInputs
+                (β := Curried.Fn δ dataInputShapes (IO Unit)) (fun xs =>
+                  Curried.curry (α := δ) (ss := dataInputShapes) (β := IO Unit)
+                    (fun dataInputs => do
+                      let (lossRef, _) ← recordLoss xs dataInputs
                       let gradsDev ←
                         Internal.EagerSession.backwardScalarParamGradsCuda (α := α) sess lossRef
                       Internal.EagerSession.withCudaGradMap gradsDev fun gradsDev =>
@@ -841,14 +727,14 @@ def scalarTrainer {α : Type} [Context α] [Internal.CudaBridge.TensorConv α] [
         let adamWStepWithLoss? :
             Option (α → α → α → α → α →
               Curried.Fn α inputShapes
-                (Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))) :=
+                (Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))) :=
           if opts.usesCuda then
             some (fun lr weightDecay beta1 beta2 epsilon =>
               Curried.curry (α := α) (ss := inputShapes)
-                (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) (fun xs =>
-                  Curried.curry (α := Nat) (ss := natInputShapes)
-                    (β := IO (Tensor α Shape.scalar)) (fun natInputs => do
-                      let (lossRef, _) ← recordLoss xs natInputs
+                (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) (fun xs =>
+                  Curried.curry (α := δ) (ss := dataInputShapes)
+                    (β := IO (Tensor α .scalar)) (fun dataInputs => do
+                      let (lossRef, _) ← recordLoss xs dataInputs
                       let lossValue ←
                         Internal.EagerSession.getValue (α := α) sess (sh := Shape.scalar) lossRef
                       let gradsDev ←

@@ -57,11 +57,11 @@ theorem in `NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness`.
 theorem alphaCrown_transfer_sound
     (g : Graph) (ps : ParamStore ℝ)
     (ibp : Array (Option (FlatBox ℝ)))
-    (alpha : Array (Option (FlatVec ℝ)))
+    (alpha : Array (Option (FlatTensor ℝ)))
     (cert : Array (Option (FlatAffineBounds ℝ)))
     (inputs : Std.HashMap Nat Val)
     (vals : Array (Option Val))
-    (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
     (htopo : TopoSorted g)
     (hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
     (hinputs : InputsMatch (inputs := inputs) (ctx := ctx) x)
@@ -143,9 +143,9 @@ theorem alphaCrown_transfer_sound
           mat_vec_mul_spec_aff_identity (n := ctx.inputDim) x
         have hGoalX : Theorems.Semantics.encloses (α := ℝ)
             (boundsEvalAt (α := ℝ) (Cert.boundsIdentity (α := ℝ) ctx.inputDim) x) x := by
-          -- Unfold to a record and prove coordinatewise using `encloses_iff_toVec`.
+          -- Unfold to a record and prove coordinatewise using `encloses_iff_getScalar`.
           dsimp [boundsEvalAt, Cert.boundsIdentity]
-          refine (encloses_iff_toVec (n := ctx.inputDim)
+          refine (encloses_iff_getScalar (n := ctx.inputDim)
               (lo := affineEvalAt (α := ℝ) (inDim := ctx.inputDim) (outDim := ctx.inputDim)
                 (Cert.affIdentity (α := ℝ) ctx.inputDim) x)
               (hi := affineEvalAt (α := ℝ) (inDim := ctx.inputDim) (outDim := ctx.inputDim)
@@ -189,9 +189,9 @@ theorem alphaCrown_transfer_sound
             have hGoalV : Theorems.Semantics.encloses (α := ℝ)
                 (boundsEvalAt (α := ℝ) (Cert.boundsConst (α := ℝ) ctx.inputDim vc.n vc.v vc.v) x) vc.v
                   := by
-              -- Unfold to a record and prove coordinatewise using `encloses_iff_toVec`.
+              -- Unfold to a record and prove coordinatewise using `encloses_iff_getScalar`.
               dsimp [boundsEvalAt, Cert.boundsConst]
-              refine (encloses_iff_toVec (n := vc.n)
+              refine (encloses_iff_getScalar (n := vc.n)
                   (lo := affineEvalAt (α := ℝ) (inDim := ctx.inputDim) (outDim := vc.n)
                     { A := Spec.fill (α := ℝ) 0 (.dim vc.n (.dim ctx.inputDim .scalar)), c := vc.v }
                       x)
@@ -213,12 +213,13 @@ theorem alphaCrown_transfer_sound
             exact hGoalVCast _
 
     | .detach => by
-        cases hps : (g.nodes[id]!).parents with
-        | nil =>
+        cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+        | none =>
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-        | cons p1 _ =>
+        | some p1 =>
             -- Semantics returns the parent value; the step returns the parent affine bound.
-            have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+            have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+              NN.IR.mem_of_unaryParent?_eq_some hps
             -- From step success: `getAff? cert p1 = some b`.
             by_cases hltC : p1 < cert.size
             · have hbp : cert[p1]! = some b := by
@@ -248,11 +249,12 @@ theorem alphaCrown_transfer_sound
 
     | .reshape _ _ => by
           -- Same as detach, but with an out-dimension cast (step checks it; semantics checks it).
-          cases hps : (g.nodes[id]!).parents with
-          | nil =>
+          cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+          | none =>
               simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-          | cons p1 _ =>
-              have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+          | some p1 =>
+              have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+                NN.IR.mem_of_unaryParent?_eq_some hps
               -- Extract step-side parent affine bound and the out-dimension check.
               have hs' := hs
               simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs'
@@ -329,11 +331,12 @@ theorem alphaCrown_transfer_sound
                     cases hcontra
 
     | .flatten _ => by
-          cases hps : (g.nodes[id]!).parents with
-          | nil =>
+          cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+          | none =>
               simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-          | cons p1 _ =>
-              have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+          | some p1 =>
+              have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+                NN.IR.mem_of_unaryParent?_eq_some hps
               have hs' := hs
               simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs'
               cases hxin : NN.MLTheory.CROWN.Cert.getAff? (α := ℝ) cert p1 with
@@ -401,11 +404,12 @@ theorem alphaCrown_transfer_sound
 
     | .linear => by
         -- Linear layer: sound by sign-splitting + parent enclosure.
-        cases hps : (g.nodes[id]!).parents with
-        | nil =>
+        cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+        | none =>
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-        | cons p1 _ =>
-            have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+        | some p1 =>
+            have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+              NN.IR.mem_of_unaryParent?_eq_some hps
             -- Step-side: extract the parent affine bound, parameters, and the out-dimension check.
             have hs' := hs
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs'
@@ -480,16 +484,16 @@ theorem alphaCrown_transfer_sound
                             rcases hpar with ⟨hinDim, hvec⟩
                             dsimp at hvec
                             rcases hvec with ⟨hdimB, hencB⟩
-                            let x' : Tensor ℝ (.dim xin.inDim .scalar) :=
+                            let x' : Tensor ℝ [xin.inDim] :=
                               castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim)
                                 hinDim.symm x
 
                             -- Identify `l/u` as in `boundsEvalAt_linear_bounds_from_affine`.
-                            let l : Tensor ℝ (.dim p.n .scalar) :=
+                            let l : Tensor ℝ [p.n] :=
                               affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := p.n)
                                 (NN.MLTheory.CROWN.Cert.castAffineOut (α := ℝ) (n := xin.inDim)
                                   (m := xin.outDim) (m' := p.n) hout xin.loAff) x'
-                            let u : Tensor ℝ (.dim p.n .scalar) :=
+                            let u : Tensor ℝ [p.n] :=
                               affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := p.n)
                                 (NN.MLTheory.CROWN.Cert.castAffineOut (α := ℝ) (n := xin.inDim)
                                   (m := xin.outDim) (m' := p.n) hout xin.hiAff) x'
@@ -533,16 +537,16 @@ theorem alphaCrown_transfer_sound
                                   CrownCertSoundness.affineEvalAt, u] using
                                   (affineEvalAt_castAffineOut (h := hout) (aff := xin.hiAff) (x :=
                                     x')).symm
-                              -- Avoid rewriting dependent boxes: reason componentwise via `toVec`.
+                              -- Avoid rewriting dependent boxes: reason componentwise via `getScalar`.
                               have hx0' :=
-                                (encloses_iff_toVec (n := p.n)
+                                (encloses_iff_getScalar (n := p.n)
                                   (lo := castDimScalar (α := ℝ) hout (boundsEvalAt (α := ℝ) xin
                                     x').lo)
                                   (hi := castDimScalar (α := ℝ) hout (boundsEvalAt (α := ℝ) xin
                                     x').hi)
                                   (x := castDimScalar (α := ℝ) hout (castDimScalar (α := ℝ)
                                     hdimB.symm vp.v))).1 hx0
-                              refine (encloses_iff_toVec (n := p.n) (lo := l) (hi := u)
+                              refine (encloses_iff_getScalar (n := p.n) (lo := l) (hi := u)
                                 (x := castDimScalar (α := ℝ) hvIn vp.v)).2 ?_
                               intro i
                               have hi := hx0' i
@@ -551,7 +555,7 @@ theorem alphaCrown_transfer_sound
                               · exact (by simpa [hu, hxCastVec] using hi.2)
 
                             -- Apply sign-splitting enclosure at the point `xv`.
-                            let xv : Tensor ℝ (.dim p.n .scalar) := castDimScalar (α := ℝ) hvIn vp.v
+                            let xv : Tensor ℝ [p.n] := castDimScalar (α := ℝ) hvIn vp.v
                             have hy :
                                 Theorems.Semantics.encloses (α := ℝ)
                                   { dim := p.m
@@ -639,11 +643,12 @@ theorem alphaCrown_transfer_sound
 
     | .matmul => by
         -- Matmul is linear with zero bias; same proof strategy as `.linear`.
-        cases hps : (g.nodes[id]!).parents with
-        | nil =>
+        cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+        | none =>
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-        | cons p1 _ =>
-            have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+        | some p1 =>
+            have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+              NN.IR.mem_of_unaryParent?_eq_some hps
             have hs' := hs
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs'
             cases hxin : NN.MLTheory.CROWN.Cert.getAff? (α := ℝ) cert p1 with
@@ -713,16 +718,16 @@ theorem alphaCrown_transfer_sound
                             rcases hpar with ⟨hinDim, hvec⟩
                             dsimp at hvec
                             rcases hvec with ⟨hdimB, hencB⟩
-                            let x' : Tensor ℝ (.dim xin.inDim .scalar) :=
+                            let x' : Tensor ℝ [xin.inDim] :=
                               castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim)
                                 hinDim.symm x
-                            let z : Tensor ℝ (.dim p.m .scalar) := Spec.fill (α := ℝ) 0 (.dim p.m
+                            let z : Tensor ℝ [p.m] := Spec.fill (α := ℝ) 0 (.dim p.m
                               .scalar)
-                            let l : Tensor ℝ (.dim p.n .scalar) :=
+                            let l : Tensor ℝ [p.n] :=
                               affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := p.n)
                                 (NN.MLTheory.CROWN.Cert.castAffineOut (α := ℝ) (n := xin.inDim)
                                   (m := xin.outDim) (m' := p.n) hout xin.loAff) x'
-                            let u : Tensor ℝ (.dim p.n .scalar) :=
+                            let u : Tensor ℝ [p.n] :=
                               affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := p.n)
                                 (NN.MLTheory.CROWN.Cert.castAffineOut (α := ℝ) (n := xin.inDim)
                                   (m := xin.outDim) (m' := p.n) hout xin.hiAff) x'
@@ -764,16 +769,16 @@ theorem alphaCrown_transfer_sound
                                   CrownCertSoundness.affineEvalAt, u] using
                                   (affineEvalAt_castAffineOut (h := hout) (aff := xin.hiAff) (x :=
                                     x')).symm
-                              -- Avoid rewriting dependent boxes: reason componentwise via `toVec`.
+                              -- Avoid rewriting dependent boxes: reason componentwise via `getScalar`.
                               have hx0' :=
-                                (encloses_iff_toVec (n := p.n)
+                                (encloses_iff_getScalar (n := p.n)
                                   (lo := castDimScalar (α := ℝ) hout (boundsEvalAt (α := ℝ) xin
                                     x').lo)
                                   (hi := castDimScalar (α := ℝ) hout (boundsEvalAt (α := ℝ) xin
                                     x').hi)
                                   (x := castDimScalar (α := ℝ) hout (castDimScalar (α := ℝ)
                                     hdimB.symm vp.v))).1 hx0
-                              refine (encloses_iff_toVec (n := p.n) (lo := l) (hi := u)
+                              refine (encloses_iff_getScalar (n := p.n) (lo := l) (hi := u)
                                 (x := castDimScalar (α := ℝ) hvIn vp.v)).2 ?_
                               intro i
                               have hi := hx0' i
@@ -781,7 +786,7 @@ theorem alphaCrown_transfer_sound
                               · exact (by simpa [hl, hxCastVec] using hi.1)
                               · exact (by simpa [hu, hxCastVec] using hi.2)
 
-                            let xv : Tensor ℝ (.dim p.n .scalar) := castDimScalar (α := ℝ) hvIn vp.v
+                            let xv : Tensor ℝ [p.n] := castDimScalar (α := ℝ) hvIn vp.v
                             have hy :
                                 Theorems.Semantics.encloses (α := ℝ)
                                   { dim := p.m
@@ -863,11 +868,12 @@ theorem alphaCrown_transfer_sound
 
     | .sum => by
         -- Sum is a 1×n linear layer with all-ones weights and zero bias.
-        cases hps : (g.nodes[id]!).parents with
-        | nil =>
+        cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+        | none =>
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-        | cons p1 _ =>
-            have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+        | some p1 =>
+            have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+              NN.IR.mem_of_unaryParent?_eq_some hps
 
             -- Step-side: extract the parent affine bound.
             have hs' := hs
@@ -879,9 +885,9 @@ theorem alphaCrown_transfer_sound
                 exact False.elim this
             | some xin =>
                 -- Step forces `b` to be `linear_bounds_from_affine onesRow 0 xin`.
-                let onesRow : Tensor ℝ (.dim 1 (.dim xin.outDim .scalar)) :=
+                let onesRow : Tensor ℝ [1, xin.outDim] :=
                   Spec.fill (α := ℝ) (Numbers.one : ℝ) (.dim 1 (.dim xin.outDim .scalar))
-                let zb : Tensor ℝ (.dim 1 .scalar) :=
+                let zb : Tensor ℝ [1] :=
                   Spec.fill (α := ℝ) (Numbers.zero : ℝ) (.dim 1 .scalar)
                 have hbEq :
                     some
@@ -889,7 +895,7 @@ theorem alphaCrown_transfer_sound
                           (m := 1)
                           onesRow zb xin (by rfl)) =
                       some b := by
-                  simpa [hxin, onesRow, zb, Numbers.zero, Numbers.one] using hs'
+                  simpa only [hxin, onesRow, zb] using hs'
                 cases hbEq
 
                 -- Semantic-side: extract the parent value.
@@ -938,17 +944,17 @@ theorem alphaCrown_transfer_sound
                     rcases hpar with ⟨hinDim, hvec⟩
                     dsimp at hvec
                     rcases hvec with ⟨hdimB, hencB⟩
-                    let x' : Tensor ℝ (.dim xin.inDim .scalar) :=
+                    let x' : Tensor ℝ [xin.inDim] :=
                       castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim) hinDim.symm x
-                    let l : Tensor ℝ (.dim xin.outDim .scalar) :=
+                    let l : Tensor ℝ [xin.outDim] :=
                       affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := xin.outDim)
                         (Cert.castAffineOut (α := ℝ) (n := xin.inDim) (m := xin.outDim)
                           (m' := xin.outDim) rfl xin.loAff) x'
-                    let u : Tensor ℝ (.dim xin.outDim .scalar) :=
+                    let u : Tensor ℝ [xin.outDim] :=
                       affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := xin.outDim)
                         (Cert.castAffineOut (α := ℝ) (n := xin.inDim) (m := xin.outDim)
                           (m' := xin.outDim) rfl xin.hiAff) x'
-                    let xv : Tensor ℝ (.dim xin.outDim .scalar) :=
+                    let xv : Tensor ℝ [xin.outDim] :=
                       castDimScalar (α := ℝ) (n := vp.n) (n' := xin.outDim) hdimB.symm vp.v
 
                     have hxCast :
@@ -1103,7 +1109,7 @@ theorem alphaCrown_transfer_sound
                               onesRow zb xin (by rfl)) x')
                             (Spec.matVecMulSpec (α := ℝ)
                               (Spec.fill (α := ℝ) (1 : ℝ) (.dim 1 (.dim vp.n .scalar))) vp.v) := by
-                        let yv : Tensor ℝ (.dim 1 .scalar) :=
+                        let yv : Tensor ℝ [1] :=
                           Spec.matVecMulSpec (α := ℝ)
                             (Spec.fill (α := ℝ) (1 : ℝ) (.dim 1 (.dim vp.n .scalar))) vp.v
                         have hyBoxCast :=
@@ -1115,11 +1121,12 @@ theorem alphaCrown_transfer_sound
                     exact hyBout
 
     | .relu => by
-        cases hps : (g.nodes[id]!).parents with
-        | nil =>
+        cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+        | none =>
             simp [stepAlpha, alphaCrownStepNode?, hk, hps] at hs
-        | cons p1 _ =>
-            have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+        | some p1 =>
+            have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+              NN.IR.mem_of_unaryParent?_eq_some hps
 
             -- Step-side: extract parent affine bounds and IBP pre-activation box.
             have hs' := hs
@@ -1194,7 +1201,7 @@ theorem alphaCrown_transfer_sound
                         | none =>
                             by_cases hout : xin.outDim = preB.dim
                             ·
-                              let αt : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let αt : Tensor ℝ [preB.dim] :=
                                 defaultAlphaVec (α := ℝ) (n := preB.dim) preB.lo preB.hi
                               let bout : FlatAffineBounds ℝ :=
                                 { inDim := xin.inDim
@@ -1218,7 +1225,7 @@ theorem alphaCrown_transfer_sound
                                   hs'
                               have hb : b = bout := (Option.some.inj hbEq).symm
 
-                              let x' : Tensor ℝ (.dim xin.inDim .scalar) :=
+                              let x' : Tensor ℝ [xin.inDim] :=
                                 castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim)
                                   hinDim.symm x
                               let xLo : AffineVec ℝ xin.inDim preB.dim := by
@@ -1227,22 +1234,22 @@ theorem alphaCrown_transfer_sound
                               let xHi : AffineVec ℝ xin.inDim preB.dim := by
                                 exact Cert.castAffineOut (α := ℝ) (n := xin.inDim) (m := xin.outDim)
                                   (m' := preB.dim) hout xin.hiAff
-                              let lAff : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let lAff : Tensor ℝ [preB.dim] :=
                                 affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim) xLo
                                   x'
-                              let uAff : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let uAff : Tensor ℝ [preB.dim] :=
                                 affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim) xHi
                                   x'
-                              let z : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let z : Tensor ℝ [preB.dim] :=
                                 castDimScalar (α := ℝ) (n := vp.n) (n' := preB.dim) hdimIbp.symm
                                   vp.v
-                              have hαrange : ∀ i : Fin preB.dim, (0 : ℝ) ≤ toVec αt i ∧ toVec αt i ≤
+                              have hαrange : ∀ i : Fin preB.dim, (0 : ℝ) ≤ getScalar αt i ∧ getScalar αt i ≤
                                 (1 : ℝ) := by
                                 simpa [αt] using defaultAlphaVec_range (lo := preB.lo) (hi :=
                                   preB.hi)
 
                               -- Derive `lAff ≤ z ≤ uAff` by casting the parent enclosure.
-                              let zXin : Tensor ℝ (.dim xin.outDim .scalar) :=
+                              let zXin : Tensor ℝ [xin.outDim] :=
                                 castDimScalar (α := ℝ) (n := vp.n) (n' := xin.outDim) hdn.symm vp.v
                               have hzXin :
                                   Theorems.Semantics.encloses (α := ℝ) (boundsEvalAt (α := ℝ) xin
@@ -1331,11 +1338,11 @@ theorem alphaCrown_transfer_sound
                                       (boundsEvalAt (α := ℝ) bout x') (Activation.reluSpec (α := ℝ)
                                         z) := by
                                 -- Componentwise enclosure.
-                                have hzAffI := (encloses_iff_toVec (n := preB.dim) (lo := lAff) (hi
+                                have hzAffI := (encloses_iff_getScalar (n := preB.dim) (lo := lAff) (hi
                                   := uAff) (x := z)).1 hzAff
-                                have hzIbpI := (encloses_iff_toVec (n := preB.dim) (lo := preB.lo)
+                                have hzIbpI := (encloses_iff_getScalar (n := preB.dim) (lo := preB.lo)
                                   (hi := preB.hi) (x := z)).1 hzIbp
-                                refine (encloses_iff_toVec (n := preB.dim)
+                                refine (encloses_iff_getScalar (n := preB.dim)
                                   (lo := (boundsEvalAt (α := ℝ) bout x').lo)
                                   (hi := (boundsEvalAt (α := ℝ) bout x').hi)
                                   (x := Activation.reluSpec (α := ℝ) z)).2 ?_
@@ -1344,10 +1351,10 @@ theorem alphaCrown_transfer_sound
                                 have hzHi := (hzAffI i).2
                                 have hzIlo := (hzIbpI i).1
                                 have hzIhi := (hzIbpI i).2
-                                let li := toVec preB.lo i
-                                let ui := toVec preB.hi i
-                                let zi := toVec z i
-                                let ai := toVec αt i
+                                let li := getScalar preB.lo i
+                                let ui := getScalar preB.hi i
+                                let zi := getScalar z i
+                                let ai := getScalar αt i
                                 have hai0 : (0 : ℝ) ≤ ai := (hαrange i).1
                                 have hai1 : ai ≤ (1 : ℝ) := (hαrange i).2
                                 have hsLo : 0 ≤ (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope :=
@@ -1359,56 +1366,56 @@ theorem alphaCrown_transfer_sound
 
                                 -- Rewrite the output bounds at index `i`.
                                 have hlo_def :
-                                    toVec (boundsEvalAt (α := ℝ) bout x').lo i
+                                    getScalar (boundsEvalAt (α := ℝ) bout x').lo i
                                       =
-                                      let rp := toVec (alphaRelaxLowerVec (α := ℝ) (n := preB.dim)
+                                      let rp := getScalar (alphaRelaxLowerVec (α := ℝ) (n := preB.dim)
                                         preB.lo preB.hi αt) i
-                                      rp.slope * toVec lAff i + rp.bias := by
+                                      rp.slope * getScalar lAff i + rp.bias := by
                                   simpa [hb, bout, CrownCertSoundness.boundsEvalAt,
                                     CrownCertSoundness.affineEvalAt, lAff, x', xLo] using
-                                    (toVec_affineEvalAt_relu_propagate_affine
+                                    (getScalar_affineEvalAt_relu_propagate_affine
                                       (relax := alphaRelaxLowerVec (α := ℝ) (n := preB.dim) preB.lo
                                         preB.hi αt)
                                       (aff := xLo) (x := x') (i := i))
                                 have hhi_def :
-                                    toVec (boundsEvalAt (α := ℝ) bout x').hi i
+                                    getScalar (boundsEvalAt (α := ℝ) bout x').hi i
                                       =
-                                      let rp := toVec
+                                      let rp := getScalar
                                         (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ) (n
                                         := preB.dim) preB.lo preB.hi) i
-                                      rp.slope * toVec uAff i + rp.bias := by
+                                      rp.slope * getScalar uAff i + rp.bias := by
                                   simpa [hb, bout, CrownCertSoundness.boundsEvalAt,
                                     CrownCertSoundness.affineEvalAt, uAff, x', xHi] using
-                                    (toVec_affineEvalAt_relu_propagate_affine
+                                    (getScalar_affineEvalAt_relu_propagate_affine
                                       (relax := NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α :=
                                         ℝ) (n := preB.dim) preB.lo preB.hi)
                                       (aff := xHi) (x := x') (i := i))
 
                                 have hrpLo :
-                                    toVec (alphaRelaxLowerVec (α := ℝ) (n := preB.dim) preB.lo
+                                    getScalar (alphaRelaxLowerVec (α := ℝ) (n := preB.dim) preB.lo
                                       preB.hi αt) i
                                       =
                                       alphaRelaxLowerScalar (α := ℝ) li ui ai := by
                                   simpa [li, ui, ai] using
-                                    (toVec_alphaRelaxLowerVec (lo := preB.lo) (hi := preB.hi) (αv :=
+                                    (getScalar_alphaRelaxLowerVec (lo := preB.lo) (hi := preB.hi) (αv :=
                                       αt) (i := i))
                                 have hrpHi :
-                                    toVec (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ)
+                                    getScalar (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ)
                                       (n := preB.dim) preB.lo preB.hi) i
                                       =
                                       NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li ui
                                         := by
-                                  simpa [li, ui] using (toVec_runtime_relu_relax_vector (lo :=
+                                  simpa [li, ui] using (getScalar_runtime_relu_relax_vector (lo :=
                                     preB.lo) (hi := preB.hi) (i := i))
 
                                 -- Lower bound inequality.
                                 have hlo1 :
-                                    (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * toVec lAff i +
+                                    (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * getScalar lAff i +
                                         (alphaRelaxLowerScalar (α := ℝ) li ui ai).bias
                                       ≤
                                       (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * zi +
                                         (alphaRelaxLowerScalar (α := ℝ) li ui ai).bias := by
-                                  have hm : (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * toVec
+                                  have hm : (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * getScalar
                                     lAff i
                                       ≤ (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * zi := by
                                     exact mul_le_mul_of_nonneg_left hzLo hsLo
@@ -1429,7 +1436,7 @@ theorem alphaCrown_transfer_sound
                                     (alphaNonnegative := hai0) (alphaAtMostOne := hai1)
                                   simpa [li, ui, zi, ai] using this
                                 have hlo :
-                                    toVec (boundsEvalAt (α := ℝ) bout x').lo i ≤
+                                    getScalar (boundsEvalAt (α := ℝ) bout x').lo i ≤
                                       Activation.Math.reluSpec (α := ℝ) zi := by
                                   -- Rewrite `lo` and chain inequalities.
                                   simp [hlo_def, hrpLo]
@@ -1453,7 +1460,7 @@ theorem alphaCrown_transfer_sound
                                           ui).bias
                                       ≤
                                       (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li
-                                        ui).slope * toVec uAff i +
+                                        ui).slope * getScalar uAff i +
                                         (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li
                                           ui).bias := by
                                   have hm :
@@ -1461,7 +1468,7 @@ theorem alphaCrown_transfer_sound
                                         ui).slope * zi
                                         ≤
                                       (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li
-                                        ui).slope * toVec uAff i := by
+                                        ui).slope * getScalar uAff i := by
                                     exact mul_le_mul_of_nonneg_left hzHi hsHi
                                   have h' :=
                                     add_le_add_right hm
@@ -1469,15 +1476,15 @@ theorem alphaCrown_transfer_sound
                                       ui).bias
                                   simpa [add_comm, add_left_comm, add_assoc] using h'
                                 have hhi :
-                                    Activation.Math.reluSpec (α := ℝ) zi ≤ toVec (boundsEvalAt (α
+                                    Activation.Math.reluSpec (α := ℝ) zi ≤ getScalar (boundsEvalAt (α
                                       := ℝ) bout x').hi i := by
                                   simp [hhi_def, hrpHi]
                                   exact le_trans hhi1 hhi2
 
-                                -- Combine, using `toVec` of ReLU.
-                                have hrelu : toVec (Activation.reluSpec (α := ℝ) z) i =
+                                -- Combine, using `getScalar` of ReLU.
+                                have hrelu : getScalar (Activation.reluSpec (α := ℝ) z) i =
                                     Activation.Math.reluSpec (α := ℝ) zi := by
-                                  simpa [zi] using (toVec_relu_spec (t := z) (i := i))
+                                  simpa [zi] using (getScalar_relu_spec (t := z) (i := i))
                                 constructor
                                 · rw [hrelu]
                                   exact hlo
@@ -1498,7 +1505,7 @@ theorem alphaCrown_transfer_sound
                         | some αv =>
                             by_cases hout : xin.outDim = preB.dim
                             ·
-                              let αt : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let αt : Tensor ℝ [preB.dim] :=
                                 if hα : αv.n = preB.dim then
                                   castDimScalar (α := ℝ) (n := αv.n) (n' := preB.dim) hα αv.v
                                 else
@@ -1524,7 +1531,7 @@ theorem alphaCrown_transfer_sound
                                 simpa [hxin, hpre, hαopt, hout, bout, αt, Cert.castAffineOut] using
                                   hs'
                               have hb : b = bout := (Option.some.inj hbEq).symm
-                              have hαrange : ∀ i : Fin preB.dim, (0 : ℝ) ≤ toVec αt i ∧ toVec αt i ≤
+                              have hαrange : ∀ i : Fin preB.dim, (0 : ℝ) ≤ getScalar αt i ∧ getScalar αt i ≤
                                 (1 : ℝ) := by
                                 classical
                                 by_cases hα : αv.n = preB.dim
@@ -1542,12 +1549,12 @@ theorem alphaCrown_transfer_sound
                                       exact False.elim this
                                   have hentry : alpha[id]! = some αv := by
                                     simpa [NN.MLTheory.CROWN.Cert.getAlpha?, hidA] using hαopt
-                                  have hrange0 : ∀ i : Fin αv.n, (0 : ℝ) ≤ toVec αv.v i ∧ toVec αv.v
+                                  have hrange0 : ∀ i : Fin αv.n, (0 : ℝ) ≤ getScalar αv.v i ∧ getScalar αv.v
                                     i ≤ (1 : ℝ) := by
                                     simpa [hentry] using halpha id hidA
                                   intro i
                                   have hri := hrange0 (Fin.cast hα.symm i)
-                                  simpa [αt, hα, toVec_castDimScalar] using hri
+                                  simpa [αt, hα, getScalar_castDimScalar] using hri
                                 ·
                                   -- Fallback: default α is 0/1.
                                   simpa [αt, hα] using defaultAlphaVec_range (lo := preB.lo) (hi :=
@@ -1556,7 +1563,7 @@ theorem alphaCrown_transfer_sound
                               -- This branch uses the same enclosure argument as the default-alpha
                               -- case, but with an explicit alpha tensor and the range proof above.
                               -- Keeping the proof local makes the dependent casts visible to Lean.
-                              let x' : Tensor ℝ (.dim xin.inDim .scalar) :=
+                              let x' : Tensor ℝ [xin.inDim] :=
                                 castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim)
                                   hinDim.symm x
                               let xLo : AffineVec ℝ xin.inDim preB.dim := by
@@ -1565,17 +1572,17 @@ theorem alphaCrown_transfer_sound
                               let xHi : AffineVec ℝ xin.inDim preB.dim := by
                                 exact Cert.castAffineOut (α := ℝ) (n := xin.inDim) (m := xin.outDim)
                                   (m' := preB.dim) hout xin.hiAff
-                              let lAff : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let lAff : Tensor ℝ [preB.dim] :=
                                 affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim) xLo
                                   x'
-                              let uAff : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let uAff : Tensor ℝ [preB.dim] :=
                                 affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim) xHi
                                   x'
-                              let z : Tensor ℝ (.dim preB.dim .scalar) :=
+                              let z : Tensor ℝ [preB.dim] :=
                                 castDimScalar (α := ℝ) (n := vp.n) (n' := preB.dim) hdimIbp.symm
                                   vp.v
 
-                              let zXin : Tensor ℝ (.dim xin.outDim .scalar) :=
+                              let zXin : Tensor ℝ [xin.outDim] :=
                                 castDimScalar (α := ℝ) (n := vp.n) (n' := xin.outDim) hdn.symm vp.v
                               have hzXin :
                                   Theorems.Semantics.encloses (α := ℝ) (boundsEvalAt (α := ℝ) xin
@@ -1659,11 +1666,11 @@ theorem alphaCrown_transfer_sound
                                   Theorems.Semantics.encloses (α := ℝ)
                                       (boundsEvalAt (α := ℝ) bout x') (Activation.reluSpec (α := ℝ)
                                         z) := by
-                                have hzAffI := (encloses_iff_toVec (n := preB.dim) (lo := lAff) (hi
+                                have hzAffI := (encloses_iff_getScalar (n := preB.dim) (lo := lAff) (hi
                                   := uAff) (x := z)).1 hzAff
-                                have hzIbpI := (encloses_iff_toVec (n := preB.dim) (lo := preB.lo)
+                                have hzIbpI := (encloses_iff_getScalar (n := preB.dim) (lo := preB.lo)
                                   (hi := preB.hi) (x := z)).1 hzIbp
-                                refine (encloses_iff_toVec (n := preB.dim)
+                                refine (encloses_iff_getScalar (n := preB.dim)
                                   (lo := (boundsEvalAt (α := ℝ) bout x').lo)
                                   (hi := (boundsEvalAt (α := ℝ) bout x').hi)
                                   (x := Activation.reluSpec (α := ℝ) z)).2 ?_
@@ -1672,10 +1679,10 @@ theorem alphaCrown_transfer_sound
                                 have hzHi := (hzAffI i).2
                                 have hzIlo := (hzIbpI i).1
                                 have hzIhi := (hzIbpI i).2
-                                let li := toVec preB.lo i
-                                let ui := toVec preB.hi i
-                                let zi := toVec z i
-                                let ai := toVec αt i
+                                let li := getScalar preB.lo i
+                                let ui := getScalar preB.hi i
+                                let zi := getScalar z i
+                                let ai := getScalar αt i
                                 have hai0 : (0 : ℝ) ≤ ai := (hαrange i).1
                                 have hai1 : ai ≤ (1 : ℝ) := (hαrange i).2
                                 have hsLo : 0 ≤ (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope :=
@@ -1685,53 +1692,53 @@ theorem alphaCrown_transfer_sound
                                   := ℝ) li ui).slope :=
                                   relax_scalar_slope_nonneg (l := li) (u := ui)
                                 have hlo_def :
-                                    toVec (boundsEvalAt (α := ℝ) bout x').lo i
+                                    getScalar (boundsEvalAt (α := ℝ) bout x').lo i
                                       =
-                                      let rp := toVec (alphaRelaxLowerVec (α := ℝ) (n := preB.dim)
+                                      let rp := getScalar (alphaRelaxLowerVec (α := ℝ) (n := preB.dim)
                                         preB.lo preB.hi αt) i
-                                      rp.slope * toVec lAff i + rp.bias := by
+                                      rp.slope * getScalar lAff i + rp.bias := by
                                   simpa [hb, bout, CrownCertSoundness.boundsEvalAt,
                                     CrownCertSoundness.affineEvalAt, lAff, x', xLo] using
-                                    (toVec_affineEvalAt_relu_propagate_affine
+                                    (getScalar_affineEvalAt_relu_propagate_affine
                                       (relax := alphaRelaxLowerVec (α := ℝ) (n := preB.dim) preB.lo
                                         preB.hi αt)
                                       (aff := xLo) (x := x') (i := i))
                                 have hhi_def :
-                                    toVec (boundsEvalAt (α := ℝ) bout x').hi i
+                                    getScalar (boundsEvalAt (α := ℝ) bout x').hi i
                                       =
-                                      let rp := toVec
+                                      let rp := getScalar
                                         (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ) (n
                                         := preB.dim) preB.lo preB.hi) i
-                                      rp.slope * toVec uAff i + rp.bias := by
+                                      rp.slope * getScalar uAff i + rp.bias := by
                                   simpa [hb, bout, CrownCertSoundness.boundsEvalAt,
                                     CrownCertSoundness.affineEvalAt, uAff, x', xHi] using
-                                    (toVec_affineEvalAt_relu_propagate_affine
+                                    (getScalar_affineEvalAt_relu_propagate_affine
                                       (relax := NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α :=
                                         ℝ) (n := preB.dim) preB.lo preB.hi)
                                       (aff := xHi) (x := x') (i := i))
                                 have hrpLo :
-                                    toVec (alphaRelaxLowerVec (α := ℝ) (n := preB.dim) preB.lo
+                                    getScalar (alphaRelaxLowerVec (α := ℝ) (n := preB.dim) preB.lo
                                       preB.hi αt) i
                                       =
                                       alphaRelaxLowerScalar (α := ℝ) li ui ai := by
                                   simpa [li, ui, ai] using
-                                    (toVec_alphaRelaxLowerVec (lo := preB.lo) (hi := preB.hi) (αv :=
+                                    (getScalar_alphaRelaxLowerVec (lo := preB.lo) (hi := preB.hi) (αv :=
                                       αt) (i := i))
                                 have hrpHi :
-                                    toVec (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ)
+                                    getScalar (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ)
                                       (n := preB.dim) preB.lo preB.hi) i
                                       =
                                       NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li ui
                                         := by
-                                  simpa [li, ui] using (toVec_runtime_relu_relax_vector (lo :=
+                                  simpa [li, ui] using (getScalar_runtime_relu_relax_vector (lo :=
                                     preB.lo) (hi := preB.hi) (i := i))
                                 have hlo1 :
-                                    (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * toVec lAff i +
+                                    (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * getScalar lAff i +
                                         (alphaRelaxLowerScalar (α := ℝ) li ui ai).bias
                                       ≤
                                       (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * zi +
                                         (alphaRelaxLowerScalar (α := ℝ) li ui ai).bias := by
-                                  have hm : (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * toVec
+                                  have hm : (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * getScalar
                                     lAff i
                                       ≤ (alphaRelaxLowerScalar (α := ℝ) li ui ai).slope * zi := by
                                     exact mul_le_mul_of_nonneg_left hzLo hsLo
@@ -1750,7 +1757,7 @@ theorem alphaCrown_transfer_sound
                                     (alphaNonnegative := hai0) (alphaAtMostOne := hai1)
                                   simpa [li, ui, zi, ai] using this
                                 have hlo :
-                                    toVec (boundsEvalAt (α := ℝ) bout x').lo i ≤
+                                    getScalar (boundsEvalAt (α := ℝ) bout x').lo i ≤
                                       Activation.Math.reluSpec (α := ℝ) zi := by
                                   simp [hlo_def, hrpLo]
                                   exact le_trans hlo1 hlo2
@@ -1771,7 +1778,7 @@ theorem alphaCrown_transfer_sound
                                           ui).bias
                                       ≤
                                       (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li
-                                        ui).slope * toVec uAff i +
+                                        ui).slope * getScalar uAff i +
                                         (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li
                                           ui).bias := by
                                   have hm :
@@ -1779,7 +1786,7 @@ theorem alphaCrown_transfer_sound
                                         ui).slope * zi
                                         ≤
                                       (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) li
-                                        ui).slope * toVec uAff i := by
+                                        ui).slope * getScalar uAff i := by
                                     exact mul_le_mul_of_nonneg_left hzHi hsHi
                                   have h' :=
                                     add_le_add_right hm
@@ -1787,13 +1794,13 @@ theorem alphaCrown_transfer_sound
                                       ui).bias
                                   simpa [add_comm, add_left_comm, add_assoc] using h'
                                 have hhi :
-                                    Activation.Math.reluSpec (α := ℝ) zi ≤ toVec (boundsEvalAt (α
+                                    Activation.Math.reluSpec (α := ℝ) zi ≤ getScalar (boundsEvalAt (α
                                       := ℝ) bout x').hi i := by
                                   simp [hhi_def, hrpHi]
                                   exact le_trans hhi1 hhi2
-                                have hrelu : toVec (Activation.reluSpec (α := ℝ) z) i =
+                                have hrelu : getScalar (Activation.reluSpec (α := ℝ) z) i =
                                     Activation.Math.reluSpec (α := ℝ) zi := by
-                                  simpa [zi] using (toVec_relu_spec (t := z) (i := i))
+                                  simpa [zi] using (getScalar_relu_spec (t := z) (i := i))
                                 constructor
                                 · rw [hrelu]
                                   exact hlo
@@ -1811,14 +1818,57 @@ theorem alphaCrown_transfer_sound
                                 simp [hxin, hpre, hαopt, hout] at hs'
                               exact False.elim this
 
+    | .conv .. | .layernorm _ | .concat _ =>
+      by
+        cases hSupported : crownNodeSemanticsSupported (α := ℝ) g.nodes ps id with
+        | false =>
+            simp [stepAlpha, alphaCrownStepNode?, hk, hSupported] at hs
+        | true =>
+          cases hib : ibp[id]!
+          · simp [stepAlpha, alphaCrownStepNode?, hk, hSupported, hib] at hs
+          · rename_i B0
+            have hEnc : CertSoundness.EnclosesBox B0 v := by
+              have hlt : id < vals.size := by simpa [hsem.1] using hid
+              have hraw := hibp id hlt
+              simpa [hib, hv] using hraw
+            have hbEq :
+                some (Cert.boundsConst (α := ℝ) ctx.inputDim B0.dim B0.lo B0.hi) = some b := by
+              simpa [stepAlpha, alphaCrownStepNode?, hk, hSupported, hib] using hs
+            cases hbEq
+            refine ⟨rfl, ?_⟩
+            dsimp [CrownCertSoundness.EnclosesAtInput]
+            simp [Cert.boundsConst]
+            rcases hEnc with ⟨hdim, hbox⟩
+            refine ⟨hdim, ?_⟩
+            have hBoxEq :
+                boundsEvalAt (α := ℝ)
+                    (Cert.boundsConst (α := ℝ) ctx.inputDim B0.dim B0.lo B0.hi) x =
+                  { dim := B0.dim, lo := B0.lo, hi := B0.hi } := by
+              simpa using
+                (boundsEvalAt_bounds_const (inDim := ctx.inputDim) (outDim := B0.dim)
+                  (lo := B0.lo) (hi := B0.hi) (x := x))
+            have hBoxEval :
+                boundsEvalAt (α := ℝ)
+                    (Cert.boundsConst (α := ℝ) ctx.inputDim B0.dim B0.lo B0.hi) x = B0 := by
+              cases B0
+              simpa using hBoxEq
+            have hbox' :=
+              sem_encloses_of_eq (h := hBoxEval.symm)
+                (x := castDimScalar (α := ℝ) hdim.symm v.v) hbox
+            have hcast :
+                castDimScalar (α := ℝ) (congrArg FlatBox.dim hBoxEval.symm)
+                    (castDimScalar (α := ℝ) hdim.symm v.v) =
+                  castDimScalar (α := ℝ) hdim.symm v.v := by
+              exact castDimScalar_self _ (castDimScalar (α := ℝ) hdim.symm v.v)
+            exact sem_encloses_value_eq (hxy := hcast) hbox'
+
     | .permute _ | .randUniform _ | .bernoulliMask _ | .add | .sub | .mul_elem | .abs | .sqrt |
       .inv
-    | .maxElem | .minElem | .maxPool2d .. | .maxPool2dPad .. | .avgPool2d .. | .avgPool2dPad
-      ..
-    | .broadcastTo .. | .reduceSum _ | .reduceMean _ | .conv2d .. | .batchNorm2dNchwEval _
+    | .maxElem | .minElem | .maxPool .. | .avgPool ..
+    | .broadcastTo .. | .reduceSum _ | .reduceMean _ | .batchNormEval _ _
       | .tanh | .sigmoid | .exp | .log | .sin | .cos
-    | .softmax _ | .hardMaskedSoftmax _ | .layernorm _ | .concat _ | .swap_first_two |
-      .transpose3dLastTwo | .mseLoss =>
+    | .softmax _ | .hardMaskedSoftmax _ | .transpose _ _ |
+      .mseLoss =>
       by
         -- Unsupported ops: `alphaCrownStepNode?` can only succeed via the IBP-derived constant
         -- enclosure.

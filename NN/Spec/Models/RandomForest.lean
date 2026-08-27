@@ -13,7 +13,7 @@ public import Std.Data.TreeMap.Basic
 /-!
 # Random Forest
 
-This file defines a random-forest model as a list of decision trees from
+This file defines a random-forest model as an array of decision trees from
 `NN.Spec.Module.DecisionTree`, plus a couple of standard aggregation strategies:
 
 - classification: majority vote
@@ -38,13 +38,13 @@ public section
 namespace random_forest
 open DecisionTree
 
-/-- Random-forest container: a list of trees.
+/-- Random-forest container for a runtime-sized array of trees.
 
 Aggregation (vote/average/etc.) is handled by `predict` so the container stays generic.
 -/
 structure RandomForest (α : Type) where
-  /-- Forest members. We keep a `List` for simplicity. -/
-  trees : List (DecisionTree α)
+  /-- Forest members. -/
+  trees : Array (DecisionTree α)
 
 /--
 Function to predict using all trees in the forest and combine results with a given aggregation
@@ -52,17 +52,17 @@ Function to predict using all trees in the forest and combine results with a giv
 For classification, this would typically be a majority vote.
 For regression, this would be an average.
 -/
-def predict {a : Type} (forest : RandomForest a) (decisionFn : String → Bool) (aggregateFn : List a
+def predict {a : Type} (forest : RandomForest a) (decisionFn : String → Bool) (aggregateFn : Array a
   → a) : a :=
   let predictions := forest.trees.map (fun tree => evaluate tree decisionFn)
   aggregateFn predictions
 
 /--
 For classification tasks, majority vote aggregation function.
-Returns the most frequent element in the list of predictions.
+Returns the most frequent element in the prediction array.
 Works with any type that supports ordering.
 -/
-def majorityVote {a : Type} [Ord a] [Inhabited a] (predictions : List a) : Option a :=
+def majorityVote {a : Type} [Ord a] (predictions : Array a) : Option a :=
   if predictions.isEmpty then
     none
   else
@@ -73,20 +73,22 @@ def majorityVote {a : Type} [Ord a] [Inhabited a] (predictions : List a) : Optio
       (Std.TreeMap.empty : Std.TreeMap a Nat compare)
 
     -- Pick the element with highest frequency.
-    let groupedList := grouped.toList
-    some (groupedList.foldl
-      (fun best cur => if cur.2 > best.2 then cur else best)
-      (groupedList.headD (default, 0))
-      |>.1)
+    grouped.foldl
+      (fun best label count =>
+        match best with
+        | none => some (label, count)
+        | some (_, bestCount) => if count > bestCount then some (label, count) else best)
+      none
+      |>.map (·.1)
 
 /--
 For regression tasks, average aggregation function.
 -/
-def average {α : Type} [Zero α] [Add α] [Div α] [Coe Nat α] (predictions : List α) : α :=
+def average {α : Type} [Zero α] [Add α] [Div α] [Coe Nat α] (predictions : Array α) : α :=
   if predictions.isEmpty then
     0
   else
-    predictions.foldl (fun sum pred => sum + pred) 0 / (predictions.length : α)
+    predictions.foldl (fun sum pred => sum + pred) 0 / (predictions.size : α)
 
 /-!
 ## Numeric random forest (spec baseline)
@@ -116,7 +118,7 @@ variable {α : Type} [Context α]
 /-- A regression random forest: an ensemble of regression trees averaged at inference time. -/
 structure RegressionForestSpec (α : Type) (nTrees maxDepth nFeatures : Nat) where
   /-- trees. -/
-  trees : Tensor (Spec.DecisionTreeSpec α nFeatures maxDepth) (.dim nTrees .scalar)
+  trees : Tensor (Spec.DecisionTreeSpec α nFeatures maxDepth) [nTrees]
 
 /-- Forward pass: average tree predictions.
 
@@ -124,7 +126,7 @@ This corresponds to `RandomForestRegressor.predict` (mean over tree outputs).
 -/
 def regressionForestForwardSpec {nTrees maxDepth nFeatures : Nat}
   (model : RegressionForestSpec α nTrees maxDepth nFeatures)
-  (x : Tensor α (.dim nFeatures .scalar)) : Tensor α .scalar :=
+  (x : Tensor α [nFeatures]) : Tensor α .scalar :=
   if _h0 : nTrees = 0 then
     Tensor.scalar 0
   else
@@ -152,23 +154,23 @@ If you want true randomness, treat this as the spec and implement an executable 
 supplies a randomized index mapping.
 -/
 def regressionForestFitRegressionMseSpec {batch nTrees maxDepth nFeatures : Nat}
-  (x : Tensor α (.dim batch (.dim nFeatures .scalar)))
-  (y : Tensor α (.dim batch .scalar))
+  (x : Tensor α [batch, nFeatures])
+  (y : Tensor α [batch])
   (hBatch : batch ≠ 0) :
   RegressionForestSpec α nTrees maxDepth nFeatures :=
-  let makeBootstrapX (k : Fin nTrees) : Tensor α (.dim batch (.dim nFeatures .scalar)) :=
+  let makeBootstrapX (k : Fin nTrees) : Tensor α [batch, nFeatures] :=
     Tensor.dim (fun i =>
       let j : Fin batch :=
         ⟨(i.val + k.val) % batch, by
           exact Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
       get x j)
-  let makeBootstrapY (k : Fin nTrees) : Tensor α (.dim batch .scalar) :=
+  let makeBootstrapY (k : Fin nTrees) : Tensor α [batch] :=
     Tensor.dim (fun i =>
       let j : Fin batch :=
         ⟨(i.val + k.val) % batch, by
           exact Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
       get y j)
-  let trees : Tensor (Spec.DecisionTreeSpec α nFeatures maxDepth) (.dim nTrees .scalar) :=
+  let trees : Tensor (Spec.DecisionTreeSpec α nFeatures maxDepth) [nTrees] :=
     Tensor.dim (fun k => Tensor.scalar (Spec.decisionTreeFitRegressionMseSpec (α := α)
       (batch := batch) (maxDepth := maxDepth) (nFeatures := nFeatures)
       (makeBootstrapX k) (makeBootstrapY k)))
@@ -181,40 +183,41 @@ This mirrors the regression forest, but uses the classifier-tree type from
 `NN/Spec/Models/GradientBoostedTrees.lean` so leaf values can be arbitrary labels (`β`).
 -/
 
-/-- Count how many times label `lbl` appears in `ys`. -/
-private def countEq {β : Type} [DecidableEq β] (lbl : β) (ys : List β) : Nat :=
-  ys.foldl (fun acc y => if y = lbl then acc + 1 else acc) 0
+/-- Count how many times label `lbl` appears in a fixed-size prediction tensor. -/
+private def countEq {β : Type} [DecidableEq β] {n : Nat} (lbl : β)
+    (ys : Tensor β [n]) : Nat :=
+  (Array.finRange n).foldl
+    (fun acc i => if ys.getScalar i = lbl then acc + 1 else acc) 0
 
-/-- Deterministic majority label of a list.
+/-- Deterministic majority label of a fixed-size prediction tensor.
 
-Tie-breaking: we keep the first label (in the `eraseDups` order) that attains the maximal count.
+Tie-breaking: we keep the first label that attains the maximal count.
 -/
-private def majorityLabel {β : Type} [DecidableEq β] [Inhabited β] (ys : List β) : β :=
-  match ys with
-  | [] => default
-  | _ =>
-    let labels := ys.eraseDups
-    labels.foldl (fun best lbl =>
-      let cBest := countEq best ys
-      let cLbl := countEq lbl ys
-      if cLbl > cBest then lbl else best
-    ) (labels.headD default)
+private def majorityLabel {β : Type} [DecidableEq β] [Inhabited β] {n : Nat}
+    (ys : Tensor β [n]) : β :=
+  if hn : n = 0 then
+    default
+  else
+    let first : Fin n := ⟨0, Nat.pos_of_ne_zero hn⟩
+    (Array.finRange n).foldl (fun best i =>
+      let label := ys.getScalar i
+      if countEq label ys > countEq best ys then label else best) (ys.getScalar first)
 
 /-- A classification random forest: an ensemble of classifier trees (majority vote). -/
 structure ClassificationForestSpec (α β : Type) (nTrees maxDepth nFeatures : Nat) where
   /-- trees. -/
-  trees : Tensor (Spec.DecisionTreeClassifierSpec α β nFeatures maxDepth) (.dim nTrees .scalar)
+  trees : Tensor (Spec.DecisionTreeClassifierSpec α β nFeatures maxDepth) [nTrees]
 
 /-- Predict by majority vote across trees. -/
 def classificationForestPredictSpec {β : Type} [DecidableEq β] [Inhabited β]
   {nTrees maxDepth nFeatures : Nat}
   (model : ClassificationForestSpec α β nTrees maxDepth nFeatures)
-  (x : Tensor α (.dim nFeatures .scalar)) : β :=
+  (x : Tensor α [nFeatures]) : β :=
   if _h0 : nTrees = 0 then
     default
   else
-    let preds : List β :=
-      (List.finRange nTrees).map (fun i =>
+    let preds : Tensor β [nTrees] :=
+      Tensor.ofFn (fun i =>
         match get model.trees i with
         | Tensor.scalar t =>
           Spec.decisionTreeClassifyForwardSpecN (α := α) (β := β)
@@ -225,20 +228,20 @@ def classificationForestPredictSpec {β : Type} [DecidableEq β] [Inhabited β]
   -/
 def classificationForestFitClassificationGiniSpec {β : Type} [DecidableEq β] [Inhabited β]
   {batch nTrees maxDepth nFeatures : Nat}
-  (x : Tensor α (.dim batch (.dim nFeatures .scalar)))
-  (y : Vector β batch)
+  (x : Tensor α [batch, nFeatures])
+  (y : Tensor β [batch])
   (hBatch : batch ≠ 0) :
   ClassificationForestSpec α β nTrees maxDepth nFeatures :=
-  let makeBootstrapX (k : Fin nTrees) : Tensor α (.dim batch (.dim nFeatures .scalar)) :=
+  let makeBootstrapX (k : Fin nTrees) : Tensor α [batch, nFeatures] :=
     Tensor.dim (fun i =>
       let j : Fin batch :=
         ⟨(i.val + k.val) % batch, by
           exact Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
       get x j)
-  let makeBootstrapY (k : Fin nTrees) : Vector β batch :=
-    Vector.ofFn fun i =>
-      y.get ⟨(i.val + k.val) % batch, Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
-  let trees : Tensor (Spec.DecisionTreeClassifierSpec α β nFeatures maxDepth) (.dim nTrees .scalar) :=
+  let makeBootstrapY (k : Fin nTrees) : Tensor β [batch] :=
+    Spec.Tensor.ofFn fun i =>
+      y.getScalar ⟨(i.val + k.val) % batch, Nat.mod_lt _ (Nat.pos_of_ne_zero hBatch)⟩
+  let trees : Tensor (Spec.DecisionTreeClassifierSpec α β nFeatures maxDepth) [nTrees] :=
     Tensor.dim (fun k => Tensor.scalar (Spec.decisionTreeFitClassificationGiniSpec (α :=
       α) (β := β)
       (batch := batch) (maxDepth := maxDepth) (nFeatures := nFeatures)

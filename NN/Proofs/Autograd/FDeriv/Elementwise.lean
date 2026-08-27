@@ -198,16 +198,16 @@ theorem hasFDerivAt_elemwiseVec_at {n : Nat} {f f' : ℝ → ℝ} (x : Vec n)
 Evaluation lemma: converting an elementwise-mapped tensor back to coordinates agrees with applying
 `f` to the corresponding Euclidean coordinate.
 -/
-@[simp] lemma toVec_map_spec_ofVecE {n : Nat} (f : ℝ → ℝ) (xV : Vec n) (i : Fin n) :
-    Spec.toVec (mapSpec (s := .dim n .scalar) f (ofVecE xV)) i = f (xV i) := by
-  -- `toVecE_map_spec` + `toVecE_ofVecE` and then evaluate at `i`.
+@[simp] lemma getScalar_map_spec_ofFnE {n : Nat} (f : ℝ → ℝ) (xV : Vec n) (i : Fin n) :
+    Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) f (ofFnE xV)) i = f (xV i) := by
+  -- `getScalarE_map_spec` + `getScalarE_ofFnE` and then evaluate at `i`.
   have h :=
-    congrArg (fun v : Vec n => v.ofLp i) (toVecE_map_spec (n := n) f (t := ofVecE xV))
-  -- Left: use `toVecE_ofLp`. Right: `ofLp` of `e.symm` is just function evaluation.
-  simpa [toVecE_ofLp, toVecE_ofVecE, ofVecE, Proofs.Autograd.euclideanEquiv] using h
+    congrArg (fun v : Vec n => v.ofLp i) (getScalarE_map_spec (n := n) f (t := ofFnE xV))
+  -- Left: use `getScalarE_ofLp`. Right: `ofLp` of `e.symm` is just function evaluation.
+  simpa [getScalarE_ofLp, getScalarE_ofFnE, ofFnE, Proofs.Autograd.euclideanEquiv] using h
 
-@[simp] lemma toVecE_map_spec_ofVecE_eq_elemwiseVec {n : Nat} (f : ℝ → ℝ) (xV : Vec n) :
-    toVecE (mapSpec (s := .dim n .scalar) f (ofVecE xV)) =
+@[simp] lemma getScalarE_map_spec_ofFnE_eq_elemwiseVec {n : Nat} (f : ℝ → ℝ) (xV : Vec n) :
+    getScalarE (mapSpec (s := .dim n .scalar) f (ofFnE xV)) =
       elemwiseVec (n := n) f xV := by
   ext i
   simp [elemwiseVec]
@@ -230,7 +230,7 @@ def exp {n : Nat} : OpSpecFDerivCorrect n n :=
         z)
         (fun z => Real.hasDerivAt_exp z)
     have hfun :
-        (fun xV : Vec n => toVecE ((expCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+        (fun xV : Vec n => getScalarE ((expCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Real.exp z) := by
       funext xV
       ext i
@@ -242,14 +242,14 @@ def exp {n : Nat} : OpSpecFDerivCorrect n n :=
     ext i
     -- LHS: unfold the JVP definition.
     have hL :
-        toVecE ((expCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((expCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
-        dxV i * Spec.toVec (mapSpec (s := .dim n .scalar) MathFunctions.exp (ofVecE xV)) i := by
+        dxV i * Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) MathFunctions.exp (ofFnE xV)) i := by
       simp [expCorrect, Spec.expOp, expSpec,
-        toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     -- simplify the `map_spec` term.
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) MathFunctions.exp (ofVecE xV)) i =
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) MathFunctions.exp (ofFnE xV)) i =
           MathFunctions.exp (xV i) := by
       simp
     -- RHS: apply the derivative CLM at coordinate `i`.
@@ -273,7 +273,7 @@ def square {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.square_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((squareCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((squareCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z : ℝ => z * z) := by
       funext xV
       ext i
@@ -284,29 +284,29 @@ def square {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((squareCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((squareCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mulSpec (fill (Numbers.two : ℝ) (.dim n .scalar)) (ofVecE xV)) i := by
-      simp [squareCorrect, Spec.squareOp, toVecE, ofVecE, Spec.toVec_ofVec,
-        Spec.toVec_mul_spec]
+          Spec.Tensor.getScalar (mulSpec (fill (Numbers.two : ℝ) (.dim n .scalar)) (ofFnE xV)) i := by
+      simp [squareCorrect, Spec.squareOp, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn,
+        Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mulSpec (fill (Numbers.two : ℝ) (.dim n .scalar)) (ofVecE xV)) i =
+        Spec.Tensor.getScalar (mulSpec (fill (Numbers.two : ℝ) (.dim n .scalar)) (ofFnE xV)) i =
           (Numbers.two : ℝ) * xV i := by
       calc
-        Spec.toVec (mulSpec (fill (Numbers.two : ℝ) (.dim n .scalar)) (ofVecE xV)) i
+        Spec.Tensor.getScalar (mulSpec (fill (Numbers.two : ℝ) (.dim n .scalar)) (ofFnE xV)) i
             =
-          Spec.toVec (fill (Numbers.two : ℝ) (.dim n .scalar)) i *
-            Spec.toVec (ofVecE xV) i := by
-              exact Spec.toVec_mul_spec (a := fill (Numbers.two : ℝ) (.dim n .scalar))
-                (b := ofVecE xV) (i := i)
+          Spec.Tensor.getScalar (fill (Numbers.two : ℝ) (.dim n .scalar)) i *
+            Spec.Tensor.getScalar (ofFnE xV) i := by
+              exact Spec.getScalar_mul_spec (a := fill (Numbers.two : ℝ) (.dim n .scalar))
+                (b := ofFnE xV) (i := i)
         _ = (Numbers.two : ℝ) * xV i := by
               have hFill :
-                  Spec.toVec (fill (Numbers.two : ℝ) (.dim n .scalar)) i =
+                  Spec.Tensor.getScalar (fill (Numbers.two : ℝ) (.dim n .scalar)) i =
                     (Numbers.two : ℝ) := by
-                simp [fill, Spec.toVec]
-              have hX : Spec.toVec (ofVecE xV) i = xV i := by
-                simp [ofVecE]
+                simp [fill, Spec.Tensor.getScalar]
+              have hX : Spec.Tensor.getScalar (ofFnE xV) i = xV i := by
+                simp [ofFnE]
               rw [hFill, hX]
     have hR :
         (elemwiseDerivCLM (n := n) (fun z => (Numbers.two : ℝ) * z) xV) dxV i =
@@ -328,7 +328,7 @@ def sinh {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.sinh_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((sinhCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((sinhCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.sinhSpec z) := by
       funext xV
       ext i
@@ -340,13 +340,13 @@ def sinh {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((sinhCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((sinhCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
-        dxV i * Spec.toVec (coshSpec (s := .dim n .scalar) (ofVecE xV)) i := by
+        dxV i * Spec.Tensor.getScalar (coshSpec (s := .dim n .scalar) (ofFnE xV)) i := by
       simp [sinhCorrect, Spec.sinhOp, coshSpec,
-        toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (coshSpec (s := .dim n .scalar) (ofVecE xV)) i = Real.cosh (xV i) := by
+        Spec.Tensor.getScalar (coshSpec (s := .dim n .scalar) (ofFnE xV)) i = Real.cosh (xV i) := by
       simp [coshSpec, mathfunc_cosh_eq_rcosh]
     have hR :
         (elemwiseDerivCLM (n := n) (fun z => Real.cosh z) xV) dxV i =
@@ -368,7 +368,7 @@ def cosh {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.cosh_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((coshCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((coshCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.coshSpec z) := by
       funext xV
       ext i
@@ -380,13 +380,13 @@ def cosh {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((coshCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((coshCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
-        dxV i * Spec.toVec (sinhSpec (s := .dim n .scalar) (ofVecE xV)) i := by
+        dxV i * Spec.Tensor.getScalar (sinhSpec (s := .dim n .scalar) (ofFnE xV)) i := by
       simp [coshCorrect, Spec.coshOp, sinhSpec,
-        toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (sinhSpec (s := .dim n .scalar) (ofVecE xV)) i = Real.sinh (xV i) := by
+        Spec.Tensor.getScalar (sinhSpec (s := .dim n .scalar) (ofFnE xV)) i = Real.sinh (xV i) := by
       simp [sinhSpec, mathfunc_sinh_eq_rsinh]
     have hR :
         (elemwiseDerivCLM (n := n) (fun z => Real.sinh z) xV) dxV i =
@@ -409,7 +409,7 @@ def tanh {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.tanh_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((tanhCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((tanhCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.tanhSpec z) := by
       funext xV
       ext i
@@ -420,14 +420,14 @@ def tanh {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((tanhCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((tanhCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
-        dxV i * Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.tanhDerivSpec (ofVecE
+        dxV i * Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.tanhDerivSpec (ofFnE
           xV)) i := by
       simp [tanhCorrect, Spec.tanhOp, Spec.liftElementwise,
-        Activation.tanhDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.tanhDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.tanhDerivSpec (ofVecE xV)) i
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.tanhDerivSpec (ofFnE xV)) i
           =
         Activation.Math.tanhDerivSpec (xV i) := by
       simp
@@ -452,7 +452,7 @@ def sigmoid {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.sigmoid_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((sigmoidCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((sigmoidCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.sigmoidSpec z) := by
       funext xV
       ext i
@@ -463,15 +463,15 @@ def sigmoid {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((sigmoidCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((sigmoidCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.sigmoidDerivSpec (ofVecE xV))
+          Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.sigmoidDerivSpec (ofFnE xV))
             i := by
       simp [sigmoidCorrect, Spec.sigmoidOp, Spec.liftElementwise,
-        Activation.sigmoidDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.sigmoidDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.sigmoidDerivSpec (ofVecE xV)) i
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.sigmoidDerivSpec (ofFnE xV)) i
           =
         Activation.Math.sigmoidDerivSpec (xV i) := by
       simp
@@ -496,7 +496,7 @@ def softplus {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.softplus_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((softplusCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((softplusCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.softplusSpec z) := by
       funext xV
       ext i
@@ -507,15 +507,15 @@ def softplus {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((softplusCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((softplusCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.softplusDerivSpec (ofVecE
+          Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.softplusDerivSpec (ofFnE
             xV)) i := by
       simp [softplusCorrect, Spec.softplusOp, Spec.liftElementwise,
-        Activation.softplusDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.softplusDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.softplusDerivSpec (ofVecE xV))
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.softplusDerivSpec (ofFnE xV))
           i
           =
         Activation.Math.softplusDerivSpec (xV i) := by
@@ -541,7 +541,7 @@ def silu {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.silu_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((siluCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((siluCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.swishSpec z) := by
       funext xV
       ext i
@@ -552,15 +552,15 @@ def silu {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((siluCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((siluCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.swishDerivSpec (ofVecE xV))
+          Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.swishDerivSpec (ofFnE xV))
             i := by
       simp [siluCorrect, Spec.siluOp,
-        Activation.swishDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.swishDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.swishDerivSpec (ofVecE xV)) i
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.swishDerivSpec (ofFnE xV)) i
           =
         Activation.Math.swishDerivSpec (xV i) := by
       simp
@@ -585,7 +585,7 @@ def gelu {n : Nat} : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.gelu_deriv_correct (x := z))
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((geluCorrect (s := .dim n .scalar)).op.forward (ofVecE xV))) =
+            getScalarE ((geluCorrect (s := .dim n .scalar)).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.geluSpec z) := by
       funext xV
       ext i
@@ -596,15 +596,15 @@ def gelu {n : Nat} : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((geluCorrect (s := .dim n .scalar)).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((geluCorrect (s := .dim n .scalar)).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.geluDerivSpec (ofVecE xV))
+          Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.geluDerivSpec (ofFnE xV))
             i := by
       simp [geluCorrect, Spec.geluOp,
-        Activation.geluDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.geluDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) Activation.Math.geluDerivSpec (ofVecE xV)) i
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) Activation.Math.geluDerivSpec (ofFnE xV)) i
           =
         Activation.Math.geluDerivSpec (xV i) := by
       simp
@@ -634,7 +634,7 @@ def safeLog {n : Nat} (ε : ℝ) (hε : 0 < ε) : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.safe_log_deriv_correct (x := z) (ε := ε) hε)
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((safeLogCorrect (s := .dim n .scalar) ε).op.forward (ofVecE xV))) =
+            getScalarE ((safeLogCorrect (s := .dim n .scalar) ε).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.safeLogSpec z ε) := by
       funext xV
       ext i
@@ -645,16 +645,16 @@ def safeLog {n : Nat} (ε : ℝ) (hε : 0 < ε) : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((safeLogCorrect (s := .dim n .scalar) ε).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((safeLogCorrect (s := .dim n .scalar) ε).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.safeLogDerivSpec x
-            ε) (ofVecE xV)) i := by
+          Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.safeLogDerivSpec x
+            ε) (ofFnE xV)) i := by
       simp [safeLogCorrect, Spec.safeLogOp, Spec.liftElementwise,
-        Activation.safeLogDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.safeLogDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.safeLogDerivSpec x
-          ε) (ofVecE xV)) i
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.safeLogDerivSpec x
+          ε) (ofFnE xV)) i
           =
         Activation.Math.safeLogDerivSpec (xV i) ε := by
       simp
@@ -684,7 +684,7 @@ def smoothAbs {n : Nat} (ε : ℝ) (hε : 0 < ε) : OpSpecFDerivCorrect n n :=
         (fun z => Proofs.smooth_abs_deriv_correct (x := z) (ε := ε) hε)
     have hfun :
         (fun xV : Vec n =>
-            toVecE ((smoothAbsCorrect (s := .dim n .scalar) ε).op.forward (ofVecE xV))) =
+            getScalarE ((smoothAbsCorrect (s := .dim n .scalar) ε).op.forward (ofFnE xV))) =
           elemwiseVec (n := n) (fun z => Activation.Math.smoothAbsSpec z ε) := by
       funext xV
       ext i
@@ -695,16 +695,16 @@ def smoothAbs {n : Nat} (ε : ℝ) (hε : 0 < ε) : OpSpecFDerivCorrect n n :=
     intro xV dxV
     ext i
     have hL :
-        toVecE ((smoothAbsCorrect (s := .dim n .scalar) ε).jvp (ofVecE xV) (ofVecE dxV)) i
+        getScalarE ((smoothAbsCorrect (s := .dim n .scalar) ε).jvp (ofFnE xV) (ofFnE dxV)) i
           =
         dxV i *
-          Spec.toVec (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.smoothAbsDerivSpec
-            x ε) (ofVecE xV)) i := by
+          Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.smoothAbsDerivSpec
+            x ε) (ofFnE xV)) i := by
       simp [smoothAbsCorrect, Spec.smoothAbsOp, Spec.liftElementwise,
-        Activation.smoothAbsDerivSpec, toVecE, ofVecE, Spec.toVec_ofVec, Spec.toVec_mul_spec]
+        Activation.smoothAbsDerivSpec, getScalarE, ofFnE, Spec.Tensor.getScalar_ofFn, Spec.getScalar_mul_spec]
     have hMap :
-        Spec.toVec (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.smoothAbsDerivSpec x
-          ε) (ofVecE xV)) i
+        Spec.Tensor.getScalar (mapSpec (s := .dim n .scalar) (fun x => Activation.Math.smoothAbsDerivSpec x
+          ε) (ofFnE xV)) i
           =
         Activation.Math.smoothAbsDerivSpec (xV i) ε := by
       simp

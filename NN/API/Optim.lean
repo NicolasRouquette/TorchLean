@@ -6,8 +6,9 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Tensor
-public import NN.API.Trainer.Manual.Core
+public import NN.API.Optim.Config
+public import NN.Tensor
+public import NN.Runtime.Autograd.TorchLean.Optim
 
 /-!
 # Optimizers
@@ -29,15 +30,20 @@ namespace TorchLean
 
 namespace optim
 
-/-- Optimizer algorithm and hyperparameters used by `Trainer`. -/
-abbrev Optimizer := TorchLean.Trainer.Manual.OptimizerConfig
-
 /-- Public SGD optimizer configuration. -/
 structure SgdConfig where
   /-- Learning rate. -/
   lr : Float
   /-- Momentum coefficient. -/
   momentum : Float := 0.0
+deriving Repr
+
+/-- Public momentum-SGD configuration. -/
+structure MomentumSgdConfig where
+  /-- Learning rate. -/
+  lr : Float
+  /-- Momentum coefficient. -/
+  momentum : Float := 0.9
 deriving Repr
 
 /-- Public AdaGrad optimizer configuration. -/
@@ -90,10 +96,9 @@ deriving Repr
 def sgd (cfg : SgdConfig) : Optimizer :=
   .sgd cfg.lr cfg.momentum
 
-/-- Momentum SGD, using momentum `0.9` when the configuration leaves it at zero. -/
-def momentumSgd (cfg : SgdConfig) : Optimizer :=
-  .sgd cfg.lr
-    (if cfg.momentum == 0.0 then 0.9 else cfg.momentum)
+/-- Momentum SGD, written `optim.momentumSgd { lr := 0.05 }`. -/
+def momentumSgd (cfg : MomentumSgdConfig) : Optimizer :=
+  .sgd cfg.lr cfg.momentum
 
 /-- Adagrad optimizer config, written `optim.adagrad { lr := 0.05 }`. -/
 def adagrad (cfg : AdagradConfig) : Optimizer :=
@@ -160,62 +165,9 @@ def toOptimizer (kind : Kind) (lr : Float) : Optimizer :=
 
 end Kind
 
-namespace runtime
-
-/-- Adam optimizer for module-level training. -/
-def adam {α : Type} [_root_.Context α]
-    (lr beta1 beta2 epsilon : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.adam (α := α) lr beta1 beta2 epsilon (paramShapes := paramShapes)
-
-/-- AdamW optimizer for module-level training. -/
-def adamW {α : Type} [_root_.Context α]
-    (lr weightDecay beta1 beta2 epsilon : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.adamw (α := α) lr weightDecay beta1 beta2 epsilon
-    (paramShapes := paramShapes)
-
-/-- SGD optimizer for module-level training. -/
-def sgd {α : Type} [_root_.Context α]
-    (lr : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.sgd (α := α) lr (paramShapes := paramShapes)
-
-/-- Momentum SGD optimizer for module-level training. -/
-def momentumSgd {α : Type} [_root_.Context α]
-    (lr momentum : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.momentumSGD (α := α) lr momentum (paramShapes := paramShapes)
-
-/-- Adagrad optimizer for module-level training. -/
-def adagrad {α : Type} [_root_.Context α]
-    (lr epsilon : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.adagrad (α := α) lr epsilon (paramShapes := paramShapes)
-
-/-- RMSprop optimizer for module-level training. -/
-def rmsprop {α : Type} [_root_.Context α]
-    (lr decay epsilon : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.rmsprop (α := α) lr decay epsilon (paramShapes := paramShapes)
-
-/-- Adadelta optimizer for module-level training. -/
-def adadelta {α : Type} [_root_.Context α]
-    (lr rho epsilon : α) {paramShapes : List Shape} :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
-  _root_.Runtime.Autograd.TorchLean.Optim.adadelta (α := α) lr rho epsilon (paramShapes := paramShapes)
-
-end runtime
-
 namespace muon
 
-@[inherit_doc _root_.Optim.Muon.Orthogonalizer]
-abbrev Orthogonalizer := _root_.Optim.Muon.Orthogonalizer
-
-@[inherit_doc _root_.Optim.Muon.identityOrthogonalizer]
-def identity {α : Type} {s : Shape} :
-    Orthogonalizer α s :=
-  _root_.Optim.Muon.identityOrthogonalizer (α := α) (s := s)
+export _root_.Optim.Muon (Orthogonalizer)
 
 /--
 Runtime Muon-style optimizer for module-level training.
@@ -227,7 +179,7 @@ pass a matrix-shaped orthogonalizer.
 def optimizer {α : Type} [_root_.Context α]
     (lr momentum : α)
     (orthogonalizer : {s : Shape} → Orthogonalizer α s :=
-      fun {s} => identity (α := α) (s := s))
+      fun {s} => _root_.Optim.Muon.identityOrthogonalizer (α := α) (s := s))
     {paramShapes : List Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
   _root_.Runtime.Autograd.TorchLean.Optim.muon (α := α) lr momentum orthogonalizer (paramShapes := paramShapes)
@@ -237,11 +189,6 @@ end muon
 namespace galore
 
 export _root_.Optim.GaLore (Projector)
-
-@[inherit_doc _root_.Optim.GaLore.identityProjector]
-def identity {α : Type} {s : Shape} :
-    Projector α s s :=
-  _root_.Optim.GaLore.identityProjector (α := α) (s := s)
 
 /--
 Projected-SGD runtime constructor for GaLore-style gradient projection.
@@ -253,7 +200,7 @@ verified update boundary once a same-shape projector is supplied.
 def sgd {α : Type} [_root_.Context α]
     (lr : α)
     (projector : {s : Shape} → Projector α s s :=
-      fun {s} => identity (α := α) (s := s))
+      fun {s} => _root_.Optim.GaLore.identityProjector (α := α) (s := s))
     {paramShapes : List Shape} :
     _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes :=
   _root_.Runtime.Autograd.TorchLean.Optim.projectedSGD (α := α) lr projector (paramShapes := paramShapes)

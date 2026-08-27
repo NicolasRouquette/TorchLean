@@ -66,8 +66,8 @@ variable {α : Type} [Context α]
 
 /-- Column-wise scaling of a matrix by a vector: scale each column `j` by `v[j]`. -/
 def matColScaleSpec
-  {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar)))
-  (v : Tensor α (.dim n .scalar)) : Tensor α (.dim m (.dim n .scalar)) :=
+  {m n : Nat} (A : Tensor α [m, n])
+  (v : Tensor α [n]) : Tensor α [m, n] :=
   match A, v with
   | Tensor.dim rows, Tensor.dim vec =>
     Tensor.dim (fun i =>
@@ -79,24 +79,24 @@ def matColScaleSpec
 
 /-- Elementwise positive part of a matrix: replace negative entries by `0`. -/
 abbrev matPosSpec {m n : Nat}
-  (A : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
+  (A : Tensor α [m, n]) : Tensor α [m, n] :=
   IBP.matPos A
 
 /-- Elementwise negative part of a matrix: replace positive entries by `0`. -/
 abbrev matNegSpec {m n : Nat}
-  (A : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
+  (A : Tensor α [m, n]) : Tensor α [m, n] :=
   IBP.matNeg A
 
 /-- Extract the slope vector from a tensor of ReLU relaxations. -/
 def reluRelaxSlopeVec {n : Nat}
-  (relax : Tensor (ReLURelax α) (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
+  (relax : Tensor (ReLURelax α) [n]) : Tensor α [n] :=
   match relax with
   | Tensor.dim r =>
     Tensor.dim (fun i => match r i with | Tensor.scalar rp => Tensor.scalar rp.slope)
 
 /-- Extract the bias vector from a tensor of ReLU relaxations. -/
 def reluRelaxBiasVec {n : Nat}
-  (relax : Tensor (ReLURelax α) (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
+  (relax : Tensor (ReLURelax α) [n]) : Tensor α [n] :=
   match relax with
   | Tensor.dim r =>
     Tensor.dim (fun i => match r i with | Tensor.scalar rp => Tensor.scalar rp.bias)
@@ -170,18 +170,18 @@ PyTorch analogue: `torch.nn.Sequential(Linear(inDim,hidDim), ReLU(), Linear(hidD
 -/
 structure TwoLayerMLP (α : Type) (inDim hidDim outDim : Nat) where
   /-- First layer weight matrix. -/
-  hiddenWeight : Tensor α (.dim hidDim (.dim inDim .scalar))
+  hiddenWeight : Tensor α [hidDim, inDim]
   /-- First layer bias vector. -/
-  hiddenBias : Tensor α (.dim hidDim .scalar)
+  hiddenBias : Tensor α [hidDim]
   /-- Second layer weight matrix. -/
-  outputWeight : Tensor α (.dim outDim (.dim hidDim .scalar))
+  outputWeight : Tensor α [outDim, hidDim]
   /-- Second layer bias vector. -/
-  outputBias : Tensor α (.dim outDim .scalar)
+  outputBias : Tensor α [outDim]
 
 /-- Forward semantics for `TwoLayerMLP` (used to state soundness theorems). -/
 def forward {inDim hidDim outDim : Nat}
   (net : TwoLayerMLP α inDim hidDim outDim)
-  (x : Tensor α (.dim inDim .scalar)) : Tensor α (.dim outDim .scalar) :=
+  (x : Tensor α [inDim]) : Tensor α [outDim] :=
   let hiddenLayer : Spec.LinearSpec α inDim hidDim := { weights := net.hiddenWeight, bias := net.hiddenBias }
   let outputLayer : Spec.LinearSpec α hidDim outDim := { weights := net.outputWeight, bias := net.outputBias }
   let hiddenPreactivation := Spec.linearSpec (α:=α) hiddenLayer x
@@ -380,7 +380,7 @@ If `x ∈ [lo, hi]` and `rp := ReLU.relax_vector lo hi`, then for every componen
 `relu(xᵢ) ≤ rpᵢ.slope * xᵢ + rpᵢ.bias`.
 -/
 theorem relu_relax_vector_pointwise_upper_real {n : Nat}
-  (lo hi x : Tensor ℝ (.dim n .scalar))
+  (lo hi x : Tensor ℝ [n])
   (hIn : Box.contains (α:=ℝ) { lo := lo, hi := hi } x) :
   ∀ i : Fin n,
     let li := match lo with | .dim flo => match flo i with | .scalar v => v
@@ -425,10 +425,10 @@ If `x ∈ xB` and `b ∈ bB`, then `W*x + b` lies in the interval box computed b
 `IBP.linear W xB bB`.
 -/
 theorem ibp_linear_sound_real {m n : Nat}
-  (W : Tensor ℝ (.dim m (.dim n .scalar)))
+  (W : Tensor ℝ [m, n])
   (xB : Box ℝ (.dim n .scalar))
   (bB : Box ℝ (.dim m .scalar))
-  (x : Tensor ℝ (.dim n .scalar)) (b : Tensor ℝ (.dim m .scalar))
+  (x : Tensor ℝ [n]) (b : Tensor ℝ [m])
   (hx : Box.contains (α:=ℝ) xB x) (hb : Box.contains (α:=ℝ) bB b) :
   Box.contains (α:=ℝ) (IBP.linear (α:=ℝ) W xB bB)
     (Spec.linearSpec (α:=ℝ) { weights := W, bias := b } x) := by
@@ -613,8 +613,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                         (List.foldl
                           (fun acc j =>
                             AffineVec.evalOnBox.match_1 (α:=ℝ)
-                              (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                Shape.scalar)
+                              (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                               acc (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                 Tensor.scalar
                                   (BoundOps.addDown accv
@@ -628,8 +627,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                           (List.foldl
                             (fun acc j =>
                               AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                  Shape.scalar)
+                                (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                                 acc (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                   Tensor.scalar
                                     (BoundOps.addUp accv
@@ -645,8 +643,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                               List.foldl
                                 (fun acc k =>
                                   Spec.matVecMulSpec.match_1 (α:=ℝ)
-                                    (fun (_acc _a _v : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                      Shape.scalar)
+                                    (fun (_acc _a _v : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                                     acc (colsA k) (xv k) (fun s ak vk => Tensor.scalar (s + ak *
                                       vk)))
                                 (Tensor.scalar 0) (List.finRange n))
@@ -660,8 +657,8 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                            (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                              Tensor ℝ Shape.scalar)
+                                            (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) =>
+                                              Tensor ℝ .scalar)
                                             accT (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                               Tensor.scalar
                                                 (BoundOps.addDown accv
@@ -692,8 +689,8 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                            (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                              Tensor ℝ Shape.scalar)
+                                            (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) =>
+                                              Tensor ℝ .scalar)
                                             accT (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                               Tensor.scalar
                                                 (BoundOps.addUp accv
@@ -724,8 +721,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT k =>
                                           Spec.matVecMulSpec.match_1 (α:=ℝ)
-                                            (fun (_acc _a _v : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                              Shape.scalar)
+                                            (fun (_acc _a _v : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                                             accT (cols k) (xv k) (fun s ak vk => Tensor.scalar (s +
                                               ak * vk)))
                                         (Tensor.scalar acc) l) =
@@ -752,8 +748,8 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                            (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                              Tensor ℝ Shape.scalar)
+                                            (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) =>
+                                              Tensor ℝ .scalar)
                                             accT (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                               Tensor.scalar
                                                 (BoundOps.addDown accv
@@ -767,8 +763,8 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                            (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                              Tensor ℝ Shape.scalar)
+                                            (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) =>
+                                              Tensor ℝ .scalar)
                                             accT (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                               Tensor.scalar
                                                 (BoundOps.addDown accv
@@ -785,8 +781,8 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                            (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                              Tensor ℝ Shape.scalar)
+                                            (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) =>
+                                              Tensor ℝ .scalar)
                                             accT (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                               Tensor.scalar
                                                 (BoundOps.addUp accv
@@ -800,8 +796,8 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT j =>
                                           AffineVec.evalOnBox.match_1 (α:=ℝ)
-                                            (fun (_acc _col _xlo _xhi : Tensor ℝ Shape.scalar) =>
-                                              Tensor ℝ Shape.scalar)
+                                            (fun (_acc _col _xlo _xhi : Tensor ℝ .scalar) =>
+                                              Tensor ℝ .scalar)
                                             accT (cols j) (xlo j) (xhi j) (fun accv aij xlo xhi =>
                                               Tensor.scalar
                                                 (BoundOps.addUp accv
@@ -815,8 +811,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                 (List.foldl
                                   (fun acc k =>
                                     Spec.matVecMulSpec.match_1 (α:=ℝ)
-                                      (fun (_acc _a _v : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                        Shape.scalar)
+                                      (fun (_acc _a _v : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                                       acc (cols k) (xv k) (fun s ak vk => Tensor.scalar (s + ak *
                                         vk)))
                                   (Tensor.scalar 0) (List.finRange n)) = Tensor.scalar sumM := by
@@ -828,8 +823,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT k =>
                                           Spec.matVecMulSpec.match_1 (α:=ℝ)
-                                            (fun (_acc _a _v : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                              Shape.scalar)
+                                            (fun (_acc _a _v : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                                             accT (cols k) (xv k) (fun s ak vk => Tensor.scalar (s +
                                               ak * vk)))
                                         (Tensor.scalar 0) (List.finRange n)) =
@@ -840,8 +834,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                                       (List.foldl
                                         (fun accT k =>
                                           Spec.matVecMulSpec.match_1 (α:=ℝ)
-                                            (fun (_acc _a _v : Tensor ℝ Shape.scalar) => Tensor ℝ
-                                              Shape.scalar)
+                                            (fun (_acc _a _v : Tensor ℝ .scalar) => Tensor ℝ .scalar)
                                             accT (cols k) (xv k) (fun s ak vk => Tensor.scalar (s +
                                               ak * vk)))
                                         (Tensor.scalar 0) (List.finRange n)) =
@@ -863,7 +856,7 @@ theorem ibp_linear_sound_real {m n : Nat}
                             -- `h1`/`h2`.
                             simp (config := { iota := true }) [hrow, hblo, hbhi, hbv]
                             -- Finish the scalar containment goal via `Tensor.item`.
-                            have hcontains_scalar_iff (loT hiT yT : Tensor ℝ Shape.scalar) :
+                            have hcontains_scalar_iff (loT hiT yT : Tensor ℝ .scalar) :
                                 Box.contains (α:=ℝ) { lo := loT, hi := hiT } yT ↔
                                   (Tensor.item loT ≤ Tensor.item yT ∧
                                     Tensor.item yT ≤ Tensor.item hiT) := by
@@ -880,7 +873,7 @@ theorem ibp_linear_sound_real {m n : Nat}
 /- Helper: soundness of IBP.relu over ℝ -/
 private theorem ibp_relu_sound_real {n : Nat}
   (zB : Box ℝ (.dim n .scalar))
-  (z : Tensor ℝ (.dim n .scalar))
+  (z : Tensor ℝ [n])
   (hz : Box.contains (α:=ℝ) zB z) :
   Box.contains (α:=ℝ) (IBP.relu (α:=ℝ) zB) (Activation.reluSpec (α:=ℝ) z) := by
   classical
@@ -927,7 +920,7 @@ private theorem ibp_relu_sound_real {n : Nat}
 theorem bound_ibp_sound {inDim hidDim outDim : Nat}
   (net : TwoLayerMLP ℝ inDim hidDim outDim)
   (xB : Box ℝ (.dim inDim .scalar))
-  (x : Tensor ℝ (.dim inDim .scalar))
+  (x : Tensor ℝ [inDim])
   (hx : Box.contains (α:=ℝ) xB x) :
   Box.contains (α:=ℝ) (boundIbp (α:=ℝ) net xB) (forward (α:=ℝ) net x) := by
   classical
@@ -989,7 +982,7 @@ corollary of `bound_ibp_sound`.
 theorem bound_affine_sound {inDim hidDim outDim : Nat}
   (net : TwoLayerMLP ℝ inDim hidDim outDim)
   (xB : Box ℝ (.dim inDim .scalar))
-  (x : Tensor ℝ (.dim inDim .scalar))
+  (x : Tensor ℝ [inDim])
   (hx : Box.contains (α:=ℝ) xB x) :
   Box.contains (α:=ℝ) (boundAffine (α:=ℝ) net xB) (forward (α:=ℝ) net x) := by
   -- `boundAffine` delegates to pure IBP bounds in this module.
@@ -1008,7 +1001,7 @@ The input set is the axis-aligned box centered at `x_center` with radius `eps` i
 def crownTwoLayerMlpBounds {inDim hidDim outDim : Nat} [BoundOps α]
   (hiddenLayer : Spec.LinearSpec α inDim hidDim)
   (outputLayer : Spec.LinearSpec α hidDim outDim)
-  (x_center : Tensor α (.dim inDim .scalar)) (eps : α) :
+  (x_center : Tensor α [inDim]) (eps : α) :
   Box α (.dim outDim .scalar) × Box α (.dim outDim .scalar) :=
   let net := ofLinearSpecs (α:=α) hiddenLayer outputLayer
   let xB : Box α (.dim inDim .scalar) :=
@@ -1022,13 +1015,6 @@ end Examples
 namespace Classify
 
 open NN.MLTheory.CROWN
-
-/-- Extract the scalar component `t[i]` from a vector-shaped tensor. -/
-def getVec {n : Nat} (t : Tensor α (.dim n .scalar)) (i : Fin n) : α :=
-  match t with
-  | Tensor.dim f =>
-    match f i with
-    | Tensor.scalar v => v
 
 /-- Lower endpoint at index `i` from a vector box. -/
 def lowerAt {n : Nat} (B : Box α (.dim n .scalar)) (i : Fin n) : α :=

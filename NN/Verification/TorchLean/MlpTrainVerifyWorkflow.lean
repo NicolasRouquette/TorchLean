@@ -6,8 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API
+public import NN.API.Verification.Trainer
+public import NN.API.Data.Training
 public import NN.API.Module.Command
+public import NN.API.Trainer.Constructor
 
 /-!
 # TorchLean MLP Train-Then-Verify Workflow
@@ -45,12 +47,12 @@ def hiddenDim : Nat := 100
 def outDim : Nat := 1
 
 /-- Input shape for the workflow model. -/
-def xShape : Spec.Shape := .dim inDim .scalar
+def xShape : List Nat := [inDim]
 /-- Output shape for the workflow model. -/
-def yShape : Spec.Shape := .dim outDim .scalar
+def yShape : List Nat := [outDim]
 
 /-- Batched inputs for training. -/
-def XFloat : Spec.Tensor Float (.dim 3 xShape) :=
+def XFloat : Spec.Tensor Float (3 :: xShape) :=
   tensor! [[1.0, 0.0],
            [0.0, 1.0],
            [1.0, 1.0]]
@@ -62,8 +64,8 @@ def target (x : Spec.Tensor Float xShape) : Spec.Tensor Float yShape :=
   Spec.Tensor.dim fun _ => Spec.Tensor.scalar (2.0 * x₁ - 3.0 * x₂)
 
 /-- Batched targets for training. -/
-def YFloat : Spec.Tensor Float (.dim 3 yShape) :=
-  Spec.Tensor.mapLeading (.dim 3 .scalar) target XFloat
+def YFloat : Spec.Tensor Float (3 :: yShape) :=
+  Tensor.mapEach [3] target XFloat
 
 /-- TorchLean model used for training and verification. -/
 def mkModel : nn.Builder (nn.Sequential xShape yShape) :=
@@ -94,7 +96,7 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
 
   IO.println s!"== TorchLean MLP workflow ({inDim} → {hiddenDim} → {outDim}) =="
   IO.println s!"Training with execution={reprStr opts.execution}, device={opts.device.cliName}"
-  let trained ← trainer.train dataset { steps := 10 }
+  let trained ← trainer.trainVerified dataset { steps := 10 }
   IO.println s!"avg_loss(on samples)={trained.report.after}"
   IO.println "Checking public IBP bounds on a small input box"
   let center := _root_.Spec.get XFloat ⟨0, by decide⟩

@@ -36,21 +36,21 @@ def swapAdjacentAtDepth {α : Type} [Context α] [DecidableEq Shape]
 
 /-! ## Core tensor semantics (PyTorch-style) -/
 
-/-- Detect duplicate `Nat`s (used to validate axis lists at runtime). -/
-def hasDupNat (xs : List Nat) : Bool :=
+/-- Detect duplicate axes in a runtime axis array. -/
+def hasDupNat (xs : Array Nat) : Bool :=
   let rec go (seen : List Nat) : List Nat → Bool
     | [] => false
     | x :: xs => if seen.contains x then true else go (x :: seen) xs
-  go [] xs
+  go [] xs.toList
 
 /-- Insert `x` into a list kept in descending order. -/
 def insertDesc (x : Nat) : List Nat → List Nat
   | [] => [x]
   | y :: ys => if x ≥ y then x :: y :: ys else y :: insertDesc x ys
 
-/-- Sort a list of `Nat`s in descending order (small insertion sort). -/
-def sortDesc (xs : List Nat) : List Nat :=
-  xs.foldl (fun acc x => insertDesc x acc) []
+/-- Sort a runtime axis array in descending order. -/
+def sortDesc (xs : Array Nat) : Array Nat :=
+  (xs.toList.foldl (fun acc x => insertDesc x acc) []).toArray
 
 /-- Swap depths that move an axis to the front position. -/
 def moveAxisToFrontSwaps (axis : Nat) : List Nat :=
@@ -81,17 +81,17 @@ PyTorch analogue: `torch.permute` / `Tensor.permute` (with runtime checks).
 def permute? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape}
-    (axes : List Nat)
+    (axes : Array Nat)
     (x : RefTy (m := m) (α := α) s) :
     m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) := do
   let r := Spec.Shape.rank s
-  if axes.length != r then
+  if axes.size != r then
     return none
   if hasDupNat axes then
     return none
   if !(axes.all (fun a => a < r)) then
     return none
-  let some swaps := Einsum.swapDepthsForPerm? axes r | return none
+  let some swaps := Einsum.swapDepthsForPerm? axes.toList r | return none
   let out ← Einsum.permuteBySwaps (α := α) (m := m) ⟨s, x⟩ swaps
   pure (some out)
 
@@ -103,7 +103,7 @@ This calls `permute?` and checks that the computed shape equals `sOut`.
 def permute {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s sOut : Shape}
-    (axes : List Nat)
+    (axes : Array Nat)
     (x : RefTy (m := m) (α := α) s) :
     m (Option (RefTy (m := m) (α := α) sOut)) := do
   let y? ← permute? (α := α) (m := m) (s := s) axes x
@@ -114,6 +114,33 @@ def permute {α : Type} [Context α] [DecidableEq Shape]
         pure (some (h ▸ y))
       else
         pure none
+
+/--
+Exchange two arbitrary axes and return the statically unknown result shape.
+
+This is the rank-independent analogue of `torch.transpose`. Both axes are checked against the
+input rank before the operation is lowered to adjacent swaps.
+-/
+def transpose? {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s : Shape} (axis₁ axis₂ : Nat)
+    (x : RefTy (m := m) (α := α) s) :
+    m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) :=
+  permute? (α := α) (m := m) (s := s)
+    (Shape.transposePermutation s.rank axis₁ axis₂).toArray x
+
+/--
+Exchange two arbitrary axes and check the statically expected output shape.
+
+The result is `none` when either axis is invalid or the transposed shape is not `sOut`.
+-/
+def transpose {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {s sOut : Shape} (axis₁ axis₂ : Nat)
+    (x : RefTy (m := m) (α := α) s) :
+    m (Option (RefTy (m := m) (α := α) sOut)) :=
+  permute (α := α) (m := m) (s := s) (sOut := sOut)
+    (Shape.transposePermutation s.rank axis₁ axis₂).toArray x
 
 namespace Internal
 
@@ -133,7 +160,7 @@ def reduceAlongLastSum {α : Type} [Context α] [DecidableEq Shape]
     if hRank : Spec.Shape.rank s > 0 then
       let axis := Spec.Shape.rank s - 1
       haveI : Shape.HasNonemptyAxis axis s :=
-        Shape.hasNonemptyLastAxis (s := s) hRank hw
+        Shape.inferNonemptyAxis (by grind)
       _root_.Runtime.Autograd.Torch.reduceSum (m := m) (α := α) (s := s) axis x.snd >>= fun y =>
         pure (some ⟨Spec.Tensor.shapeAfterSum s axis, y⟩)
     else
@@ -152,7 +179,7 @@ def reduceAlongLastMean {α : Type} [Context α] [DecidableEq Shape]
     if hRank : Spec.Shape.rank s > 0 then
       let axis := Spec.Shape.rank s - 1
       haveI : Shape.HasNonemptyAxis axis s :=
-        Shape.hasNonemptyLastAxis (s := s) hRank hw
+        Shape.inferNonemptyAxis (by grind)
       _root_.Runtime.Autograd.Torch.reduceMean (m := m) (α := α) (s := s) axis x.snd >>= fun y =>
         pure (some ⟨Spec.Tensor.shapeAfterSum s axis, y⟩)
     else
@@ -161,7 +188,7 @@ def reduceAlongLastMean {α : Type} [Context α] [DecidableEq Shape]
     pure none
 
 /--
-Core implementation for reductions over a runtime list of axes.
+Core implementation for reductions over a runtime array of axes.
 
 This lowers “reduce along axis k” to:
 1. permute axis `k` to the last position,
@@ -176,7 +203,7 @@ def reduceAxesCore {α : Type} [Context α] [DecidableEq Shape]
       (Σ s : Shape, RefTy (m := m) (α := α) s) →
         m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')))
     {s : Shape}
-    (axes : List Nat)
+    (axes : Array Nat)
     (keepdim : Bool)
     (x : RefTy (m := m) (α := α) s) :
     m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) := do
@@ -191,7 +218,7 @@ def reduceAxesCore {α : Type} [Context α] [DecidableEq Shape]
     let r := Spec.Shape.rank cur.fst
     if axis ≥ r then
       return none
-    let swaps := Shape.moveAxisToLastSwaps r axis
+    let swaps := Shape.moveAxisToInnermostSwaps r axis
     let curMoved ← Einsum.permuteBySwaps (α := α) (m := m) cur swaps
     let some curRed ← reduceLast curMoved | return none
     if keepdim then
@@ -212,7 +239,7 @@ end Internal
 def reduceSumDims? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape}
-    (axes : List Nat)
+    (axes : Array Nat)
     (x : RefTy (m := m) (α := α) s)
     (keepdim : Bool := false) :
     m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) :=
@@ -222,7 +249,7 @@ def reduceSumDims? {α : Type} [Context α] [DecidableEq Shape]
 def reduceMeanDims? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape}
-    (axes : List Nat)
+    (axes : Array Nat)
     (x : RefTy (m := m) (α := α) s)
     (keepdim : Bool := false) :
     m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) :=
@@ -270,7 +297,7 @@ def softmax {α : Type} [Context α] [DecidableEq Shape]
     {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (x : RefTy (m := m) (α := α) s) :
     m (RefTy (m := m) (α := α) s) := do
-  let swaps := Shape.moveAxisToLastSwaps (Spec.Shape.rank s) axis
+  let swaps := Shape.moveAxisToInnermostSwaps (Spec.Shape.rank s) axis
   let moved ← Einsum.permuteBySwapsTyped (α := α) (m := m) x swaps
   let y ← _root_.Runtime.Autograd.Torch.softmaxLast (m := m) (α := α) moved
   let restored ← Einsum.permuteBySwapsTyped (α := α) (m := m) y swaps.reverse
@@ -282,7 +309,7 @@ def logSoftmax {α : Type} [Context α] [DecidableEq Shape]
     {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (x : RefTy (m := m) (α := α) s) :
     m (RefTy (m := m) (α := α) s) := do
-  let swaps := Shape.moveAxisToLastSwaps (Spec.Shape.rank s) axis
+  let swaps := Shape.moveAxisToInnermostSwaps (Spec.Shape.rank s) axis
   let moved ← Einsum.permuteBySwapsTyped (α := α) (m := m) x swaps
   let y ← _root_.Runtime.Autograd.Torch.logSoftmaxLast (m := m) (α := α) moved
   let restored ← Einsum.permuteBySwapsTyped (α := α) (m := m) y swaps.reverse
@@ -299,7 +326,7 @@ def softmax? {α : Type} [Context α] [DecidableEq Shape]
   let r := Spec.Shape.rank s
   if axis ≥ r then
     return none
-  let swaps := Shape.moveAxisToLastSwaps r axis
+  let swaps := Shape.moveAxisToInnermostSwaps r axis
   let xMoved ← Einsum.permuteBySwaps (α := α) (m := m) ⟨s, x⟩ swaps
   let yMoved ←
     _root_.Runtime.Autograd.Torch.softmaxLast (m := m) (α := α) (s := xMoved.fst) xMoved.snd
@@ -319,7 +346,7 @@ def logSoftmax? {α : Type} [Context α] [DecidableEq Shape]
   let r := Spec.Shape.rank s
   if axis ≥ r then
     return none
-  let swaps := Shape.moveAxisToLastSwaps r axis
+  let swaps := Shape.moveAxisToInnermostSwaps r axis
   let xMoved ← Einsum.permuteBySwaps (α := α) (m := m) ⟨s, x⟩ swaps
   let yMoved ←
     _root_.Runtime.Autograd.Torch.logSoftmaxLast (m := m) (α := α) (s := xMoved.fst) xMoved.snd
@@ -366,7 +393,7 @@ def squeeze? {α : Type} [Context α] [DecidableEq Shape]
   let r := Spec.Shape.rank s
   if axis ≥ r then
     return none
-  let swaps := Shape.moveAxisToLastSwaps r axis
+  let swaps := Shape.moveAxisToInnermostSwaps r axis
   let xMoved ← Einsum.permuteBySwaps (α := α) (m := m) ⟨s, x⟩ swaps
   let dims := Shape.toList xMoved.fst
   match hrev : dims.reverse with
@@ -390,7 +417,7 @@ def squeeze? {α : Type} [Context α] [DecidableEq Shape]
             _ = Spec.Shape.size (Shape.ofList (dims' ++ [dLast])) := by simp [hdims]
             _ = Spec.Shape.size (Shape.ofList dims') := by
               -- `dLast = 1` in this branch.
-              simp [hLast]
+              simp [Spec.Shape.size_concat, Spec.Shape.size, hLast]
             _ = Spec.Shape.size sDropped := by rfl
         let xDropped ← reshape (m := m) (α := α) (s₁ := xMoved.fst) (s₂ := sDropped) xMoved.snd hSz
         -- Note: we *do not* permute back. After moving `axis` to the last position and then
@@ -399,11 +426,11 @@ def squeeze? {α : Type} [Context α] [DecidableEq Shape]
       else
         pure none
 
-/-- Concatenate a nonempty list of dynamically shaped tensors along `axis`. -/
+/-- Concatenate a nonempty array of dynamically shaped tensors along `axis`. -/
 def concatAxis? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     (axis : Nat)
-    (xs : List (Σ s : Shape, RefTy (m := m) (α := α) s)) :
+    (xs : Array (Σ s : Shape, RefTy (m := m) (α := α) s)) :
     m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) := do
   let concatPair
       (x y : Σ s : Shape, RefTy (m := m) (α := α) s) :
@@ -431,9 +458,10 @@ def concatAxis? {α : Type} [Context α] [DecidableEq Shape]
         else
           pure none
     | _, _ => pure none
-  match xs with
-  | [] => pure none
-  | x0 :: rest =>
+  match xs[0]? with
+  | none => pure none
+  | some x0 =>
+      let rest := xs.extract 1 xs.size
       let mut cur := x0
       for x in rest do
         let some cur' ← concatPair cur x | return none
@@ -450,18 +478,19 @@ Implementation: `unsqueeze` each input at `axis`, then `cat` along the same `axi
 def stackAxis? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     (axis : Nat)
-    (xs : List (Σ s : Shape, RefTy (m := m) (α := α) s)) :
+    (xs : Array (Σ s : Shape, RefTy (m := m) (α := α) s)) :
     m (Option (Σ s' : Shape, RefTy (m := m) (α := α) s')) := do
-  match xs with
-  | [] => pure none
-  | x0 :: rest =>
+  match xs[0]? with
+  | none => pure none
+  | some x0 =>
+      let rest := xs.extract 1 xs.size
       -- Require all inputs have the same shape (PyTorch requirement).
       if !(rest.all (fun x => x.fst = x0.fst)) then
         return none
-      let mut ys : List (Σ s : Shape, RefTy (m := m) (α := α) s) := []
+      let mut ys : Array (Σ s : Shape, RefTy (m := m) (α := α) s) := #[]
       for x in xs do
         let some y ← unsqueeze? (α := α) (m := m) (s := x.fst) axis x.snd | return none
-        ys := ys.concat y
+        ys := ys.push y
       concatAxis? (α := α) (m := m) axis ys
 
 /--
@@ -473,9 +502,9 @@ def splitAxis? {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {s : Shape}
     (axis : Nat)
-    (splitSizes : List Nat)
+    (splitSizes : Array Nat)
     (x : RefTy (m := m) (α := α) s) :
-    m (Option (List (Σ s' : Shape, RefTy (m := m) (α := α) s'))) := do
+    m (Option (Array (Σ s' : Shape, RefTy (m := m) (α := α) s'))) := do
   let r := Spec.Shape.rank s
   if r = 0 then
     return none
@@ -489,10 +518,10 @@ def splitAxis? {α : Type} [Context α] [DecidableEq Shape]
       if splitSizes.foldl (fun acc k => acc + k) 0 != nDim then
         return none
       let mut start : Nat := 0
-      let mut outs : List (Σ s' : Shape, RefTy (m := m) (α := α) s') := []
+      let mut outs : Array (Σ s' : Shape, RefTy (m := m) (α := α) s') := #[]
       for len in splitSizes do
         let some y ← sliceRangeAxis? (α := α) (m := m) (s := s) axis start len x | return none
-        outs := outs.concat y
+        outs := outs.push y
         start := start + len
       pure (some outs)
 
@@ -507,7 +536,7 @@ def chunkAxis? {α : Type} [Context α] [DecidableEq Shape]
     (axis : Nat)
     (chunkSize : Nat)
     (x : RefTy (m := m) (α := α) s) :
-    m (Option (List (Σ s' : Shape, RefTy (m := m) (α := α) s'))) := do
+    m (Option (Array (Σ s' : Shape, RefTy (m := m) (α := α) s'))) := do
   if chunkSize = 0 then
     return none
   let r := Spec.Shape.rank s
@@ -522,33 +551,13 @@ def chunkAxis? {α : Type} [Context α] [DecidableEq Shape]
   | .dim nDim _ =>
       -- Ceiling division to compute number of chunks.
       let nChunks : Nat := (nDim + chunkSize - 1) / chunkSize
-      let sizes : List Nat :=
-        (List.range nChunks).map (fun i =>
+      let sizes : Array Nat :=
+        (Array.range nChunks).map (fun i =>
           if (i + 1) * chunkSize ≤ nDim then
             chunkSize
           else
             nDim - i * chunkSize)
       splitAxis? (α := α) (m := m) (s := s) axis sizes x
-
-/-- NCHW → NHWC for 4D tensors, implemented via two adjacent swaps. -/
-def nchwToNhwc {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n c h w : Nat}
-    (x : RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim h (.dim w (.dim c .scalar))))) := do
-  let x1 : RefTy (m := m) (α := α) (.dim n (.dim h (.dim c (.dim w .scalar)))) ←
-    swapAdjacentAtDepth (m := m) (α := α) (s := (.dim n (.dim c (.dim h (.dim w .scalar))))) 1 x
-  swapAdjacentAtDepth (m := m) (α := α) (s := (.dim n (.dim h (.dim c (.dim w .scalar))))) 2 x1
-
-/-- NHWC → NCHW for 4D tensors, implemented via two adjacent swaps. -/
-def nhwcToNchw {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n h w c : Nat}
-    (x : RefTy (m := m) (α := α) (.dim n (.dim h (.dim w (.dim c .scalar))))) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))) := do
-  let x1 : RefTy (m := m) (α := α) (.dim n (.dim h (.dim c (.dim w .scalar)))) ←
-    swapAdjacentAtDepth (m := m) (α := α) (s := (.dim n (.dim h (.dim w (.dim c .scalar))))) 2 x
-  swapAdjacentAtDepth (m := m) (α := α) (s := (.dim n (.dim h (.dim c (.dim w .scalar))))) 1 x1
 
 end F
 end TorchLean

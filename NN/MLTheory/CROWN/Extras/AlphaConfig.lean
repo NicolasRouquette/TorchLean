@@ -56,7 +56,7 @@ structure LayerAlpha (α : Type) [Context α] where
   /-- Number of neurons in this activation layer. -/
   dim : Nat
   /-- Per-neuron α parameters, indexed by the layer dimension. -/
-  alphas : Tensor (NeuronAlpha α) (.dim dim .scalar)
+  alphas : Tensor (NeuronAlpha α) [dim]
 
 /-- Full network alpha configuration. -/
 structure NetworkAlpha (α : Type) [Context α] where
@@ -186,7 +186,7 @@ structure LayerAlphaGrad (α : Type) [Context α] where
   /-- Number of neurons in the activation layer. -/
   dim : Nat
   /-- Per-neuron gradients of the bound objective with respect to α parameters. -/
-  grads : Tensor (AlphaGradient α) (.dim dim .scalar)
+  grads : Tensor (AlphaGradient α) [dim]
 
 /-- Configuration for alpha optimization. -/
 structure AlphaOptConfig where

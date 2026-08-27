@@ -27,31 +27,29 @@ namespace TorchLean.nn.models
 /-- Configuration for a scalar-field FNO over `d` spatial axes. -/
 structure FnoConfig (d : Nat) where
   /-- Extent of each spatial axis. -/
-  spatial : Vector Nat d
+  spatial : Tensor Nat [d]
   /-- Number of low and high Fourier modes retained along each axis. -/
-  modes : Vector Nat d
+  modes : Tensor Nat [d]
   /-- Every spatial axis is nonempty. -/
-  spatialNonzero : ∀ axis : Fin d, spatial.get axis ≠ 0
+  spatialNonzero : ∀ axis : Fin d, spatial.getScalar axis ≠ 0
   /-- Low and high retained bands do not overlap along any axis. -/
-  modesFit : ∀ axis : Fin d, 2 * modes.get axis ≤ spatial.get axis
+  modesFit : ∀ axis : Fin d, 2 * modes.getScalar axis ≤ spatial.getScalar axis
   /-- Width of the latent channel representation. -/
   width : Nat
   /-- The latent channel representation is nonempty. -/
   widthNonzero : width ≠ 0
   /-- Number of spectral residual blocks. -/
   blocks : Nat
-  /-- Base seed for parameter initialization. -/
-  seed : Nat := 0
 
 /-- Input shape of the scalar field, with any independently mapped axes prepended. -/
 abbrev FnoConfig.inputShape {d : Nat} (cfg : FnoConfig d)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (Spec.Shape.ofList cfg.spatial.toList)
+    (leading : List Nat := []) : List Nat :=
+  leading ++ cfg.spatial.toList
 
 /-- Output shape of the scalar field, with any independently mapped axes prepended. -/
 abbrev FnoConfig.outputShape {d : Nat} (cfg : FnoConfig d)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (Spec.Shape.ofList cfg.spatial.toList)
+    (leading : List Nat := []) : List Nat :=
+  leading ++ cfg.spatial.toList
 
 /--
 Build the portable multidimensional FNO model.
@@ -59,10 +57,11 @@ Build the portable multidimensional FNO model.
 The shape and mode contracts are independent of the selected device and provider and are retained
 when a fused kernel is chosen.
 -/
-def fno {d : Nat} (cfg : FnoConfig d) (leading : Spec.Shape := .scalar) :
+def fno {d : Nat} (cfg : FnoConfig d) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
-  nn.mapLeading leading <|
-    _root_.Runtime.Autograd.TorchLean.NN.FNO.model
-      cfg.spatial cfg.modes cfg.width cfg.blocks (seed := cfg.seed)
+  nn.withSeed fun seed =>
+    nn.mapEach leading <|
+      _root_.Runtime.Autograd.TorchLean.NN.FNO.model
+        cfg.spatial cfg.modes cfg.width cfg.blocks (seed := seed)
 
 end TorchLean.nn.models

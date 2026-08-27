@@ -92,11 +92,12 @@ variable {α : Type u}
 /--
 The leaves of the reduction tree, read left-to-right.
 
-We use `List.Perm` on `leaves` later to model “the same multiset of inputs, possibly reordered by
-parallel scheduling”.
+The numerical collection is an `Array`. The schedule relation below converts arrays to lists only
+inside `List.Perm`, reusing mathlib's established permutation theory without exposing list-backed
+numerical data in the API.
 -/
-def leaves : SumTree α → List α
-  | leaf x => [x]
+def leaves : SumTree α → Array α
+  | leaf x => #[x]
   | node a b => leaves a ++ leaves b
 
 /-- Number of leaves in the tree (the “reduction length”). -/
@@ -123,9 +124,6 @@ namespace ReductionBound
 /-- Growth factor `(1+u)^(n-1)` for a reduction with `n` leaves. -/
 noncomputable def growth (u : ℝ) (n : Nat) : ℝ :=
   (1 + u) ^ (n - 1)
-
-/-- Base case: a “reduction” with one leaf has growth factor `1`. -/
-theorem growth_one (u : ℝ) : growth u 1 = 1 := by simp [growth]
 
 /--
 Monotonicity of the growth factor in the number of leaves.
@@ -434,8 +432,9 @@ Nondeterministic sum result relation.
 `sumTreeResult xs r` means: there exists a reduction tree `t` whose leaves are a permutation of `xs`
 and such that evaluating `t` using executable `add` produces `r` *and* stays finite throughout.
 -/
-def sumTreeResult (xs : List IEEE32Exec) (r : IEEE32Exec) : Prop :=
-  ∃ t : SumTree IEEE32Exec, List.Perm t.leaves xs ∧ evalIEEE t = r ∧ FiniteEvalSumTree t
+def sumTreeResult (xs : Array IEEE32Exec) (r : IEEE32Exec) : Prop :=
+  ∃ t : SumTree IEEE32Exec,
+    List.Perm t.leaves.toList xs.toList ∧ evalIEEE t = r ∧ FiniteEvalSumTree t
 
 /--
 Real-valued “finite-branch model” of `evalIEEE`.
@@ -504,13 +503,13 @@ The conclusion produces a witness tree `t` and a bound on how far `toReal r` can
 exact real sum of `t`’s leaves (measured against the leaf scale `sumAbsIEEE t`).
 -/
 theorem sumTreeResult_enclosure
-    (xs : List IEEE32Exec) (r : IEEE32Exec)
+    (xs : Array IEEE32Exec) (r : IEEE32Exec)
     (hres : sumTreeResult xs r)
     (u : ℝ)
     (H : RelativeLocalAddBound (fun a b => fp32Round (a + b)) u)
     (hu : 0 ≤ u) :
     ∃ t : SumTree IEEE32Exec,
-      List.Perm t.leaves xs ∧ evalIEEE t = r ∧
+      List.Perm t.leaves.toList xs.toList ∧ evalIEEE t = r ∧
       _root_.abs (toReal r - exactSumIEEE t) ≤ (growth u t.leafCount - 1) * sumAbsIEEE t := by
   rcases hres with ⟨t, hperm, hr, hfin⟩
   refine ⟨t, hperm, hr, ?_⟩
@@ -599,9 +598,9 @@ Nondeterministic dot-product result relation.
   permutation)
 whose executable evaluation `evalDotIEEE` yields `r` and stays finite throughout.
 -/
-def dotTreeResult (xs : List (IEEE32Exec × IEEE32Exec)) (r : IEEE32Exec) : Prop :=
+def dotTreeResult (xs : Array (IEEE32Exec × IEEE32Exec)) (r : IEEE32Exec) : Prop :=
   ∃ t : SumTree (IEEE32Exec × IEEE32Exec),
-    List.Perm t.leaves xs ∧ evalDotIEEE t = r ∧ FiniteEvalDot t
+    List.Perm t.leaves.toList xs.toList ∧ evalDotIEEE t = r ∧ FiniteEvalDot t
 
 /--
 Real-valued finite-branch model of `evalDotIEEE`.
@@ -686,7 +685,7 @@ theorem toReal_evalDotIEEE_eq_evalRealDotIEEE_of_FiniteEvalDot :
 /--
 Enclosure theorem for nondeterministic dot-product accumulation.
 
-`dotTreeResult xs r` means: the runtime computed `r` by taking the list of pairs `xs`, multiplying
+`dotTreeResult xs r` means: the runtime computed `r` by taking the array of pairs `xs`, multiplying
 each pair, and then summing the products using *some* reduction tree whose leaves are a permutation
 of `xs`.
 
@@ -695,13 +694,13 @@ the accumulation result is close (in $\mathbb{R}$) to the exact sum of leaf prod
 factor bound as in the plain-sum case.
 -/
 theorem dotTreeResult_enclosure
-    (xs : List (IEEE32Exec × IEEE32Exec)) (r : IEEE32Exec)
+    (xs : Array (IEEE32Exec × IEEE32Exec)) (r : IEEE32Exec)
     (hres : dotTreeResult xs r)
     (u : ℝ)
     (H : RelativeLocalAddBound (fun a b => fp32Round (a + b)) u)
     (hu : 0 ≤ u) :
     ∃ t : SumTree (IEEE32Exec × IEEE32Exec),
-      List.Perm t.leaves xs ∧ evalDotIEEE t = r ∧
+      List.Perm t.leaves.toList xs.toList ∧ evalDotIEEE t = r ∧
       _root_.abs (toReal r - exactSumDotIEEE t) ≤ (growth u t.leafCount - 1) * sumAbsDotIEEE t := by
   rcases hres with ⟨t, hperm, hr, hfin⟩
   refine ⟨t, hperm, hr, ?_⟩

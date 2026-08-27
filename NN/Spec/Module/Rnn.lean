@@ -45,11 +45,11 @@ variable {α : Type} [Context α]
 def rnn {seqLen inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim seqLen (.dim inputSize .scalar))
-    (.dim seqLen (.dim hiddenSize .scalar)) :=
+    ([seqLen, inputSize])
+    ([seqLen, hiddenSize]) :=
 {
   forward := fun x =>
-    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    let initialHidden := fill 0 ([hiddenSize])
     rnnSequenceSpec rnn x initialHidden,
   kind := "RNN",
   pythonExpr := s!"RNNOnlyOutput({inputSize}, {hiddenSize})"
@@ -60,13 +60,13 @@ def rnn {seqLen inputSize hiddenSize : Nat}
 def lstm {seqLen inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim seqLen (.dim inputSize .scalar))
-    (.dim seqLen (.dim hiddenSize .scalar)) :=
+    ([seqLen, inputSize])
+    ([seqLen, hiddenSize]) :=
 {
   forward := fun x =>
     let initialState : LSTMState α hiddenSize := {
-      hidden := fill 0 (.dim hiddenSize .scalar),
-      cell := fill 0 (.dim hiddenSize .scalar)
+      hidden := fill 0 ([hiddenSize]),
+      cell := fill 0 ([hiddenSize])
     }
     (lstmSequenceSpec lstm x initialState).1,
   kind := "LSTM",
@@ -78,11 +78,11 @@ def lstm {seqLen inputSize hiddenSize : Nat}
 def gru {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim seqLen (.dim inputSize .scalar))
-    (.dim seqLen (.dim hiddenSize .scalar)) :=
+    ([seqLen, inputSize])
+    ([seqLen, hiddenSize]) :=
 {
   forward := fun x =>
-    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    let initialHidden := fill 0 ([hiddenSize])
     gruSequenceSpec gru x initialHidden,
   kind := "GRU",
   pythonExpr := s!"GRUOnlyOutput({inputSize}, {hiddenSize})"
@@ -93,20 +93,20 @@ def bidirectionalLstm {seqLen inputSize hiddenSize : Nat}
   (forwardLstm : LSTMSpec α inputSize hiddenSize)
   (backwardLstm : LSTMSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim seqLen (.dim inputSize .scalar))
-    (.dim seqLen (.dim (hiddenSize + hiddenSize) .scalar)) :=
+    ([seqLen, inputSize])
+    ([seqLen, (hiddenSize + hiddenSize)]) :=
 {
   forward := fun x =>
     let initialState : LSTMState α hiddenSize := {
-      hidden := fill 0 (.dim hiddenSize .scalar),
-      cell := fill 0 (.dim hiddenSize .scalar)
+      hidden := fill 0 ([hiddenSize]),
+      cell := fill 0 ([hiddenSize])
     }
     let (forwardOut, _) := lstmSequenceSpec forwardLstm x initialState
-    let reversedInputs := Tensor.reverseLeadingAxis x
+    let reversedInputs := Tensor.reverseAxis 0 x
     let (reversedBackwardOut, _) := lstmSequenceSpec backwardLstm reversedInputs initialState
-    let backwardOut := Tensor.reverseLeadingAxis reversedBackwardOut
-    Tensor.zipWithLeading (.dim seqLen .scalar) (.dim (hiddenSize + hiddenSize) .scalar)
-      Tensor.concatLeadingAxisSpec forwardOut backwardOut,
+    let backwardOut := Tensor.reverseAxis 0 reversedBackwardOut
+    Tensor.zipEach ([seqLen]) ([(hiddenSize + hiddenSize)])
+      (Tensor.concatAxisSpec .scalar) forwardOut backwardOut,
   kind := "BiLSTM",
   pythonExpr := s!"LSTMOnlyOutput({inputSize}, {hiddenSize}, bidirectional=True)"
 }
@@ -120,8 +120,8 @@ so the module is shape-safe and easy to compose.
 def rnnCell {inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim (inputSize + hiddenSize) .scalar)
-    (.dim hiddenSize .scalar) :=
+    ([(inputSize + hiddenSize)])
+    ([hiddenSize]) :=
 {
   forward := fun x =>
     let input := sliceRangeSpec x 0 inputSize (by
@@ -141,8 +141,8 @@ Output convention: the concatenated new state `[h'; c']`.
 def lstmCell {inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim (inputSize + hiddenSize + hiddenSize) .scalar)
-    (.dim (hiddenSize + hiddenSize) .scalar) :=
+    ([(inputSize + hiddenSize + hiddenSize)])
+    ([(hiddenSize + hiddenSize)]) :=
 {
   forward := fun x =>
     let input := sliceRangeSpec x 0 inputSize (by
@@ -152,7 +152,7 @@ def lstmCell {inputSize hiddenSize : Nat}
     let cell := sliceRangeSpec x (inputSize + hiddenSize) hiddenSize (by simp)
     let state : LSTMState α hiddenSize := ⟨hidden, cell⟩
     let nextState := lstmCellSpec lstm input state
-    concatLeadingAxisSpec nextState.hidden nextState.cell,
+    concatAxisSpec .scalar nextState.hidden nextState.cell,
   kind := "LSTMCell",
   pythonExpr := s!"nn.LSTMCell({inputSize}, {hiddenSize})"
 }
@@ -162,8 +162,8 @@ def lstmCell {inputSize hiddenSize : Nat}
 def gruCell {inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim (inputSize + hiddenSize) .scalar)
-    (.dim hiddenSize .scalar) :=
+    ([(inputSize + hiddenSize)])
+    ([hiddenSize]) :=
 {
   forward := fun x =>
     let input := sliceRangeSpec x 0 inputSize (by
@@ -183,17 +183,17 @@ def bidirectionalRnn {seqLen inputSize hiddenSize : Nat}
   (forwardRnn : RNNSpec α inputSize hiddenSize)
   (backwardRnn : RNNSpec α inputSize hiddenSize) :
   Spec.Module α
-    (.dim seqLen (.dim inputSize .scalar))
-    (.dim seqLen (.dim (hiddenSize + hiddenSize) .scalar)) :=
+    ([seqLen, inputSize])
+    ([seqLen, (hiddenSize + hiddenSize)]) :=
 {
   forward := fun x =>
-    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    let initialHidden := fill 0 ([hiddenSize])
     let forwardOut := rnnSequenceSpec forwardRnn x initialHidden
-    let reversedInputs := Tensor.reverseLeadingAxis x
+    let reversedInputs := Tensor.reverseAxis 0 x
     let reversedBackwardOut := rnnSequenceSpec backwardRnn reversedInputs initialHidden
-    let backwardOut := Tensor.reverseLeadingAxis reversedBackwardOut
-    Tensor.zipWithLeading (.dim seqLen .scalar) (.dim (hiddenSize + hiddenSize) .scalar)
-      Tensor.concatLeadingAxisSpec forwardOut backwardOut,
+    let backwardOut := Tensor.reverseAxis 0 reversedBackwardOut
+    Tensor.zipEach ([seqLen]) ([(hiddenSize + hiddenSize)])
+      (Tensor.concatAxisSpec .scalar) forwardOut backwardOut,
   kind := "BiRNN",
   pythonExpr := s!"RNNOnlyOutput({inputSize}, {hiddenSize}, bidirectional=True)"
 }

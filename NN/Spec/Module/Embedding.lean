@@ -29,7 +29,7 @@ variable {α : Type} [Context α]
 /-- One-hot embedding module: `(seqLen, vocab)` to `(seqLen, embedDim)`. -/
 def oneHotEmbedding {vocab embedDim seqLen : Nat}
   (embedding : Embedding vocab embedDim α) :
-  Spec.Module α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
+  Spec.Module α ([seqLen, vocab]) ([seqLen, embedDim]) :=
 { forward := fun oneHot => embedding.oneHot oneHot
   kind := "OneHotEmbedding"
   pythonExpr := s!"OneHotEmbedding(vocab={vocab}, embedDim={embedDim})" }

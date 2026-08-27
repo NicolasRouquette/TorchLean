@@ -11,7 +11,7 @@ public import NN.Runtime.Autograd.TypedGraph.GraphM.Neural
 /-!
 # GraphM Convolution Ops
 
-N-dimensional and two-dimensional convolution and transposed-convolution builders.
+Rank-generic convolution and transposed-convolution builders.
 -/
 
 @[expose] public section
@@ -37,9 +37,9 @@ The JVP follows bilinearity:
 -/
 def conv {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {d inC outC : Nat}
-  {kernel stride padding : Vector Nat d}
-  {inSpatial : Vector Nat d}
-  {hInC : inC ≠ 0} {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
+  {kernel stride padding : Spec.Tensor Nat [d]}
+  {inSpatial : Spec.Tensor Nat [d]}
+  {hInC : inC ≠ 0} {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
   (w : Var (Shape.ofList (outC :: inC :: kernel.toList)))
   (b : Var (.dim outC .scalar))
   (x : Var (Shape.ofList (inC :: inSpatial.toList))) :
@@ -51,7 +51,7 @@ def conv {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss b)
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
 
-  let outSpatial : Vector Nat d :=
+  let outSpatial : Spec.Tensor Nat [d] :=
     Spec.convOutSpatial inSpatial kernel stride padding
   let outS : Shape := Shape.ofList (outC :: outSpatial.toList)
   let node : NodeData α Δ (Γ ++ ss) outS :=
@@ -68,7 +68,7 @@ def conv {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
         let dW := getIdx (α := α) (xs := dctx) iw
         let dB := getIdx (α := α) (xs := dctx) ib
         let dX := getIdx (α := α) (xs := dctx) ix
-        let zeroBias : Tensor α (.dim outC .scalar) := fill (0 : α) (.dim outC .scalar)
+        let zeroBias : Tensor α [outC] := fill (0 : α) (.dim outC .scalar)
         let layerX : Spec.ConvSpec d inC outC kernel stride padding α :=
           { kernel := wv, bias := zeroBias }
         let layerParams : Spec.ConvSpec d inC outC kernel stride padding α :=
@@ -82,12 +82,12 @@ def conv {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
           { kernel := wv, bias := bv }
         let (dW, dB, dX) := Spec.convBackwardSpec (layer := layer) xv dLdy
         let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss)
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss)
               (s := Shape.ofList (outC :: inC :: kernel.toList)) iw dW)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outC .scalar) ib dB)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim outC .scalar) ib dB)
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z0
+          (TensorPack.single (α := α) (Γ := Γ ++ ss)
             (s := Shape.ofList (inC :: inSpatial.toList)) ix dX) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
 
@@ -108,9 +108,9 @@ Forward-mode JVP uses bilinearity:
 -/
 def convTranspose {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   {Γ : List Shape} {d inC outC : Nat}
-  {kernel stride padding : Vector Nat d}
-  {inSpatial : Vector Nat d}
-  {hInC : inC ≠ 0} {hKernel : ∀ i : Fin d, kernel.get i ≠ 0}
+  {kernel stride padding : Spec.Tensor Nat [d]}
+  {inSpatial : Spec.Tensor Nat [d]}
+  {hInC : inC ≠ 0} {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
   (w : Var (Shape.ofList (inC :: outC :: kernel.toList)))
   (b : Var (.dim outC .scalar))
   (x : Var (Shape.ofList (inC :: inSpatial.toList))) :
@@ -122,7 +122,7 @@ def convTranspose {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
   let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss b)
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
 
-  let outSpatial : Vector Nat d :=
+  let outSpatial : Spec.Tensor Nat [d] :=
     Spec.convTransposeOutSpatial inSpatial kernel stride padding
   let outS : Shape := Shape.ofList (outC :: outSpatial.toList)
   let node : NodeData α Δ (Γ ++ ss) outS :=
@@ -139,7 +139,7 @@ def convTranspose {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
         let dW := getIdx (α := α) (xs := dctx) iw
         let dB := getIdx (α := α) (xs := dctx) ib
         let dX := getIdx (α := α) (xs := dctx) ix
-        let zeroBias : Tensor α (.dim outC .scalar) := fill (0 : α) (.dim outC .scalar)
+        let zeroBias : Tensor α [outC] := fill (0 : α) (.dim outC .scalar)
         let layerX : Spec.ConvTransposeSpec d inC outC kernel stride padding α :=
           { kernel := wv, bias := zeroBias }
         let layerParams : Spec.ConvTransposeSpec d inC outC kernel stride padding α :=
@@ -154,155 +154,14 @@ def convTranspose {α : Type} {Δ : Type} [Context α] [DecidableEq Shape]
           { kernel := wv, bias := bv }
         let (dW, dB, dX) := Spec.convTransposeBackwardSpec (layer := layer) xv dLdy
         let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss)
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss)
               (s := Shape.ofList (inC :: outC :: kernel.toList)) iw dW)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outC .scalar) ib dB)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim outC .scalar) ib dB)
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z0
+          (TensorPack.single (α := α) (Γ := Γ ++ ss)
             (s := Shape.ofList (inC :: inSpatial.toList)) ix dX) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
-
-/--
-2D convolution (channel-first) on a single image tensor.
-
-PyTorch comparison: `torch.nn.functional.conv2d` (without a batch dimension).
-
-Forward-mode JVP uses bilinearity:
-`d(conv2d(k,b,x)) = conv2d(k,0,dx) + conv2d(dk,db,x)`.
--/
-def conv2d {α : Type} {Δ : Type} [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-  {Γ : List Shape} {inC outC kH kW stride padding inH inW : Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-  (kernel : Var (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))))
-  (bias : Var (.dim outC .scalar))
-  (input : Var (.dim inC (.dim inH (.dim inW .scalar)))) :
-  MWith α Δ Γ (Var (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
-  let ⟨ss, g⟩ ← get
-  let ik ← liftM (mkIdx (_α := α) (Γ := Γ) ss kernel)
-  let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss bias)
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss input)
-  let outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
-  let outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
-  let outS : Shape := .dim outC (.dim outH (.dim outW .scalar))
-  let node : NodeData α Δ (Γ ++ ss) outS :=
-    { forward := fun ctx _d =>
-        let kern := getIdx (α := α) (xs := ctx) ik
-        let bv := getIdx (α := α) (xs := ctx) ib
-        let inp := getIdx (α := α) (xs := ctx) ix
-        let layer :
-            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
-          { kernel := kern
-            bias := bv }
-        Spec.conv2dSpec (layer := layer) inp
-      jvp := fun ctx dctx _d =>
-        let kern := getIdx (α := α) (xs := ctx) ik
-        let inp := getIdx (α := α) (xs := ctx) ix
-        let dKernel := getIdx (α := α) (xs := dctx) ik
-        let dBias := getIdx (α := α) (xs := dctx) ib
-        let dInput := getIdx (α := α) (xs := dctx) ix
-        let zeroBias : Tensor α (.dim outC .scalar) := fill (0 : α) (.dim outC .scalar)
-        let layerX :
-            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
-          { kernel := kern
-            bias := zeroBias }
-        let layerParams :
-            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
-          { kernel := dKernel
-            bias := dBias }
-        addSpec (Spec.conv2dSpec (layer := layerX) dInput)
-          (Spec.conv2dSpec (layer := layerParams) inp)
-      vjp := fun ctx _d dLdy =>
-        let kern := getIdx (α := α) (xs := ctx) ik
-        let bv := getIdx (α := α) (xs := ctx) ib
-        let inp := getIdx (α := α) (xs := ctx) ix
-        let layer :
-            Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
-          { kernel := kern
-            bias := bv }
-        let (dKernel, dBias, dInput) := Spec.conv2dBackwardSpec (layer := layer) inp dLdy
-        let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outC (.dim inC (.dim kH (.dim kW
-              .scalar)))) ik dKernel)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outC .scalar) ib dBias)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim inC (.dim inH (.dim inW .scalar))) ix
-            dInput) }
-  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
-
-/--
-2D transpose convolution (channel-first) on a single image tensor.
-
-PyTorch comparison: `torch.nn.functional.conv_transpose2d` (without a batch dimension).
-
-Forward-mode JVP uses bilinearity:
-`d(convTranspose2d(k,b,x)) = convTranspose2d(k,0,dx) + convTranspose2d(dk,db,x)`.
--/
-def convTranspose2d {α : Type} {Δ : Type} [Context α]
-  [DecidableEq Shape]
-  {Γ : List Shape} {inC outC kH kW stride padding inH inW : Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-  (kernel : Var (.dim inC (.dim outC (.dim kH (.dim kW .scalar)))))
-  (bias : Var (.dim outC .scalar))
-  (input : Var (.dim inC (.dim inH (.dim inW .scalar)))) :
-  MWith α Δ Γ (Var (.dim outC (.dim (Spec.convTransposeOutDim inH kH stride padding)
-    (.dim (Spec.convTransposeOutDim inW kW stride padding) .scalar)))) := do
-  have h1' : inC > 0 := Nat.pos_of_ne_zero h1
-  let ⟨ss, g⟩ ← get
-  let ik ← liftM (mkIdx (_α := α) (Γ := Γ) ss kernel)
-  let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss bias)
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss input)
-  let outH : Nat := Spec.convTransposeOutDim inH kH stride padding
-  let outW : Nat := Spec.convTransposeOutDim inW kW stride padding
-  let outS : Shape := .dim outC (.dim outH (.dim outW .scalar))
-  let node : NodeData α Δ (Γ ++ ss) outS :=
-    { forward := fun ctx _d =>
-        let kern := getIdx (α := α) (xs := ctx) ik
-        let bv := getIdx (α := α) (xs := ctx) ib
-        let inp := getIdx (α := α) (xs := ctx) ix
-        let layer :
-            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
-          { kernel := kern
-            bias := bv }
-        Spec.convTranspose2dSpec (layer := layer) inp
-      jvp := fun ctx dctx _d =>
-        let kern := getIdx (α := α) (xs := ctx) ik
-        let inp := getIdx (α := α) (xs := ctx) ix
-        let dKernel := getIdx (α := α) (xs := dctx) ik
-        let dBias := getIdx (α := α) (xs := dctx) ib
-        let dInput := getIdx (α := α) (xs := dctx) ix
-        let zeroBias : Tensor α (.dim outC .scalar) := fill (0 : α) (.dim outC .scalar)
-        let layerX :
-            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
-          { kernel := kern
-            bias := zeroBias }
-        let layerParams :
-            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
-          { kernel := dKernel
-            bias := dBias }
-        addSpec (Spec.convTranspose2dSpec (layer := layerX) dInput)
-          (Spec.convTranspose2dSpec (layer := layerParams) inp)
-      vjp := fun ctx _d dLdy =>
-        let kern := getIdx (α := α) (xs := ctx) ik
-        let bv := getIdx (α := α) (xs := ctx) ib
-        let inp := getIdx (α := α) (xs := ctx) ix
-        let layer :
-            Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
-          { kernel := kern
-            bias := bv }
-        let (dKernel, dBias, dInput) := Spec.convTranspose2dBackwardSpec (layer := layer) inp dLdy
-        let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss)
-              (s := .dim inC (.dim outC (.dim kH (.dim kW .scalar)))) ik dKernel)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outC .scalar) ib dBias)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim inC (.dim inH (.dim inW .scalar))) ix
-            dInput) }
-  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
-
 
 end GraphM
 end TypedGraph

@@ -65,11 +65,11 @@ structure LayerRelax (α : Type) [Context α] where
   /-- Number of neurons covered by this relaxation record. -/
   dim : Nat
   /-- Per-neuron affine envelope parameters. -/
-  params : Tensor (NeuronRelax α) (.dim dim .scalar)
+  params : Tensor (NeuronRelax α) [dim]
 
 /-- Extract relaxation slopes as diagonal matrix (for lower bound). -/
 def layerSlopesLower {n : Nat} (relax : LayerRelax α)
-    (h : relax.dim = n) : Tensor α (.dim n (.dim n .scalar)) :=
+    (h : relax.dim = n) : Tensor α [n, n] :=
   by
     cases h
     cases relax.params with
@@ -85,7 +85,7 @@ def layerSlopesLower {n : Nat} (relax : LayerRelax α)
 
 /-- Extract relaxation slopes as diagonal matrix (for upper bound). -/
 def layerSlopesUpper {n : Nat} (relax : LayerRelax α)
-    (h : relax.dim = n) : Tensor α (.dim n (.dim n .scalar)) :=
+    (h : relax.dim = n) : Tensor α [n, n] :=
   by
     cases h
     cases relax.params with
@@ -101,7 +101,7 @@ def layerSlopesUpper {n : Nat} (relax : LayerRelax α)
 
 /-- Extract bias vector (for lower bound). -/
 def layerBiasLower {n : Nat} (relax : LayerRelax α)
-    (h : relax.dim = n) : Tensor α (.dim n .scalar) :=
+    (h : relax.dim = n) : Tensor α [n] :=
   by
     cases h
     cases relax.params with
@@ -113,7 +113,7 @@ def layerBiasLower {n : Nat} (relax : LayerRelax α)
 
 /-- Extract bias vector (for upper bound). -/
 def layerBiasUpper {n : Nat} (relax : LayerRelax α)
-    (h : relax.dim = n) : Tensor α (.dim n .scalar) :=
+    (h : relax.dim = n) : Tensor α [n] :=
   by
     cases h
     cases relax.params with
@@ -135,27 +135,27 @@ structure BackwardNetwork (α : Type) [Context α] where
   /-- Layer dimensions: dims[i] is output dim of layer i -/
   dims : Array Nat
   /-- Weight matrices: W[i] has shape [dims[i], dims[i-1]] -/
-  weights : Array (Σ m n : Nat, Tensor α (.dim m (.dim n .scalar)))
+  weights : Array (Σ m n : Nat, Tensor α [m, n])
   /-- Bias vectors: b[i] has shape [dims[i]] -/
-  biases : Array (Σ n : Nat, Tensor α (.dim n .scalar))
+  biases : Array (Σ n : Nat, Tensor α [n])
   /-- Per-layer activation relaxations (empty for output layer) -/
   relaxations : Array (LayerRelax α)
 
 /-- Backward state during propagation. -/
 structure BackwardState (α : Type) [Context α] where
   /-- Current lower-bound affine coefficient matrix `A` (`output_dim × input_dim`). -/
-  A_lower : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar))
+  A_lower : Σ m n : Nat, Tensor α [m, n]
   /-- Current upper-bound affine coefficient matrix `A` (`output_dim × input_dim`). -/
-  A_upper : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar))
+  A_upper : Σ m n : Nat, Tensor α [m, n]
   /-- Current lower-bound affine bias vector `b` (`output_dim`). -/
-  b_lower : Σ n : Nat, Tensor α (.dim n .scalar)
+  b_lower : Σ n : Nat, Tensor α [n]
   /-- Current upper-bound affine bias vector `b` (`output_dim`). -/
-  b_upper : Σ n : Nat, Tensor α (.dim n .scalar)
+  b_upper : Σ n : Nat, Tensor α [n]
 
 /-- Helper: matrix multiplication for sigma-typed tensors. -/
-def sigmaMatMul (A : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar)))
-    (B : Σ p q : Nat, Tensor α (.dim p (.dim q .scalar))) :
-    Option (Σ m q : Nat, Tensor α (.dim m (.dim q .scalar))) :=
+def sigmaMatMul (A : Σ m n : Nat, Tensor α [m, n])
+    (B : Σ p q : Nat, Tensor α [p, q]) :
+    Option (Σ m q : Nat, Tensor α [m, q]) :=
   let ⟨m, n, matA⟩ := A
   let ⟨p, q, matB⟩ := B
   if h : n = p then
@@ -164,9 +164,9 @@ def sigmaMatMul (A : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar)))
     none
 
 /-- Helper: matrix-vector multiplication for sigma-typed tensors. -/
-def sigmaMatVecMul (A : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar)))
-    (v : Σ n : Nat, Tensor α (.dim n .scalar)) :
-    Option (Σ m : Nat, Tensor α (.dim m .scalar)) :=
+def sigmaMatVecMul (A : Σ m n : Nat, Tensor α [m, n])
+    (v : Σ n : Nat, Tensor α [n]) :
+    Option (Σ m : Nat, Tensor α [m]) :=
   let ⟨m, n, matA⟩ := A
   let ⟨p, vecV⟩ := v
   if h : n = p then
@@ -175,22 +175,22 @@ def sigmaMatVecMul (A : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar)))
     none
 
 /-- Helper: vector addition for sigma-typed tensors. -/
-def sigmaVecAdd (v1 v2 : Σ n : Nat, Tensor α (.dim n .scalar)) :
-    Option (Σ n : Nat, Tensor α (.dim n .scalar)) :=
-  let ⟨n1, lhsVector⟩ := v1
-  let ⟨n2, rhsVector⟩ := v2
+def sigmaVecAdd (v1 v2 : Σ n : Nat, Tensor α [n]) :
+    Option (Σ n : Nat, Tensor α [n]) :=
+  let ⟨n1, lhsTensor⟩ := v1
+  let ⟨n2, rhsTensor⟩ := v2
   if h : n1 = n2 then
-    some ⟨n1, Tensor.addSpec lhsVector (by cases h; exact rhsVector)⟩
+    some ⟨n1, Tensor.addSpec lhsTensor (by cases h; exact rhsTensor)⟩
   else
     none
 
 /-- Initialize backward state with identity at output. -/
 def initBackwardState (outDim : Nat) : BackwardState α :=
-  let identity : Tensor α (.dim outDim (.dim outDim .scalar)) :=
+  let identity : Tensor α [outDim, outDim] :=
     Tensor.dim (fun i =>
       Tensor.dim (fun j =>
         Tensor.scalar (if decide (i.val = j.val) then Numbers.one else Numbers.zero)))
-  let zero : Tensor α (.dim outDim .scalar) :=
+  let zero : Tensor α [outDim] :=
     Spec.fill (α:=α) Numbers.zero (.dim outDim .scalar)
   { A_lower := ⟨outDim, outDim, identity⟩
   , A_upper := ⟨outDim, outDim, identity⟩
@@ -206,8 +206,8 @@ def initBackwardState (outDim : Nat) : BackwardState α :=
     Here we handle lower and upper bounds separately.
 -/
 def backwardOneLayer (state : BackwardState α)
-    (W : Σ m n : Nat, Tensor α (.dim m (.dim n .scalar)))
-    (bias : Σ n : Nat, Tensor α (.dim n .scalar))
+    (W : Σ m n : Nat, Tensor α [m, n])
+    (bias : Σ n : Nat, Tensor α [n])
     (relax : LayerRelax α) : Option (BackwardState α) := do
   let ⟨wm, wn, matW⟩ := W
   let ⟨bn, vecB⟩ := bias
@@ -223,7 +223,7 @@ def backwardOneLayer (state : BackwardState α)
     -- A_new_lower = A_lower · diag(slopeLower) · W
     -- First: temp = diag(slopeLower) · W
     -- Cast matW to match dimensions using equality h.1
-    let matW' : Tensor α (.dim relax.dim (.dim wn .scalar)) :=
+    let matW' : Tensor α [relax.dim, wn] :=
       cast (by rw [h.1]) matW
     let tempLower := Spec.matMulSpec (α:=α) slopeLower matW'
     -- Then: A_new = A_lower · temp
@@ -235,7 +235,7 @@ def backwardOneLayer (state : BackwardState α)
 
     -- b_new_lower = A_lower · (slopeLower · bias + biasLower) + b_lower
     -- First: scaled_bias = slopeLower · bias + biasLower (elementwise)
-    let scaledBiasLower : Tensor α (.dim relax.dim .scalar) :=
+    let scaledBiasLower : Tensor α [relax.dim] :=
       match biasLower, vecB with
       | .dim bl, .dim vb =>
         Tensor.dim (fun i =>
@@ -248,7 +248,7 @@ def backwardOneLayer (state : BackwardState α)
                 match slcols i with
                 | .scalar si => Tensor.scalar (si * vbi + bli))
 
-    let scaledBiasUpper : Tensor α (.dim relax.dim .scalar) :=
+    let scaledBiasUpper : Tensor α [relax.dim] :=
       match biasUpper, vecB with
       | .dim bu, .dim vb =>
         Tensor.dim (fun i =>
@@ -409,38 +409,6 @@ def computeTanhRelax (n : Nat) (preB : Box α (.dim n .scalar)) : LayerRelax α 
           , bias_upper := tl - slope_sec * l }
         Tensor.scalar relax)
     { dim := n, params := params }
-
-namespace Theorems
-
-/-- ReLU relaxation preserves dimension. -/
-theorem relu_relax_dim_preserved (n : Nat) (preB : Box α (.dim n .scalar)) :
-    (computeReLURelax (α:=α) n preB).dim = n := by
-  unfold computeReLURelax
-  match preB.lo, preB.hi with
-  | .dim _, .dim _ => rfl
-
-/-- Sigmoid relaxation preserves dimension. -/
-theorem sigmoid_relax_dim_preserved (n : Nat) (preB : Box α (.dim n .scalar)) :
-    (computeSigmoidRelax (α:=α) n preB).dim = n := by
-  unfold computeSigmoidRelax
-  match preB.lo, preB.hi with
-  | .dim _, .dim _ => rfl
-
-/-- Tanh relaxation preserves dimension. -/
-theorem tanh_relax_dim_preserved (n : Nat) (preB : Box α (.dim n .scalar)) :
-    (computeTanhRelax (α:=α) n preB).dim = n := by
-  unfold computeTanhRelax
-  match preB.lo, preB.hi with
-  | .dim _, .dim _ => rfl
-
-/-- Initial backward state has identity matrices of the same dimension. -/
-theorem init_state_identity (outDim : Nat) :
-    let state := initBackwardState (α:=α) outDim
-    state.A_lower.1 = outDim ∧ state.A_lower.2.1 = outDim := by
-  unfold initBackwardState
-  exact ⟨rfl, rfl⟩
-
-end Theorems
 
 end NN.MLTheory.CROWN.Propagation.Backward
 /-!

@@ -10,7 +10,7 @@ public import NN.MLTheory.CROWN.Graph.Engine.Base
 public import NN.MLTheory.CROWN.Graph.Engine.IBP
 public import NN.MLTheory.CROWN.Graph.Engine.Derivatives
 public import NN.MLTheory.CROWN.Graph.Engine.Affine
-public import NN.MLTheory.CROWN.Graph.Engine.CROWN
+public import NN.MLTheory.CROWN.Graph.Engine.CROWN.Run
 public import NN.MLTheory.CROWN.Graph.Engine.BackwardObjective
 
 /-!

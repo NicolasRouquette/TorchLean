@@ -262,12 +262,6 @@ def inferMatrixDims : Json → Option (Nat × Nat)
         | _ => none
   | _ => none
 
-/-- Drop the last element of a list of `Nat` (used when inferring hidden layer widths). -/
-def dropLastNat : List Nat → List Nat
-  | [] => []
-  | [_] => []
-  | x :: xs => x :: dropLastNat xs
-
 /-!
 ## Convenience parsers for function-based constructors
 
@@ -281,7 +275,7 @@ parsing logic outside this core module.
 /-- Parse a JSON array into a `Fin n → Float` function. -/
 def parseFloatVec (n : Nat) (j : Json) : Option (Fin n → Float) := do
   let t ← parseTensor (.dim n .scalar) j
-  pure (fun i => Tensor.vecGet t i)
+  pure (fun i => Tensor.getScalar t i)
 
 /-- Parse a JSON matrix into a `Fin rows → Fin cols → Float` function. -/
 def parseFloatMatrix (rows cols : Nat) (j : Json) : Option (Fin rows → Fin cols → Float) := do

@@ -83,49 +83,20 @@ Flatten a typed convolution into the affine map it denotes.
 The CROWN pass uses this when a convolution is linear in the selected input. Keeping the conversion
 here lets convolution share the same affine machinery as linear and matmul nodes.
 
-Precondition: `cfg.stride ≠ 0`. Engine call sites check this before calling the converter.
 -/
-def affOfConv2d (cfg : NN.IR.Conv2dParams α) :
-  let outH := Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
-  let outW := Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
-  AffineVec α (cfg.inC * cfg.inH * cfg.inW) (cfg.outC * outH * outW) :=
-  let outH := Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
-  let outW := Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
-  let inShape := Shape.dim cfg.inC (Shape.dim cfg.inH (Shape.dim cfg.inW Shape.scalar))
-  let outShape := Shape.dim cfg.outC (Shape.dim outH (Shape.dim outW Shape.scalar))
-  let nIn := inShape.size
-  let nOut := outShape.size
-  have hIn' : nIn = cfg.inC * (cfg.inH * cfg.inW) := by
-    simp [nIn, inShape, Spec.Shape.size]
-  have hIn : nIn = cfg.inC * cfg.inH * cfg.inW := by
-    simpa [Nat.mul_assoc] using hIn'
-  have hOut' : nOut = cfg.outC * (outH * outW) := by
-    simp [nOut, outShape, Spec.Shape.size, outH, outW]
-  have hOut : nOut = cfg.outC * outH * outW := by
-    simpa [Nat.mul_assoc] using hOut'
-  let Wraw := NN.MLTheory.CROWN.conv2dLinearMatrix (α:=α)
-    (inC:=cfg.inC) (outC:=cfg.outC) (kH:=cfg.kH) (kW:=cfg.kW)
-    (stride:=cfg.stride) (padding:=cfg.padding)
-    (inH:=cfg.inH) (inW:=cfg.inW) cfg.spec
-  let bRaw := NN.MLTheory.CROWN.conv2dBiasBroadcast (α:=α)
-    (outC:=cfg.outC) (inH:=cfg.inH) (inW:=cfg.inW)
-    (kH:=cfg.kH) (kW:=cfg.kW)
-    (stride:=cfg.stride) (padding:=cfg.padding) cfg.spec.bias
-  have hShapeW : Shape.dim nOut (Shape.dim nIn Shape.scalar) =
-      Shape.dim (cfg.outC * outH * outW) (Shape.dim (cfg.inC * cfg.inH * cfg.inW) Shape.scalar) :=
-        by
-    simp [hIn, hOut]
-  have hShapeB : Shape.dim nOut Shape.scalar = Shape.dim (cfg.outC * outH * outW) Shape.scalar := by
-    simp [hOut]
-  let W := Spec.tensorCast
-    (Shape.dim (cfg.outC * outH * outW) (Shape.dim (cfg.inC * cfg.inH * cfg.inW) Shape.scalar))
-    hShapeW Wraw
-  let b := Spec.tensorCast
-    (Shape.dim (cfg.outC * outH * outW) Shape.scalar)
-    hShapeB bRaw
+def affOfConv (cfg : NN.IR.ConvParams α) :
+    let inShape := Shape.ofList (cfg.inChannels :: cfg.inputSpatial.toList)
+    let outSpatial := Spec.convOutSpatial cfg.inputSpatial cfg.kernel cfg.stride cfg.padding
+    let outShape := Shape.ofList (cfg.outChannels :: outSpatial.toList)
+    AffineVec α inShape.size outShape.size :=
+  let inShape := Shape.ofList (cfg.inChannels :: cfg.inputSpatial.toList)
+  let outSpatial := Spec.convOutSpatial cfg.inputSpatial cfg.kernel cfg.stride cfg.padding
+  let outShape := Shape.ofList (cfg.outChannels :: outSpatial.toList)
+  let W := NN.MLTheory.CROWN.convLinearMatrix (α := α) (inSpatial := cfg.inputSpatial) cfg.spec
+  let b := NN.MLTheory.CROWN.convBiasBroadcast (α := α) (outSpatial := outSpatial) cfg.spec.bias
   AffineVec.ofLinear (α:=α)
-    (inDim:=cfg.inC * cfg.inH * cfg.inW)
-    (outDim:=cfg.outC * outH * outW)
+    (inDim := inShape.size)
+    (outDim := outShape.size)
     W b
 
 /--
@@ -158,7 +129,7 @@ def propagateAffineNode
     | none => affs
   | .detach =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getAff p1 with
       | some a => affs.set! id (some a)
       | none => affs
@@ -166,12 +137,12 @@ def propagateAffineNode
   | .randUniform _ | .bernoulliMask _ =>
     -- Stochastic nodes are treated as non-affine; downstream passes can fall back to IBP boxes.
     affs
-  | .maxPool2d .. | .avgPool2d .. | .maxPool2dPad .. | .avgPool2dPad .. =>
+  | .maxPool .. | .avgPool .. =>
     -- Pooling is non-affine; downstream passes can fall back to IBP boxes.
     affs
   | .add =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match getAff p1, getAff p2 with
       | some a1, some a2 =>
         if hout : a1.outDim = a2.outDim then
@@ -188,7 +159,7 @@ def propagateAffineNode
     | _ => affs
   | .sub =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match getAff p1, getAff p2 with
       | some a1, some a2 =>
         if hout : a1.outDim = a2.outDim then
@@ -209,7 +180,7 @@ def propagateAffineNode
     | none => affs
   | .linear =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getAff p1, ps.linearWB[id]? with
       | some paff, some p =>
         if hdim : paff.outDim = p.n then
@@ -224,7 +195,7 @@ def propagateAffineNode
     | _ => affs
   | .matmul =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getAff p1, ps.matmulW[id]? with
       | some paff, some p =>
         if hdim : paff.outDim = p.n then
@@ -239,10 +210,10 @@ def propagateAffineNode
     | _ => affs
   | .sum =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getAff p1 with
       | some paff =>
-        let onesRow : Tensor α (.dim 1 (.dim paff.outDim .scalar)) :=
+        let onesRow : Tensor α [1, paff.outDim] :=
           Spec.fill (α := α) Numbers.one (.dim 1 (.dim paff.outDim .scalar))
         let outAff : AffineVec α paff.inDim 1 :=
           { A := Spec.matMulSpec onesRow paff.aff.A
@@ -252,13 +223,12 @@ def propagateAffineNode
     | _ => affs
   | .reshape _ _ => affs
   | .flatten _ => affs
-  | .swap_first_two => affs
-  | .transpose3dLastTwo => affs
+  | .transpose .. => affs
   | .permute _ => affs
   | .mseLoss => affs
   | .mul_elem =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match getAff p1, getAff p2, ibp[p1]!, ibp[p2]! with
       | some ax, some ay, some Bx, some By =>
         -- Require matching output dims and input dims; otherwise skip
@@ -318,46 +288,37 @@ def propagateAffineNode
         else affs
       | _, _, _, _ => affs
     | _ => affs
-  | .conv2d .. =>
-    match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ps.conv2dCfg[id]? with
-      | some paff, some cfg =>
-        let convIn := cfg.inC * cfg.inH * cfg.inW
-        if _hs : cfg.stride = 0 then
-          affs
-        else if hdim : paff.outDim = convIn then
-          let outH := Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
-          let outW := Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
-          let convAff0 := affOfConv2d (α:=α) cfg
-          let convAff := castAffineIn (α:=α)
-            (n:=convIn) (n':=paff.outDim) (m:=cfg.outC * outH * outW)
-            hdim.symm convAff0
-          let composed := AffineVec.compose (α:=α)
-            (n:=paff.inDim) (h:=paff.outDim) (m:=cfg.outC * outH * outW)
-            convAff paff.aff
-          affs.set! id (some { inDim := paff.inDim, outDim := cfg.outC * outH * outW, aff :=
-            composed })
-        else affs
-      | some paff, none =>
-        match ps.linearWB[id]? with
-        | some p =>
-          if hdim : paff.outDim = p.n then
-            let wbaff0 := affOfLinear (α:=α) p
-            let wbaff := castAffineIn (α:=α) (n:=p.n) (n':=paff.outDim) (m:=p.m) hdim.symm wbaff0
-            let composed := AffineVec.compose (α:=α) (n:=paff.inDim) (h:=paff.outDim) (m:=p.m) wbaff
-              paff.aff
-            affs.set! id (some { inDim := paff.inDim, outDim := p.m, aff := composed })
+  | .conv .. =>
+    if !crownNodeSemanticsSupported (α := α) nodes ps id then
+      affs
+    else
+      match node.parents with
+      | #[p1] =>
+        match getAff p1, ps.convCfg[id]? with
+        | some paff, some cfg =>
+          let inShape := Shape.ofList (cfg.inChannels :: cfg.inputSpatial.toList)
+          let outSpatial := Spec.convOutSpatial cfg.inputSpatial cfg.kernel cfg.stride cfg.padding
+          let outShape := Shape.ofList (cfg.outChannels :: outSpatial.toList)
+          let convIn := inShape.size
+          if hdim : paff.outDim = convIn then
+            let convAff0 := affOfConv (α:=α) cfg
+            let convAff := castAffineIn (α:=α)
+              (n:=convIn) (n':=paff.outDim) (m:=outShape.size)
+              hdim.symm convAff0
+            let composed := AffineVec.compose (α:=α)
+              (n:=paff.inDim) (h:=paff.outDim) (m:=outShape.size)
+              convAff paff.aff
+            affs.set! id (some { inDim := paff.inDim, outDim := outShape.size, aff :=
+              composed })
           else affs
-        | none => affs
-      | _, _ => affs
-    | _ => affs
-  | .batchNorm2dNchwEval .. =>
+        | _, _ => affs
+      | _ => affs
+  | .batchNormEval channelAxis _ =>
     match node.parents with
-    | p1 :: _ =>
-      match getAff p1, ps.batchNorm2dNchwEval[id]? with
+    | #[p1] =>
+      match getAff p1, ps.batchNormEval[id]? with
       | some paff, some cfg =>
-        match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+        match batchNormEvalLinear? (α := α) nodes[p1]!.outShape channelAxis cfg with
         | some p =>
           if hdim : paff.outDim = p.n then
             let bnAff0 := affOfLinear (α := α) p
@@ -376,43 +337,52 @@ def propagateAffineNode
     | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
     | none => affs
   | .layernorm _ =>
-    match ibp[id]! with
-    | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
-    | none => affs
+    if !crownNodeSemanticsSupported (α := α) nodes ps id then
+      affs
+    else
+      match ibp[id]! with
+      | some B => affs.set! id (some (upperConstAffine (α := α) ctx.inputDim B))
+      | none => affs
   | .concat axis =>
     -- Concatenation on axis zero stacks the flattened output rows.
     -- For other axes/shapes, this requires stride-aware flatten/reshape bookkeeping.
     if axis != 0 then affs
     else
-      let rec collect (ps : List Nat) (acc : List (FlatAffine α)) : Option (List (FlatAffine α)) :=
-        match ps with
-        | [] => some acc.reverse
-        | p :: ps =>
-          match getAff p with
-          | some a => collect ps (a :: acc)
-          | none => none
-      match collect node.parents [] with
+      let collect (parents : Array Nat) : Option (Array (FlatAffine α)) := do
+        let mut result := #[]
+        for parent in parents do
+          let affine <- getAff parent
+          result := result.push affine
+        pure result
+      match collect node.parents with
       | none => affs
       | some parentsAff =>
-        match parentsAff with
-        | [] => affs
-        | first :: rest =>
+        match parentsAff[0]? with
+        | none => affs
+        | some first =>
           let inDim := first.inDim
-          if rest.all (fun a => a.inDim == inDim) then
+          if parentsAff.all (fun a => a.inDim == inDim) then
             let totalOut := parentsAff.foldl (fun acc a => acc + a.outDim) 0
             if Spec.Shape.size node.outShape = totalOut then
-              let rec pick (k : Nat) (l : List (FlatAffine α)) : FlatAffine α × Nat :=
-                match l with
-                | [] => (first, 0)
-                | a :: tl =>
-                  if k < a.outDim then (a, k) else pick (k - a.outDim) tl
-              let A' : Tensor α (.dim totalOut (.dim inDim .scalar)) :=
+              let pick (k : Nat) : FlatAffine α × Nat :=
+                let result := parentsAff.foldl
+                  (fun (state : Option (FlatAffine α × Nat) × Nat) a =>
+                    match state with
+                    | (some selected, remaining) => (some selected, remaining)
+                    | (none, remaining) =>
+                      if remaining < a.outDim then
+                        (some (a, remaining), 0)
+                      else
+                        (none, remaining - a.outDim))
+                  (none, k)
+                result.1.getD (first, 0)
+              let A' : Tensor α [totalOut, inDim] :=
                 Tensor.dim (fun i =>
-                  let (a, k) := pick i.val parentsAff
+                  let (a, k) := pick i.val
                   Tensor.dim (fun j => Tensor.scalar (getAtOrZero a.aff.A [k, j.val])))
-              let c' : Tensor α (.dim totalOut .scalar) :=
+              let c' : Tensor α [totalOut] :=
                 Tensor.dim (fun i =>
-                  let (a, k) := pick i.val parentsAff
+                  let (a, k) := pick i.val
                   Tensor.scalar (getAtOrZero a.aff.c [k]))
               let outAff : AffineVec α inDim totalOut := { A := A', c := c' }
               affs.set! id (some { inDim := inDim, outDim := totalOut, aff := outAff })
@@ -433,7 +403,10 @@ IBP upper endpoint as a constant affine bound unless this pass has a separately 
 def runAffine (g : Graph) (ps : ParamStore α) (ctx : AffineCtx) (ibp : Array (Option (FlatBox α))) :
   Array (Option (FlatAffine α)) :=
   let init := Array.replicate g.nodes.size none
-  (List.finRange g.nodes.size).foldl (fun acc i => propagateAffineNode (α:=α) g.nodes ps ibp acc ctx
-    i) init
+  if crownGraphSemanticsSupported (α := α) g ps then
+    (List.finRange g.nodes.size).foldl (fun acc i =>
+      propagateAffineNode (α:=α) g.nodes ps ibp acc ctx i) init
+  else
+    init
 
 end NN.MLTheory.CROWN.Graph

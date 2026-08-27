@@ -41,16 +41,16 @@ The runtime checkers operate over `Float` (fast, executable), and can be used to
 Python-produced floating certificate to the *same* computations in Lean.
 -/
 
-abbrev Val := FlatVec ℝ
+abbrev Val := FlatTensor ℝ
 
 /-- Componentwise enclosure predicate for a tensor point inside a `FlatBox`. -/
-abbrev encloses (B : FlatBox ℝ) (x : Tensor ℝ (.dim B.dim .scalar)) : Prop :=
+abbrev encloses (B : FlatBox ℝ) (x : Tensor ℝ [B.dim]) : Prop :=
   NN.MLTheory.CROWN.Graph.Theorems.Semantics.encloses (α := ℝ) B x
 
 /-- `EnclosesBox B v` means the value vector `v` lies inside the interval box `B`.
 
 We phrase enclosure using the existing `Sem.encloses` predicate, but our semantic values are
-`FlatVec`s (carrying their dimension as a `Nat`), so we also carry a dimension equality witness.
+`FlatTensor`s (carrying their dimension as a `Nat`), so we also carry a dimension equality witness.
 -/
 def EnclosesBox (B : FlatBox ℝ) (v : Val) : Prop :=
   ∃ h : B.dim = v.n, encloses B (castDimScalar (α := ℝ) h.symm v.v)
@@ -68,6 +68,21 @@ The semantics is defined as a *safe* `Option` evaluator:
 def getVal? (vals : Array (Option Val)) (pid : Nat) : Option Val :=
   if _h : pid < vals.size then vals[pid]! else none
 
+/-- Reconstruct a shaped value, run a generic unary tensor operation, and flatten its result. -/
+def evalSomeTensorUnary? (shape : Shape)
+    (op : SomeTensor ℝ → Except String (SomeTensor ℝ)) (x : Val) : Option Val :=
+  if h : x.n = shape.size then
+    let flatShape : Shape := .dim x.n .scalar
+    have hsize : flatShape.size = shape.size := by
+      simpa [flatShape, Spec.Shape.size] using h
+    let input : Tensor ℝ shape := Tensor.reshapeSpec (α := ℝ) x.v hsize
+    match op ⟨shape, input⟩ with
+    | .ok output =>
+      some { n := output.shape.size, v := Tensor.flattenSpec output.tensor }
+    | .error _ => none
+  else
+    none
+
 /-- Value semantics for a single node in the supported dialect (over `ℝ`). -/
 def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap Nat Val)
     (vals : Array (Option Val)) (id : Nat) : Option Val :=
@@ -78,17 +93,17 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
   | .const _ =>
       ps.constVals[id]?
   | .detach =>
-      match node.parents with
-      | p1 :: _ => getVal? vals p1
+      match NN.IR.unaryParent? node.parents with
+      | some p1 => getVal? vals p1
       | _ => none
     | .add =>
-        match node.parents with
-        | p1 :: p2 :: _ =>
+        match NN.IR.binaryParents? node.parents with
+        | some (p1, p2) =>
             match getVal? vals p1, getVal? vals p2 with
             | some x, some y =>
                 if h : x.n = y.n then
                   -- Use an explicit cast rather than `by simpa [h]` to keep later proofs stable.
-                  let yv : Tensor ℝ (.dim x.n .scalar) :=
+                  let yv : Tensor ℝ [x.n] :=
                     castDimScalar (α := ℝ) (Eq.symm h) y.v
                   some { n := x.n, v := Tensor.addSpec (α := ℝ) x.v yv }
                 else
@@ -96,12 +111,12 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
             | _, _ => none
         | _ => none
   | .sub =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getVal? vals p1, getVal? vals p2 with
           | some x, some y =>
               if h : x.n = y.n then
-                let yv : Tensor ℝ (.dim x.n .scalar) :=
+                let yv : Tensor ℝ [x.n] :=
                   castDimScalar (α := ℝ) (Eq.symm h) y.v
                 some { n := x.n, v := Tensor.subSpec (α := ℝ) x.v yv }
               else
@@ -109,182 +124,56 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
           | _, _ => none
       | _ => none
   | .mul_elem =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getVal? vals p1, getVal? vals p2 with
           | some x, some y =>
               if h : x.n = y.n then
-                let yv : Tensor ℝ (.dim x.n .scalar) :=
+                let yv : Tensor ℝ [x.n] :=
                   castDimScalar (α := ℝ) (Eq.symm h) y.v
                 some { n := x.n, v := Tensor.mulSpec (α := ℝ) x.v yv }
               else
                 none
           | _, _ => none
       | _ => none
-  | .maxPool2d kH kW stride =>
-      match node.parents with
-      | p1 :: _ =>
+  | .maxPool config =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
-          | some x =>
-              match nodes[p1]!.outShape with
-              | .dim inC (.dim inH (.dim inW .scalar)) =>
-                  let expectedInDim := inC * inH * inW
-                  if hIn : x.n = expectedInDim then
-                    if hkH : kH = 0 then
-                      none
-                    else if hkW : kW = 0 then
-                      none
-                    else if hStride : stride = 0 then
-                      none
-                    else
-                      let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                      let sFlat : Shape := .dim x.n .scalar
-                      have hsize : sFlat.size = sIn.size := by
-                        simp [Spec.Shape.size, sFlat, sIn, hIn, expectedInDim, Nat.mul_assoc]
-                      let xCHW : Tensor ℝ sIn := Tensor.reshapeSpec (α := ℝ) (s₁ := sFlat) (s₂ :=
-                        sIn) x.v hsize
-                      let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                      let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hStride := {}
-                      let y : Tensor ℝ outShape :=
-                        Spec.maxPool2dMultiSpec (α := ℝ) (kH := kH) (kW := kW)
-                          (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-                          (layer := layer) (input := xCHW)
-                      let flat := Tensor.flattenSpec (α := ℝ) y
-                      some { n := outShape.size, v := flat }
-                  else none
-              | _ => none
+          | some x => evalSomeTensorUnary? nodes[p1]!.outShape (NN.IR.Graph.evalMaxPool config) x
           | none => none
       | _ => none
-  | .maxPool2dPad kH kW stride padding =>
-      match node.parents with
-      | p1 :: _ =>
+  | .avgPool config =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
-          | some x =>
-              match nodes[p1]!.outShape with
-              | .dim inC (.dim inH (.dim inW .scalar)) =>
-                  let expectedInDim := inC * inH * inW
-                  if hIn : x.n = expectedInDim then
-                    if hkH : kH = 0 then
-                      none
-                    else if hkW : kW = 0 then
-                      none
-                    else if hStride : stride = 0 then
-                      none
-                    else
-                      let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                      let sFlat : Shape := .dim x.n .scalar
-                      have hsize : sFlat.size = sIn.size := by
-                        simp [Spec.Shape.size, sFlat, sIn, hIn, expectedInDim, Nat.mul_assoc]
-                      let xCHW : Tensor ℝ sIn := Tensor.reshapeSpec (α := ℝ) (s₁ := sFlat) (s₂ :=
-                        sIn) x.v hsize
-                      let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW
-                        stride padding
-                      let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hStride := {}
-                      let y : Tensor ℝ outShape :=
-                        Spec.maxPool2dMultiSpecPad (α := ℝ) (kH := kH) (kW := kW)
-                          (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-                            padding)
-                          (layer := layer) (input := xCHW)
-                      let flat := Tensor.flattenSpec (α := ℝ) y
-                      some { n := outShape.size, v := flat }
-                  else none
-              | _ => none
-          | none => none
-      | _ => none
-  | .avgPool2d kH kW stride =>
-      match node.parents with
-      | p1 :: _ =>
-          match getVal? vals p1 with
-          | some x =>
-              match nodes[p1]!.outShape with
-              | .dim inC (.dim inH (.dim inW .scalar)) =>
-                  let expectedInDim := inC * inH * inW
-                  if hIn : x.n = expectedInDim then
-                    if hkH : kH = 0 then
-                      none
-                    else if hkW : kW = 0 then
-                      none
-                    else if hStride : stride = 0 then
-                      none
-                    else
-                      let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                      let sFlat : Shape := .dim x.n .scalar
-                      have hsize : sFlat.size = sIn.size := by
-                        simp [Spec.Shape.size, sFlat, sIn, hIn, expectedInDim, Nat.mul_assoc]
-                      let xCHW : Tensor ℝ sIn := Tensor.reshapeSpec (α := ℝ) (s₁ := sFlat) (s₂ :=
-                        sIn) x.v hsize
-                      let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                      let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hStride := {}
-                      let y : Tensor ℝ outShape :=
-                        Spec.avgPool2dMultiSpec (α := ℝ) (kH := kH) (kW := kW)
-                          (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-                          (h1 := hkH) (h2 := hkW) (layer := layer) (input := xCHW)
-                      let flat := Tensor.flattenSpec (α := ℝ) y
-                      some { n := outShape.size, v := flat }
-                  else none
-              | _ => none
-          | none => none
-      | _ => none
-  | .avgPool2dPad kH kW stride padding =>
-      match node.parents with
-      | p1 :: _ =>
-          match getVal? vals p1 with
-          | some x =>
-              match nodes[p1]!.outShape with
-              | .dim inC (.dim inH (.dim inW .scalar)) =>
-                  let expectedInDim := inC * inH * inW
-                  if hIn : x.n = expectedInDim then
-                    if hkH : kH = 0 then
-                      none
-                    else if hkW : kW = 0 then
-                      none
-                    else if hStride : stride = 0 then
-                      none
-                    else
-                      let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                      let sFlat : Shape := .dim x.n .scalar
-                      have hsize : sFlat.size = sIn.size := by
-                        simp [Spec.Shape.size, sFlat, sIn, hIn, expectedInDim, Nat.mul_assoc]
-                      let xCHW : Tensor ℝ sIn := Tensor.reshapeSpec (α := ℝ) (s₁ := sFlat) (s₂ :=
-                        sIn) x.v hsize
-                      let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW
-                        stride padding
-                      let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hStride := {}
-                      let y : Tensor ℝ outShape :=
-                        Spec.avgPool2dMultiSpecPad (α := ℝ) (kH := kH) (kW := kW)
-                          (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-                            padding)
-                          (h1 := hkH) (h2 := hkW) (layer := layer) (input := xCHW)
-                      let flat := Tensor.flattenSpec (α := ℝ) y
-                      some { n := outShape.size, v := flat }
-                  else none
-              | _ => none
+          | some x => evalSomeTensorUnary? nodes[p1]!.outShape (NN.IR.Graph.evalAvgPool config) x
           | none => none
       | _ => none
   | .relu =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x => some { n := x.n, v := Activation.reluSpec (α := ℝ) x.v }
           | none => none
       | _ => none
   | .tanh =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x => some { n := x.n, v := Activation.tanhSpec (α := ℝ) x.v }
           | none => none
       | _ => none
   | .sigmoid =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x => some { n := x.n, v := Activation.sigmoidSpec (α := ℝ) x.v }
           | none => none
       | _ => none
   | .sin =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x =>
               some
@@ -293,8 +182,8 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
           | none => none
       | _ => none
   | .cos =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x =>
               some
@@ -303,13 +192,13 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
           | none => none
       | _ => none
   | .linear =>
-        match node.parents with
-        | p1 :: _ =>
+        match NN.IR.unaryParent? node.parents with
+        | some p1 =>
             match getVal? vals p1, ps.linearWB[id]? with
             | some x, some p =>
                 if h : x.n = p.n then
-                  let xv : Tensor ℝ (.dim p.n .scalar) := castDimScalar (α := ℝ) h x.v
-                  let yv : Tensor ℝ (.dim p.m .scalar) :=
+                  let xv : Tensor ℝ [p.n] := castDimScalar (α := ℝ) h x.v
+                  let yv : Tensor ℝ [p.m] :=
                     Spec.linearSpec (α := ℝ) { weights := p.w, bias := p.b } xv
                   some { n := p.m, v := yv }
                 else
@@ -317,14 +206,14 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
             | _, _ => none
         | _ => none
   | .matmul =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1, ps.matmulW[id]? with
           | some x, some p =>
               if h : x.n = p.n then
-                let xv : Tensor ℝ (.dim p.n .scalar) := castDimScalar (α := ℝ) h x.v
-                let z : Tensor ℝ (.dim p.m .scalar) := Spec.fill (α := ℝ) 0 (.dim p.m .scalar)
-                let yv : Tensor ℝ (.dim p.m .scalar) :=
+                let xv : Tensor ℝ [p.n] := castDimScalar (α := ℝ) h x.v
+                let z : Tensor ℝ [p.m] := Spec.fill (α := ℝ) 0 (.dim p.m .scalar)
+                let yv : Tensor ℝ [p.m] :=
                   Spec.linearSpec (α := ℝ) { weights := p.w, bias := z } xv
                 some { n := p.m, v := yv }
               else
@@ -332,23 +221,23 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
           | _, _ => none
       | _ => none
   | .sum =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x =>
-              let onesRow : Tensor ℝ (.dim 1 (.dim x.n .scalar)) :=
+              let onesRow : Tensor ℝ [1, x.n] :=
                 Spec.fill (α := ℝ) 1 (.dim 1 (.dim x.n .scalar))
-              let y : Tensor ℝ (.dim 1 .scalar) := Spec.matVecMulSpec (α := ℝ) onesRow x.v
+              let y : Tensor ℝ [1] := Spec.matVecMulSpec (α := ℝ) onesRow x.v
               some { n := 1, v := y }
           | none => none
       | _ => none
   | .reshape _ _ | .flatten _ =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getVal? vals p1 with
           | some x =>
               if h : x.n = node.outShape.size then
-                let xv : Tensor ℝ (.dim node.outShape.size .scalar) :=
+                let xv : Tensor ℝ [node.outShape.size] :=
                   castDimScalar (α := ℝ) h x.v
                 some { n := node.outShape.size, v := xv }
               else
@@ -356,14 +245,14 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
           | none => none
       | _ => none
   | .concat _ =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getVal? vals p1, getVal? vals p2 with
           | some x, some y =>
               match x.v, y.v with
               | .dim fx, .dim fy =>
                   let outDim := x.n + y.n
-                  let z : Tensor ℝ (.dim outDim .scalar) :=
+                  let z : Tensor ℝ [outDim] :=
                     Tensor.dim (fun i =>
                       Fin.addCases (fun i1 => fx i1) (fun i2 => fy i2) i)
                   some { n := outDim, v := z }

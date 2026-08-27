@@ -43,14 +43,14 @@ namespace NN.Examples.Models.RL.DQNReplay
 
 def exeName : String := "torchlean dqn_replay"
 
-abbrev ObsShape : Shape := .dim 2 .scalar
+abbrev ObsShape : List Nat := [2]
 abbrev NActions : Nat := 3
 
 /-- A compact two-feature observation. -/
-def obsA : Tensor Float ObsShape := Tensor.vectorFromList [0.0, 1.0]
+def obsA : Tensor Float ObsShape := tensor! [0.0, 1.0]
 
 /-- A second observation used as the next state. -/
-def obsB : Tensor Float ObsShape := Tensor.vectorFromList [1.0, 0.0]
+def obsB : Tensor Float ObsShape := tensor! [1.0, 0.0]
 
 /-- One typed transition inserted into the replay buffer. -/
 def transitionA : rl.core.Transition Float ObsShape NActions :=
@@ -69,16 +69,16 @@ def transitionB : rl.core.Transition Float ObsShape NActions :=
     done := true }
 
 /-- Compact online Q-function used by the example. -/
-def onlineQ (obs : Tensor Float ObsShape) : Tensor Float (.dim NActions .scalar) :=
-  let x0 := Tensor.vecGet obs ⟨0, by decide⟩
-  let x1 := Tensor.vecGet obs ⟨1, by decide⟩
-  Tensor.vectorFromList [x0 + 0.2, x1 + 1.0, 0.5]
+def onlineQ (obs : Tensor Float ObsShape) : Tensor Float [NActions] :=
+  let x0 := Tensor.item (Tensor.get obs ⟨0, by decide⟩)
+  let x1 := Tensor.item (Tensor.get obs ⟨1, by decide⟩)
+  tensor! [x0 + 0.2, x1 + 1.0, 0.5]
 
 /-- Compact target Q-function used by the example. -/
-def targetQ (obs : Tensor Float ObsShape) : Tensor Float (.dim NActions .scalar) :=
-  let x0 := Tensor.vecGet obs ⟨0, by decide⟩
-  let x1 := Tensor.vecGet obs ⟨1, by decide⟩
-  Tensor.vectorFromList [0.1 + x1, 1.4 + x0, 0.3]
+def targetQ (obs : Tensor Float ObsShape) : Tensor Float [NActions] :=
+  let x0 := Tensor.item (Tensor.get obs ⟨0, by decide⟩)
+  let x1 := Tensor.item (Tensor.get obs ⟨1, by decide⟩)
+  tensor! [0.1 + x1, 1.4 + x0, 0.3]
 
 /-- Build a replay buffer, sample a minibatch, and compute DQN losses. -/
 def run : IO Unit := do

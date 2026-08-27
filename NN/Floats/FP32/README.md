@@ -24,7 +24,8 @@ Bit-level binary32 behavior, including special values, is defined by
   `≈[t]`.
 - `Sterbenz.lean`: exact subtraction for nearby representable binary32 values.
 
-Interval enclosures live in `NN/Floats/Interval/FP32.lean` and are imported by `NN.Floats.FP32`.
+Interval enclosures live in `NN/Floats/Interval/FP32.lean` and are available through the separate
+`NN.Floats.Interval` umbrella.
 
 ## Relationship To Runtime
 

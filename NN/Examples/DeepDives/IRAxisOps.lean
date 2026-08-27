@@ -63,9 +63,9 @@ def usage : String :=
 We keep shapes compact while still exercising the “axis is not last / not 0” code paths.
 -/
 
-abbrev baseRankThreeShape : Shape := Spec.Shape.ofList [2, 3, 4]
-abbrev widerMiddleAxisShape : Shape := Spec.Shape.ofList [2, 5, 4]
-abbrev concatenatedMiddleAxisShape : Shape := Spec.Shape.ofList [2, 8, 4]
+abbrev baseTensorShape : Shape := [2, 3, 4]
+abbrev widerMiddleAxisShape : Shape := [2, 5, 4]
+abbrev concatenatedMiddleAxisShape : Shape := [2, 8, 4]
 
 /-!
 ## Small IR Graphs
@@ -73,24 +73,24 @@ abbrev concatenatedMiddleAxisShape : Shape := Spec.Shape.ofList [2, 8, 4]
 
 def softmaxMiddleAxisGraph : NN.IR.Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := baseRankThreeShape }
-    , { id := 1, parents := [0], kind := .softmax (axis := 1), outShape := baseRankThreeShape }
+      { id := 0, parents := #[], kind := .input, outShape := baseTensorShape }
+    , { id := 1, parents := #[0], kind := .softmax (axis := 1), outShape := baseTensorShape }
     ] }
 
 def layerNormMiddleAxisGraph : NN.IR.Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := baseRankThreeShape }
-    , { id := 1, parents := [0], kind := .layernorm (axis := 1), outShape := baseRankThreeShape }
+      { id := 0, parents := #[], kind := .input, outShape := baseTensorShape }
+    , { id := 1, parents := #[0], kind := .layernorm (axis := 1), outShape := baseTensorShape }
     ] }
 
 def concatMiddleAxisGraph : NN.IR.Graph :=
   -- The concat example uses `rand_uniform` sources, so the input node only fixes the graph's
   -- single-input interface for the shared runner.
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := Spec.Shape.scalar }
-    , { id := 1, parents := [], kind := .randUniform (seed := 0), outShape := baseRankThreeShape }
-    , { id := 2, parents := [], kind := .randUniform (seed := 1), outShape := widerMiddleAxisShape }
-    , { id := 3, parents := [1, 2], kind := .concat (axis := 1), outShape := concatenatedMiddleAxisShape }
+      { id := 0, parents := #[], kind := .input, outShape := Spec.Shape.scalar }
+    , { id := 1, parents := #[], kind := .randUniform (seed := 0), outShape := baseTensorShape }
+    , { id := 2, parents := #[], kind := .randUniform (seed := 1), outShape := widerMiddleAxisShape }
+    , { id := 3, parents := #[1, 2], kind := .concat (axis := 1), outShape := concatenatedMiddleAxisShape }
     ] }
 
 /-!
@@ -101,12 +101,13 @@ def checkIR (tag : String) (g : NN.IR.Graph) : IO Unit := do
   CLI.orThrow s!"{tag}:checkWellFormed" <| g.checkWellFormed
   CLI.orThrow s!"{tag}:checkShapes" <| NN.IR.Graph.checkShapes g
 
-def firstScalars {α : Type} [ToString α] : List α → String
-  | [] => "[]"
-  | xs =>
-      let ys := xs.take 8
-      "[" ++ ", ".intercalate (ys.map toString) ++ (if xs.length > ys.length then ", ..." else "")
-        ++ "]"
+def firstScalars {α : Type} [ToString α] (xs : Array α) : String :=
+  if xs.isEmpty then
+    "[]"
+  else
+    let ys := xs.extract 0 8
+    let body := ys.foldl (fun acc x => if acc.isEmpty then toString x else acc ++ ", " ++ toString x) ""
+    "[" ++ body ++ (if xs.size > ys.size then ", ..." else "") ++ "]"
 
 def runOne
     {α : Type} [_root_.Context α] [DecidableEq Shape] [ToString α] [Runtime.FromFloat α]
@@ -120,13 +121,13 @@ def runOne
   checkIR tag g
 
   -- Spec semantics (denotational model).
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inputShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.ofTensor x
   let outSpec ← CLI.orThrow s!"{tag}:spec" <|
     NN.IR.Graph.denote (α := α) (g := g) (payload := payload) (input := input) (outputId :=
       outputId)
   let ⟨sSpec, tSpec⟩ := outSpec
   IO.println s!"[{tag}] spec outShape: {repr sSpec}"
-  IO.println s!"[{tag}] spec first scalars: {firstScalars (Spec.toList tSpec)}"
+  IO.println s!"[{tag}] spec first scalars: {firstScalars (Spec.Tensor.toArray tSpec)}"
 
   if !runForward then
     IO.println s!"[{tag}] forward graph execution skipped by the caller."
@@ -152,7 +153,7 @@ def runOne
         s!"{tag}: forward graph output index out of bounds: index={outputId.1}, size={valsExec.size}"
   let ⟨sExec, tExec⟩ := outExec
   IO.println s!"[{tag}] forward graph outShape: {repr sExec}"
-  IO.println s!"[{tag}] forward graph first scalars: {firstScalars (Spec.toList tExec)}"
+  IO.println s!"[{tag}] forward graph first scalars: {firstScalars (Spec.Tensor.toArray tExec)}"
 
   if sExec = sSpec then
     pure ()
@@ -166,7 +167,7 @@ def runOnce
   let payload : NN.IR.Payload α := {}
 
   -- A small but nontrivial 2×3×4 input tensor.
-  let x234 : Spec.Tensor α baseRankThreeShape :=
+  let x234 : Spec.Tensor α baseTensorShape :=
     Tensor.generateFromFloat (α := α) Runtime.ofFloat [2, 3, 4] (fun i =>
       (Float.ofNat i) / 10.0 - 1.0)
 
@@ -177,18 +178,18 @@ def runOnce
   IO.println ""
   IO.println "-- softmax axis=1 on shape [2,3,4]"
   runOne (α := α) (tag := "softmax_middle_axis") (g := softmaxMiddleAxisGraph) (payload := payload)
-    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩)
+    (inputShape := baseTensorShape) (x := x234) (outputId := ⟨1, by decide⟩)
 
   IO.println ""
-  IO.println "-- layernorm axis=1 on rank-3 shape [2,3,4]"
+  IO.println "-- layernorm axis=1 on shape [2,3,4]"
   IO.println "PyTorch meaning: normalized_shape = x.shape[axis:] = [3,4]"
-  runOne (α := α) (tag := "layernorm_rank3_middle_axis") (g := layerNormMiddleAxisGraph) (payload := payload)
-    (inputShape := baseRankThreeShape) (x := x234) (outputId := ⟨1, by decide⟩) (runForward := false)
+  runOne (α := α) (tag := "layernorm_middle_axis") (g := layerNormMiddleAxisGraph) (payload := payload)
+    (inputShape := baseTensorShape) (x := x234) (outputId := ⟨1, by decide⟩) (runForward := false)
 
   IO.println ""
   IO.println "-- concat axis=1: [2,3,4] ++ [2,5,4] -> [2,8,4]"
   let x0 : Spec.Tensor α Spec.Shape.scalar :=
-    Spec.Tensor.scalar (Runtime.ofFloat (α := α) 0.0)
+    Tensor.full [] (Runtime.ofFloat (α := α) 0.0)
   runOne (α := α) (tag := "concat_middle_axis") (g := concatMiddleAxisGraph) (payload := payload)
     (inputShape := Spec.Shape.scalar) (x := x0) (outputId := ⟨3, by decide⟩)
 

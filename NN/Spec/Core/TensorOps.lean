@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.Context
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
 
 /-!
 # Elementwise tensor operations (`Spec.Tensor.*_spec`)
@@ -40,6 +40,79 @@ namespace Tensor
 
 variable {α : Type} [Context α]
 
+/-! ## Axis-parametric indexing -/
+
+/-- Place one selected slice back into an otherwise-zero tensor.
+
+This is the adjoint of `selectSpec` and therefore its reverse-mode rule. -/
+def selectBackwardSpec {α : Type} [Zero α] :
+    (axis : Nat) → {s : Shape} →
+      [_h : Shape.AxisInBounds axis s] →
+      Fin (Shape.axisSize s axis) → Tensor α (s.eraseAxis axis) → Tensor α s
+  | 0, .dim n rest, _, selected, gradient =>
+      .dim fun coordinate =>
+        if coordinate.val = selected.val then gradient else fill 0 rest
+  | axis + 1, .dim n rest, h, selected, .dim gradients =>
+      .dim fun outer =>
+        @selectBackwardSpec α _ axis rest
+          ⟨by
+            have := h.proof
+            simp only [Shape.rank] at this
+            grind⟩
+          (Fin.cast (by rfl) selected)
+          (gradients outer)
+
+/-- Select coordinates from an arbitrary axis using an index vector.
+
+The selected axis is replaced by the index count. Repeated indices are preserved, matching
+`torch.index_select`. -/
+def indexSelectSpec {α : Type} :
+    (axis : Nat) → {s : Shape} → (tensor : Tensor α s) →
+      [_h : Shape.AxisInBounds axis s] →
+      {count : Nat} → Tensor (Fin (Shape.axisSize s axis)) [count] →
+      Tensor α (s.replaceAxis axis count)
+  | 0, .dim _ _, .dim values, _, count, .dim indices =>
+      .dim fun j =>
+        match indices j with
+        | .scalar i => values i
+  | axis + 1, .dim n rest, .dim values, h, count, indices =>
+      .dim fun outer =>
+        @indexSelectSpec α axis rest (values outer)
+          ⟨by
+            have := h.proof
+            simp only [Shape.rank] at this
+            grind⟩
+          count
+          (cast (by rfl) indices)
+
+/-- Insert a sliced gradient back along an arbitrary axis, filling coordinates outside it by zero. -/
+def sliceAxisRangeBackwardSpec {α : Type} [Zero α] :
+    (axis : Nat) → {s : Shape} →
+      [_h : Shape.AxisInBounds axis s] →
+      (start count : Nat) → (start + count ≤ Shape.axisSize s axis) →
+      Tensor α (s.replaceAxis axis count) → Tensor α s
+  | 0, .dim n rest, _, start, count, _hRange, .dim gradients =>
+      .dim fun coordinate =>
+        if hBefore : coordinate.val < start then
+          fill 0 rest
+        else if hInside : coordinate.val < start + count then
+          gradients ⟨coordinate.val - start,
+            Nat.sub_lt_left_of_lt_add (Nat.not_lt.mp hBefore) hInside⟩
+        else
+          fill 0 rest
+  | axis + 1, .dim n rest, hAxis, start, count, hRange, .dim gradients =>
+      let innerAxis : Shape.AxisInBounds axis rest :=
+        ⟨by
+          have := hAxis.proof
+          simp only [Shape.rank] at this
+          grind⟩
+      letI := innerAxis
+      have hRange' : start + count ≤ Shape.axisSize rest axis := by
+        simpa only [Shape.axisSize_succ] using hRange
+      .dim fun outer =>
+        @sliceAxisRangeBackwardSpec α _ axis rest innerAxis start count hRange'
+          (gradients outer)
+
 /--
 Map a scalar function over a tensor (shape preserved).
 
@@ -49,9 +122,8 @@ Most elementwise ops are direct instances of `mapSpec f`.
 PyTorch analogy: `f` applied pointwise (like `torch.<op>` broadcasting over all entries),
 but here shape is fixed and enforced by the type.
 -/
-def mapSpec {s : Shape} (f : α → α) : Tensor α s → Tensor α s
-  | Tensor.scalar x => Tensor.scalar (f x)
-  | Tensor.dim g => Tensor.dim (fun i => mapSpec f (g i))
+def mapSpec {s : Shape} (f : α → α) : Tensor α s → Tensor α s :=
+  Tensor.map f
 
 omit [Context α] in
 /-- Elementwise mapping computes directly on a scalar tensor. -/
@@ -112,8 +184,8 @@ def map2Spec {α β γ : Type} (f : α → β → γ) : ∀ {s : Shape}, Tensor 
 
 /-- Matrix indexing commutes with a pointwise binary tensor operation. -/
 @[simp] theorem get2_map2Spec {α β γ : Type} {f : α → β → γ} {m n : Nat}
-    (left : Tensor α (.dim m (.dim n .scalar)))
-    (right : Tensor β (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) :
+    (left : Tensor α [m, n])
+    (right : Tensor β [m, n]) (i : Fin m) (j : Fin n) :
     _root_.Spec.get2 (map2Spec f left right) i j =
       f (_root_.Spec.get2 left i j) (_root_.Spec.get2 right i j) := by
   cases left with
@@ -127,7 +199,7 @@ def map2Spec {α β γ : Type} (f : α → β → γ) : ∀ {s : Shape}, Tensor 
                   cases hLeftCell : leftRow j
                   cases hRightCell : rightRow j
                   simp [map2Spec, _root_.Spec.get2, _root_.Spec.get,
-                    _root_.Spec.getAtSpec, hLeft, hRight, hLeftCell, hRightCell]
+                    _root_.Spec.get, hLeft, hRight, hLeftCell, hRightCell]
 
 /-- Transport two pointwise properties through a binary shape-preserving operation. -/
 theorem forall_map2Spec {α β γ : Type} {p : α → Prop} {q : β → Prop} {r : γ → Prop}
@@ -152,6 +224,42 @@ theorem forall_map2Spec {α β γ : Type} {p : α → Prop} {q : β → Prop} {r
 def addSpec {α : Type} [Add α] {s : Shape} (T₁ T₂ : Tensor α s) : Tensor α s :=
   map2Spec (· + ·) T₁ T₂
 
+/-- Shape transport commutes with pointwise tensor addition. -/
+theorem castShape_addSpec {α : Type} [Add α] {shape shape' : Shape}
+    (left right : Tensor α shape) (h : shape = shape') :
+    Tensor.castShape (addSpec left right) h =
+      addSpec (Tensor.castShape left h) (Tensor.castShape right h) := by
+  cases h
+  rfl
+
+/-- Add indexed source slices into an arbitrary axis of a tensor.
+
+Repeated indices accumulate. This is the pure tensor semantics used by the backward rule for
+`indexSelectSpec` and corresponds to `torch.scatter_add` with an index vector. -/
+def scatterAddSpec {α : Type} [Add α] :
+    (axis : Nat) → {s : Shape} → (base : Tensor α s) →
+      [_h : Shape.AxisInBounds axis s] →
+      {count : Nat} → Tensor (Fin (Shape.axisSize s axis)) [count] →
+      Tensor α (s.replaceAxis axis count) → Tensor α s
+  | 0, .dim _ _, .dim baseValues, _, count, .dim indices, .dim sourceValues =>
+      .dim fun destination =>
+        (List.finRange count).foldl
+          (fun value source =>
+            match indices source with
+            | .scalar index =>
+                if index.val = destination.val then addSpec value (sourceValues source) else value)
+          (baseValues destination)
+  | axis + 1, .dim n rest, .dim baseValues, h, count, indices, .dim sourceValues =>
+      .dim fun outer =>
+        @scatterAddSpec α _ axis rest (baseValues outer)
+          ⟨by
+            have := h.proof
+            simp only [Shape.rank] at this
+            grind⟩
+          count
+          (cast (by rfl) indices)
+          (sourceValues outer)
+
 /-- `Add` instance for shape-indexed tensors: add pointwise, preserving the shape. -/
 instance {α : Type} [Add α] {s : Shape} : Add (Tensor α s) :=
   ⟨addSpec⟩
@@ -173,7 +281,7 @@ def mulSpec {α : Type} [Mul α] {s : Shape} (T₁ T₂ : Tensor α s) : Tensor 
     ∀ t : Tensor α s, mulSpec (fill coefficient s) t = mapSpec (coefficient * ·) t
   | .scalar value => rfl
   | .dim values => by
-      simp only [mulSpec, map2Spec, fill, mapSpec]
+      simp only [mulSpec, map2Spec, fill, mapSpec, Tensor.map]
       congr 1
       funext index
       exact mulSpec_fill_left coefficient (values index)
@@ -220,7 +328,7 @@ theorem squareSpec_eq_mulSpec {s : Shape} (t : Tensor α s) :
   | dim n inner ih =>
       cases t with
       | dim values =>
-          simp only [squareSpec, mapSpec, mulSpec, map2Spec]
+          simp only [squareSpec, mapSpec, Tensor.map, mulSpec, map2Spec]
           congr 1
           funext i
           exact ih (values i)

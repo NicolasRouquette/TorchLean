@@ -41,12 +41,12 @@ variable {α : Type} [Context α]
 
 /-- A matrix-shaped TorchLean tensor. -/
 abbrev MatrixTensor (α : Type) (m n : Nat) :=
-  Tensor α (.dim m (.dim n .scalar))
+  Tensor α [m, n]
 
 /-- The column Gram matrix $Q^\mathsf{T}Q$. -/
 def columnGram {m n : Nat} (Q : MatrixTensor α m n) :
     MatrixTensor α n n :=
-  matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q
+  matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q
 
 /-- Exact column orthogonality for a matrix-shaped update direction. -/
 def HasExactColumnGram {m n : Nat} (Q : MatrixTensor α m n) : Prop :=

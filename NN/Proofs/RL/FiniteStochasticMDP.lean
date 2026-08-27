@@ -115,8 +115,8 @@ theorem bellmanPolicy_monotone
     (state : Fin nStates) :
     valueAt (Spec.RL.FiniteStochastic.bellmanPolicy mdp policy values₁) state ≤
       valueAt (Spec.RL.FiniteStochastic.bellmanPolicy mdp policy values₂) state := by
-  simpa [Spec.RL.FiniteStochastic.bellmanPolicy, valueAt, Spec.Tensor.vecGet, Spec.get,
-    Spec.getAtSpec, Spec.Tensor.item] using
+  simpa [Spec.RL.FiniteStochastic.bellmanPolicy, valueAt, Spec.get,
+    Spec.get, Spec.Tensor.item] using
     actionValue_monotone mdp valid values₁ values₂ hValues state (policy state)
 
 /-- Optimal Bellman operators are pointwise monotone. -/
@@ -157,15 +157,15 @@ theorem expectedNextValue_abs_sub_le
           Spec.RL.FiniteStochastic.expectedNextValue mdp values₂ state action =
         (Finset.univ : Finset (Fin nStates)).sum
           (fun nextState =>
-            row.vecGet nextState *
+            row.getScalar nextState *
               (valueAt values₁ nextState - valueAt values₂ nextState)) := by
     change
       (∑ nextState : Fin nStates,
-          (mdp.transitionProb state action).vecGet nextState * valueAt values₁ nextState) -
+          (mdp.transitionProb state action).getScalar nextState * valueAt values₁ nextState) -
         (∑ nextState : Fin nStates,
-          (mdp.transitionProb state action).vecGet nextState * valueAt values₂ nextState) =
+          (mdp.transitionProb state action).getScalar nextState * valueAt values₂ nextState) =
       ∑ nextState : Fin nStates,
-        row.vecGet nextState * (valueAt values₁ nextState - valueAt values₂ nextState)
+        row.getScalar nextState * (valueAt values₁ nextState - valueAt values₂ nextState)
     rw [← Finset.sum_sub_distrib]
     refine Finset.sum_congr rfl ?_
     intro nextState _
@@ -174,36 +174,36 @@ theorem expectedNextValue_abs_sub_le
   rw [hrewrite]
   calc
     |∑ nextState : Fin nStates,
-        row.vecGet nextState * (valueAt values₁ nextState - valueAt values₂ nextState)|
+        row.getScalar nextState * (valueAt values₁ nextState - valueAt values₂ nextState)|
       ≤ ∑ nextState : Fin nStates,
-          |row.vecGet nextState * (valueAt values₁ nextState - valueAt values₂ nextState)| := by
+          |row.getScalar nextState * (valueAt values₁ nextState - valueAt values₂ nextState)| := by
             simpa using (Finset.abs_sum_le_sum_abs
               (s := (Finset.univ : Finset (Fin nStates)))
               (f := fun nextState =>
-                row.vecGet nextState *
+                row.getScalar nextState *
                   (valueAt values₁ nextState - valueAt values₂ nextState)))
     _ = ∑ nextState : Fin nStates,
-          row.vecGet nextState * |valueAt values₁ nextState - valueAt values₂ nextState| := by
+          row.getScalar nextState * |valueAt values₁ nextState - valueAt values₂ nextState| := by
             refine Finset.sum_congr rfl ?_
             intro nextState _
             rw [abs_mul, abs_of_nonneg]
             simpa [row] using valid.transition_nonneg state action nextState
     _ ≤ ∑ nextState : Fin nStates,
-          row.vecGet nextState * valueSupDist values₁ values₂ := by
+          row.getScalar nextState * valueSupDist values₁ values₂ := by
             refine Finset.sum_le_sum ?_
             intro nextState _
             exact mul_le_mul_of_nonneg_left
               (abs_sub_valueAt_le_valueSupDist values₁ values₂ nextState)
               (by simpa [row] using valid.transition_nonneg state action nextState)
     _ = ((Finset.univ : Finset (Fin nStates)).sum
-          (fun nextState => row.vecGet nextState)) * valueSupDist values₁ values₂ := by
+          (fun nextState => row.getScalar nextState)) * valueSupDist values₁ values₂ := by
             simpa using
               (Finset.sum_mul (s := (Finset.univ : Finset (Fin nStates)))
-                (f := fun nextState => row.vecGet nextState)
+                (f := fun nextState => row.getScalar nextState)
                 (a := valueSupDist values₁ values₂)).symm
     _ = valueSupDist values₁ values₂ := by
             rw [show (Finset.univ : Finset (Fin nStates)).sum
-                (fun nextState => row.vecGet nextState) = 1 by
+                (fun nextState => row.getScalar nextState) = 1 by
               simpa [row] using valid.transition_sums_to_one state action, one_mul]
 
 /-- State-action Bellman values are Lipschitz with constant `γ` in the sup metric. -/
@@ -302,8 +302,8 @@ theorem bellmanPolicy_le_bellmanOptimality
     (state : Fin nStates) :
     valueAt (Spec.RL.FiniteStochastic.bellmanPolicy mdp policy values) state ≤
       valueAt (Spec.RL.FiniteStochastic.bellmanOptimality mdp values) state := by
-  simpa [Spec.RL.FiniteStochastic.bellmanPolicy, valueAt, Spec.Tensor.vecGet, Spec.get,
-    Spec.getAtSpec, Spec.Tensor.item] using
+  simpa [Spec.RL.FiniteStochastic.bellmanPolicy, valueAt, Spec.get,
+    Spec.get, Spec.Tensor.item] using
     actionValue_le_bellmanOptimality mdp values state (policy state)
 
 /-- At a fixed state, Bellman optimality is a contraction with modulus `γ`. -/
@@ -344,8 +344,8 @@ theorem bellmanOptimality_abs_sub_le
         ≤ bound := by
     exact abs_sub_le_iff.mpr
       ⟨sub_le_iff_le_add'.mpr hs1, sub_le_iff_le_add'.mpr hs2⟩
-  simpa [Spec.RL.FiniteStochastic.bellmanOptimality, valueAt, Spec.Tensor.vecGet, Spec.get,
-    Spec.getAtSpec, Spec.Tensor.item, f, g, bound] using habs
+  simpa [Spec.RL.FiniteStochastic.bellmanOptimality, valueAt, Spec.get,
+    Spec.get, Spec.Tensor.item, f, g, bound] using habs
 
 /-- Bellman optimality is a contraction with modulus `γ` in the sup metric:
 
@@ -388,9 +388,9 @@ section FixedPoints
 
 variable {nStates nActions : Nat}
 
-private lemma dimScalarEquiv_apply_eq_valueAt
+private lemma vectorEquiv_apply_eq_valueAt
     (values : ValueFunction ℝ nStates) (state : Fin nStates) :
-    (Spec.Tensor.dimScalarEquiv (α := ℝ) nStates values) state = valueAt values state := by
+    (Spec.Tensor.vectorEquiv (α := ℝ) nStates values) state = valueAt values state := by
   cases values with
   | dim _ =>
       rfl
@@ -402,7 +402,7 @@ theorem valueSupDist_eq_zero_iff
     valueSupDist values₁ values₂ = 0 ↔ values₁ = values₂ := by
   constructor
   · intro h
-    apply (Spec.Tensor.dimScalarEquiv (α := ℝ) nStates).injective
+    apply (Spec.Tensor.vectorEquiv (α := ℝ) nStates).injective
     funext state
     have habs :
         |valueAt values₁ state - valueAt values₂ state| ≤ valueSupDist values₁ values₂ :=
@@ -415,7 +415,8 @@ theorem valueSupDist_eq_zero_iff
       abs_eq_zero.mp habseq
     have hcoord : valueAt values₁ state = valueAt values₂ state :=
       sub_eq_zero.mp hdiff
-    simpa [dimScalarEquiv_apply_eq_valueAt] using hcoord
+    rw [vectorEquiv_apply_eq_valueAt, vectorEquiv_apply_eq_valueAt]
+    exact hcoord
   · intro h
     subst h
     simp [valueSupDist, valueAt]

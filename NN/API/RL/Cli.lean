@@ -30,6 +30,26 @@ namespace TorchLean
 namespace rl
 namespace cli
 
+/-- Help text for PPO commands, with optional environment-specific artifact flags. -/
+def ppoUsage (exeName : String) (artifactOptions : Array String := #[]) : String :=
+  String.intercalate "\n" <| (#[
+    s!"Usage: lake exe torchlean {exeName.drop 10} [options]",
+    "",
+    "Training and evaluation:",
+    "  --updates N         PPO update iterations",
+    "  --eval-every N      updates between policy evaluations",
+    "  --eval-episodes N   episodes in each evaluation",
+    "  --eval-max-steps N  step limit for each evaluation episode",
+    "  --log PATH|false    write a TrainLog JSON, or disable logging"
+  ] ++ artifactOptions ++ #[
+    "",
+    "Runtime:",
+    "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external",
+    "  --execution eager|typed-graph",
+    "  --scalar float32|ieee32-exec|complex64",
+    "  --seed N --show-backend"
+  ]).toList
+
 /-- Parsed PPO-style training flags shared by multiple runnable examples. -/
 structure PpoFlags where
   updates : Nat

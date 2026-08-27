@@ -87,10 +87,9 @@ The final layer normalization and linear projection produce logits
 $$`\operatorname{logits}\in\mathbb{R}^{B\times T\times V}.`
 
 The training target is the same token window shifted by one position. Cross entropy at location
-$`t`$ therefore uses the target character $`x_{t+1}`. Token ids and targets enter the runtime as
-`Tensor Nat`; they are not transported through floating-point tensors. The reusable GPT API also
-supports tying the output projection to the embedding table. This CharGPT command uses an
-independent output head.
+$`t`$ therefore uses the target character $`x_{t+1}`. Token IDs stay discrete throughout the
+embedding lookup. The reusable GPT API also supports tying the output projection to the embedding
+table. This CharGPT command uses an independent output head.
 
 The mask is semantic, not merely a convenient floating-point bias:
 

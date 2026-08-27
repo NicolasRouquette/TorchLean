@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export per-example logit-margin certificates for robustness evaluation.
+"""Export per-example logit-bound reports for robustness evaluation.
 
 This is a focused certificate exporter in the spirit of certified-accuracy
 benchmarks (AutoLiRPA / CROWN-style workflows): compute output logit bounds for an
@@ -106,9 +106,9 @@ def take_examples(examples: list[dict[str, Any]], max_n: int) -> Iterable[dict[s
 
 
 def main() -> None:
-    """Export per-example logit-margin certificates for the digits workflow."""
+    """Export per-example logit bounds and margin outcomes for the digits workflow."""
     parser = argparse.ArgumentParser(
-        description="Export per-example logit bounds (margin certificates)",
+        description="Export per-example logit-bound reports",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

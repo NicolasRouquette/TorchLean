@@ -27,7 +27,7 @@ variable {α : Type} [Add α] [Mul α] [Zero α]
 /-- A linear layer as a mathematical module. -/
 def linear {inDim outDim : Nat}
   (m : Spec.LinearSpec α inDim outDim) :
-  Spec.Module α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  Spec.Module α ([inDim]) ([outDim]) :=
 {
   forward := Spec.linearSpec (α := α) m
   kind := "Linear",

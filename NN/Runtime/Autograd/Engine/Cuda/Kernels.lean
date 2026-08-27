@@ -81,7 +81,7 @@ opaque hardMaskedSoftmaxByRow (scores mask : @& Buffer) (rows cols : UInt32) : B
 
 /-- Concatenate two 1D buffers `a` (length `n`) and `b` (length `m`). -/
 @[never_extract, extern "torchlean_cuda_buffer_concat1d"]
-opaque concatVectorBuffers (a b : @& Buffer) (n m : UInt32) : Buffer
+opaque concatBuffers (a b : @& Buffer) (n m : UInt32) : Buffer
 
 /--
 Slice a 1D buffer `b` (length `n`) starting at `start` for `len` elements.
@@ -89,15 +89,15 @@ Slice a 1D buffer `b` (length `n`) starting at `start` for `len` elements.
 Requires `start + len ≤ n`.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_slice1d"]
-opaque sliceVectorBuffer (b : @& Buffer) (n start len : UInt32) : Buffer
+opaque sliceBuffer (b : @& Buffer) (n start len : UInt32) : Buffer
 
 /--
-Broadcast a row-vector (length `cols`) to a `(rows, cols)` matrix.
+Broadcast a rank-one row tensor of length `cols` to a `(rows, cols)` matrix.
 
 Output is row-major of length `rows*cols`, with `out[i, j] = vec[j]`.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_broadcast_vec_to_rows"]
-opaque broadcastVecToRows (vec : @& Buffer) (rows cols : UInt32) : Buffer
+opaque broadcastRowToRows (vec : @& Buffer) (rows cols : UInt32) : Buffer
 
 /--
 Broadcast a column-vector (length `rows`) to a `(rows, cols)` matrix.
@@ -315,15 +315,6 @@ opaque libTorchSDPABwd
     IO (Buffer × Buffer × Buffer)
 
 /--
-Row-major transpose of a 2D buffer.
-
-Input `b` has shape `(rows, cols)` and is stored as length `rows*cols`.
-Output has shape `(cols, rows)` and is stored as length `rows*cols` (row-major).
--/
-@[never_extract, extern "torchlean_cuda_buffer_transpose2d"]
-opaque transpose2d (b : @& Buffer) (rows cols : UInt32) : Buffer
-
-/--
 Gather `k` scalars from a 1D vector using host indices.
 
 Input:
@@ -409,14 +400,6 @@ Large `Nat` values outside the FFI index range are rejected by the runtime.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_gather_rows"]
 opaque gatherRows (mat : @& Buffer) (rows cols : UInt32) (indices : @& Array Nat) (k : UInt32) : Buffer
-
-/--
-Scatter-add into a single matrix row.
-
-Returns a copy of `mat` with `out[i,:] += rowVec`.
--/
-@[never_extract, extern "torchlean_cuda_buffer_scatter_add_row"]
-opaque scatterAddRow (mat rowVec : @& Buffer) (rows cols : UInt32) (i : UInt32) : Buffer
 
 /--
 Scatter-add `k` rows given host indices.

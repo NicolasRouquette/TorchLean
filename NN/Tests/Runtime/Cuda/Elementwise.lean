@@ -32,9 +32,9 @@ open Runtime.Autograd
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: elementwise ==="
 
-  let s : Shape := shape![5]
-  let a : Tensor Float s := tensorOfList! [5] [0.10, -0.20, 0.30, -0.15, 0.05]
-  let b : Tensor Float s := tensorOfList! [5] [0.20,  0.10, -0.25, 0.40, -0.05]
+  let s : Shape := [5]
+  let a : Tensor Float s := tensorOfArray! [5] #[0.10, -0.20, 0.30, -0.15, 0.05]
+  let b : Tensor Float s := tensorOfArray! [5] #[0.20,  0.10, -0.25, 0.40, -0.05]
 
   let scaleC : Float := 0.3
   let clampLo : Float := 1e-3
@@ -67,7 +67,7 @@ def run : IO Unit := do
   let (t22, outId) ← Utils.okOrThrow (Tape.sum (α := Float) (t := t21) (s := s) u19)
 
   let outCpu ← Utils.cpuValue (s := Shape.scalar) t22 outId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (Tensor.scalar 1.0)
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (Tensor.scalar 1.0)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t22) outId seedCpu)
   let dA_cpu ← Utils.cpuGrad (s := s) gradsCpu aId
   let dB_cpu ← Utils.cpuGrad (s := s) gradsCpu bId
@@ -109,30 +109,30 @@ def run : IO Unit := do
   Utils.assertTensorApprox (s := s) "elementwise backward dB" dB_cuda dB_cpu (tol := 2e-3)
 
   -- The former exp(2x) quotient produced infinity divided by infinity at +100.
-  let tailShape : Shape := shape![2]
-  let tails : Tensor Float tailShape := tensorOfList! [2] [100.0, -100.0]
+  let tailShape : Shape := [2]
+  let tails : Tensor Float tailShape := tensorOfArray! [2] #[100.0, -100.0]
   let tailTape0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
   let (tailTape1, tailsId) := Runtime.Autograd.Cuda.Tape.leaf
     (t := tailTape0) (Utils.tensorToAnyBuffer tails) (name := some "tanh tails")
   let (tailTape2, tanhId) ← Utils.okOrThrow <|
     Runtime.Autograd.Cuda.Tape.tanh (t := tailTape1) (s := tailShape) tailsId
   let gotTails ← Utils.cudaValue (s := tailShape) tailTape2 tanhId
-  let expectedTails : Tensor Float tailShape := tensorOfList! [2] [1.0, -1.0]
+  let expectedTails : Tensor Float tailShape := tensorOfArray! [2] #[1.0, -1.0]
   Utils.assertTensorApprox (s := tailShape) "tanh finite tails" gotTails expectedTails
 
   -- GELU is one semantic tape node and one pointwise kernel in each direction. Check both against
   -- the spec-backed CPU tape over the nonlinear center and saturated tails.
-  let geluShape : Shape := shape![7]
+  let geluShape : Shape := [7]
   let geluInput : Tensor Float geluShape :=
-    tensorOfList! [7] [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0]
+    tensorOfArray! [7] #[-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0]
   let geluCpu0 : Tape Float := Tape.empty
   let (geluCpu1, geluCpuInputId) :=
     Tape.leaf (t := geluCpu0) geluInput (name := some "gelu input")
   let (geluCpu2, geluCpuOutputId) ← Utils.okOrThrow <|
     Tape.gelu (α := Float) (t := geluCpu1) (s := geluShape) geluCpuInputId
   let geluCpuOutput ← Utils.cpuValue (s := geluShape) geluCpu2 geluCpuOutputId
-  let geluSeedCpu : Spec.PackedTensor Float :=
-    Spec.PackedTensor.ofTensor (Spec.fill (α := Float) 1.0 geluShape)
+  let geluSeedCpu : Spec.SomeTensor Float :=
+    Spec.SomeTensor.ofTensor (Spec.fill (α := Float) 1.0 geluShape)
   let geluCpuGrads ← Utils.okOrThrow <|
     Tape.backwardDenseAll (α := Float) (t := geluCpu2) geluCpuOutputId geluSeedCpu
   let geluCpuGrad ← Utils.cpuGrad (s := geluShape) geluCpuGrads geluCpuInputId
@@ -157,11 +157,11 @@ def run : IO Unit := do
     (s := geluShape) "fused GELU backward" geluCudaGrad geluCpuGrad (tol := 3e-5)
 
   -- The fused optimizer primitive must preserve the staged AdamW computation it replaces.
-  let optimShape : Shape := shape![4]
-  let params : Tensor Float optimShape := tensorOfList! [4] [1.0, -2.0, 0.5, 4.0]
-  let gradient : Tensor Float optimShape := tensorOfList! [4] [0.2, -0.1, 0.4, -0.3]
-  let firstMoment : Tensor Float optimShape := tensorOfList! [4] [0.01, -0.02, 0.03, -0.04]
-  let secondMoment : Tensor Float optimShape := tensorOfList! [4] [0.2, 0.1, 0.4, 0.3]
+  let optimShape : Shape := [4]
+  let params : Tensor Float optimShape := tensorOfArray! [4] #[1.0, -2.0, 0.5, 4.0]
+  let gradient : Tensor Float optimShape := tensorOfArray! [4] #[0.2, -0.1, 0.4, -0.3]
+  let firstMoment : Tensor Float optimShape := tensorOfArray! [4] #[0.01, -0.02, 0.03, -0.04]
+  let secondMoment : Tensor Float optimShape := tensorOfArray! [4] #[0.2, 0.1, 0.4, 0.3]
   let paramsBuf := Utils.tensorToBuffer params
   let gradientBuf := Utils.tensorToBuffer gradient
   let firstMomentBuf := Utils.tensorToBuffer firstMoment

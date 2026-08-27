@@ -46,7 +46,7 @@ def add {α : Type} (s : EagerSession α) [Add α] [DecidableEq Shape] {sh : Sha
       Runtime.Autograd.Cuda.Tape.add (t := t0) (s := sh) a.id b.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .add cpu cuda
+  dispatchCudaOpt (α := α) s .add #[a.identity?, b.identity?] cpu cuda
 
 /-- Record elementwise subtraction `a - b`. PyTorch: `torch.sub`. -/
 def sub {α : Type} (s : EagerSession α) [Sub α] [Zero α] [DecidableEq Shape] {sh : Shape}
@@ -62,7 +62,7 @@ def sub {α : Type} (s : EagerSession α) [Sub α] [Zero α] [DecidableEq Shape]
       Runtime.Autograd.Cuda.Tape.sub (t := t0) (s := sh) a.id b.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .sub cpu cuda
+  dispatchCudaOpt (α := α) s .sub #[a.identity?, b.identity?] cpu cuda
 
 /-- Record elementwise multiplication `a * b`. PyTorch: `torch.mul`. -/
 def mul {α : Type} (s : EagerSession α) [Mul α] [DecidableEq Shape] {sh : Shape}
@@ -78,10 +78,10 @@ def mul {α : Type} (s : EagerSession α) [Mul α] [DecidableEq Shape] {sh : Sha
       Runtime.Autograd.Cuda.Tape.mul (t := t0) (s := sh) a.id b.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .mul cpu cuda
+  dispatchCudaOpt (α := α) s .mul #[a.identity?, b.identity?] cpu cuda
 
 /-- Record scaling by a scalar constant. PyTorch: `x * c`. -/
-def scale {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Mul α] [DecidableEq Shape]
+def scale {α : Type} [TensorTransfer α] (s : EagerSession α) [Mul α] [DecidableEq Shape]
   {sh : Shape}
   (x : TensorRef α sh) (c : α) : IO (TensorRef α sh) := do
   let cpu := do
@@ -90,13 +90,13 @@ def scale {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Mul α] 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let cF ← CudaBridge.TensorConv.toFloat (α := α) c
+    let cF ← TensorTransfer.toFloat (α := α) c
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.scale (t := t0) (s := sh) x.id cF
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .scale cpu cuda
+  dispatchCudaOpt (α := α) s .scale #[x.identity?] cpu cuda
 
 /-- Record elementwise absolute value. PyTorch: `torch.abs`. -/
 def abs {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
@@ -113,7 +113,7 @@ def abs {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) 
       Runtime.Autograd.Cuda.Tape.abs (t := t0) (s := sh) x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .abs cpu cuda
+  dispatchCudaOpt (α := α) s .abs #[x.identity?] cpu cuda
 
 /-- Record elementwise square root. PyTorch: `torch.sqrt`. -/
 def sqrt {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
@@ -130,10 +130,10 @@ def sqrt {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·)
       Runtime.Autograd.Cuda.Tape.sqrt (t := t0) (s := sh) x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .sqrt cpu cuda
+  dispatchCudaOpt (α := α) s .sqrt #[x.identity?] cpu cuda
 
 /-- Record elementwise clamp to `[minVal,maxVal]`. PyTorch: `torch.clamp`. -/
-def clamp {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context α]
+def clamp {α : Type} [TensorTransfer α] (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {sh : Shape} (x : TensorRef α sh) (minVal maxVal : α) : IO (TensorRef α sh) := do
   let cpu := do
@@ -142,14 +142,14 @@ def clamp {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context 
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let lo ← CudaBridge.TensorConv.toFloat (α := α) minVal
-    let hi ← CudaBridge.TensorConv.toFloat (α := α) maxVal
+    let lo ← TensorTransfer.toFloat (α := α) minVal
+    let hi ← TensorTransfer.toFloat (α := α) maxVal
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.clamp (t := t0) (s := sh) x.id lo hi
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .clamp cpu cuda
+  dispatchCudaOpt (α := α) s .clamp #[x.identity?] cpu cuda
 
 /-- Record elementwise maximum. PyTorch: `torch.maximum`. -/
 def max {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
@@ -166,7 +166,7 @@ def max {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) 
       Runtime.Autograd.Cuda.Tape.max (t := t0) (s := sh) a.id b.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .max cpu cuda
+  dispatchCudaOpt (α := α) s .max #[a.identity?, b.identity?] cpu cuda
 
 /-- Record elementwise minimum. PyTorch: `torch.minimum`. -/
 def min {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
@@ -183,7 +183,7 @@ def min {α : Type} (s : EagerSession α) [Context α] [DecidableRel ((· > ·) 
       Runtime.Autograd.Cuda.Tape.min (t := t0) (s := sh) a.id b.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .min cpu cuda
+  dispatchCudaOpt (α := α) s .min #[a.identity?, b.identity?] cpu cuda
 
 /-- Record elementwise ReLU. PyTorch: `torch.relu` / `torch.nn.functional.relu`. -/
 def relu {α : Type} (s : EagerSession α)
@@ -201,7 +201,7 @@ def relu {α : Type} (s : EagerSession α)
       Runtime.Autograd.Cuda.Tape.relu (t := t0) (s := sh) x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .relu cpu cuda
+  dispatchCudaOpt (α := α) s .relu #[x.identity?] cpu cuda
 
 /-- Record elementwise sigmoid. PyTorch: `torch.sigmoid`. -/
 def sigmoid {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -216,7 +216,7 @@ def sigmoid {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.sigmoid (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .sigmoid cpu cuda
+  dispatchCudaOpt (α := α) s .sigmoid #[x.identity?] cpu cuda
 
 /-- Record elementwise tanh. PyTorch: `torch.tanh`. -/
 def tanh {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -231,7 +231,7 @@ def tanh {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.tanh (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .tanh cpu cuda
+  dispatchCudaOpt (α := α) s .tanh #[x.identity?] cpu cuda
 
 /-- Record tanh-approximate GELU as one tape operation. -/
 def gelu {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -246,7 +246,7 @@ def gelu {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.gelu (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .gelu cpu cuda
+  dispatchCudaOpt (α := α) s .gelu #[x.identity?] cpu cuda
 
 /--
 Record softmax (shape-preserving).
@@ -266,7 +266,7 @@ def softmaxLast {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shap
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.softmaxLast (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .softmax cpu cuda
+  dispatchCudaOpt (α := α) s .softmax #[x.identity?] cpu cuda
 
 /--
 Record stable log-softmax (shape-preserving, last-axis convention).
@@ -285,7 +285,7 @@ def logSoftmaxLast {α : Type} (s : EagerSession α) [Context α] [DecidableEq S
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.logSoftmaxLast (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .logSoftmax cpu cuda
+  dispatchCudaOpt (α := α) s .logSoftmax #[x.identity?] cpu cuda
 
 /-- Record elementwise softplus. PyTorch: `torch.nn.functional.softplus`. -/
 def softplus {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -300,7 +300,7 @@ def softplus {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
     let (t1, id) ← okOrThrow (Runtime.Autograd.Cuda.Tape.softplus (t := t0) (s := sh) x.id)
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .softplus cpu cuda
+  dispatchCudaOpt (α := α) s .softplus #[x.identity?] cpu cuda
 
 /-- Record elementwise exponential. PyTorch: `torch.exp`. -/
 def exp {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -316,7 +316,7 @@ def exp {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
       Runtime.Autograd.Cuda.Tape.exp (t := t0) (s := sh) x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .exp cpu cuda
+  dispatchCudaOpt (α := α) s .exp #[x.identity?] cpu cuda
 
 /-- Record elementwise log. PyTorch: `torch.log`. -/
 def log {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -332,7 +332,7 @@ def log {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
       Runtime.Autograd.Cuda.Tape.log (t := t0) (s := sh) x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .log cpu cuda
+  dispatchCudaOpt (α := α) s .log #[x.identity?] cpu cuda
 
 /-- Record elementwise inverse `1/x`. PyTorch: `torch.reciprocal`. -/
 def inv {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
@@ -348,14 +348,14 @@ def inv {α : Type} (s : EagerSession α) [Context α] [DecidableEq Shape]
       Runtime.Autograd.Cuda.Tape.inv (t := t0) (s := sh) x.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .inv cpu cuda
+  dispatchCudaOpt (α := α) s .inv #[x.identity?] cpu cuda
 
 /--
 Record elementwise log with epsilon guard.
 
 PyTorch comparison: `torch.log(torch.clamp(x, min=ε))`.
 -/
-def safeLog {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Context α] [DecidableEq Shape]
+def safeLog {α : Type} [TensorTransfer α] (s : EagerSession α) [Context α] [DecidableEq Shape]
   {sh : Shape} (x : TensorRef α sh) (ε : α := Numbers.epsilon) : IO (TensorRef α sh) := do
   let cpu := do
     let t0 ← s.tape.get
@@ -363,13 +363,13 @@ def safeLog {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) [Contex
     s.tape.set t1
     pure { id := id }
   let cuda := do
-    let epsF ← CudaBridge.TensorConv.toFloat (α := α) ε
+    let epsF ← TensorTransfer.toFloat (α := α) ε
     let t0 ← s.cudaTape.get
     let (t1, id) ← okOrThrow <|
       Runtime.Autograd.Cuda.Tape.safeLog (t := t0) (s := sh) x.id epsF
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .safeLog cpu cuda
+  dispatchCudaOpt (α := α) s .safeLog #[x.identity?] cpu cuda
 
 end EagerSession
 

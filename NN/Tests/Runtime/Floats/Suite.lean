@@ -12,7 +12,9 @@ public import NN.Tests.Runtime.Floats.IRBatchNorm
 public import NN.Tests.Runtime.Floats.ONNXBridge
 public import NN.Tests.Runtime.Floats.PINNDerivResidual
 public import NN.Tests.Runtime.Floats.PyTorchRoundtripParity
+public import NN.Tests.Runtime.Floats.RankPolymorphicLayerOps
 public import NN.Tests.Runtime.Floats.RLCheck
+public import NN.Tests.Runtime.Floats.SessionRefIdentity
 public import NN.Tests.Runtime.Floats.StandaloneImport
 public import NN.Tests.Runtime.Floats.TorchLeanIRExecEquivCheck
 public import NN.Tests.Runtime.Floats.TorchLeanIndexShapeCheck
@@ -42,7 +44,9 @@ def run : IO Unit := do
   Tests.Floats.IRBatchNorm.run
   Tests.Floats.ONNXBridge.run
   Tests.Floats.PyTorchRoundtripParity.run
+  Tests.Floats.RankPolymorphicLayerOps.run
   Tests.Floats.RLCheck.run
+  Tests.Floats.SessionRefIdentity.run
   Tests.Floats.StandaloneImport.run
   Tests.Floats.PinnDerivResidual.run
   Tests.Floats.TorchLeanOpsCheck.run

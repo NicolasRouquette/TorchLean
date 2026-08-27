@@ -25,8 +25,8 @@ namespace Backend
 namespace LibTorch
 
 /-- Optional LibTorch capsules currently known to the planner. -/
-def capsules : List KernelCapsule :=
-  [Attention.libTorchSDPAForward]
+def capsules : Array KernelCapsule :=
+  #[Attention.libTorchSDPAForward]
 
 end LibTorch
 end Backend

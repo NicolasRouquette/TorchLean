@@ -1,15 +1,17 @@
 # Vision Examples
 
-This folder contains runnable image-model commands. They use the same public trainer API as the
-tabular examples, but they exercise image-specific runtime paths: NCHW tensors, convolution,
-pooling, patch embeddings, attention blocks, CUDA kernels, and CIFAR-10 loaders.
+This folder contains runnable models over the prepared CIFAR-10 tensors. CIFAR is stored in a
+channel-first layout, while the TorchLean tensor and layer APIs remain rank-polymorphic: convolution
+and pooling consume a declared spatial suffix and preserve any leading axes.
 
 ## Files
 
 - `Cnn.lean`: compact convolutional CIFAR-10 classifier. It uses a small crop so the command is a
   practical CUDA regression target while still exercising real convolution/pooling-style data flow.
+- `ResNet.lean`: residual classifier with configurable convolution geometry and global average
+  pooling over every spatial axis.
 - `Vit.lean`: compact ViT-style CIFAR-10 classifier. It uses convolutional patch embedding,
-  token reshape, one transformer encoder block, and a linear head.
+  token reshape, a configurable encoder stack, learned positions, and class-slot pooling.
 
 ## Data
 
@@ -27,6 +29,7 @@ runs.
 
 ```bash
 lake -R -K cuda=true exe torchlean cnn --device cuda --n-total 1 --steps 1
+lake -R -K cuda=true exe torchlean resnet --device cuda --n-total 1 --steps 1
 lake -R -K cuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
 ```
 
@@ -35,6 +38,7 @@ For runtime profiling or fast kernels:
 ```bash
 lake -R -K cuda=true build
 lake -R -K cuda=true exe torchlean cnn --device cuda --n-total 1 --steps 1
+lake -R -K cuda=true exe torchlean resnet --device cuda --n-total 1 --steps 1
 lake -R -K cuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
 ```
 

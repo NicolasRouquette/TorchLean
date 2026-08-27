@@ -36,7 +36,7 @@ If the activation is monotone, then the min/max of the endpoints is a correct en
 -/
 
 theorem map_minmax_sound_real {n : Nat} (f : ℝ → ℝ) (hf : Monotone f)
-    (xB : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n .scalar))
+    (xB : Box ℝ (.dim n .scalar)) (x : Tensor ℝ [n])
     (hx : Box.contains (α := ℝ) xB x) :
     Box.contains (α := ℝ) (NN.MLTheory.CROWN.Runtime.Ops.IBP.mapMinmax (α := ℝ) (n := n) f xB)
       (Tensor.mapSpec (α := ℝ) (s := .dim n .scalar) f x) := by
@@ -142,8 +142,7 @@ lemma cos_lipschitz_real (x y : ℝ) : |Real.cos x - Real.cos y| ≤ |x - y| := 
               simp [div_eq_mul_inv, mul_left_comm, mul_comm]
             _ = |x - y| := by nlinarith
 
-lemma ibp_sin_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n
-  .scalar))
+lemma ibp_sin_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor ℝ [n])
     (hx : Box.contains (α := ℝ) xB x) :
     Box.contains (α := ℝ) (NN.MLTheory.CROWN.Runtime.Ops.IBP.sin (α := ℝ) (n := n) xB)
       (Tensor.mapSpec (α := ℝ) (s := .dim n .scalar) Real.sin x) := by
@@ -207,8 +206,7 @@ lemma ibp_sin_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor �
                     exact hsinRange.2,
                    hmidHi'⟩⟩
 
-lemma ibp_cos_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n
-  .scalar))
+lemma ibp_cos_sound_real {n : Nat} (xB : Box ℝ (.dim n .scalar)) (x : Tensor ℝ [n])
     (hx : Box.contains (α := ℝ) xB x) :
     Box.contains (α := ℝ) (NN.MLTheory.CROWN.Runtime.Ops.IBP.cos (α := ℝ) (n := n) xB)
       (Tensor.mapSpec (α := ℝ) (s := .dim n .scalar) Real.cos x) := by

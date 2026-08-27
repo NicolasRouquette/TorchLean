@@ -34,13 +34,13 @@ structure PlannedKernel where
 
 /-- One selected kernel capsule per requested operation. This record does not execute them. -/
 structure KernelPlan where
-  kernels : List PlannedKernel
+  kernels : Array PlannedKernel
   deriving Repr
 
 namespace KernelPlan
 
 /-- Names of the selected backend capsules, useful for audits and logs. -/
-def capsuleNames (p : KernelPlan) : List String :=
+def capsuleNames (p : KernelPlan) : Array String :=
   p.kernels.map fun k => k.capsule.name
 
 /-- Whether every selected capsule is admitted by the provider, device, and assurance policy. -/
@@ -50,7 +50,7 @@ def admissible (policy : KernelPolicy) (p : KernelPlan) : Bool :=
 end KernelPlan
 
 /-- Choose a backend capsule for one operation. -/
-def planOp (policy : KernelPolicy) (registry : List KernelCapsule)
+def planOp (policy : KernelPolicy) (registry : Array KernelCapsule)
     (op : BackendOp) : Except String PlannedKernel := do
   match chooseCapsuleFor? policy op registry with
   | some capsule => pure { op, capsule }
@@ -58,14 +58,14 @@ def planOp (policy : KernelPolicy) (registry : List KernelCapsule)
       throw s!"no admissible kernel capsule for op {op.name} on device {policy.device.cliName}"
 
 /-- Choose backend capsules for a sequence of operations. -/
-def planOps (policy : KernelPolicy) (registry : List KernelCapsule)
-    (ops : List BackendOp) : Except String KernelPlan := do
+def planOps (policy : KernelPolicy) (registry : Array KernelCapsule)
+    (ops : Array BackendOp) : Except String KernelPlan := do
   let kernels ← ops.mapM (planOp policy registry)
   pure { kernels }
 
 /-- Choose backend capsules after filtering the registry by machine/build availability. -/
 def planOpsAvailable (policy : KernelPolicy) (availability : Availability)
-    (registry : List KernelCapsule) (ops : List BackendOp) : Except String KernelPlan :=
+    (registry : Array KernelCapsule) (ops : Array BackendOp) : Except String KernelPlan :=
   planOps policy (availability.filterCapsules registry) ops
 
 /-! ## Typed verified planning -/
@@ -108,17 +108,18 @@ erased capsule metadata and therefore rejects capsules whose trust level is mere
 -/
 def planVerifiedKernel {ι : Type u} {ο : Type v} {op : BackendOp}
     {specification : ι → ο} (policy : KernelPolicy)
-    (kernels : List (ProofCarryingKernel ι ο op specification)) :
-    Except String (VerifiedPlannedKernel ι ο op specification policy) :=
-  match kernels with
-  | [] =>
+    (kernels : Array (ProofCarryingKernel ι ο op specification)) :
+    Except String (VerifiedPlannedKernel ι ο op specification policy) := do
+  let mut selected : Option (VerifiedPlannedKernel ι ο op specification policy) := none
+  for kernel in kernels do
+    if selected.isNone then
+      if h : kernel.selectable policy = true then
+        selected := some { kernel, selectable := h }
+  match selected with
+  | some kernel => pure kernel
+  | none =>
       throw <| s!"no selectable proof-carrying kernel for op {op.name} on device " ++
         s!"{policy.device.cliName}"
-  | kernel :: rest =>
-      if h : kernel.selectable policy = true then
-        pure { kernel, selectable := h }
-      else
-        planVerifiedKernel policy rest
 
 end Backend
 end NN

@@ -68,15 +68,15 @@ structure PyTorchExportMetadata (α : Type) (s t : Shape) where
   outputShape : Shape
   /-- Count of primitive layers/ops in the model (exporter-specific). -/
   layerCount : Nat
-  /-- A list of operation names used for summary reporting in examples. -/
-  operationTypes : List String
+  /-- Operation names used for summary reporting in examples. -/
+  operationTypes : Array String
   /-- Whether the exporter embedded a `state_dict` literal in the emitted Python. -/
   hasWeights : Bool
   /-- The emitted Python source (usually a full script or class definition). -/
   pytorchCode : String
 
-/-- Join a list of lines with newline separators. -/
-def joinLines (xs : List String) : String := String.intercalate "\n" xs
+/-- Join an array of lines with newline separators. -/
+def joinLines (xs : Array String) : String := String.intercalate "\n" xs.toList
 /-- Render a Lean `Bool` as the corresponding Python literal. -/
 def pyBool (b : Bool) : String :=
   if b then "True" else "False"
@@ -109,28 +109,21 @@ Emit a standard `get_model_info` method used by most TorchLean PyTorch example m
 This is meant as a *formatting helper* only; it does not validate Python syntax.
 -/
 def generateGetModelInfoMethodLines (modelName : String)
-    (extraFields : List (String × String) := []) : List String :=
-  let items : List (String × String) :=
-    ("model_name", s!"\"{modelName}\"") ::
-      (extraFields ++
-        [ ("input_shape", "self.input_shape")
-        , ("output_shape", "self.output_shape")
-        , ("layer_count", "self.layer_count")
-        , ("operation_types", "self.operation_types")
-        ])
-  let rec renderItems : List (String × String) → List String
-    | [] => []
-    | [kv] =>
-        let (k, v) := kv
-        [indentSix s!"\"{k}\": {v}"]
-    | kv :: rest =>
-        let (k, v) := kv
-        indentSix s!"\"{k}\": {v}," :: renderItems rest
-  [ indentTwo "def get_model_info(self) -> dict:"
+    (extraFields : Array (String × String) := #[]) : Array String :=
+  let items :=
+    #[("model_name", s!"\"{modelName}\"")] ++ extraFields ++
+      #[ ("input_shape", "self.input_shape")
+       , ("output_shape", "self.output_shape")
+       , ("layer_count", "self.layer_count")
+       , ("operation_types", "self.operation_types")
+       ]
+  let rendered := items.mapIdx fun i (k, v) =>
+    let comma := if i + 1 < items.size then "," else ""
+    indentSix s!"\"{k}\": {v}{comma}"
+  #[ indentTwo "def get_model_info(self) -> dict:"
   , indentFour "return {"
-  ] ++ renderItems items ++
-  [ indentFour "}"
-  ]
+  ] ++ rendered ++
+  #[indentFour "}"]
 
 /--
 Render a `Shape` as a Python tuple literal.
@@ -152,78 +145,6 @@ def countLayers {α : Type} {s t : Shape} : Spec.Module.Chain α s t → Nat
 | .single _ => 1
 | .comp a b => countLayers a + countLayers b
 
-/-- Convert a 1D float tensor into a Lean list (outermost dimension order). -/
-def vectorTensorToList {n : Nat} (t : Tensor Float (.dim n .scalar)) : List Float :=
-  match t with
-  | .dim f =>
-      (List.finRange n).map fun i =>
-        match f i with
-        | .scalar x => x
-
-/-- Render a 1D float tensor as a Python list literal (e.g. `[1.0, 2.0]`). -/
-def vectorTensorToPy {n : Nat} (t : Tensor Float (.dim n .scalar)) : String :=
-  let elems := (vectorTensorToList (n := n) t).map toString
-  "[" ++ String.intercalate ", " elems ++ "]"
-/-- Render a 2D float tensor as a Python nested-list literal. -/
-def matrixTensorToPy {rows cols : Nat} (t : Tensor Float (.dim rows (.dim cols .scalar))) : String :=
-  let rowToStr (i : Fin rows) : String :=
-    match t with
-    | .dim f =>
-      match f i with
-      | .dim g =>
-        let elems := (List.finRange cols).map (fun j =>
-          match g j with
-          | .scalar x => toString x)
-        s!"[" ++ String.intercalate ", " elems ++ "]"
-  let rowsStr := (List.finRange rows).map (fun i => rowToStr i)
-  s!"[" ++ String.intercalate ", " rowsStr ++ "]"
-
-/--
-Render the transpose of a 2D float tensor as a Python nested-list literal.
-
-TorchLean's matrix-valued specs often follow the mathematical convention where a feature matrix
-`W` has shape `(in, out)` and is applied as `X * W`. PyTorch stores `nn.Linear` weights as
-`(out, in)` and applies them as `X @ W.T + b`. This helper prints a TorchLean matrix in the
-transposed orientation expected by PyTorch.
--/
-def transposedMatrixTensorToPy {rows cols : Nat} (t : Tensor Float (.dim rows (.dim cols .scalar))) : String :=
-  let colToStr (j : Fin cols) : String :=
-    match t with
-    | .dim f =>
-      let elems := (List.finRange rows).map (fun i =>
-        match f i with
-        | .dim g =>
-          match g j with
-          | .scalar x => toString x)
-      s!"[" ++ String.intercalate ", " elems ++ "]"
-  let colsStr := (List.finRange cols).map colToStr
-  s!"[" ++ String.intercalate ", " colsStr ++ "]"
-
-/-- Render a 4D float tensor as a Python nested-list literal. -/
-def rankFourTensorToPy {a b c d : Nat} (t : Tensor Float (.dim a (.dim b (.dim c (.dim d .scalar))))) :
-  String :=
-  let toStr (i : Fin a) : String :=
-    let toStr2 (j : Fin b) : String :=
-      let toStr3 (k : Fin c) : String :=
-        let elems := (List.finRange d).map (fun l =>
-          match t with
-          | .dim f =>
-            match f i with
-            | .dim g =>
-              match g j with
-              | .dim h =>
-                match h k with
-                | .dim m =>
-                  match m l with
-                  | .scalar x => toString x)
-        s!"[" ++ String.intercalate ", " elems ++ "]"
-      let elems2 := (List.finRange c).map toStr3
-      s!"[" ++ String.intercalate ", " elems2 ++ "]"
-    let elems3 := (List.finRange b).map toStr2
-    s!"[" ++ String.intercalate ", " elems3 ++ "]"
-  let elems4 := (List.finRange a).map toStr
-  s!"[" ++ String.intercalate ", " elems4 ++ "]"
-
 /--
 Best-effort conversion of a float tensor to a Python list literal.
 
@@ -242,9 +163,30 @@ def tensorToPyString {s : Shape} (t : Tensor Float s) : String :=
         | .dim _ => tensorToPyString (f i))
       s!"[" ++ String.intercalate ", " elems ++ "]"
 
+/--
+Render the transpose of a 2D float tensor as a Python nested-list literal.
+
+TorchLean's matrix-valued specs often follow the mathematical convention where a feature matrix
+`W` has shape `(in, out)` and is applied as `X * W`. PyTorch stores `nn.Linear` weights as
+`(out, in)` and applies them as `X @ W.T + b`. This helper prints a TorchLean matrix in the
+transposed orientation expected by PyTorch.
+-/
+def transposedMatrixTensorToPy {rows cols : Nat} (t : Tensor Float [rows, cols]) : String :=
+  let colToStr (j : Fin cols) : String :=
+    match t with
+    | .dim f =>
+      let elems := (List.finRange rows).map (fun i =>
+        match f i with
+        | .dim g =>
+          match g j with
+          | .scalar x => toString x)
+      s!"[" ++ String.intercalate ", " elems ++ "]"
+  let colsStr := (List.finRange cols).map colToStr
+  s!"[" ++ String.intercalate ", " colsStr ++ "]"
+
 /-- Standard imports used by the generated Python snippets. -/
 def generatePyTorchImports : String :=
-  joinLines [
+  joinLines #[
     "import torch",
     "import torch.nn as nn",
     "import torch.nn.functional as F",
@@ -259,7 +201,7 @@ These are small, dependency-free Python utilities (selectors, wrappers, a compac
 used so the generated model classes stay short and readable.
 -/
 def generatePyTorchSupportDefinitions : String :=
-  joinLines [
+  joinLines #[
     "",
     "class SelectLast(nn.Module):",
     indentTwo "\"\"\"Select the last timestep from a (batch, seq, hidden) tensor.\"\"\"",
@@ -434,7 +376,7 @@ instead of the simpler `nn.Sequential` emitter.
 -/
 def generateBasePyTorchModule (className : String) (docstring : String) : String :=
   joinLines <|
-    [ s!"class {className}(nn.Module):"
+    #[ s!"class {className}(nn.Module):"
     , indentTwo s!"\"\"\"{docstring}\"\"\""
     , indentTwo ""
     , indentTwo "def __init__(self):"
@@ -449,7 +391,7 @@ def generateBasePyTorchModule (className : String) (docstring : String) : String
     , indentFour ""
     ] ++
       generateGetModelInfoMethodLines className ++
-      [ indentFour ""
+      #[ indentFour ""
       , indentTwo "@property"
       , indentTwo "def input_shape(self):"
       , indentFour "raise NotImplementedError(\"Subclasses must implement input_shape\")"
@@ -469,7 +411,7 @@ def generateBasePyTorchModule (className : String) (docstring : String) : String
 
 /-- Emit Python helpers for saving/loading state dictionaries and JSON checkpoints. -/
 def generateWeightLoadingUtils : String :=
-  joinLines [
+  joinLines #[
     "def load_weights_from_dict(model: nn.Module, state_dict: dict):",
     indentTwo "\"\"\"Load weights from a state dictionary into the model.\"\"\"",
     indentTwo "model.load_state_dict(state_dict)",
@@ -494,7 +436,7 @@ def generateWeightLoadingUtils : String :=
 
 /-- Emit Python helpers for validating exported models. -/
 def generateTestingUtils : String :=
-  joinLines [
+  joinLines #[
     "def test_model_forward(model: nn.Module, input_shape: Tuple[int, ...], num_tests: int = 5):",
     indentTwo "\"\"\"Test model forward pass with random inputs.\"\"\"",
     indentTwo "model.eval()",
@@ -519,7 +461,7 @@ def generateTestingUtils : String :=
 /--
 Generate a complete `nn.Sequential`-based Python module for a `Spec.Module.Chain`.
 
-This is the simplest exporter: we extract a list of `(opName, pythonLayerString)` pairs and drop
+This is the simplest exporter: we extract an array of `(opName, pythonLayerString)` pairs and drop
 them into an `nn.Sequential(...)` in a new class.
 -/
 def generatePyTorchModule {α : Type} {s t : Shape}
@@ -529,10 +471,11 @@ def generatePyTorchModule {α : Type} {s t : Shape}
   let layerCount := countLayers chain
   let layers := Spec.Module.Chain.layerInfo chain
   let layerStrings := layers.map (fun (_, pytorch) => indentEight pytorch)
-  let opList := "[" ++ String.intercalate ", " (layers.map (fun (op, _) => s!"\"{op}\"")) ++ "]"
+  let opList :=
+    "[" ++ String.intercalate ", " (layers.map (fun (op, _) => s!"\"{op}\"")).toList ++ "]"
 
   joinLines <|
-    [ generatePyTorchImports
+    #[ generatePyTorchImports
     , generatePyTorchSupportDefinitions
     , ""
     , s!"class {className}(nn.Module):"
@@ -541,10 +484,10 @@ def generatePyTorchModule {α : Type} {s t : Shape}
     , indentFour s!"# Input shape: {inputShape}"
     , indentFour s!"# Output shape: {outputShape}"
     , indentFour s!"# Layer count: {layerCount}"
-    , indentFour s!"# Operations: {String.intercalate ", " (layers.map (fun (op, _) => op))}"
+    , indentFour s!"# Operations: {String.intercalate ", " (layers.map (fun (op, _) => op)).toList}"
     , indentFour ""
     , indentFour "self.layers = nn.Sequential("
-    , String.intercalate ",\n" layerStrings
+    , String.intercalate ",\n" layerStrings.toList
     , indentFour ")"
     , ""
     , indentTwo "def forward(self, x):"
@@ -571,7 +514,7 @@ def generatePyTorchModule {α : Type} {s t : Shape}
 
 /-- Like `generateBasePyTorchModule`, but also include shared weight/testing helpers. -/
 def generateCompletePyTorchExport (className : String) (docstring : String) : String :=
-  joinLines [
+  joinLines #[
     generatePyTorchImports,
     "",
     generateBasePyTorchModule className docstring,

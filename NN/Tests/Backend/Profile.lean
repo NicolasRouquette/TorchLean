@@ -9,6 +9,7 @@ module
 public import NN.Backend.Report
 public import NN.Backend.IR
 public import NN.Runtime.Autograd.Torch.Core.Ops
+public import NN.Tensor
 
 /-!
 # Backend Profile Tests
@@ -29,7 +30,7 @@ def expect (tag : String) (ok : Bool) : IO Unit := do
   unless ok do
     throw <| IO.userError s!"backend profile check failed: {tag}"
 
-def expectCapsules (tag : String) (got expected : List String) : IO Unit := do
+def expectCapsules (tag : String) (got expected : Array String) : IO Unit := do
   expect tag (got == expected)
 
 def expectOp (tag : String) (kind : NN.IR.OpKind) (expected : Option BackendOp) : IO Unit := do
@@ -44,15 +45,15 @@ def expectContains (tag needle haystack : String) : IO Unit := do
 def tinyReluGraph : NN.IR.Graph :=
   { nodes := #[
       { id := 0
-        parents := []
+        parents := #[]
         kind := .input
         outShape := Spec.Shape.scalar },
       { id := 1
-        parents := [0]
+        parents := #[0]
         kind := .relu
         outShape := Spec.Shape.scalar },
       { id := 2
-        parents := [1]
+        parents := #[1]
         kind := .relu
         outShape := Spec.Shape.scalar }
     ] }
@@ -120,7 +121,7 @@ def mismatchedRandomCapsule : KernelCapsule :=
     name := "torchlean.rand_uniform_mismatched"
     provider := .torchLean }
 
-def planOrThrow (tag : String) (profile : BackendProfile) (ops : List BackendOp) :
+def planOrThrow (tag : String) (profile : BackendProfile) (ops : Array BackendOp) :
     IO KernelPlan := do
   match profile.planOps ops with
   | .ok plan => pure plan
@@ -135,7 +136,7 @@ def profileOrThrow (tag : String) (opts : Runtime.Autograd.Torch.Options) :
     throw <| IO.userError s!"{tag}: profile `{profile.name}` has no capsule for its device"
   pure profile
 
-def expectPlanningFails (tag : String) (profile : BackendProfile) (ops : List BackendOp) :
+def expectPlanningFails (tag : String) (profile : BackendProfile) (ops : Array BackendOp) :
     IO Unit := do
   match profile.planOps ops with
   | .ok plan =>
@@ -166,11 +167,11 @@ def expectNativeCudaBindingAccepts (tag : String)
   let base ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float)
   let s := { base with opts := opts }
   let result ← s.executeSelected op
-    [ ({ name := "profile-test native CUDA handler"
+    #[({ name := "profile-test native CUDA handler"
          op
          provider := .nativeCuda
          device := .cuda
-         execute := fun _ => pure true } : KernelHandler Bool) ]
+         execute := fun _ => pure true } : KernelHandler Bool)]
   expect tag result
 
 /-- A handler mismatch must fail before its implementation can run. -/
@@ -204,8 +205,8 @@ def checkHandlerIdentity : IO Unit := do
 /-- Eager execution must not run a reference implementation under another provider's capsule. -/
 def expectRandomProviderRejected : IO Unit := do
   let mismatchedModule : Registry.CapsuleModule :=
-    { name := "reference", capsules := [mismatchedRandomCapsule] }
-  let profile := BackendProfile.checkedCpu.withCapsuleModules [mismatchedModule]
+    { name := "reference", capsules := #[mismatchedRandomCapsule] }
+  let profile := BackendProfile.checkedCpu.withCapsuleModules #[mismatchedModule]
   let opts :=
     Runtime.Autograd.Torch.Options.withBackendProfile
       ({} : Runtime.Autograd.Torch.Options) profile
@@ -270,22 +271,22 @@ def run : IO Unit := do
   expect "default registry contract fields are aligned"
     ((Registry.flatten Registry.maintainedModules).all KernelCapsule.contractsAligned)
   expect "LibTorch registry contract fields are aligned"
-    ((Registry.flatten (Registry.libTorchModule :: Registry.maintainedModules)).all
+    ((Registry.flatten (#[Registry.libTorchModule] ++ Registry.maintainedModules)).all
       KernelCapsule.contractsAligned)
   let duplicateModuleProfile : BackendProfile :=
     { BackendProfile.checkedCpu with
-      capsuleModules := [Registry.libTorchModule, Registry.libTorchModule] }
+      capsuleModules := #[Registry.libTorchModule, Registry.libTorchModule] }
   expectPlanningFails "duplicate capsule module names are rejected"
-    duplicateModuleProfile [.relu]
+    duplicateModuleProfile #[.relu]
   let replacementModule : Registry.CapsuleModule :=
-    { name := "reference", capsules := [replacementReluCapsule] }
+    { name := "reference", capsules := #[replacementReluCapsule] }
   let replacementProfile :=
-    BackendProfile.checkedCpu.withCapsuleModules [replacementModule]
+    BackendProfile.checkedCpu.withCapsuleModules #[replacementModule]
   expect "same-name capsule modules are replaced instead of duplicated"
-    ((replacementProfile.capsuleModules.filter (fun module => module.name == "reference")).length == 1)
-  let replaced ← planOrThrow "replacement capsule module" replacementProfile [.relu]
+    ((replacementProfile.capsuleModules.filter (fun module => module.name == "reference")).size == 1)
+  let replaced ← planOrThrow "replacement capsule module" replacementProfile #[.relu]
   expectCapsules "replacement capsule module is selected" replaced.capsuleNames
-    ["replacement.relu"]
+    #["replacement.relu"]
   let inferenceOpts : Runtime.Autograd.Torch.Options := { gradEnabled := false }
   let inferenceProfile ← profileOrThrow "no-grad default profile" inferenceOpts
   expect "no-grad runtime planning requests no VJP"
@@ -296,14 +297,27 @@ def run : IO Unit := do
     (trainingProfile.policy.vjpMode == .torchLeanTape)
   expectOp "IR add maps to exact add capsule" .add (some .add)
   expectOp "IR linear maps to exact linear capsule" .linear (some .linear)
-  expectOp "IR conv2d maps to the rank-generic convolution capability"
-    (.conv2d 1 1 3 3 1 0) (some .conv)
-  expectOp "IR maxPool2d maps to the rank-generic max-pool capability"
-    (.maxPool2d 2 2 2) (some .maxPool)
+  let convConfig : NN.IR.ConvConfig :=
+    { spatialRank := 2
+      kernel := tensor! [3, 3]
+      stride := tensor! [1, 1]
+      padding := tensor! [0, 0]
+      channelAxis := 0
+      inChannels := 1
+      outChannels := 1 }
+  let poolConfig : NN.IR.WindowConfig :=
+    { spatialRank := 2
+      kernel := tensor! [2, 2]
+      stride := tensor! [2, 2]
+      padding := tensor! [0, 0] }
+  expectOp "IR convolution maps to the convolution capability"
+    (.conv convConfig) (some .conv)
+  expectOp "IR max pooling maps to the max-pool capability"
+    (.maxPool poolConfig) (some .maxPool)
   expectOp "IR rand uniform maps to exact forward-only capsule"
     (.randUniform 0) (some .randUniform)
   expectOp "IR permute maps to exact permute capsule"
-    (.permute [1, 0]) (some .permute)
+    (.permute #[1, 0]) (some .permute)
   expectOp "IR hard-masked softmax keeps its exact capsule identity"
     (.hardMaskedSoftmax scalarHardMask) (some .hardMaskedSoftmax)
   expectOp "IR input has no backend capsule" .input none
@@ -315,57 +329,57 @@ def run : IO Unit := do
   match planOpsAvailable
       { device := .external, provider := .only .external }
       Target.external.declaredAvailability
-      [externalReluCapsule]
-      [.relu] with
+      #[externalReluCapsule]
+      #[.relu] with
   | .ok plan =>
       expectCapsules "external target can plan explicit external capsule" plan.capsuleNames
-        ["external.relu"]
+        #["external.relu"]
   | .error msg =>
       throw <| IO.userError s!"external capsule planning failed: {msg}"
-  match planOps { device := .cpu } [disabledForwardReluCapsule] [.relu] with
+  match planOps { device := .cpu } #[disabledForwardReluCapsule] #[.relu] with
   | .ok plan =>
       throw <| IO.userError
         s!"disabled forward capsule unexpectedly planned as {plan.capsuleNames}"
   | .error _ => pure ()
   match planOps
       { device := .cpu, vjpMode := .none }
-      [Reference.relu] [.relu] with
+      #[Reference.relu] #[.relu] with
   | .ok inferencePlan =>
       expectCapsules "inference accepts a forward capsule that also supports VJP"
-        inferencePlan.capsuleNames ["reference.relu"]
+        inferencePlan.capsuleNames #["reference.relu"]
   | .error msg =>
       throw <| IO.userError s!"inference VJP compatibility test: planning failed: {msg}"
   match planOps { device := .cpu, vjpMode := .torchLeanTape }
-      [forwardOnlyReluCapsule] [.relu] with
+      #[forwardOnlyReluCapsule] #[.relu] with
   | .ok forwardOnly =>
       throw <| IO.userError
         s!"forward-only differentiable capsule unexpectedly planned as {forwardOnly.capsuleNames}"
   | .error _ => pure ()
   match planOps { device := .cpu, assurance := .verified }
-      [malformedReluCapsule] [.relu] with
+      #[malformedReluCapsule] #[.relu] with
   | .ok malformed =>
       throw <| IO.userError
         s!"malformed capsule unexpectedly planned as {malformed.capsuleNames}"
   | .error _ => pure ()
   match planOps { device := .cpu, assurance := .verified, vjpMode := .none }
-      [verifiedReluCapsule] [.relu] with
+      #[verifiedReluCapsule] #[.relu] with
   | .ok erased =>
       throw <| IO.userError
         s!"erased verified metadata unexpectedly planned as {erased.capsuleNames}"
   | .error _ => pure ()
   let verifiedConfig : KernelPolicy :=
     { device := .cpu, assurance := .verified, vjpMode := .none }
-  match planVerifiedKernel verifiedConfig [verifiedReluKernel] with
+  match planVerifiedKernel verifiedConfig #[verifiedReluKernel] with
   | .ok planned =>
       expect "proof-carrying planner did not execute the indexed specification"
         (planned.run (-3) == 0 && planned.run 4 == 4)
   | .error msg =>
       throw <| IO.userError s!"proof-carrying planner rejected a verified kernel: {msg}"
-  match planVerifiedKernel { verifiedConfig with assurance := .checked } [verifiedReluKernel] with
+  match planVerifiedKernel { verifiedConfig with assurance := .checked } #[verifiedReluKernel] with
   | .ok _ =>
       throw <| IO.userError "proof-carrying planner accepted a non-verified assurance policy"
   | .error _ => pure ()
-  match planOps { device := .cpu } [fuzzedReluCapsule] [.relu] with
+  match planOps { device := .cpu } #[fuzzedReluCapsule] #[.relu] with
   | .ok fuzzedRelu =>
       expect "strict gate rejects fuzz-only evidence"
         (!fuzzedRelu.acceptedBy AssurancePolicy.verified)
@@ -377,9 +391,9 @@ def run : IO Unit := do
   let acceptedCpuGraph ← acceptedGraphOrThrow "checked cpu graph acceptance"
     BackendProfile.checkedCpu tinyReluGraph
   expectCapsules "checked cpu graph coalesces same relu capsule"
-    acceptedCpuGraph.capsuleNames ["reference.relu"]
+    acceptedCpuGraph.capsuleNames #["reference.relu"]
   expectCapsules "checked cpu graph keeps source node ids"
-    (acceptedCpuGraph.nodeIds.map (fun n => toString n)) ["1", "2"]
+    (acceptedCpuGraph.nodeIds.map (fun n => toString n)) #["1", "2"]
   expect "checked cpu graph has no missing evidence" acceptedCpuGraph.audit.hasNoMissingEvidence
   expect "checked cpu graph has no trusted external" (!acceptedCpuGraph.audit.hasTrustedExternal)
 
@@ -390,16 +404,16 @@ def run : IO Unit := do
   let singletonCpuGraph ← acceptedGraphOrThrow "checked cpu singleton graph acceptance"
     singletonCpuProfile tinyReluGraph
   expectCapsules "singleton graph keeps repeated relu capsules"
-    singletonCpuGraph.capsuleNames ["reference.relu", "reference.relu"]
+    singletonCpuGraph.capsuleNames #["reference.relu", "reference.relu"]
 
   -- Operations without a LibTorch capsule use the native provider under the hybrid profile.
   let softmaxFallback ← planOrThrow "hybrid native softmax fallback"
-    BackendProfile.libTorchForwardCuda [.softmax]
+    BackendProfile.libTorchForwardCuda #[.softmax]
   expectCapsules "hybrid profile falls back to native softmax"
-    softmaxFallback.capsuleNames ["native_cuda.softmax"]
+    softmaxFallback.capsuleNames #["native_cuda.softmax"]
 
   let exactOps :=
-    [ BackendOp.matmul, .linear, .mseLoss, .add, .sub, .mul, .scale, .abs, .sqrt
+    #[ BackendOp.matmul, .linear, .mseLoss, .add, .sub, .mul, .scale, .abs, .sqrt
     , .clamp, .max, .min, .relu, .gelu, .sigmoid, .tanh
     , .softmax, .hardMaskedSoftmax, .softplus, .exp, .log, .inv, .safeLog, .logSoftmax
     , .reduceSum
@@ -409,15 +423,15 @@ def run : IO Unit := do
 
   let exactReferenceCapsules := exactOps.map fun op => s!"reference.{op.name}"
   let exactNativeCudaCapsules := exactOps.map fun op => s!"native_cuda.{op.name}"
-  let cpuOnlyOps := [BackendOp.sin, .cos]
+  let cpuOnlyOps := #[BackendOp.sin, .cos]
   let profileOps :=
-    [ BackendOp.matmul, .relu, .softmax, .hardMaskedSoftmax, .layerNorm, .batchNorm
+    #[ BackendOp.matmul, .relu, .softmax, .hardMaskedSoftmax, .layerNorm, .batchNorm
     , .conv, .convTranspose, .maxPool, .smoothMaxPool, .avgPool, .mseLoss
     , .scaledDotProductAttention ]
 
   let cpu ← planOrThrow "checked cpu" BackendProfile.checkedCpu profileOps
   expectCapsules "checked cpu capsule order" cpu.capsuleNames
-    [ "reference.matmul"
+    #[ "reference.matmul"
     , "reference.relu"
     , "reference.softmax"
     , "reference.hard_masked_softmax"
@@ -437,16 +451,16 @@ def run : IO Unit := do
   expectCapsules "checked cpu exact capsules" cpuExact.capsuleNames exactReferenceCapsules
   let cpuOnly ← planOrThrow "checked cpu cpu-only ops" BackendProfile.checkedCpu cpuOnlyOps
   expectCapsules "checked cpu cpu-only capsules" cpuOnly.capsuleNames
-    ["reference.sin", "reference.cos"]
+    #["reference.sin", "reference.cos"]
 
   let replacementModule : Registry.CapsuleModule :=
-    { name := "profile-test-replacement", capsules := [replacementReluCapsule] }
-  let extendedCpu := BackendProfile.checkedCpu.withCapsuleModules [replacementModule]
-  let extendedPlan ← planOrThrow "extended capsule modules" extendedCpu [.relu, .matmul]
+    { name := "profile-test-replacement", capsules := #[replacementReluCapsule] }
+  let extendedCpu := BackendProfile.checkedCpu.withCapsuleModules #[replacementModule]
+  let extendedPlan ← planOrThrow "extended capsule modules" extendedCpu #[.relu, .matmul]
   expectCapsules "extended modules preserve model-independent preference" extendedPlan.capsuleNames
-    ["replacement.relu", "reference.matmul"]
+    #["replacement.relu", "reference.matmul"]
 
-  let reportOps := exactOps ++ [.scaledDotProductAttention]
+  let reportOps := exactOps ++ #[.scaledDotProductAttention]
   match BackendProfile.checkedCpu.planReport reportOps with
   | .ok report =>
       expectContains "checked cpu report names exact add" "add: reference.add" report
@@ -462,7 +476,7 @@ def run : IO Unit := do
 
   let cuda ← planOrThrow "checked cuda" BackendProfile.checkedCuda profileOps
   expectCapsules "checked cuda capsule order" cuda.capsuleNames
-    [ "native_cuda.matmul"
+    #[ "native_cuda.matmul"
     , "native_cuda.relu"
     , "native_cuda.softmax"
     , "native_cuda.hard_masked_softmax"
@@ -480,7 +494,7 @@ def run : IO Unit := do
 
   let cudaExact ← planOrThrow "checked cuda exact ops" BackendProfile.checkedCuda exactOps
   expectCapsules "checked cuda exact capsules" cudaExact.capsuleNames exactNativeCudaCapsules
-  expectPlanningFails "checked cuda has no sin capsule yet" BackendProfile.checkedCuda [.sin]
+  expectPlanningFails "checked cuda has no sin capsule yet" BackendProfile.checkedCuda #[.sin]
   match BackendProfile.checkedCuda.planReport reportOps with
   | .ok report =>
       expectContains "checked cuda report names exact add" "add: native_cuda.add" report
@@ -495,21 +509,21 @@ def run : IO Unit := do
       throw <| IO.userError s!"checked cuda report failed: {msg}"
 
   let libtorchForward ← planOrThrow "libtorch forward cuda" BackendProfile.libTorchForwardCuda
-    [.scaledDotProductAttention]
+    #[.scaledDotProductAttention]
   expectCapsules "preferred LibTorch provider wins without registry-order dependence"
     libtorchForward.capsuleNames
-    ["libtorch.sdpa_forward"]
+    #["libtorch.sdpa_forward"]
   expect "libtorch forward records external boundary" libtorchForward.hasTrustedExternal
   expectCapsules "libtorch forward external op" libtorchForward.trustedExternalOps
-    ["scaled_dot_product_attention"]
+    #["scaled_dot_product_attention"]
   expect "strict gate rejects trusted LibTorch forward"
     (!libtorchForward.acceptedBy AssurancePolicy.verified)
   let hybridForward ← planOrThrow "hybrid libtorch forward cuda"
-    BackendProfile.libTorchForwardCuda [.add, .scaledDotProductAttention, .relu]
+    BackendProfile.libTorchForwardCuda #[.add, .scaledDotProductAttention, .relu]
   expectCapsules "hybrid profile uses native fallback around LibTorch attention"
     hybridForward.capsuleNames
-    ["native_cuda.add", "libtorch.sdpa_forward", "native_cuda.relu"]
-  match BackendProfile.libTorchForwardCuda.planReport [.scaledDotProductAttention] with
+    #["native_cuda.add", "libtorch.sdpa_forward", "native_cuda.relu"]
+  match BackendProfile.libTorchForwardCuda.planReport #[.scaledDotProductAttention] with
   | .ok report =>
       expectContains "libtorch forward report names TorchLean tape"
         "vjp=torchlean-tape" report
@@ -537,13 +551,13 @@ def run : IO Unit := do
   let secondRelu ← cpuSession.selectedCapsule .relu
   let cpuSelections ← cpuSession.backendSelections
   expect "session reuses the selected capsule for a repeated operation"
-    (firstRelu.name == secondRelu.name && cpuSelections.length == 1)
+    (firstRelu.name == secondRelu.name && cpuSelections.size == 1)
   expectRandomProviderRejected
 
   let checkedCudaOpts : Runtime.Autograd.Torch.Options :=
     { device := .cuda }
   for op in
-      [ BackendOp.matmul
+      #[ BackendOp.matmul
       , .batchNorm
       , .maxPool
       , .avgPool

@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Train.Core
-public import NN.Runtime.Autograd.Train.Dataset
+public import NN.Data.SampleStream
 public import NN.Runtime.Autograd.Train.Trainer
 
 /-!
@@ -29,27 +29,28 @@ namespace Eval
 ## Metric aggregation
 -/
 /--
-Add two metric lists pointwise.
+Add two metric arrays pointwise.
 
 Names must match, so unrelated quantities are not silently averaged.
 -/
 def addMetrics {a : Type} [Add a]
-  (tag : String) (xs ys : List (Metric a)) : Result (List (Metric a)) :=
-  match xs, ys with
-  | [], [] => .ok []
-  | m1 :: ms1, m2 :: ms2 =>
-      if m1.name = m2.name then
-        match addMetrics (tag := tag) ms1 ms2 with
-        | .ok rest => .ok ({ name := m1.name, value := m1.value + m2.value } :: rest)
-        | .error e => .error e
-      else
-        .error (tagError tag s!"metric name mismatch: {m1.name} vs {m2.name}")
-  | _, _ =>
-      .error (tagError tag "metric length mismatch")
+  (tag : String) (xs ys : Array (Metric a)) : Result (Array (Metric a)) := do
+  if xs.size != ys.size then
+    throw (tagError tag "metric length mismatch")
+  let mut result := Array.emptyWithCapacity xs.size
+  for i in [:xs.size] do
+    match xs[i]?, ys[i]? with
+    | some left, some right =>
+        if left.name != right.name then
+          throw (tagError tag s!"metric name mismatch: {left.name} vs {right.name}")
+        result := result.push { name := left.name, value := left.value + right.value }
+    | _, _ =>
+        throw (tagError tag "metric length changed during aggregation")
+  pure result
 
 /-- Multiply every metric value by a scalar (used for weighted batch averaging). -/
 def scaleMetrics {a : Type} [Mul a] [Coe Nat a]
-  (count : Nat) (metrics : List (Metric a)) : List (Metric a) :=
+  (count : Nat) (metrics : Array (Metric a)) : Array (Metric a) :=
   metrics.map (fun m => { name := m.name, value := m.value * (count : a) })
 
 /-!
@@ -58,7 +59,7 @@ def scaleMetrics {a : Type} [Mul a] [Coe Nat a]
 /--
 An accumulator for averaging `StepReport`s.
 
-Instead of keeping a list of all reports and reducing at the end, we maintain:
+Instead of retaining every report and reducing at the end, we maintain:
 - `count`: how many samples contributed,
 - `lossSum`: the sum of losses (optionally weighted by batch size),
 - `metricsSum`: a pointwise sum of named metrics.
@@ -71,7 +72,7 @@ structure ReportSum (a : Type) where
   /-- Sum of losses, already weighted by sample count for batch reports. -/
   lossSum : a
   /-- Pointwise sum of metrics; names must stay aligned across additions. -/
-  metricsSum : List (Metric a)
+  metricsSum : Array (Metric a)
 
 namespace ReportSum
 
@@ -108,69 +109,70 @@ def mean {a : Type} [Div a] [Coe Nat a] (s : ReportSum a) : StepReport a :=
 end ReportSum
 
 /-!
-## Dataset evaluation
+## Sample-stream evaluation
 -/
 /--
-Evaluate a list of samples and average their reports.
+Evaluate an array of samples and average their reports.
 
 This is the “for sample in dataset: compute report; take mean” pattern.
 -/
-def evalList {sample a : Type}
+def evalArray {sample a : Type}
   [Add a] [Div a] [Coe Nat a]
-  (tag : String) (xs : List sample) (evalSample : sample -> Result (StepReport a)) :
+  (tag : String) (xs : Array sample) (evalSample : sample -> Result (StepReport a)) :
   Result (StepReport a) := do
-  match xs with
-  | [] => .error (tagError tag "empty dataset")
-  | x0 :: xs => do
+  match xs[0]? with
+  | none => .error (tagError tag "empty dataset")
+  | some x0 => do
       let r0 <- evalSample x0
       let acc0 := ReportSum.ofReport r0
-      let acc <- xs.foldlM (init := acc0) (fun acc x => do
+      let acc <- (xs.drop 1).foldlM (init := acc0) (fun acc x => do
         let r <- evalSample x
         ReportSum.add (tag := tag) acc (ReportSum.ofReport r))
       pure (ReportSum.mean acc)
 
-/-- Evaluate a `Dataset` by converting to a list and calling `evalList`. -/
+/-- Evaluate a finite sample stream in index order. -/
 def evalDataset {sample a : Type}
   [Add a] [Div a] [Coe Nat a]
-  (tag : String) (ds : Dataset sample) (evalSample : sample -> Result (StepReport a)) :
+  (tag : String) (ds : TorchLean.Data.SampleStream sample)
+  (evalSample : sample -> Result (StepReport a)) :
   Result (StepReport a) :=
-  evalList (tag := tag) ds.toList evalSample
+  evalArray (tag := tag) ds.toArray evalSample
 
 /--
-Evaluate a list of non-empty batches and compute a weighted mean report.
+Evaluate an array of nonempty batches and compute a weighted mean report.
 
 Each batch contributes proportionally to its length (so small last-batches do not distort the
 average).
 -/
 def evalBatches {sample a : Type}
   [Add a] [Mul a] [Div a] [Coe Nat a]
-  (tag : String) (batches : List (List sample))
-  (reportBatch : List sample -> Result (StepReport a)) :
+  (tag : String) (batches : Array (Array sample))
+  (reportBatch : Array sample -> Result (StepReport a)) :
   Result (StepReport a) := do
-  match batches with
-  | [] => .error (tagError tag "empty batch list")
-  | b0 :: bs => do
+  match batches[0]? with
+  | none => .error (tagError tag "empty batch array")
+  | some b0 => do
       if b0.isEmpty then
         .error (tagError tag "empty batch")
       else
         let r0 <- reportBatch b0
-        let acc0 := ReportSum.ofBatch (count := b0.length) r0
-        let acc <- bs.foldlM (init := acc0) (fun acc b => do
+        let acc0 := ReportSum.ofBatch (count := b0.size) r0
+        let acc <- (batches.drop 1).foldlM (init := acc0) (fun acc b => do
           if b.isEmpty then
             .error (tagError tag "empty batch")
           else
             let r <- reportBatch b
-            let sum := ReportSum.ofBatch (count := b.length) r
+            let sum := ReportSum.ofBatch (count := b.size) r
             ReportSum.add (tag := tag) acc sum)
         pure (ReportSum.mean acc)
 
 /-- Batch a dataset and then call `evalBatches`. -/
 def evalDatasetBatches {sample a : Type}
   [Add a] [Mul a] [Div a] [Coe Nat a]
-  (tag : String) (batchSize : Nat) (ds : Dataset sample)
-  (reportBatch : List sample -> Result (StepReport a)) :
+  (tag : String) (batchSize : Nat) (ds : TorchLean.Data.SampleStream sample)
+  (reportBatch : Array sample -> Result (StepReport a)) :
   Result (StepReport a) := do
-  let batches <- Dataset.batches (tag := tag) batchSize ds
+  let batches <- TorchLean.Data.SampleStream.batches tag batchSize ds
   evalBatches (tag := tag) batches reportBatch
 
 end Eval

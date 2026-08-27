@@ -155,9 +155,9 @@ structure LayerWB where
   /-- Output dimension for this layer. -/
   outDim : Nat
   /-- Weight matrix, shape `(outDim × inDim)`. -/
-  w : _root_.Spec.Tensor Float (.dim outDim (.dim inDim .scalar))
+  w : _root_.Spec.Tensor Float [outDim, inDim]
   /-- Bias vector, shape `(outDim)`. -/
-  b : _root_.Spec.Tensor Float (.dim outDim .scalar)
+  b : _root_.Spec.Tensor Float [outDim]
 
 /-- State-dict keys for the `i`-th linear layer exported by the Python script. -/
 def keysForLayer (i : Nat) : (String × String) :=
@@ -213,15 +213,13 @@ def loadWeights (path : String) : IO (Array LayerWB) := do
       | throw <| IO.userError s!"Bad bias shape for {kB} (expected length {rows})"
     layers := layers.push { inDim := cols, outDim := rows, w := w, b := bT }
 
-  -- Basic chain check
-  let rec checkChain : List LayerWB → IO Unit
-    | [] | [_] => pure ()
-    | a :: b :: rest =>
+  for i in [0:layers.size - 1] do
+    match layers[i]?, layers[i + 1]? with
+    | some a, some b =>
         if a.outDim != b.inDim then
           throw <| IO.userError s!"Layer dim mismatch: out={a.outDim} ≠ in={b.inDim}"
-        else
-          checkChain (b :: rest)
-  checkChain layers.toList
+    | _, _ =>
+        throw <| IO.userError "Internal error while validating the layer chain"
 
   pure layers
 
@@ -269,49 +267,47 @@ and return the graph plus the inferred `inDim`, `outDim`, and output node id.
 -/
 def buildGraphAndParams (layers : Array LayerWB) : IO (Graph × ParamStore Float × Nat × Nat × Nat)
   := do
-  let layersL := layers.toList
   let first ←
-    match layersL with
-    | [] => throw <| IO.userError "Empty layer list"
-    | a :: _ => pure a
+    match layers[0]? with
+    | none => throw <| IO.userError "Empty layer array"
+    | some layer => pure layer
+  let last ←
+    match layers[layers.size - 1]? with
+    | none => throw <| IO.userError "Empty layer array"
+    | some layer => pure layer
   let inDim := first.inDim
-  let outDim := (layersL.getLastD first).outDim
+  let outDim := last.outDim
 
-  let rec go (parentId : Nat) (nodes : Array Node) (ps : ParamStore Float) (rem : List LayerWB) :
-      (Array Node × ParamStore Float × Nat) :=
-    match rem with
-    | [] => (nodes, ps, parentId)
-    | layer :: more =>
-        let linId := parentId + 1
-        let nodes := nodes.push
-          { id := linId
-            parents := [parentId]
-            kind := .linear
-            outShape := .dim layer.outDim .scalar }
-        let ps := { ps with
-          linearWB := ps.linearWB.insert linId
-            { m := layer.outDim
-              n := layer.inDim
-              w := layer.w
-              b := layer.b } }
-        if more.isEmpty then
-          go linId nodes ps more
+  let nodes0 : Array Node :=
+    #[{ id := 0
+        parents := #[]
+        kind := .input
+        outShape := .dim inDim .scalar }]
+  let baseParams : ParamStore Float := {}
+  let (nodes, ps, outId) := layers.zipIdx.foldl (init := (nodes0, baseParams, 0))
+    fun (nodes, ps, parentId) (layer, index) =>
+      let linId := parentId + 1
+      let nodes := nodes.push
+        { id := linId
+          parents := #[parentId]
+          kind := .linear
+          outShape := .dim layer.outDim .scalar }
+      let ps := { ps with
+        linearWB := ps.linearWB.insert linId
+          { m := layer.outDim
+            n := layer.inDim
+            w := layer.w
+            b := layer.b } }
+      if index + 1 = layers.size then
+        (nodes, ps, linId)
       else
         let reluId := linId + 1
         let nodes := nodes.push
           { id := reluId
-            parents := [linId]
+            parents := #[linId]
             kind := .relu
             outShape := .dim layer.outDim .scalar }
-        go reluId nodes ps more
-
-  let nodes0 : Array Node :=
-    #[{ id := 0
-        parents := []
-        kind := .input
-        outShape := .dim inDim .scalar }]
-  let baseParams : ParamStore Float := {}
-  let (nodes, ps, outId) := go 0 nodes0 baseParams layersL
+        (nodes, ps, reluId)
   let g : Graph := { nodes := nodes }
   pure (g, ps, inDim, outDim, outId)
 
@@ -360,8 +356,8 @@ def boxesForObjective (g : Graph) (ps : ParamStore Float) (xB : FlatBox Float)
   let mut need : Array Bool := Array.replicate g.nodes.size false
   for id in List.finRange g.nodes.size do
     let node := g.nodes[id.val]'id.isLt
-    match node.parents with
-    | p1 :: _ =>
+    match node.parents[0]? with
+    | some p1 =>
       let isUnaryRelax : Bool :=
         match node.kind with
         | .relu | .exp | .log | .inv | .sigmoid | .tanh | .softmax _ | .layernorm _ => true
@@ -373,7 +369,7 @@ def boxesForObjective (g : Graph) (ps : ParamStore Float) (xB : FlatBox Float)
           pure ()
       else
         pure ()
-    | _ => pure ()
+    | none => pure ()
 
   for p in List.finRange g.nodes.size do
     if (need[p.val]?).getD false then
@@ -407,7 +403,7 @@ def refutesRowByCROWNObjective
     (outId _inDim outDim : Nat) (row : Array Float) (rhs : Float) : IO Bool := do
   let some rowT := NN.Verification.Util.Tensor.vecOfArray outDim row
     | throw <| IO.userError "spec row dim mismatch"
-  let obj : FlatVec Float := { n := outDim, v := rowT }
+  let obj : FlatTensor Float := { n := outDim, v := rowT }
   let outB ←
     match backwardObjectiveBox? (α := Float) g ps ctx ibp xB outId obj with
     | .ok outB => pure outB
@@ -425,10 +421,10 @@ def refutesRowByCROWNObjectiveWithReluAlpha
     (g : Graph) (ps : ParamStore Float) (xB : FlatBox Float)
     (ibp : Array (Option (FlatBox Float))) (inId outId inDim outDim : Nat)
     (row : Array Float) (rhs : Float)
-    (reluAlpha : Array (Option (FlatVec Float))) : IO Bool := do
+    (reluAlpha : Array (Option (FlatTensor Float))) : IO Bool := do
   let some rowT := NN.Verification.Util.Tensor.vecOfArray outDim row
     | throw <| IO.userError "spec row dim mismatch"
-  let obj : FlatVec Float := { n := outDim, v := rowT }
+  let obj : FlatTensor Float := { n := outDim, v := rowT }
   let ctx : AffineCtx := { inputId := inId, inputDim := inDim }
   let some loAff := runCROWNBackwardObjectiveLowerWithReluAlpha (α := Float) g ps ctx ibp outId obj
     reluAlpha
@@ -494,7 +490,7 @@ def vnnlibRefutedByCROWNObjectivesAlpha
     -- Build per-node α vector for this disjunct term (objective index = termIdx).
       let a2Row? := alphas.alpha2[termIdx.val]?
       let a4Row? := alphas.alpha4[termIdx.val]?
-      let mut reluAlpha : Array (Option (FlatVec Float)) := Array.replicate g.nodes.size none
+      let mut reluAlpha : Array (Option (FlatTensor Float)) := Array.replicate g.nodes.size none
       match a2Row?, a4Row? with
       | some a2Row, some a4Row =>
         let some a2T := NN.Verification.Util.Tensor.vecOfArray hid1 a2Row

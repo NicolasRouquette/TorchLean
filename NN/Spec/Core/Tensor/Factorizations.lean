@@ -64,11 +64,11 @@ variable {α : Type} [Context α]
 /-! ## Boundary conversions between `Spec.Tensor` and plain functions -/
 
 /-- View a matrix tensor as a function `Fin m → Fin n → α`. -/
-def toMatFn {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) : Fin m → Fin n → α :=
+def toMatFn {m n : Nat} (A : Tensor α [m, n]) : Fin m → Fin n → α :=
   fun i j => get2 A i j
 
 /-- View a vector tensor as a function `Fin n → α`. -/
-def toVecFn {n : Nat} (v : Tensor α (.dim n .scalar)) : Fin n → α :=
+def getScalarFn {n : Nat} (v : Tensor α [n]) : Fin n → α :=
   fun i => Tensor.item (get v i)
 
 /-! ## Small numeric helpers on the function representation -/
@@ -175,8 +175,8 @@ reconstruction theorem assumes symmetry and positive executable Cholesky pivots.
 
 PyTorch analogue: `torch.linalg.cholesky(A)`.
 -/
-def choleskySpec {n : Nat} (A : Tensor α (.dim n (.dim n .scalar))) :
-    Tensor α (.dim n (.dim n .scalar)) :=
+def choleskySpec {n : Nat} (A : Tensor α [n, n]) :
+    Tensor α [n, n] :=
   Tensor.matrix (choleskyFn (toMatFn A))
 
 /-! ## Triangular solves and the kernel-ridge (Tikhonov) linear solve
@@ -304,9 +304,9 @@ def solveRidgeFn {n : Nat} (K : Fin n → Fin n → α) (γ : α) (b : Fin n →
 /-- Tensor-level kernel-ridge solve: $(K+\gamma I)x=b$.
 
 PyTorch analogue: `torch.linalg.solve(K + gamma * I, b)` (specialized to the SPD Cholesky path). -/
-def solveRidgeSpec {n : Nat} (K : Tensor α (.dim n (.dim n .scalar))) (γ : α)
-    (b : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
-  Tensor.vector (solveRidgeFn (toMatFn K) γ (toVecFn b))
+def solveRidgeSpec {n : Nat} (K : Tensor α [n, n]) (γ : α)
+    (b : Tensor α [n]) : Tensor α [n] :=
+  Tensor.ofFn (solveRidgeFn (toMatFn K) γ (getScalarFn b))
 
 /-! ## QR factorization (classical Gram–Schmidt)
 
@@ -348,14 +348,14 @@ def gramSchmidtFn {m n : Nat} (A : Fin m → Fin n → α) : GSState m n α :=
 
 /-- The `Q` factor candidate of the QR factorization of `A`. Its columns are proved orthonormal under
 positive executable `R` pivots. -/
-def qrQSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
-    Tensor α (.dim m (.dim n .scalar)) :=
+def qrQSpec {m n : Nat} (A : Tensor α [m, n]) :
+    Tensor α [m, n] :=
   let st := gramSchmidtFn (toMatFn A)
   Tensor.matrix (fun i j => (st.qs.getD j.val (fun _ => 0)) i)
 
 /-- The `R` factor (upper-triangular) of the QR factorization of `A`. -/
-def qrRSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
-    Tensor α (.dim n (.dim n .scalar)) :=
+def qrRSpec {m n : Nat} (A : Tensor α [m, n]) :
+    Tensor α [n, n] :=
   let st := gramSchmidtFn (toMatFn A)
   Tensor.matrix (fun k j => (st.rcols.getD j.val (fun _ => 0)) k)
 
@@ -366,8 +366,8 @@ executable $R$ pivots.
 
 PyTorch analogue: `torch.linalg.qr(A)`.
 -/
-def qrSpec {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) :
-    Tensor α (.dim m (.dim n .scalar)) × Tensor α (.dim n (.dim n .scalar)) :=
+def qrSpec {m n : Nat} (A : Tensor α [m, n]) :
+    Tensor α [m, n] × Tensor α [n, n] :=
   (qrQSpec A, qrRSpec A)
 
 end Spec

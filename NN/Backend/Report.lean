@@ -129,8 +129,8 @@ def reportLine (a : KernelAudit) : String :=
   s!"numeric=[{a.numericalPolicy.reportLabel}]"
 
 /-- Full contract report for a selected backend capsule. -/
-def detailedReportLines (a : KernelAudit) : List String :=
-  [ a.reportLine
+def detailedReportLines (a : KernelAudit) : Array String :=
+  #[ a.reportLine
   , a.shapeContract.reportLine "shape"
   , a.layoutContract.reportLine "layout"
   , a.valueContract.reportLine "value"
@@ -142,11 +142,11 @@ end KernelAudit
 namespace KernelPlanAudit
 
 /-- Human-readable lines for all selected capsules. -/
-def reportLines (a : KernelPlanAudit) : List String :=
+def reportLines (a : KernelPlanAudit) : Array String :=
   a.kernels.map KernelAudit.reportLine
 
 /-- Human-readable contract details for all selected capsules. -/
-def detailedReportLines (a : KernelPlanAudit) : List String :=
+def detailedReportLines (a : KernelPlanAudit) : Array String :=
   a.kernels.flatMap KernelAudit.detailedReportLines
 
 end KernelPlanAudit
@@ -154,11 +154,11 @@ end KernelPlanAudit
 namespace KernelPlan
 
 /-- Human-readable lines for a selected kernel plan. -/
-def reportLines (p : KernelPlan) : List String :=
+def reportLines (p : KernelPlan) : Array String :=
   p.audit.reportLines
 
 /-- Human-readable contract details for a selected kernel plan. -/
-def detailedReportLines (p : KernelPlan) : List String :=
+def detailedReportLines (p : KernelPlan) : Array String :=
   p.audit.detailedReportLines
 
 end KernelPlan
@@ -171,15 +171,15 @@ def summary (p : BackendProfile) : String :=
   s!"vjp={p.policy.vjpMode.label}"
 
 /-- Plan a list of backend ops and format the selected capsules. -/
-def planReport (p : BackendProfile) (ops : List BackendOp) : Except String String := do
+def planReport (p : BackendProfile) (ops : Array BackendOp) : Except String String := do
   let plan ← p.planOps ops
   let boundary :=
     if plan.hasTrustedExternal then
-      "trusted external boundary: " ++ String.intercalate ", " plan.trustedExternalOps
+      "trusted external boundary: " ++ String.intercalate ", " plan.trustedExternalOps.toList
     else
       "trusted external boundary: none"
   pure <| String.intercalate "\n" <|
-    [p.summary, boundary] ++ plan.detailedReportLines
+    (#[p.summary, boundary] ++ plan.detailedReportLines).toList
 
 end BackendProfile
 

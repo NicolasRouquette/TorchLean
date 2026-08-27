@@ -45,11 +45,11 @@ abbrev SpecM := Except String
 instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.Ops (m :=
   SpecM) α where
   Ref := fun s => Tensor α s
-  NatTensorRef := fun s => Tensor Nat s
+  DataRef := fun β s => Tensor β s
 
   const := fun {_s} t => pure t
-  natTensorConst := fun t => t
-  mapNatTensor := fun f t => f t
+  dataConst := fun t => t
+  mapData := fun f t => f t
 
   add := fun {_s} a b => pure (Tensor.addSpec (α := α) a b)
   sub := fun {_s} a b => pure (Tensor.subSpec (α := α) a b)
@@ -63,12 +63,6 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
 
   broadcastTo := fun {s₁ s₂} cb x => pure (Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) cb x)
   reshape := fun {s₁ s₂} x h => pure (Tensor.reshapeSpec (α := α) (s₁ := s₁) (s₂ := s₂) x h)
-  transpose2d := fun {_mDim _nDim} x => pure (Tensor.matrixTransposeSpec (α := α) x)
-  transpose3dFirstToLast := fun {_a _b _c} x => pure (Tensor.transpose3DFirstToLastSpec (α
-    := α) x)
-  transpose3dLastToFirst := fun {_a _b _c} x => pure (Tensor.transpose3DLastToFirstSpec (α
-    := α) x)
-  transpose3dLastTwo := fun {_a _b _c} x => pure (Tensor.transpose3DLastTwoSpec (α := α) x)
   swapAdjacentAtDepth := fun {_s} depth x =>
     -- `swapAdjacentAtDepth` at depth 0 corresponds to swapping the first two axes; deeper swaps
     -- recurse through the outer dims.
@@ -83,32 +77,23 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
     let hRed := hAxis
     pure (Tensor.reduceMean (α := α) (s := s) axis x hRed)
 
-  gatherScalar := fun {_n} x i =>
-    pure (getAtSpec x i)
-  gatherRow := fun {_rows _cols} x i =>
-    pure (getAtSpec x i)
+  select := fun {_s} axis _axisInBounds x index =>
+    pure (Tensor.selectSpec axis x index)
+  indexSelect := fun {_s} axis _count _axisInBounds x indices =>
+    pure (Tensor.indexSelectSpec axis x indices)
+  scatterAdd := fun {_s} axis _count _axisInBounds base source indices =>
+    pure (Tensor.scatterAddSpec axis base indices source)
 
-  gatherScalarNatOrZero := fun {_n} _x _i => throw
-    "TorchLeanSpecEval: gather_scalar_nat_or_zero not supported in spec backend"
-  gatherVecNatOrZero := fun {_n _k} _x _idx => throw
-    "TorchLeanSpecEval: gather_vec_nat_or_zero not supported in spec backend"
-  gatherRowsNatOrZero := fun {_rows _cols _k} _x _idx => throw
-    "TorchLeanSpecEval: gather_rows_nat_or_zero not supported in spec backend"
-  scatterAddVec := fun {_n} _x _val _i => throw
-    "TorchLeanSpecEval: scatter_add_vec not supported in spec backend"
-  scatterAddRow := fun {_rows _cols} _x _row _i => throw
-    "TorchLeanSpecEval: scatter_add_row not supported in spec backend"
-
-  matmul := fun {_mDim _nDim _pDim} a b => pure (matMulSpec (α := α) a b)
-  bmm := fun {_batch _mDim _nDim _pDim} a b => pure (Tensor.bmmSpec (α := α) a b)
-
-  concatLeadingAxis := fun {_nDim _mDim} {s} a b => pure (Tensor.concatLeadingAxisSpec (α := α) (s := s) a b)
+  matmul := fun {_batchA _batchB _batch _mDim _nDim _pDim} broadcastA broadcastB a b =>
+    pure (Tensor.matmulSpec broadcastA.proof broadcastB.proof a b)
+  concatLeadingAxis := fun {_nDim _mDim} {_s} a b =>
+    pure (Tensor.concatAxisSpec (α := α) .scalar a b)
 
   sliceLeadingAxisRange := fun {_nDim} {_s} _start _len _h _x =>
     throw "TorchLeanSpecEval: slice_leading_axis_range not supported in spec backend"
 
   maxPool := fun {d C} {inSpatial kernel stride padding} {hKernel} x =>
-    if hStride : (∀ i : Fin d, stride.get i ≠ 0) then
+    if hStride : (∀ i : Fin d, stride.getScalar i ≠ 0) then
       let layer : Spec.MaxPoolSpec d kernel stride padding hKernel hStride := {}
       pure (Spec.maxPoolSpec (α := α) (d := d) (C := C)
         (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
@@ -116,64 +101,46 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
     else
       throw "TorchLeanSpecEval: max_pool invalid stride (some axis has stride=0)"
   avgPool := fun {d C} {inSpatial kernel stride padding} hKernel x =>
-    if hStride : (∀ i : Fin d, stride.get i ≠ 0) then
+    if hStride : (∀ i : Fin d, stride.getScalar i ≠ 0) then
       let layer : Spec.AvgPoolSpec d kernel stride padding hKernel hStride := {}
       pure (Spec.avgPoolSpec (α := α) (d := d) (C := C)
         (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
         (hKernel := hKernel) (layer := layer) (input := x))
     else
       throw "TorchLeanSpecEval: avg_pool invalid stride (some axis has stride=0)"
-  smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel} x beta =>
-    if hStride : (∀ i : Fin d, stride.get i ≠ 0) then
-      let layer : Spec.MaxPoolSpec d kernel stride padding hKernel hStride := {}
-      pure (Spec.smoothMaxPoolSpec (α := α) (d := d) (C := C)
-        (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
-        (layer := layer) (beta := beta) (input := x))
+  smoothMaxPool := fun {d C} {inSpatial kernel stride padding} {hKernel}
+      [_decidableEq : DecidableEq α] x beta =>
+    if hBeta : beta ≠ 0 then
+      if hStride : (∀ i : Fin d, stride.getScalar i ≠ 0) then
+        let layer : Spec.MaxPoolSpec d kernel stride padding hKernel hStride := {}
+        pure (Spec.smoothMaxPoolSpec (α := α) (d := d) (C := C)
+          (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
+          (layer := layer) (beta := beta) (hBeta := hBeta) (input := x))
+      else
+        throw "TorchLeanSpecEval: smooth_max_pool invalid stride (some axis has stride=0)"
     else
-      throw "TorchLeanSpecEval: smooth_max_pool invalid stride (some axis has stride=0)"
-
-  maxPool2d := fun {kH kW inH inW inC stride} {h1} {h2} x =>
-    if hStride : stride ≠ 0 then
-      let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
-      pure (Spec.maxPool2dMultiSpec (α := α) (inC := inC) (inH := inH) (inW := inW) (layer :=
-        layer) x)
-    else
-      throw "TorchLeanSpecEval: max_pool2d invalid stride (stride=0)"
-  maxPool2dPad := fun {kH kW inH inW inC stride padding} {h1} {h2} x =>
-    if hStride : stride ≠ 0 then
-      let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
-      pure (Spec.maxPool2dMultiSpecPad (α := α) (inC := inC) (inH := inH) (inW := inW)
-        (stride := stride) (padding := padding) (layer := layer) x)
-    else
-      throw "TorchLeanSpecEval: max_pool2d_pad invalid stride (stride=0)"
-  smoothMaxPool2d := fun {kH kW inH inW inC stride} {h1} {h2} x beta =>
-    if hStride : stride ≠ 0 then
-      let layer : Spec.MaxPool2dSpec kH kW stride h1 h2 hStride := {}
-      pure (Spec.smoothMaxPool2dMultiSpec (α := α) (inC := inC) (inH := inH) (inW := inW) (layer
-        := layer) (beta := beta) x)
-    else
-      throw "TorchLeanSpecEval: smooth_max_pool2d invalid stride (stride=0)"
-  avgPool2d := fun {kH kW inH inW inC stride} h1 h2 x =>
-    if hStride : stride ≠ 0 then
-      let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
-      pure (Spec.avgPool2dMultiSpec (α := α) (inC := inC) (inH := inH) (inW := inW) (h1 := h1)
-        (h2 := h2) (layer := layer) x)
-    else
-      throw "TorchLeanSpecEval: avg_pool2d invalid stride (stride=0)"
-  avgPool2dPad := fun {kH kW inH inW inC stride padding} h1 h2 x =>
-    if hStride : stride ≠ 0 then
-      let layer : Spec.AvgPool2dSpec kH kW stride h1 h2 hStride := {}
-      pure (Spec.avgPool2dMultiSpecPad (α := α) (inC := inC) (inH := inH) (inW := inW)
-        (stride := stride) (padding := padding) (h1 := h1) (h2 := h2) (layer := layer) x)
-    else
-      throw "TorchLeanSpecEval: avg_pool2d_pad invalid stride (stride=0)"
+      throw "TorchLeanSpecEval: smooth_max_pool requires nonzero beta"
 
   relu := fun {_s} x => pure (Activation.reluSpec (α := α) x)
   sigmoid := fun {_s} x => pure (Activation.sigmoidSpec (α := α) x)
   tanh := fun {_s} x => pure (Activation.tanhSpec (α := α) x)
   gelu := fun {_s} x => pure (Activation.geluSpec (α := α) x)
-  softmaxLast := fun {_s} x => pure (Activation.softmaxLastSpec (α := α) x)
-  logSoftmaxLast := fun {_s} x => pure (Activation.logSoftmaxLastSpec (α := α) x)
+  softmaxLast := fun {s} x =>
+    match s, x with
+    | .scalar, .scalar _ => pure (.scalar 1)
+    | .dim n inner, x =>
+        let axis := Shape.rank (.dim n inner) - 1
+        letI : Shape.AxisInBounds axis (.dim n inner) := ⟨by
+          simp [axis, Shape.rank]⟩
+        pure (Activation.softmaxSpec (α := α) axis x)
+  logSoftmaxLast := fun {s} x =>
+    match s, x with
+    | .scalar, .scalar _ => pure (.scalar 0)
+    | .dim n inner, x =>
+        let axis := Shape.rank (.dim n inner) - 1
+        letI : Shape.AxisInBounds axis (.dim n inner) := ⟨by
+          simp [axis, Shape.rank]⟩
+        pure (Activation.logSoftmaxSpec (α := α) axis x)
   softplus := fun {_s} x => pure (Activation.softplusSpec (α := α) x)
   exp := fun {_s} x => pure (Tensor.expSpec (α := α) x)
   log := fun {_s} x => pure (Tensor.logSpec (α := α) x)
@@ -193,10 +160,10 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
     pure (Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
       (x := x) (gamma := gamma) (beta := beta) (h_seq_pos := hSeq) (h_embed_pos := hEmb))
 
-  batchNormChannelFirst := fun {channels height width} hC hH hW x gamma beta =>
-    pure (Spec.batchNorm2d (α := α)
-      (channels := channels) (height := height) (width := width)
-      (x := x) (gamma := gamma) (beta := beta) (h_c := hC) (h_h := hH) (h_w := hW))
+  batchNorm := fun {channels sSpatial} hWellFormed x gamma beta =>
+    let _ : Shape.WellFormed (.dim channels sSpatial) := ⟨hWellFormed⟩
+    pure (Spec.batchNorm (α := α) (channels := channels) (sSpatial := sSpatial)
+      (x := x) (gamma := gamma) (beta := beta))
 
   multiHeadAttention := fun {n numHeads dModel headDim} h1 wq wk wv wo x mask =>
     -- Package the weight matrices into the spec-layer structure.
@@ -229,19 +196,6 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       (layer := layer) (input := x))
 
-  conv2d := fun {inC outC kH kW stride padding _inH _inW} {h1} {h2} {h3} kernel bias input =>
-    let layer : Spec.Conv2dSpec inC outC kH kW stride padding α h1 h2 h3 :=
-      { kernel := kernel, bias := bias }
-    pure (Spec.conv2dSpec (α := α) (layer := layer) (input := input))
-
-  convTranspose2d := fun {inC outC kH kW stride padding inH inW} {h1} {h2} {h3} kernel bias input =>
-    let h1' : inC > 0 := Nat.pos_of_ne_zero h1
-    let layer : Spec.ConvTranspose2dSpec inC outC kH kW stride padding α h1' h2 h3 :=
-      { kernel := kernel, bias := bias }
-    pure (Spec.convTranspose2dSpec (α := α) (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-      (stride := stride) (padding := padding) (inH := inH) (inW := inW) (layer := layer)
-      (input := input))
-
   randUniform := fun {_s} _seed =>
     throw <|
       "TorchLeanSpecEval: rand_uniform is not supported in spec backend " ++
@@ -251,27 +205,29 @@ instance {α : Type} [Context α] [DecidableEq Shape] : Runtime.Autograd.Torch.O
       "TorchLeanSpecEval: bernoulli_mask is not supported in spec backend " ++
         "(needs a deterministic counter)"
 
-/-- Convert a parameter `TList` into the spec-eval backend's `RefList` representation. -/
-def refListOfTList {α : Type} [Context α] :
-    {ss : List Shape} → Runtime.Autograd.Torch.TList α ss → Runtime.Autograd.Torch.RefList (fun s =>
+/-- Convert a parameter `_root_.TorchLean.TensorPack` into the spec-eval backend's `RefList` representation. -/
+def refListOfPack {α : Type} [Context α] :
+    {ss : List Shape} → TorchLean.TensorPack α ss → Runtime.Autograd.Torch.RefList (fun s =>
       Tensor α s) ss
   | [], .nil => .nil
-  | _s :: ss, .cons t ts => .cons t (refListOfTList (ss := ss) ts)
+  | _s :: ss, .cons t ts => .cons t (refListOfPack (ss := ss) ts)
 
 /-- Spec semantics for forward models with one distinguished input in the last argument. -/
 def evalForwardSpec
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}
     (model : Runtime.Autograd.TorchLean.Program α (paramShapes ++ [inShape]) outShape)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (x : Tensor α inShape) : Except String (Tensor α outShape) := do
-  let psRefs := refListOfTList (α := α) (ss := paramShapes) params
+  let psRefs := refListOfPack (α := α) (ss := paramShapes) params
   let allRefs : Runtime.Autograd.Torch.RefList (fun s => Tensor α s) (paramShapes ++ [inShape]) :=
     Runtime.Autograd.Torch.RefList.append (Ref := fun s => Tensor α s)
       (ss₁ := paramShapes) (ss₂ := [inShape]) psRefs (.cons x .nil)
-  Runtime.Autograd.Torch.CurriedRef.uncurry
+  let evaluated := Runtime.Autograd.Torch.CurriedRef.uncurry
     (Ref := fun s => Runtime.Autograd.TorchLean.RefTy (m := SpecM) (α := α) s)
     (ss := paramShapes ++ [inShape])
+    (β := SpecM (Runtime.Autograd.TorchLean.RefTy (m := SpecM) (α := α) outShape))
     (model (m := SpecM)) allRefs
+  evaluated
 
 end NN.Verification.TorchLean

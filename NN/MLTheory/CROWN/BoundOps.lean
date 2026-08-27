@@ -368,7 +368,8 @@ instance instNonlinearBoundOpsFloat : NonlinearBoundOps Float where
   tanhBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
   sinBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
   cosBounds := fun _ _ => some (Numbers.negOne, Numbers.one)
-  layerNormAbsBound := fun _ => none
+  layerNormAbsBound := fun n =>
+    some (HostFloat.nextUp (MathFunctions.sqrt (Float.ofNat n)))
   supportsIdealCoupledDerivatives := false
 
 /-!

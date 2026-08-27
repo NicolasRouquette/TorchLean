@@ -112,8 +112,8 @@ work, but they do not alter the denotation.
 def attentionScores
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2) :
-    Tensor α (.dim nQ (.dim nK .scalar)) :=
-  matMulSpec ctx.Q (matrixTransposeSpec ctx.K)
+    Tensor α [nQ, nK] :=
+  matMulSpec ctx.Q (swapAdjacentAxes ctx.K 0)
 
 /-- Scaled attention scores before row normalization.
 
@@ -123,13 +123,13 @@ semantics as `scaledDotProductAttention`.
 def scaledAttentionScores
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2) :
-    Tensor α (.dim nQ (.dim nK .scalar)) :=
+    Tensor α [nQ, nK] :=
   let scale := attentionScaleDenom (α := α) dModel
   scaleSpec (attentionScores (α := α) ctx) (1 / scale)
 
 /-- The row-wise softmax weights produced by the online softmax summary.
 
-`Activation.softmaxLastSpec` already uses the stabilized form `exp(x - rowMax) / Σ exp(x - rowMax)`.
+`Activation.softmaxSpec` uses the stabilized form `exp(x - rowMax) / Σ exp(x - rowMax)`.
 This definition is the **denotation** that a FlashAttention implementation must refine. It is not a
 formal model of Dao-style tile loops or SRAM/HBM traffic.
 -/
@@ -137,13 +137,13 @@ def onlineSoftmaxWeights
     (cfg : FlashAttentionConfig)
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2) :
-    Tensor α (.dim nQ (.dim nK .scalar)) :=
+    Tensor α [nQ, nK] :=
   -- Tile metadata is relevant to the runtime schedule, not to the exact normalized weights.
   let _blockQ := cfg.blockQ
   let _blockK := cfg.blockK
   let scores := scaledAttentionScores (α := α) ctx
   match ctx.mask with
-  | none => Activation.softmaxLastSpec (α := α) scores
+  | none => Activation.softmaxSpec (α := α) 1 scores
   | some m => hardMaskedSoftmaxSpec scores m
 
 /-- Proof-facing FlashAttention forward algorithm.
@@ -155,7 +155,7 @@ def onlineSoftmaxTiledAttention
     (cfg : FlashAttentionConfig)
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2) :
-    Tensor α (.dim nQ (.dim dModel .scalar)) :=
+    Tensor α [nQ, dModel] :=
   matMulSpec (onlineSoftmaxWeights (α := α) cfg ctx) ctx.V
 
 /--
@@ -183,7 +183,7 @@ def flashAttention
     (cfg : FlashAttentionConfig)
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2) :
-    Tensor α (.dim nQ (.dim dModel .scalar)) :=
+    Tensor α [nQ, dModel] :=
   -- The config is kept in the signature so graph rewrites and runtimes can record the intended
   -- schedule. At the denotational level, schedules must not change the mathematical result.
   onlineSoftmaxTiledAttention (α := α) cfg ctx
@@ -199,10 +199,10 @@ def flashAttentionBackward
     (cfg : FlashAttentionConfig)
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2)
-    (dOut : Tensor α (.dim nQ (.dim dModel .scalar))) :
-    (Tensor α (.dim nQ (.dim dModel .scalar)) ×
-     Tensor α (.dim nK (.dim dModel .scalar)) ×
-     Tensor α (.dim nK (.dim dModel .scalar))) :=
+    (dOut : Tensor α [nQ, dModel]) :
+    (Tensor α [nQ, dModel] ×
+     Tensor α [nK, dModel] ×
+     Tensor α [nK, dModel]) :=
   -- As with the forward operator, the tile metadata belongs to the implementation schedule.
   -- The proof layer VJP is the same local derivative contract as standard SDPA.
   let _blockQ := cfg.blockQ
@@ -222,7 +222,7 @@ def flashAttentionBackward
     (cfg : FlashAttentionConfig)
     {nQ nK dModel : Nat} {h1 : nQ ≠ 0} {h2 : nK ≠ 0}
     (ctx : AttentionContext α nQ nK dModel h1 h2)
-    (dOut : Tensor α (.dim nQ (.dim dModel .scalar))) :
+    (dOut : Tensor α [nQ, dModel]) :
     flashAttentionBackward (α := α) cfg ctx dOut =
       scaledDotProductAttentionBackward (α := α) ctx dOut := by
   cases cfg

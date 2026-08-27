@@ -53,7 +53,7 @@ open TapeNodes
 
 /-- Matrix shape `m×n`. -/
 abbrev MatShape (m n : Nat) : Shape := .dim m (.dim n .scalar)
-/-- Vector shape `k`. -/
+/-- Rank-one tensor shape `k`. -/
 abbrev VecShape (k : Nat) : Shape := .dim k .scalar
 
 /-- Input context shapes: `[X, gamma, beta]` for layer norm over the last axis. -/
@@ -638,7 +638,7 @@ def wholeNode {Γ : List Shape} {m n : Nat} (inputs : Inputs Γ m n) (ε : ℝ) 
       outputCLM (m := m) (n := n)
         (Graph.evalVec (Γ := ΓLN m n) (ss := ssLayerNorm m n)
           (layerNormGraph (m := m) (n := n) ε) (pack xV))
-  Node.ofVec (Γ := Γ) (τ := MatShape m n)
+  Node.ofFn (Γ := Γ) (τ := MatShape m n)
     (f := f)
     (jvp := fun xV dxV => (fderiv ℝ f xV) dxV)
     (vjp := fun xV δV => (fderiv ℝ f xV).adjoint δV)

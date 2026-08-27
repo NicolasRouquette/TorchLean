@@ -23,8 +23,8 @@ Two independent developments meet in this file.
 
 The two developments are stated on *different graph types*: the algebraic
 `Algebra.Graph (α := α) Δ Γ ss` versus the `ℝ`-monomorphic, environment-free
-`Proofs.Autograd.Graph Γ ss`. Their contexts already coincide (`TList Γ` is by definition
-`Algebra.TList ℝ Γ`), and their `eval`/`jvpCtx`/`backpropCtx` recursions mirror each other
+`Proofs.Autograd.Graph Γ ss`. Their contexts already coincide (`_root_.TorchLean.TensorPack ℝ Γ` is by definition
+`Algebra._root_.TorchLean.TensorPack ℝ Γ`), and their `eval`/`jvpCtx`/`backpropCtx` recursions mirror each other
 node for node — what has been missing is the formal connection. This file supplies it:
 
 * **The real, environment-free slice.** `Algebra.Node.toReal` / `Algebra.Graph.toReal` specialize an
@@ -35,12 +35,12 @@ node for node — what has been missing is the formal connection. This file supp
   the algebraic model. The commutation lemmas
   `toReal_eval`, `toReal_jvpCtx`, `toReal_backpropCtx` show the specialization preserves all
   three semantics.
-* **Input-prefix extraction.** `TList.takeLeft` reads the input (`Γ`-prefix) block out of a
+* **Input-prefix extraction.** `TensorPack.takeLeft` reads the input (`Γ`-prefix) block out of a
   full context, and `takeLeft_backpropAllCtx` (also in `GraphData` form) identifies the input
   block of the full backpropagation with the inputs-only `backpropCtx` — the missing lemma
   relating the runtime-facing `backpropAllCtx` to the proof-facing `backpropCtx`.
 * **Vectorization transport.** The `flattenCtx_*` lemmas commute context vectorization with
-  `cast`/`snoc`/`unsnoc`/`add`, so the `TList`-level graph semantics coincide with the
+  `cast`/`snoc`/`unsnoc`/`add`, so the `TensorPack`-level graph semantics coincide with the
   Euclidean `CtxVec` semantics: `evalVec_flattenCtx`, `jvpVec_flattenCtx`,
   `backpropVec_flattenCtx`.
 * **The composed endpoints.** `backpropCtx_eq_adjoint_fderiv` upgrades the algebraic
@@ -79,8 +79,8 @@ The analytic context inner product (`Spec.dot`-based) agrees with the algebraic 
 Both recursions are the same sum of per-entry tensor dots; the entries agree by
 `dot_eq_tensorAlgebra_dot`.
 -/
-theorem dotList_eq_algebra_dotList {Γ : List Shape} (x y : TList Γ) :
-    TList.dotList (ss := Γ) x y = Algebra.TList.dotList (α := ℝ) x y := by
+theorem dotList_eq_algebra_dotList {Γ : List Shape} (x y : _root_.TorchLean.TensorPack ℝ Γ) :
+    TensorPack.dotList (ss := Γ) x y = Algebra.TensorPack.dotList (α := ℝ) x y := by
   induction Γ with
   | nil =>
     cases x
@@ -91,15 +91,15 @@ theorem dotList_eq_algebra_dotList {Γ : List Shape} (x y : TList Γ) :
     | cons xh xt =>
       cases y with
       | cons yh yt =>
-        simp [TList.dotList, Algebra.TList.dotList, dot_eq_tensorAlgebra_dot, ih]
+        simp [TensorPack.dotList, Algebra.TensorPack.dotList, dot_eq_tensorAlgebra_dot, ih]
 
 -- ---------------------------------------------------------------------------
 -- Vectorization transport: `flattenCtx` commutes with the context operations
 -- ---------------------------------------------------------------------------
 
 /-- `flattenCtx` commutes with casting a context along a shape-list equality. -/
-theorem flattenCtx_cast {Γ₁ Γ₂ : List Shape} (h : Γ₁ = Γ₂) (xs : TList Γ₁) :
-    flattenCtx (Γ := Γ₂) (TList.cast h xs) = castCtxVec (Γ₁ := Γ₁) (Γ₂ := Γ₂) h (flattenCtx xs) := by
+theorem flattenCtx_cast {Γ₁ Γ₂ : List Shape} (h : Γ₁ = Γ₂) (xs : _root_.TorchLean.TensorPack ℝ Γ₁) :
+    flattenCtx (Γ := Γ₂) (_root_.TorchLean.TensorPack.cast h xs) = castCtxVec (Γ₁ := Γ₁) (Γ₂ := Γ₂) h (flattenCtx xs) := by
   cases h
   simp
 
@@ -113,14 +113,14 @@ theorem tensorToVec_addSpec {s : Shape} (a b : Tensor ℝ s) :
     dot_add_left]
 
 /-- The context inner product is additive in its left argument. -/
-private lemma dotList_add_left' {Γ : List Shape} (u v z : TList Γ) :
-    TList.dotList (TList.add u v) z = TList.dotList u z + TList.dotList v z := by
+private lemma dotList_add_left' {Γ : List Shape} (u v z : _root_.TorchLean.TensorPack ℝ Γ) :
+    TensorPack.dotList (_root_.TorchLean.TensorPack.add u v) z = TensorPack.dotList u z + TensorPack.dotList v z := by
   induction Γ with
   | nil =>
     cases u
     cases v
     cases z
-    simp [TList.dotList, Algebra.TList.add]
+    simp [TensorPack.dotList, _root_.TorchLean.TensorPack.add]
   | cons s Γ ih =>
     cases u with
     | cons uh ut =>
@@ -128,14 +128,14 @@ private lemma dotList_add_left' {Γ : List Shape} (u v z : TList Γ) :
       | cons vh vt =>
         cases z with
         | cons zh zt =>
-          show TList.dotList (TList.cons (addSpec uh vh) (TList.add ut vt)) (TList.cons zh zt)
+          show TensorPack.dotList (_root_.TorchLean.TensorPack.cons (addSpec uh vh) (_root_.TorchLean.TensorPack.add ut vt)) (_root_.TorchLean.TensorPack.cons zh zt)
               = _
-          simp only [TList.dotList, dot_add_left, ih]
+          simp only [TensorPack.dotList, dot_add_left, ih]
           ring
 
 /-- `flattenCtx` maps context addition to vector addition. -/
-theorem flattenCtx_add {Γ : List Shape} (u v : TList Γ) :
-    flattenCtx (TList.add u v) = flattenCtx u + flattenCtx v := by
+theorem flattenCtx_add {Γ : List Shape} (u v : _root_.TorchLean.TensorPack ℝ Γ) :
+    flattenCtx (_root_.TorchLean.TensorPack.add u v) = flattenCtx u + flattenCtx v := by
   refine ext_inner_right ℝ ?_
   intro w
   have hw : w = flattenCtx (unflattenCtx (Γ := Γ) w) :=
@@ -144,14 +144,14 @@ theorem flattenCtx_add {Γ : List Shape} (u v : TList Γ) :
     ← dotList_eq_inner_flattenCtx]
   exact dotList_add_left' u v _
 
-/-- `flattenCtx` maps `TList.snoc` to `snocCtx`. -/
-theorem flattenCtx_snoc {Γ : List Shape} {τ : Shape} (xs : TList Γ) (y : Tensor ℝ τ) :
-    flattenCtx (Γ := Γ ++ [τ]) (TList.snoc xs y)
+/-- `flattenCtx` maps `_root_.TorchLean.TensorPack.snoc` to `snocCtx`. -/
+theorem flattenCtx_snoc {Γ : List Shape} {τ : Shape} (xs : _root_.TorchLean.TensorPack ℝ Γ) (y : Tensor ℝ τ) :
+    flattenCtx (Γ := Γ ++ [τ]) (_root_.TorchLean.TensorPack.snoc xs y)
       = snocCtx (Γ := Γ) (τ := τ) (flattenCtx xs) (tensorToVec (t := y)) := by
   induction Γ with
   | nil =>
     cases xs
-    change flattenCtx (TList.cons y TList.nil) = _
+    change flattenCtx (_root_.TorchLean.TensorPack.cons y _root_.TorchLean.TensorPack.nil) = _
     rw [flattenCtx_cons, flattenCtx_nil]
     let h : ctxSize [] + τ.size = τ.size + ctxSize [] := by simp [ctxSize]
     change appendVec (tensorToVec y) 0 = castVec h (appendVec 0 (tensorToVec y))
@@ -170,31 +170,31 @@ theorem flattenCtx_snoc {Γ : List Shape} {τ : Shape} (xs : TList Γ) (y : Tens
   | cons s Γ ih =>
     cases xs with
     | cons x xs =>
-      change flattenCtx (TList.cons x (TList.snoc xs y)) = _
+      change flattenCtx (_root_.TorchLean.TensorPack.cons x (_root_.TorchLean.TensorPack.snoc xs y)) = _
       rw [flattenCtx_cons, ih, flattenCtx_cons, appendVec_snocCtx]
 
-/-- `flattenCtx` maps `TList.unsnoc` to `unsnocCtx`. -/
-theorem unsnocCtx_flattenCtx {Γ : List Shape} {τ : Shape} (w : TList (Γ ++ [τ])) :
+/-- `flattenCtx` maps `_root_.TorchLean.TensorPack.unsnoc` to `unsnocCtx`. -/
+theorem unsnocCtx_flattenCtx {Γ : List Shape} {τ : Shape} (w : _root_.TorchLean.TensorPack ℝ (Γ ++ [τ])) :
     unsnocCtx (Γ := Γ) (τ := τ) (flattenCtx w)
-      = (flattenCtx (TList.unsnoc w).1, tensorToVec (t := (TList.unsnoc w).2)) := by
-  conv_lhs => rw [← Algebra.TList.snoc_unsnoc (α := ℝ) (ss := Γ) (τ := τ) (xs := w)]
+      = (flattenCtx (_root_.TorchLean.TensorPack.unsnoc w).1, tensorToVec (t := (_root_.TorchLean.TensorPack.unsnoc w).2)) := by
+  conv_lhs => rw [← _root_.TorchLean.TensorPack.snoc_unsnoc (α := ℝ) (ss := Γ) (τ := τ) (xs := w)]
   rw [flattenCtx_snoc, unsnocCtx_snocCtx]
 
 namespace Node
 
 /-- The vectorized forward map, evaluated on a flattened context. -/
-theorem forwardVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x : TList Γ) :
+theorem forwardVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x : _root_.TorchLean.TensorPack ℝ Γ) :
     node.forwardVec (Γ := Γ) (τ := τ) (flattenCtx x) = tensorToVec (t := node.forward x) := by
   simp [Node.forwardVec]
 
 /-- The vectorized JVP, evaluated on flattened contexts. -/
-theorem jvpVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x dx : TList Γ) :
+theorem jvpVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x dx : _root_.TorchLean.TensorPack ℝ Γ) :
     node.jvpVec (Γ := Γ) (τ := τ) (flattenCtx x) (flattenCtx dx)
       = tensorToVec (t := node.jvp x dx) := by
   simp [Node.jvpVec]
 
 /-- The vectorized VJP, evaluated on a flattened context and a vectorized cotangent. -/
-theorem vjpVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x : TList Γ)
+theorem vjpVec_flattenCtx {Γ : List Shape} {τ : Shape} (node : Node Γ τ) (x : _root_.TorchLean.TensorPack ℝ Γ)
     (δ : Tensor ℝ τ) :
     node.vjpVec (Γ := Γ) (τ := τ) (flattenCtx x) (tensorToVec (t := δ))
       = flattenCtx (node.vjp x δ) := by
@@ -206,8 +206,8 @@ namespace Graph
 
 variable {Γ : List Shape}
 
-/-- The Euclidean graph evaluation is the flattening of the `TList` evaluation. -/
-theorem evalVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x : TList Γ) :
+/-- The Euclidean graph evaluation is the flattening of the `TensorPack` evaluation. -/
+theorem evalVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x : _root_.TorchLean.TensorPack ℝ Γ) :
     evalVec (Γ := Γ) (ss := ss) g (flattenCtx x) = flattenCtx (eval (Γ := Γ) (ss := ss) g x) := by
   induction g with
   | nil =>
@@ -215,8 +215,8 @@ theorem evalVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x : TList Γ) :
   | snoc g node ih =>
     simp [evalVec, eval, flattenCtx_cast, flattenCtx_snoc, ih, Node.forwardVec_flattenCtx]
 
-/-- The Euclidean graph JVP is the flattening of the `TList` JVP. -/
-theorem jvpVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x dx : TList Γ) :
+/-- The Euclidean graph JVP is the flattening of the `TensorPack` JVP. -/
+theorem jvpVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x dx : _root_.TorchLean.TensorPack ℝ Γ) :
     jvpVec (Γ := Γ) (ss := ss) g (flattenCtx x) (flattenCtx dx)
       = flattenCtx (jvpCtx (Γ := Γ) (ss := ss) g x dx) := by
   induction g with
@@ -226,9 +226,9 @@ theorem jvpVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x dx : TList Γ) 
     simp [jvpVec, jvpCtx, flattenCtx_cast, flattenCtx_snoc, ih, evalVec_flattenCtx,
       Node.jvpVec_flattenCtx]
 
-/-- The Euclidean reverse pass is the flattening of the `TList` reverse pass. -/
-theorem backpropVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x : TList Γ)
-    (seed : TList (Γ ++ ss)) :
+/-- The Euclidean reverse pass is the flattening of the `TensorPack` reverse pass. -/
+theorem backpropVec_flattenCtx {ss : List Shape} (g : Graph Γ ss) (x : _root_.TorchLean.TensorPack ℝ Γ)
+    (seed : _root_.TorchLean.TensorPack ℝ (Γ ++ ss)) :
     backpropVec (Γ := Γ) (ss := ss) g (flattenCtx x) (flattenCtx seed)
       = flattenCtx (backpropCtx (Γ := Γ) (ss := ss) g x seed) := by
   induction g with
@@ -322,7 +322,7 @@ variable {Δ : Type}
 variable {Γ : List Shape}
 
 /-- Specialization preserves evaluation. -/
-theorem toReal_eval {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : TList ℝ Γ)
+theorem toReal_eval {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : _root_.TorchLean.TensorPack ℝ Γ)
     (d : Δ) :
     _root_.Proofs.Autograd.Graph.eval (toReal g d) x = eval (α := ℝ) g x d := by
   induction g with
@@ -333,7 +333,7 @@ theorem toReal_eval {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ := �
 
 /-- Specialization preserves the JVP. -/
 theorem toReal_jvpCtx {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss)
-    (x dx : TList ℝ Γ) (d : Δ) :
+    (x dx : _root_.TorchLean.TensorPack ℝ Γ) (d : Δ) :
     _root_.Proofs.Autograd.Graph.jvpCtx (toReal g d) x dx = jvpCtx (α := ℝ) g x dx d := by
   induction g with
   | nil =>
@@ -343,7 +343,7 @@ theorem toReal_jvpCtx {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ :=
 
 /-- Specialization preserves the reverse pass. -/
 theorem toReal_backpropCtx {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss)
-    (x : TList ℝ Γ) (d : Δ) (seed : TList ℝ (Γ ++ ss)) :
+    (x : _root_.TorchLean.TensorPack ℝ Γ) (d : Δ) (seed : _root_.TorchLean.TensorPack ℝ (Γ ++ ss)) :
     _root_.Proofs.Autograd.Graph.backpropCtx (toReal g d) x seed
       = backpropCtx (α := ℝ) g x d seed := by
   induction g with
@@ -359,23 +359,25 @@ end Graph
 -- Input-prefix extraction from a full context
 -- ---------------------------------------------------------------------------
 
-namespace TList
+namespace TensorPack
 
 /-- Read the input (`Γ`-prefix) block out of a full context over `Γ ++ ss`. -/
-def takeLeft {α : Type} : {Γ ss : List Shape} → TList α (Γ ++ ss) → TList α Γ
+def takeLeft {α : Type} : {Γ ss : List Shape} → _root_.TorchLean.TensorPack α (Γ ++ ss) → _root_.TorchLean.TensorPack α Γ
   | [], _, _ => .nil
   | _ :: Γ, ss, .cons x xs => .cons x (takeLeft (Γ := Γ) (ss := ss) xs)
 
 /-- Push a `cast` along a `cons` cell. -/
 theorem cast_cons {α : Type} {s : Shape} {ss₁ ss₂ : List Shape} (h : s :: ss₁ = s :: ss₂)
-    (h' : ss₁ = ss₂) (x : Tensor α s) (xs : TList α ss₁) :
-    cast (α := α) h (cons x xs) = cons x (cast (α := α) h' xs) := by
+    (h' : ss₁ = ss₂) (x : Tensor α s) (xs : _root_.TorchLean.TensorPack α ss₁) :
+    _root_.TorchLean.TensorPack.cast (α := α) h (.cons x xs) =
+      .cons x (_root_.TorchLean.TensorPack.cast (α := α) h' xs) := by
   cases h'
   rfl
 
 /-- On a context with no intermediates, `takeLeft` is the cast along `Γ ++ [] = Γ`. -/
-theorem takeLeft_append_nil {α : Type} {Γ : List Shape} (w : TList α (Γ ++ [])) :
-    takeLeft (Γ := Γ) (ss := []) w = cast (α := α) (List.append_nil Γ) w := by
+theorem takeLeft_append_nil {α : Type} {Γ : List Shape} (w : _root_.TorchLean.TensorPack α (Γ ++ [])) :
+    takeLeft (Γ := Γ) (ss := []) w =
+      _root_.TorchLean.TensorPack.cast (α := α) (List.append_nil Γ) w := by
   induction Γ with
   | nil =>
     cases w
@@ -383,17 +385,19 @@ theorem takeLeft_append_nil {α : Type} {Γ : List Shape} (w : TList α (Γ ++ [
   | cons s Γ ih =>
     cases w with
     | cons x w' =>
-      show cons x (takeLeft (Γ := Γ) (ss := []) w')
-          = cast (α := α) (ss₁ := s :: (Γ ++ [])) (ss₂ := s :: Γ)
-              (show s :: (Γ ++ []) = s :: Γ from List.append_nil (s :: Γ)) (cons x w')
+      show .cons x (takeLeft (Γ := Γ) (ss := []) w') =
+          _root_.TorchLean.TensorPack.cast (α := α)
+            (show s :: (Γ ++ []) = s :: Γ from List.append_nil (s :: Γ)) (.cons x w')
       rw [cast_cons (α := α) (s := s) (ss₁ := Γ ++ []) (ss₂ := Γ)
         (show s :: (Γ ++ []) = s :: Γ from List.append_nil (s :: Γ)) (List.append_nil Γ) x w', ih]
 
 /-- `takeLeft` ignores a snoc-ed final block (after reassociating the context). -/
 theorem takeLeft_cast_snoc {α : Type} {Γ : List Shape} :
     ∀ {ss : List Shape} {τ : Shape} (h : (Γ ++ ss) ++ [τ] = Γ ++ (ss ++ [τ]))
-      (w : TList α (Γ ++ ss)) (y : Tensor α τ),
-      takeLeft (Γ := Γ) (ss := ss ++ [τ]) (cast (α := α) h (snoc w y))
+      (w : _root_.TorchLean.TensorPack α (Γ ++ ss)) (y : Tensor α τ),
+      takeLeft (Γ := Γ) (ss := ss ++ [τ])
+        (_root_.TorchLean.TensorPack.cast (α := α) h
+          (_root_.TorchLean.TensorPack.snoc w y))
         = takeLeft (Γ := Γ) (ss := ss) w := by
   induction Γ with
   | nil =>
@@ -404,17 +408,18 @@ theorem takeLeft_cast_snoc {α : Type} {Γ : List Shape} :
     cases w with
     | cons x w' =>
       show takeLeft (Γ := s :: Γ) (ss := ss ++ [τ])
-            (cast (α := α) (ss₁ := s :: ((Γ ++ ss) ++ [τ])) (ss₂ := s :: (Γ ++ (ss ++ [τ]))) h
-              (cons x (snoc w' y)))
-          = cons x (takeLeft (Γ := Γ) (ss := ss) w')
+            (_root_.TorchLean.TensorPack.cast (α := α) h
+              (.cons x (_root_.TorchLean.TensorPack.snoc w' y))) =
+          .cons x (takeLeft (Γ := Γ) (ss := ss) w')
       rw [cast_cons (α := α) (s := s) (ss₁ := (Γ ++ ss) ++ [τ]) (ss₂ := Γ ++ (ss ++ [τ])) h
-        (List.append_assoc Γ ss [τ]) x (snoc w' y)]
-      show cons x (takeLeft (Γ := Γ) (ss := ss ++ [τ])
-            (cast (α := α) (List.append_assoc Γ ss [τ]) (snoc w' y)))
-          = cons x (takeLeft (Γ := Γ) (ss := ss) w')
+        (List.append_assoc Γ ss [τ]) x (_root_.TorchLean.TensorPack.snoc w' y)]
+      show _root_.TorchLean.TensorPack.cons x (takeLeft (Γ := Γ) (ss := ss ++ [τ])
+            (_root_.TorchLean.TensorPack.cast (α := α) (List.append_assoc Γ ss [τ])
+              (_root_.TorchLean.TensorPack.snoc w' y))) =
+          _root_.TorchLean.TensorPack.cons x (takeLeft (Γ := Γ) (ss := ss) w')
       rw [ih]
 
-end TList
+end TensorPack
 
 namespace Graph
 
@@ -430,14 +435,14 @@ value, mirroring the tape engine's dense reverse pass) with the proof-facing `ba
 on the input block.
 -/
 theorem takeLeft_backpropAllCtx {ss : List Shape} (g : Graph (α := α) (Δ := Δ) (Γ := Γ) ss)
-    (x : TList α Γ) (d : Δ) (seed : TList α (Γ ++ ss)) :
-    TList.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed := by
+    (x : _root_.TorchLean.TensorPack α Γ) (d : Δ) (seed : _root_.TorchLean.TensorPack α (Γ ++ ss)) :
+    TensorPack.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed := by
   induction g with
   | nil =>
-    exact TList.takeLeft_append_nil (α := α) seed
+    exact TensorPack.takeLeft_append_nil (α := α) seed
   | snoc g node ih =>
     simp only [backpropAllCtx, backpropCtx]
-    rw [TList.takeLeft_cast_snoc]
+    rw [TensorPack.takeLeft_cast_snoc]
     exact ih _
 end Graph
 
@@ -448,15 +453,15 @@ variable {Δ : Type}
 variable {Γ : List Shape}
 
 /-- `GraphData` version of `Graph.takeLeft_backpropAllCtx`. -/
-theorem takeLeft_backpropAllCtx {ss : List Shape} (g : GraphData α Δ Γ ss) (x : TList α Γ)
-    (d : Δ) (seed : TList α (Γ ++ ss)) :
-    TList.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed := by
+theorem takeLeft_backpropAllCtx {ss : List Shape} (g : GraphData α Δ Γ ss) (x : _root_.TorchLean.TensorPack α Γ)
+    (d : Δ) (seed : _root_.TorchLean.TensorPack α (Γ ++ ss)) :
+    TensorPack.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed := by
   induction g with
   | nil =>
-    exact TList.takeLeft_append_nil (α := α) seed
+    exact TensorPack.takeLeft_append_nil (α := α) seed
   | snoc g node ih =>
     simp only [backpropAllCtx, backpropCtx]
-    rw [TList.takeLeft_cast_snoc]
+    rw [TensorPack.takeLeft_cast_snoc]
     exact ih _
 
 end GraphData
@@ -480,8 +485,8 @@ the inputs-only backpropagation computes the adjoint of the Fréchet derivative 
 -/
 theorem backpropCtx_eq_adjoint_fderiv {ss : List Shape}
     (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (d : Δ)
-    (hg : GraphFDerivCorrect (Γ := Γ) (toReal g d)) (x : TList ℝ Γ)
-    (seed : TList ℝ (Γ ++ ss)) :
+    (hg : GraphFDerivCorrect (Γ := Γ) (toReal g d)) (x : _root_.TorchLean.TensorPack ℝ Γ)
+    (seed : _root_.TorchLean.TensorPack ℝ (Γ ++ ss)) :
     flattenCtx (backpropCtx (α := ℝ) g x d seed)
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d))
           (flattenCtx x)).adjoint (flattenCtx seed) := by
@@ -493,9 +498,9 @@ Pointwise variant of `backpropCtx_eq_adjoint_fderiv`: differentiability is assum
 values actually encountered, admitting non-smooth primitives away from their kinks.
 -/
 theorem backpropCtx_eq_adjoint_fderiv_at {ss : List Shape}
-    (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (d : Δ) (x : TList ℝ Γ)
+    (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (d : Δ) (x : _root_.TorchLean.TensorPack ℝ Γ)
     (hg : GraphFDerivCorrectAt (Γ := Γ) (toReal g d) (flattenCtx x))
-    (seed : TList ℝ (Γ ++ ss)) :
+    (seed : _root_.TorchLean.TensorPack ℝ (Γ ++ ss)) :
     flattenCtx (backpropCtx (α := ℝ) g x d seed)
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d))
           (flattenCtx x)).adjoint (flattenCtx seed) := by
@@ -504,7 +509,7 @@ theorem backpropCtx_eq_adjoint_fderiv_at {ss : List Shape}
 
 /-- The function differentiated in the endpoints is the graph's own forward evaluation. -/
 theorem toReal_evalVec {ss : List Shape} (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (d : Δ)
-    (x : TList ℝ Γ) :
+    (x : _root_.TorchLean.TensorPack ℝ Γ) :
     _root_.Proofs.Autograd.Graph.evalVec (toReal g d) (flattenCtx x)
       = flattenCtx (eval (α := ℝ) g x d) := by
   rw [_root_.Proofs.Autograd.Graph.evalVec_flattenCtx, toReal_eval]
@@ -520,14 +525,14 @@ This composes the runtime link (`backwardDenseFrom_lowerGraphToTape_eq_backpropA
 analytic upgrade above.
 -/
 theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv [DecidableEq Shape] {ss : List Shape}
-    (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : TList ℝ Γ) (d0 : Δ)
-    (seed : TList ℝ (Γ ++ ss)) (hg : GraphFDerivCorrect (Γ := Γ) (toReal g d0)) :
+    (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : _root_.TorchLean.TensorPack ℝ Γ) (d0 : Δ)
+    (seed : _root_.TorchLean.TensorPack ℝ (Γ ++ ss)) (hg : GraphFDerivCorrect (Γ := Γ) (toReal g d0)) :
     Runtime.Autograd.Tape.backwardDenseFrom
         (t := (lowerGraphToTape (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
-        (grads0 := TList.toPackedArray (α := ℝ) (ss := Γ ++ ss) seed)
-      = .ok (TList.toPackedArray (α := ℝ) (ss := Γ ++ ss)
+        (grads0 := _root_.TorchLean.TensorPack.toShapeErasedArray (α := ℝ) (ss := Γ ++ ss) seed)
+      = .ok (_root_.TorchLean.TensorPack.toShapeErasedArray (α := ℝ) (ss := Γ ++ ss)
           (backpropAllCtx (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed))
-    ∧ flattenCtx (TList.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
+    ∧ flattenCtx (TensorPack.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d0))
           (flattenCtx x)).adjoint (flattenCtx seed) := by
   refine ⟨backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx (α := ℝ) g x d0 seed, ?_⟩
@@ -536,15 +541,15 @@ theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv [DecidableEq Shape] {s
 
 /-- Pointwise variant of `backwardDenseFrom_lowerGraphToTape_adjoint_fderiv`. -/
 theorem backwardDenseFrom_lowerGraphToTape_adjoint_fderiv_at [DecidableEq Shape] {ss : List Shape}
-    (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : TList ℝ Γ) (d0 : Δ)
-    (seed : TList ℝ (Γ ++ ss))
+    (g : Graph (α := ℝ) (Δ := Δ) (Γ := Γ) ss) (x : _root_.TorchLean.TensorPack ℝ Γ) (d0 : Δ)
+    (seed : _root_.TorchLean.TensorPack ℝ (Γ ++ ss))
     (hg : GraphFDerivCorrectAt (Γ := Γ) (toReal g d0) (flattenCtx x)) :
     Runtime.Autograd.Tape.backwardDenseFrom
         (t := (lowerGraphToTape (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0).1)
-        (grads0 := TList.toPackedArray (α := ℝ) (ss := Γ ++ ss) seed)
-      = .ok (TList.toPackedArray (α := ℝ) (ss := Γ ++ ss)
+        (grads0 := _root_.TorchLean.TensorPack.toShapeErasedArray (α := ℝ) (ss := Γ ++ ss) seed)
+      = .ok (_root_.TorchLean.TensorPack.toShapeErasedArray (α := ℝ) (ss := Γ ++ ss)
           (backpropAllCtx (α := ℝ) (Δ := Δ) (Γ := Γ) (ss := ss) g x d0 seed))
-    ∧ flattenCtx (TList.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
+    ∧ flattenCtx (TensorPack.takeLeft (backpropAllCtx (α := ℝ) g x d0 seed))
       = (fderiv ℝ (_root_.Proofs.Autograd.Graph.evalVec (toReal g d0))
           (flattenCtx x)).adjoint (flattenCtx seed) := by
   refine ⟨backwardDenseFrom_lowerGraphToTape_eq_backpropAllCtx (α := ℝ) g x d0 seed, ?_⟩

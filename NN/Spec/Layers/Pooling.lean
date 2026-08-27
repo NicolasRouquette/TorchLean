@@ -6,13 +6,10 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Layers.Pooling.TwoD
-public import NN.Spec.Layers.Pooling.PaddedTwoD
-public import NN.Spec.Layers.Pooling.ND
+public import NN.Spec.Layers.Pooling.Spatial
 
 /-!
 # Pooling Layers
 
-Spec-layer pooling operators: 2D pooling, padded variants, adaptive pooling, smooth max-pooling,
-and dimension-polymorphic pooling.
+Dimension-polymorphic fixed-window, adaptive, and smooth max-pooling specifications.
 -/

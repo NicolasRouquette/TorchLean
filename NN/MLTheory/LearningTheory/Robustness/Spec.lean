@@ -186,8 +186,8 @@ def isAdversariallyRobust {s₁ s₂ : Shape}
     tensorDistance norm₂ (f x₀) (f x) ≤ δ
 
 /--
-Certified robustness for a classifier: the prediction is constant on the $\varepsilon$-ball around
-$x_0$.
+Certified robustness for a classifier at a nonnegative radius: the prediction is constant on the
+$\varepsilon$-ball around $x_0$.
 
 For neural networks, `classifier` is typically `argmax` on a logits tensor.
 -/
@@ -195,18 +195,17 @@ def isCertifiedRobust {s : Shape}
     (classifier : Tensor α s → Nat)
     (norm : ∀ {s : Shape}, Tensor α s → α)
     (x₀ : Tensor α s) (ε : α) : Prop :=
-  ∀ x : Tensor α s,
-    x ∈ tensorBall norm x₀ ε →
-    classifier x = classifier x₀
+  0 ≤ ε ∧
+    ∀ x : Tensor α s,
+      x ∈ tensorBall norm x₀ ε →
+      classifier x = classifier x₀
 
-/--
-Uniform adversarial robustness over a finite list of inputs.
--/
+/-- Uniform adversarial robustness over a finite array of inputs. -/
 def isUniformlyRobust {s₁ s₂ : Shape}
     (f : Tensor α s₁ → Tensor α s₂)
     (norm₁ : ∀ {s : Shape}, Tensor α s → α)
     (norm₂ : ∀ {s : Shape}, Tensor α s → α)
-    (dataset : List (Tensor α s₁)) (ε δ : α) : Prop :=
+    (dataset : Array (Tensor α s₁)) (ε δ : α) : Prop :=
   ∀ x₀ ∈ dataset, isAdversariallyRobust f norm₁ norm₂ x₀ ε δ
 
 /--

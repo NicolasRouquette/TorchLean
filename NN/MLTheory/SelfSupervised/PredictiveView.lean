@@ -62,7 +62,7 @@ guards.
 structure PredictiveViewContract
     (n : Nat) (Context Target TargetRep Prediction : Type) where
   /-- Selected target/masked indices. -/
-  targetIdxs : List (Fin n)
+  targetIdxs : Array (Fin n)
   /-- Context view representation. -/
   context : Context
   /-- Target view before applying the target encoder. -/
@@ -133,7 +133,7 @@ The context is `Unit` because the finite MAE skeleton already abstracts away the
 target encoder is identity into patch/pixel space.
 -/
 def maeAsPredictiveViewContract {n : Nat} {Patch Pred : Type}
-    (maskedIdxs : List (Fin n))
+    (maskedIdxs : Array (Fin n))
     (target : PatchBatch n Patch)
     (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) :
@@ -148,7 +148,7 @@ def maeAsPredictiveViewContract {n : Nat} {Patch Pred : Type}
 
 /-- MAE's masked reconstruction loss is the predictive term with identity target encoder. -/
 theorem mae_is_predictive_view_loss {n : Nat} {Patch Pred : Type}
-    (maskedIdxs : List (Fin n))
+    (maskedIdxs : Array (Fin n))
     (target : PatchBatch n Patch)
     (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) :
@@ -158,7 +158,7 @@ theorem mae_is_predictive_view_loss {n : Nat} {Patch Pred : Type}
 
 /-- MAE is the zero-geometry predictive-view objective with pixel/patch identity targets. -/
 theorem mae_is_predictive_view_objective {n : Nat} {Patch Pred : Type}
-    (maskedIdxs : List (Fin n))
+    (maskedIdxs : Array (Fin n))
     (target : PatchBatch n Patch)
     (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) :
@@ -175,7 +175,7 @@ This matches `jepaLoss`: target representations are values at the objective boun
 predictor tries to match them at selected target indices.
 -/
 def jepaAsPredictiveViewContract {n : Nat} {Context Target Pred : Type}
-    (targetIdxs : List (Fin n))
+    (targetIdxs : Array (Fin n))
     (context : Context)
     (target : Fin n → Target)
     (predict : Context → Fin n → Pred)
@@ -191,7 +191,7 @@ def jepaAsPredictiveViewContract {n : Nat} {Context Target Pred : Type}
 
 /-- JEPA's finite target-representation loss is the predictive-view loss. -/
 theorem jepa_is_predictive_view_loss {n : Nat} {Context Target Pred : Type}
-    (targetIdxs : List (Fin n))
+    (targetIdxs : Array (Fin n))
     (context : Context)
     (target : Fin n → Target)
     (predict : Context → Fin n → Pred)
@@ -202,7 +202,7 @@ theorem jepa_is_predictive_view_loss {n : Nat} {Context Target Pred : Type}
 
 /-- JEPA is the zero-geometry predictive-view objective with latent target values. -/
 theorem jepa_is_predictive_view_objective {n : Nat} {Context Target Pred : Type}
-    (targetIdxs : List (Fin n))
+    (targetIdxs : Array (Fin n))
     (context : Context)
     (target : Fin n → Target)
     (predict : Context → Fin n → Pred)
@@ -220,7 +220,7 @@ finite view-prediction algebra alone. MAE is the special case where this encoder
 pixels/patches; JEPA uses a latent/stopped target branch.
 -/
 def encodedTargetPredictiveViewContract {n : Nat} {Context Target TargetRep Pred : Type}
-    (targetIdxs : List (Fin n))
+    (targetIdxs : Array (Fin n))
     (context : Context)
     (target : Fin n → Target)
     (targetEncoder : Fin n → Target → TargetRep)
@@ -238,7 +238,7 @@ def encodedTargetPredictiveViewContract {n : Nat} {Context Target TargetRep Pred
 
 theorem encodedTargetPredictiveViewContract_loss_eq_maskedLoss
     {n : Nat} {Context Target TargetRep Pred : Type}
-    (targetIdxs : List (Fin n))
+    (targetIdxs : Array (Fin n))
     (context : Context)
     (target : Fin n → Target)
     (targetEncoder : Fin n → Target → TargetRep)
@@ -277,9 +277,9 @@ structure BarlowGuard where
   /-- Weight for off-diagonal redundancy terms. -/
   lambda : Nat
   /-- Diagonal cross-correlation summaries, ideal value `1`. -/
-  diag : List Nat
+  diag : Array Nat
   /-- Off-diagonal cross-correlation summaries, ideal value `0`. -/
-  offDiag : List Nat
+  offDiag : Array Nat
 
 /-- Evaluate a finite Barlow-style redundancy guard. -/
 def BarlowGuard.value (guard : BarlowGuard) : Nat :=
@@ -300,14 +300,16 @@ theorem vicreg_guard_variance_only_positive {mu variance : Nat}
 /-- The ideal Barlow-style guard has zero value. -/
 @[simp] theorem barlow_guard_identity_value_zero (lambda d k : Nat) :
     (BarlowGuard.value
-      ({ lambda := lambda, diag := List.replicate d 1, offDiag := List.replicate k 0 } :
+      ({ lambda := lambda, diag := Array.replicate d 1, offDiag := Array.replicate k 0 } :
         BarlowGuard)) = 0 := by
   simp [BarlowGuard.value]
 
 /-- A collapsed diagonal entry pays a positive Barlow-style redundancy guard. -/
 theorem barlow_guard_collapsed_diag_positive {lambda d k : Nat} :
     0 < (BarlowGuard.value
-      ({ lambda := lambda, diag := 0 :: List.replicate d 1, offDiag := List.replicate k 0 } :
+      ({ lambda := lambda
+         diag := Array.push (Array.replicate d 1) 0
+         offDiag := Array.replicate k 0 } :
         BarlowGuard)) := by
   simpa [BarlowGuard.value] using
     (redundancyReductionObjective_collapsed_diag_positive (lambda := lambda) (d := d) (k := k))
@@ -317,7 +319,7 @@ theorem barlow_guard_collapsed_diag_positive {lambda d k : Nat} :
 /-- A finite positive-view edge graph over `n` views. -/
 structure SSLViewGraph (n : Nat) where
   /-- Positive/compatible view edges. -/
-  positiveEdges : List (Fin n × Fin n)
+  positiveEdges : Array (Fin n × Fin n)
 
 /-- Edge energy for a finite positive-view graph. -/
 def viewGraphEnergy {n : Nat}
@@ -364,11 +366,18 @@ noncomputable def graphAlignmentEnergy {n d : Nat}
 theorem graphAlignmentEnergy_nonneg {n d : Nat}
     (graph : SSLViewGraph n) (rep : Fin n → EuclideanRep d) :
     0 ≤ graphAlignmentEnergy graph rep := by
-  unfold graphAlignmentEnergy
-  induction graph.positiveEdges with
-  | nil => simp
-  | cons edge rest ih =>
-      simp [List.map, List.sum_cons, add_nonneg (sqDist_nonneg (rep edge.1) (rep edge.2)) ih]
+  let energies := graph.positiveEdges.map (fun edge => sqDist (rep edge.1) (rep edge.2))
+  change 0 ≤ energies.sum
+  have henergy : ∀ energy ∈ energies, 0 ≤ energy := by
+    intro energy hmem
+    rw [Array.mem_map] at hmem
+    obtain ⟨edge, _, rfl⟩ := hmem
+    exact sqDist_nonneg _ _
+  unfold Array.sum
+  apply Array.foldr_induction (motive := fun _ total => 0 ≤ total)
+  · simp
+  · intro i total htotal
+    exact add_nonneg (henergy energies[i] (Array.getElem_mem i.isLt)) htotal
 
 /-- A collapsed representation maps every view to the same finite vector. -/
 def CollapsedRep {n d : Nat} (rep : Fin n → EuclideanRep d) : Prop :=
@@ -384,10 +393,22 @@ theorem graphAlignmentEnergy_eq_zero_of_collapsed {n d : Nat}
     graphAlignmentEnergy graph rep = 0 := by
   rcases hcollapsed with ⟨z, hz⟩
   unfold graphAlignmentEnergy
-  induction graph.positiveEdges with
-  | nil => simp
-  | cons edge rest ih =>
-      simp [List.map, List.sum_cons, hz edge.1, hz edge.2, sqDist_self, ih]
+  have hmap :
+      graph.positiveEdges.map (fun edge => sqDist (rep edge.1) (rep edge.2)) =
+        Array.replicate graph.positiveEdges.size 0 := by
+    apply Array.ext <;> simp only [Array.size_map, Array.size_replicate]
+    intro i hiMap hiReplicate
+    rw [Array.getElem_map, Array.getElem_replicate]
+    simp [hz]
+  rw [hmap]
+  have hzero : ∀ count, (Array.replicate count (0 : ℝ)).sum = 0 := by
+    intro count
+    induction count with
+    | zero => simp
+    | succ count ih =>
+        rw [Array.replicate_succ, Array.sum_push, ih]
+        simp
+  exact hzero graph.positiveEdges.size
 
 /--
 Coordinate spread is a finite pairwise squared-difference summary for one embedding coordinate.
@@ -483,8 +504,9 @@ theorem predictiveLoss_eq_viewGraphEnergy_from_anchor
           contract.distance (contract.targetEncoder i (contract.target i))
             (contract.predict contract.context i)) := by
   unfold predictiveLoss viewGraphEnergy maskedLoss
-  induction contract.targetIdxs with
-  | nil => simp
-  | cons _ _ ih => simp [ih]
+  apply congrArg Array.sum
+  apply Array.ext <;> simp only [Array.size_map]
+  intro i hiLeft hiRight
+  simp [Array.getElem_map]
 
 end NN.MLTheory.SelfSupervised

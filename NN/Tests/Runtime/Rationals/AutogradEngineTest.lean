@@ -57,23 +57,23 @@ structure ParamIds where
 
 We use a small deterministic 2-layer MLP so the gradients are stable.
 -/
-def hiddenWeight : Tensor ℚ (.dim hidDim (.dim inDim .scalar)) :=
-  tensorOfList! [hidDim, inDim] [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+def hiddenWeight : Tensor ℚ [hidDim, inDim] :=
+  tensorOfArray! [hidDim, inDim] #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
 
-def hiddenBias : Tensor ℚ (.dim hidDim .scalar) :=
-  tensorOfList! [hidDim] [0.1, 0.2, 0.3]
+def hiddenBias : Tensor ℚ [hidDim] :=
+  tensorOfArray! [hidDim] #[0.1, 0.2, 0.3]
 
-def outputWeight : Tensor ℚ (.dim outDim (.dim hidDim .scalar)) :=
-  tensorOfList! [outDim, hidDim] [0.7, 0.8, 0.9]
+def outputWeight : Tensor ℚ [outDim, hidDim] :=
+  tensorOfArray! [outDim, hidDim] #[0.7, 0.8, 0.9]
 
-def outputBias : Tensor ℚ (.dim outDim .scalar) :=
-  tensorOfList! [outDim] [0.4]
+def outputBias : Tensor ℚ [outDim] :=
+  tensorOfArray! [outDim] #[0.4]
 
-def x : Tensor ℚ (.dim inDim .scalar) :=
-  tensorOfList! [inDim] [0.5, 0.8]
+def x : Tensor ℚ [inDim] :=
+  tensorOfArray! [inDim] #[0.5, 0.8]
 
-def dLdy : Tensor ℚ (.dim outDim .scalar) :=
-  tensorOfList! [outDim] [1.0]
+def dLdy : Tensor ℚ [outDim] :=
+  tensorOfArray! [outDim] #[1.0]
 
 def hiddenLayer : Spec.LinearSpec ℚ inDim hidDim := { weights := hiddenWeight, bias := hiddenBias }
 def outputLayer : Spec.LinearSpec ℚ hidDim outDim := { weights := outputWeight, bias := outputBias }
@@ -100,11 +100,11 @@ def checkMlpGrads :
 
     -- Forward pass: linear -> relu -> linear
     let z1Id ← TapeM.linear (inDim:=inDim) (outDim:=hidDim) hiddenWeightId hiddenBiasId xId
-    let a1Id ← TapeM.relu (s:=.dim hidDim .scalar) z1Id
+    let a1Id ← TapeM.relu (s := [hidDim]) z1Id
     let yId ← TapeM.linear (inDim:=hidDim) (outDim:=outDim) outputWeightId outputBiasId a1Id
 
     let t ← TapeM.getTape
-    let grads ← liftM (Tape.backward (t:=t) yId (Spec.PackedTensor.ofTensor dLdy))
+    let grads ← liftM (Tape.backward (t:=t) yId (Spec.SomeTensor.ofTensor dLdy))
 
     let ids : ParamIds := { hiddenWeightId := hiddenWeightId, hiddenBiasId := hiddenBiasId, outputWeightId := outputWeightId, outputBiasId := outputBiasId }
     pure (ids, grads)
@@ -114,13 +114,13 @@ def checkMlpGrads :
   let (dW1_exp, db1_exp, dW2_exp, db2_exp, _dX_exp) := expected
 
   let dW1_dyn ← Train.requireGradTensor (tag := tag)
-    (s:=.dim hidDim (.dim inDim .scalar)) grads ids.hiddenWeightId
+    (s := [hidDim, inDim]) grads ids.hiddenWeightId
   let db1_dyn ← Train.requireGradTensor (tag := tag)
-    (s:=.dim hidDim .scalar) grads ids.hiddenBiasId
+    (s := [hidDim]) grads ids.hiddenBiasId
   let dW2_dyn ← Train.requireGradTensor (tag := tag)
-    (s:=.dim outDim (.dim hidDim .scalar)) grads ids.outputWeightId
+    (s := [outDim, hidDim]) grads ids.outputWeightId
   let db2_dyn ← Train.requireGradTensor (tag := tag)
-    (s:=.dim outDim .scalar) grads ids.outputBiasId
+    (s := [outDim]) grads ids.outputBiasId
 
   let ok1 := decide (pretty dW1_dyn = pretty dW1_exp)
   let ok2 := decide (pretty db1_dyn = pretty db1_exp)

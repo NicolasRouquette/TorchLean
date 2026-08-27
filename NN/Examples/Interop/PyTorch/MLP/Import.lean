@@ -52,21 +52,21 @@ export to JSON, then run/verify in TorchLean.
 -/
 structure MlpStateDict (inDim hidDim outDim : Nat) where
   /-- First linear layer weight, PyTorch shape `(hidden, input)`. -/
-  w1 : Tensor Float (.dim hidDim (.dim inDim .scalar))  -- fc1.weight
+  w1 : Tensor Float [hidDim, inDim]  -- fc1.weight
   /-- Bias for layer 1. -/
-  b1 : Tensor Float (.dim hidDim .scalar)               -- fc1.bias
+  b1 : Tensor Float [hidDim]               -- fc1.bias
   /-- Second linear layer weight, PyTorch shape `(output, hidden)`. -/
-  w2 : Tensor Float (.dim outDim (.dim hidDim .scalar)) -- fc2.weight
+  w2 : Tensor Float [outDim, hidDim] -- fc2.weight
   /-- Bias for layer 2. -/
-  b2 : Tensor Float (.dim outDim .scalar)               -- fc2.bias
+  b2 : Tensor Float [outDim]               -- fc2.bias
 
 /-- Load an MLP state dict from JSON (accepts both key conventions described above). -/
 def loadMlpStateDict (inDim hidDim outDim : Nat) (j : Json) : Option (MlpStateDict inDim hidDim
   outDim) :=
-  let w1Shape : Shape := .dim hidDim (.dim inDim .scalar)
-  let b1Shape : Shape := .dim hidDim .scalar
-  let w2Shape : Shape := .dim outDim (.dim hidDim .scalar)
-  let b2Shape : Shape := .dim outDim .scalar
+  let w1Shape : Shape := [hidDim, inDim]
+  let b1Shape : Shape := [hidDim]
+  let w2Shape : Shape := [outDim, hidDim]
+  let b2Shape : Shape := [outDim]
   do
     -- `loadWeights?` accepts either:
     -- - `{ ...state_dict... }`, or
@@ -91,7 +91,7 @@ def toLinearSpecs {inDim hidDim outDim : Nat}
 /-- Convenience: run the Float MLP forward given a state dict and input. -/
 def forward {inDim hidDim outDim : Nat}
   (sd : MlpStateDict inDim hidDim outDim)
-  (x : Tensor Float (.dim inDim .scalar)) : Tensor Float (.dim outDim .scalar) :=
+  (x : Tensor Float [inDim]) : Tensor Float [outDim] :=
   let (l1, l2) := toLinearSpecs sd
   let z1 := Spec.linearSpec (α:=Float) l1 x
   let a1 := Activation.reluSpec (α:=Float) z1

@@ -177,7 +177,7 @@ theorem choleskyFn_lower_triangular (A : Fin n → Fin n → ℝ) {i j : Fin n} 
   rw [if_pos hij]
 
 /-- Tensor-level statement: the Cholesky factor `choleskySpec A` is lower-triangular. -/
-theorem choleskySpec_lower_triangular (A : Spec.Tensor ℝ (.dim n (.dim n .scalar)))
+theorem choleskySpec_lower_triangular (A : Spec.Tensor ℝ [n, n])
     {i j : Fin n} (hij : i.val < j.val) :
     Spec.get2 (Spec.choleskySpec A) i j = 0 := by
   rw [show Spec.choleskySpec A = Spec.Tensor.matrix (Spec.choleskyFn (Spec.toMatFn A)) from rfl,

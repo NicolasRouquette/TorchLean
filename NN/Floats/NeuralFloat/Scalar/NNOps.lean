@@ -18,7 +18,7 @@ defined in the “rounding on $\mathbb{R}$” style.
 The pattern is always:
 
 1. define the intended real-valued expression (e.g. `max x 0` for ReLU),
-2. round it back to the target grid using `neural_round`.
+2. round it back to the target grid using `neuralRound`.
 
 This is the same modeling choice as `NF`:
 we treat each primitive as a real computation followed by a rounding step.

@@ -19,8 +19,8 @@ public import NN.API.Optim
 public import NN.API.RL
 public import NN.API.Runtime
 public import NN.API.SelfSupervised
-public import NN.API.Tensor
-public import NN.API.TensorPack
+public import NN.Tensor
+public import NN.API.Sample
 public import NN.API.Text
 public import NN.API.Trainer
 

@@ -28,7 +28,7 @@ failures: invalid domains for `log`, `sqrt`, division, `exp`, and related math A
 TorchLean cannot repair an arbitrary hand-written unstable loss after the fact. The design instead
 gives stable primitives and domain-aware variants a named place in the spec. For example,
 `crossEntropyLogitsSpec` is the logits API users should reach for: it is defined through
-`logSoftmaxLastSpec`, rather than through a fragile `softmax` followed by `log`. Likewise, `safedivSpec`
+`logSoftmaxSpec`, rather than through a fragile `softmax` followed by `log`. Likewise, `safedivSpec`
 and `safeDivOp` make epsilon-protected division explicit in the graph.
 
 Bug-shaped PyTorch sketches:

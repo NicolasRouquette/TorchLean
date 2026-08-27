@@ -33,7 +33,7 @@ variable {α : Type} [Context α]
 /-- Learnable positional encoding wrapper (adds a `(seqLen,embedDim)` parameter tensor). -/
 def positionalEncoding {seqLen embedDim : Nat}
   (pe : PositionalEncodingSpec seqLen embedDim α) :
-  Spec.Module α (.dim seqLen (.dim embedDim .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
+  Spec.Module α ([seqLen, embedDim]) ([seqLen, embedDim]) :=
 { forward := fun x => addPositionalEncodingSpec (α := α) pe x
   kind := "PositionalEncoding"
   pythonExpr := s!"PositionalEncoding(seqLen={seqLen}, embedDim={embedDim})" }

@@ -156,20 +156,20 @@ The file
 records these equations using TorchLean tensors:
 
 ```
-theorem linear_weight_gradient_correct
-    (x : Tensor ℝ (.dim inDim .scalar))
-    (δ : Tensor ℝ (.dim outDim .scalar)) :
+theorem linearWeightsDerivSpec_eq_outerProductSpec
+    (x : Tensor ℝ [inDim])
+    (δ : Tensor ℝ [outDim]) :
   linearWeightsDerivSpec x δ = outerProductSpec δ x
 
-theorem linear_input_gradient_correct
+theorem linearInputDerivSpec_eq_vecMatMulSpec
     (layer : LinearSpec ℝ inDim outDim)
-    (δ : Tensor ℝ (.dim outDim .scalar)) :
+    (δ : Tensor ℝ [outDim]) :
   linearInputDerivSpec layer.weights δ =
     vecMatMulSpec δ layer.weights
 
-theorem linear_bias_gradient_correct
-    (x : Tensor ℝ (.dim inDim .scalar))
-    (δ : Tensor ℝ (.dim outDim .scalar)) :
+theorem linearBiasDerivSpec_eq
+    (x : Tensor ℝ [inDim])
+    (δ : Tensor ℝ [outDim]) :
   linearBiasDerivSpec (Inhabited.default) δ x = δ
 ```
 
@@ -202,8 +202,9 @@ You can inspect the backward ABI directly in an editor:
 ```
 import NN.Proofs.Gradients.Linear
 
-#check Proofs.linear_weight_gradient_correct
-#check Proofs.linear_gradients_mathematical_correctness
+#check Proofs.linearWeightsDerivSpec_eq_outerProductSpec
+#check Proofs.linearInputDerivSpec_eq_vecMatMulSpec
+#check Proofs.linearBiasDerivSpec_eq
 ```
 
 The result is an equality between backward specifications. It does not mention `HasFDerivAt`,

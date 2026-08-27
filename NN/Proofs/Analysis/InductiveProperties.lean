@@ -134,7 +134,7 @@ theorem l2_norm_concatenation {n : Nat} {s : Shape}
         _ = (Finset.univ : Finset (Fin n)).sum (fun i => sumSpec (mulSpec (f i) (f i))) := by
           -- Use the canonical lemma from `NN/Proofs/Tensor/Basic.lean` instead of duplicating the
           -- outer-fold-to-`Finset.sum` proof here.
-            simpa [Spec.get, Spec.getAtSpec] using
+            simpa [Spec.get] using
               (Spec.sum_spec_dim (t := Tensor.dim (fun i => mulSpec (f i) (f i))))
         _ = (Finset.univ : Finset (Fin n)).sum (fun i => tensorNormSquared (f i)) := by
           refine Finset.sum_congr rfl ?_
@@ -359,11 +359,12 @@ theorem sigmoid_bounds_inductive {s : Shape} (t : Tensor ℝ s) :
     intro n s f ih indices
     cases indices with
     | nil =>
-      simp [mapSpec]
+      simp
     | cons head tail =>
-      simp [mapSpec]
+      rw [mapSpec_dim, get_spec_dim_cons]
       by_cases h : head < n
-      · simpa [h] using ih ⟨head, h⟩ tail
+      · simp only [h, dite_true]
+        exact ih ⟨head, h⟩ tail
       · simp [h]
 
 -- ====================================================================
@@ -375,8 +376,8 @@ Matrix-vector multiplication dimension consistency.
 Proves output dimensions are correct regardless of input tensor structure.
 -/
 theorem matvec_dimension_consistency {m n : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (x : Tensor ℝ (.dim n .scalar)) :
+  (A : Tensor ℝ [m, n])
+  (x : Tensor ℝ [n]) :
   shapeOf (matVecMulSpec A x) = .dim m .scalar := by
   exact shapeOf_eq_shape (matVecMulSpec A x)
 
@@ -385,8 +386,8 @@ Linear transformation preserves tensor structure inductively.
 Shows that linearity holds component-wise across all dimensions.
 -/
 theorem linear_structure_preservation {m n : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar))) :
-  ∀ (x y : Tensor ℝ (.dim n .scalar)) (a b : ℝ),
+  (A : Tensor ℝ [m, n]) :
+  ∀ (x y : Tensor ℝ [n]) (a b : ℝ),
   matVecMulSpec A (addSpec (scaleSpec x a) (scaleSpec y b)) =
   addSpec (scaleSpec (matVecMulSpec A x) a) (scaleSpec (matVecMulSpec A y) b) := by
   intro x y a b
@@ -396,108 +397,69 @@ theorem linear_structure_preservation {m n : Nat}
 -- COMPOSITION INDUCTIVE THEOREMS
 -- ====================================================================
 
-/--
-Compose a list of functions into a single function by folding left.
-This is the forward semantics of a sequential neural network.
--/
-def composeFunctions {s : Shape} :
-    List (Tensor ℝ s → Tensor ℝ s) →
-    Tensor ℝ s → Tensor ℝ s :=
-  fun fs x => fs.foldl (fun acc f => f acc) x
+/-- A tensor map packaged with a proved nonnegative Lipschitz constant. -/
+structure LipschitzLayer (s : Shape) where
+  /-- The layer's forward map. -/
+  forward : Tensor ℝ s → Tensor ℝ s
+  /-- A global Lipschitz constant for `forward`. -/
+  constant : ℝ
+  /-- Lipschitz constants are nonnegative. -/
+  constant_nonneg : 0 ≤ constant
+  /-- The distance bound witnessed by `constant`. -/
+  dist_le : ∀ x y, tensorL2Dist (forward x) (forward y) ≤ constant * tensorL2Dist x y
 
-/--
-Nested function composition preserves Lipschitz constants inductively.
-This shows that a deep network is Lipschitz with constant equal to
-the product of its layers’ Lipschitz constants.
--/
-theorem nested_lipschitz_composition {s : Shape}
-  (functions : List (Tensor ℝ s → Tensor ℝ s))
-  (constants : List ℝ)
-  (h_len : functions.length = constants.length)
-  (h_nonneg : ∀ j : Fin constants.length, 0 ≤ constants.get j) -- needed for `mul_le_mul_*`
-  (h_lipschitz : ∀ i : Fin functions.length, ∀ x y,
-    tensorL2Dist (functions.get i x) (functions.get i y) ≤
-      constants.get (Fin.cast (h_len) i) * tensorL2Dist x y) :
-  ∀ x y, tensorL2Dist (composeFunctions functions x) (composeFunctions functions y) ≤
-    constants.foldl (· * ·) 1 * tensorL2Dist x y := by
-  -- A small helper: nonnegativity of a list product from pointwise nonnegativity (via `get`).
-  have prod_nonneg_of_get :
-      ∀ (l : List ℝ), (∀ j : Fin l.length, 0 ≤ l.get j) → 0 ≤ l.prod := by
-    intro l h
-    induction l with
-    | nil =>
-      simp
-    | cons a l ih =>
-      have ha : 0 ≤ a := by
-        simpa using h ⟨0, by simp⟩
-      have htail : ∀ j : Fin l.length, 0 ≤ l.get j := by
-        intro j
-        simpa using h (Fin.succ j)
-      have hl : 0 ≤ l.prod := ih htail
-      simpa [List.prod_cons] using mul_nonneg ha hl
+/-- Apply a runtime-sized sequence of shape-preserving layers from left to right. -/
+def composeFunctions {s : Shape} (layers : Array (LipschitzLayer s))
+    (x : Tensor ℝ s) : Tensor ℝ s :=
+  layers.foldl (fun value layer => layer.forward value) x
 
-  induction functions generalizing constants with
-  | nil =>
-    intro x y
-    cases constants with
-    | nil =>
-      simp [composeFunctions]
-    | cons c cs =>
-      -- impossible: constants nonempty but functions empty
-      simp at h_len
-  | cons f fs ih =>
-    intro x y
-    cases constants with
-    | nil =>
-      -- impossible: functions nonempty but constants empty
-      simp at h_len
-    | cons c cs =>
-      -- Reduce the goal to the tail-composition applied to `f x`/`f y`.
-      simp [composeFunctions]
-      have h_len_tail : fs.length = cs.length := by
-        exact Nat.succ_inj.mp (by simpa using h_len)
-      have hc_nonneg : 0 ≤ c := by
-        simpa using h_nonneg ⟨0, by simp⟩
-      have h_nonneg_tail : ∀ j : Fin cs.length, 0 ≤ cs.get j := by
-        intro j
-        simpa using h_nonneg (Fin.succ j)
+/-- Product of the Lipschitz constants attached to a layer sequence. -/
+def composedLipschitzConstant {s : Shape} (layers : Array (LipschitzLayer s)) : ℝ :=
+  layers.foldr (fun layer bound => layer.constant * bound) 1
 
-      have h_lipschitz_tail :
-          ∀ i : Fin fs.length, ∀ x y,
-            tensorL2Dist (fs.get i x) (fs.get i y) ≤
-              cs.get (Fin.cast h_len_tail i) * tensorL2Dist x y := by
-        intro i x y
-        have hcast_succ :
-            Fin.cast h_len (Fin.succ i) = Fin.succ (Fin.cast h_len_tail i) := by
-          ext
-          rfl
-        simpa [hcast_succ] using (h_lipschitz (Fin.succ i) x y)
+private def composeLayerList {s : Shape} (layers : List (LipschitzLayer s))
+    (x : Tensor ℝ s) : Tensor ℝ s :=
+  layers.foldl (fun value layer => layer.forward value) x
 
-      have tail_bound :
-          tensorL2Dist (composeFunctions fs (f x)) (composeFunctions fs (f y)) ≤
-            cs.foldl (· * ·) 1 * tensorL2Dist (f x) (f y) := by
-        exact ih cs h_len_tail h_nonneg_tail h_lipschitz_tail (f x) (f y)
+private def layerListConstant {s : Shape} (layers : List (LipschitzLayer s)) : ℝ :=
+  layers.foldr (fun layer bound => layer.constant * bound) 1
 
-      have head_bound : tensorL2Dist (f x) (f y) ≤ c * tensorL2Dist x y := by
-        have h := h_lipschitz ⟨0, by simp⟩ x y
-        change tensorL2Dist (f x) (f y) ≤ c * tensorL2Dist x y at h
-        exact h
+private theorem layerListConstant_nonneg {s : Shape} (layers : List (LipschitzLayer s)) :
+    0 ≤ layerListConstant layers := by
+  induction layers with
+  | nil => simp [layerListConstant]
+  | cons layer layers ih =>
+      simpa [layerListConstant] using mul_nonneg layer.constant_nonneg ih
 
-      have cs_nonneg : 0 ≤ cs.foldl (· * ·) 1 := by
-        -- `cs.foldl (·*·) 1 = cs.prod` and products of nonneg terms are nonneg.
-        have : 0 ≤ cs.prod := prod_nonneg_of_get cs h_nonneg_tail
-        simpa [List.prod_eq_foldl] using this
-
+private theorem composeLayerList_dist_le {s : Shape} (layers : List (LipschitzLayer s))
+    (x y : Tensor ℝ s) :
+    tensorL2Dist (composeLayerList layers x) (composeLayerList layers y) ≤
+      layerListConstant layers * tensorL2Dist x y := by
+  induction layers generalizing x y with
+  | nil => simp [composeLayerList, layerListConstant]
+  | cons layer layers ih =>
+      have tailConstantNonneg : 0 ≤ layerListConstant layers :=
+        layerListConstant_nonneg layers
       calc
-        tensorL2Dist (composeFunctions fs (f x)) (composeFunctions fs (f y))
-            ≤ cs.foldl (· * ·) 1 * tensorL2Dist (f x) (f y) := tail_bound
-        _ ≤ cs.foldl (· * ·) 1 * (c * tensorL2Dist x y) := by
-          exact mul_le_mul_of_nonneg_left head_bound cs_nonneg
-        _ = (c :: cs).foldl (· * ·) 1 * tensorL2Dist x y := by
-          -- Convert folds to products and reorder.
-            rw [← List.prod_eq_foldl (xs := cs), ← List.prod_eq_foldl (xs := c :: cs)]
-            simp [List.prod_cons, mul_assoc, mul_left_comm]
-        _ = cs.foldl (· * ·) c * tensorL2Dist x y := by
-          simp [List.foldl]
+        tensorL2Dist (composeLayerList (layer :: layers) x)
+            (composeLayerList (layer :: layers) y) =
+            tensorL2Dist (composeLayerList layers (layer.forward x))
+              (composeLayerList layers (layer.forward y)) := by
+                rfl
+        _ ≤ layerListConstant layers *
+              tensorL2Dist (layer.forward x) (layer.forward y) := ih _ _
+        _ ≤ layerListConstant layers * (layer.constant * tensorL2Dist x y) :=
+          mul_le_mul_of_nonneg_left (layer.dist_le x y) tailConstantNonneg
+        _ = layerListConstant (layer :: layers) * tensorL2Dist x y := by
+          simp only [layerListConstant, List.foldr_cons]
+          ring
+
+/-- The composition of proved Lipschitz layers is Lipschitz with the product bound. -/
+theorem nested_lipschitz_composition {s : Shape} (layers : Array (LipschitzLayer s))
+    (x y : Tensor ℝ s) :
+    tensorL2Dist (composeFunctions layers x) (composeFunctions layers y) ≤
+      composedLipschitzConstant layers * tensorL2Dist x y := by
+  simpa [composeFunctions, composedLipschitzConstant, composeLayerList, layerListConstant,
+    Array.foldl_toList, Array.foldr_toList] using composeLayerList_dist_le layers.toList x y
 
 end Proofs

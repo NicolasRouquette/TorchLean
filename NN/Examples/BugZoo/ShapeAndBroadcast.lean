@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.TensorReductionShape
+public import NN.Tensor
 
 /-!
 # BugZoo: shape and broadcasting boundaries
@@ -64,10 +64,10 @@ namespace NN.Examples.BugZoo.ShapeAndBroadcast
 open Spec.Tensor
 
 abbrev ImageShape : Spec.Shape :=
-  .dim 100 (.dim 100 (.dim 3 .scalar))
+  [100, 100, 3]
 
 abbrev SingletonBatchImageShape : Spec.Shape :=
-  .dim 1 ImageShape
+  ImageShape.prependDim 1
 
 /--
 Insert an explicit singleton batch dimension.
@@ -77,19 +77,18 @@ This is the TorchLean version of the fix for the classic “forgot the batch axi
 -/
 def addSingletonBatch {α : Type} (x : Spec.Tensor α ImageShape) :
     Spec.Tensor α SingletonBatchImageShape :=
-  Spec.Tensor.dim fun _ => x
+  TorchLean.Tensor.stack 0 fun _ => x
 
 /-- Reading the only batch entry after `addSingletonBatch` gives back the original image. -/
 @[simp] theorem addSingletonBatch_zero {α : Type} (x : Spec.Tensor α ImageShape) :
-    match addSingletonBatch x with
-    | Spec.Tensor.dim batch => batch ⟨0, by decide⟩ = x := by
+    Spec.get (addSingletonBatch x) ⟨0, by decide⟩ = x := by
   rfl
 
 abbrev MatrixShape : Spec.Shape :=
-  .dim 2 (.dim 3 .scalar)
+  [2, 3]
 
 abbrev RowShape : Spec.Shape :=
-  .dim 3 .scalar
+  [3]
 
 /-- Sum over the outer axis of a `2 × 3` tensor, dropping that axis and producing a row vector. -/
 def reduceRows {α : Type} [Add α] [Zero α] (x : Spec.Tensor α MatrixShape) :
@@ -119,8 +118,7 @@ def inferredRowBroadcastToMatrix {α : Type} [Inhabited α] (x : Spec.Tensor α 
 /-- The first row of an explicit broadcast is definitionally the original row. -/
 @[simp] theorem broadcastRowToMatrix_firstRow {α : Type} [Inhabited α]
     (x : Spec.Tensor α RowShape) :
-    match broadcastRowToMatrix x with
-    | Spec.Tensor.dim rows => rows ⟨0, by decide⟩ = x := by
+    Spec.get (broadcastRowToMatrix x) ⟨0, by decide⟩ = x := by
   cases x with
   | dim xs =>
       rfl
@@ -139,23 +137,22 @@ both axes have length two, but NumPy/PyTorch broadcasting still requires the vec
 the final axis.
 -/
 
-abbrev SquareVectorShape : Spec.Shape :=
-  .dim 2 .scalar
+abbrev SquareRowShape : Spec.Shape :=
+  [2]
 
 abbrev SquareMatrixShape : Spec.Shape :=
-  .dim 2 (.dim 2 .scalar)
+  [2, 2]
 
 /-- Broadcast a length-two vector across the rows of a `2 x 2` matrix. -/
 def inferredSquareBroadcast {α : Type} [Inhabited α]
-    (x : Spec.Tensor α SquareVectorShape) : Spec.Tensor α SquareMatrixShape :=
+    (x : Spec.Tensor α SquareRowShape) : Spec.Tensor α SquareMatrixShape :=
   Spec.Tensor.broadcastTo Spec.Shape.BroadcastTo.proof x
 
 /-- The inferred square broadcast is right-aligned: each matrix row is the source vector. -/
 theorem inferredSquareBroadcast_rows {α : Type} [Inhabited α]
-    (x : Spec.Tensor α SquareVectorShape) :
-    match inferredSquareBroadcast x with
-    | Spec.Tensor.dim rows =>
-        rows ⟨0, by decide⟩ = x ∧ rows ⟨1, by decide⟩ = x := by
+    (x : Spec.Tensor α SquareRowShape) :
+    Spec.get (inferredSquareBroadcast x) ⟨0, by decide⟩ = x ∧
+      Spec.get (inferredSquareBroadcast x) ⟨1, by decide⟩ = x := by
   cases x
   exact ⟨rfl, rfl⟩
 

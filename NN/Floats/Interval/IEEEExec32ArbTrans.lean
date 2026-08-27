@@ -22,7 +22,7 @@ public import NN.Floats.Interval.IEEEExec32
 
 For transcendentals (`exp/log/tanh/sqrt/...`) the situation is different:
 
-- IEEE-754 does **not** specify correctly-rounded transcendentals (libm is out of scope),
+- the executable transcendental wrappers have no proved real-error contract (libm is out of scope),
 - `NN/Floats/IEEEExec/Exec32.lean` contains *deterministic* transcendental approximations, but
   they are not proved outward-rounded w.r.t. real semantics.
 

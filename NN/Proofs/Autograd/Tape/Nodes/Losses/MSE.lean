@@ -43,7 +43,7 @@ API is totalized with denominator `1`, matching `Spec.mseSpec` and the IR evalua
 def mseLoss {Γ : List Shape} {s : Shape} (yhat target : Idx Γ s) : Node Γ Shape.scalar :=
   let n : Nat := Spec.meanDenom s
   let c : ℝ := (1 : ℝ) / (n : ℝ)
-  Node.ofVec (Γ := Γ) (τ := Shape.scalar)
+  Node.ofFn (Γ := Γ) (τ := Shape.scalar)
     (f := fun xV =>
       vecOfFun (n := Spec.Shape.size Shape.scalar) fun _ =>
         c * ‖(CtxVec.get (Γ := Γ) (s := s) yhat xV) - (CtxVec.get (Γ := Γ) (s := s) target xV)‖ ^ 2)
@@ -202,7 +202,7 @@ def mseLossFderiv {Γ : List Shape} {s : Shape} (yhat target : Idx Γ s) :
           (↑(Spec.meanDenom s))⁻¹ *
             ‖CtxVec.get (Γ := Γ) (s := s) yhat x -
               CtxVec.get (Γ := Γ) (s := s) target x‖ ^ 2 := by
-            simp only [mseLoss, Node.forwardVec_ofVec]
+            simp only [mseLoss, Node.forwardVec_ofFn]
             simp [Spec.Shape.size, div_eq_mul_inv]
         _ = (vecScalarCLM (g x)).ofLp ⟨0, by simp [Spec.Shape.size]⟩ := by
             simp [g, c, n, smul_eq_mul, div_eq_mul_inv]
@@ -229,7 +229,7 @@ def mseLossFderiv {Γ : List Shape} {s : Shape} (yhat target : Idx Γ s) :
         (Node.jvpVec (Γ := Γ) (τ := Shape.scalar) (mseLoss (Γ := Γ) (s := s) yhat target) xV
           dxV).ofLp i =
           c * (2 * inner ℝ diffV ddiffV) := by
-      simp only [mseLoss, Node.jvpVec_ofVec]
+      simp only [mseLoss, Node.jvpVec_ofFn]
       rw [vecOfFun_ofLp]
     have hR : ((vecScalarCLM.comp D0) dxV).ofLp i = D0 dxV := by
       simp [ContinuousLinearMap.comp_apply]

@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Verification.Util.Json
-public import NN.Spec.Core.TensorArray
+public import NN.Spec.Core.Tensor.Constructors
 public import NN.Floats.IEEEExec.Exec32
 public import NN.Floats.Interval.IEEEExec32ArbTrans
 import Lean.Data.Json
@@ -56,7 +56,7 @@ namespace NN.Verification.Splines.PiecewisePolyCert
 open Lean
 open Json
 open NN.Verification.Json
-open TensorArray
+open _root_.Spec
 
 /-!
 ## Utilities: exact rationals in JSON
@@ -135,9 +135,9 @@ structure PiecewisePolyCertificate where
   degree : Nat
   /-- Number of knot points. -/
   n : Nat
-  /-- Knot x-coordinates as a length-`n` vector. -/
+  /-- Knot x-coordinates as a rank-one tensor of length `n`. -/
   xs : Tensor Rat [n]
-  /-- Knot y-values as a length-`n` vector. -/
+  /-- Knot y-values as a rank-one tensor of length `n`. -/
   ys : Tensor Rat [n]
   /-- One piece per interval $[\mathrm{xs}[i],\mathrm{xs}[i+1]]$. -/
   pieces : Array PolynomialPiece
@@ -214,17 +214,11 @@ def parsePiecewisePolyCertificate (j : Json) : IO PiecewisePolyCertificate := do
       throw <|
         IO.userError s!"pieces length mismatch: pieces.size={pieces.size}, expected {n - 1} (=xs.size-1)"
 
-    -- Treat `xs/ys` as 1D tensors. This is the `Spec` layer’s intended representation for IO.
+    -- Validate the dynamic arrays once, then enter the canonical shape-indexed tensor API.
     let xs : Tensor Rat [n] :=
-      { data := xsArr
-        shape_valid := by
-          -- `shapeProd [n] = n`.
-          simp [n] }
+      Tensor.ofFlatArrayExact (.dim n .scalar) xsArr (by simp [n, Shape.size])
     let ys : Tensor Rat [n] :=
-      { data := ysArr
-        shape_valid := by
-          -- Reduce `shapeProd [n]` to `n`, then use the earlier size check.
-          simpa [n] using hYsSize }
+      Tensor.ofFlatArrayExact (.dim n .scalar) ysArr (by simpa [n, Shape.size] using hYsSize)
 
     pure { degree, n, xs, ys, pieces }
   else
@@ -242,8 +236,8 @@ tolerances, so a passing check means the certificate's equalities hold exactly a
 -/
 def checkCertificateRat (cert : PiecewisePolyCertificate) : IO Unit := do
   let n := cert.n
-  let xs := cert.xs.data
-  let ys := cert.ys.data
+  let xs := cert.xs.toArray
+  let ys := cert.ys.toArray
 
   for i in [0:n - 1] do
     let a ← requireArrayEntry "xs" xs i
@@ -318,8 +312,8 @@ The check is deliberately strict:
 - comparisons use IEEE-style `BEq` (so `+0 == -0`, and NaNs never compare equal).
 -/
 def checkCertificateIEEE32ExecExact (cert : PiecewisePolyCertificate) : IO Unit := do
-  let xsQ := cert.xs.data
-  let ysQ := cert.ys.data
+  let xsQ := cert.xs.toArray
+  let ysQ := cert.ys.toArray
 
   let xs ← xsQ.mapIdxM (fun i q => ratToIEEE32ExecExact (ctx := s!"xs[{i}]") q)
   let ys ← ysQ.mapIdxM (fun i q => ratToIEEE32ExecExact (ctx := s!"ys[{i}]") q)

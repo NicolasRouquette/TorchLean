@@ -1,6 +1,20 @@
 # `TorchLean.Data`
 
-`TorchLean.Data` contains typed datasets, loaders, and file sources.
+`TorchLean.Data` contains constructors and file sources for `Trainer.Dataset`.
+
+Application code uses one supervised-data type:
+
+```lean
+Trainer.Dataset inputShape targetShape
+```
+
+It keeps the sample shapes in the type while delaying scalar conversion until the trainer chooses
+its runtime. Constructors such as `Data.tensorDataset`, `Data.floatSamples`, and
+`Data.supervisedDataset` all return this type.
+
+Manual loops that already own a runtime scalar can import `NN.Data.SampleStream`. A sample stream is
+finite and lazily indexed: wrapping an array does not copy it, and slicing a batched tensor happens
+when a sample is requested. It is deliberately not a second application-level dataset API.
 
 The data boundary is focused:
 
@@ -27,9 +41,9 @@ export, or verifier.
 | supervised `X.npy`, `Y.npy` | `Data.SupervisedSource` |
 | image/classification labels | `Data.LabeledSource` |
 | small numeric CSV | `Data.TabularSupervisedSource` |
-| repeated training batches | `Data.batchLoader` |
+| fixed-size tensor batches | `Data.batchDataset` |
 | generated or file-backed batches | typed step streams through the trainer API |
-| text windows | `TorchLean.text` helpers, then integer-token samples |
+| text windows | `TorchLean.text` helpers, then bounded-token samples |
 
 The main Lean entry points are:
 
@@ -37,10 +51,10 @@ The main Lean entry points are:
 - `Data.SupervisedSource`: two batched tensors, `X : (N, xDims...)` and `Y : (N, yDims...)`.
 - `Data.LabeledSource`: batched inputs plus label vector, one-hot encoded when loaded.
 - `Data.TabularSupervisedSource`: one CSV where each row contains `x..., y...`.
-- `Data.batchLoader`: typed, deterministic minibatching.
+- `Data.batchDataset`: fixed-size tensor minibatches represented as another `Trainer.Dataset`.
 
-Use `Data.map`, `Tensor.map`, and `Sample.mapX` or `Sample.mapY` for preprocessing. These are the
-same operations used elsewhere in the API rather than a second transform-specific vocabulary.
+Use `Tensor.map` and `Sample.mapX` or `Sample.mapY` for preprocessing. Manual stream code may use
+`SampleStream.map`; it transforms samples only when they are requested.
 
 ## Boundary Discipline
 
@@ -66,7 +80,7 @@ order explicit before the data reaches a trainer or checker.
 | --- | --- |
 | MLP/KAN tabular examples | numeric CSV or `X.npy`/`Y.npy` with shape `(N, features)` and `(N, targets)` |
 | CNN/ViT examples | image tensors `(N, C, H, W)` plus label vector `(N,)` |
-| GPT/Mamba examples | UTF-8 text, tokenizer assets, integer-token windows, shifted targets |
+| GPT/Mamba examples | UTF-8 text, tokenizer assets, bounded-token windows, shifted targets |
 | FNO Burgers | `.mat` or simulator output converted to `X.npy`/`Y.npy`, plus metadata for grid and split |
 | PINN checks | JSON/certificate artifacts plus coordinate/value samples checked by `NN.Verification.PINN` |
 | VNN-COMP-style checks | network/property artifacts loaded by the verification layer, not by an ordinary trainer |

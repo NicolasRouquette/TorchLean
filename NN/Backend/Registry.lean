@@ -33,30 +33,28 @@ namespace Registry
 /-- A named, independently maintained contribution to the backend catalog. -/
 structure CapsuleModule where
   name : String
-  capsules : List KernelCapsule
+  capsules : Array KernelCapsule
   deriving Repr
 
 /-- Flatten capsule modules while preserving module and local preference order. -/
-def flatten (modules : List CapsuleModule) : List KernelCapsule :=
+def flatten (modules : Array CapsuleModule) : Array KernelCapsule :=
   modules.flatMap (·.capsules)
 
 /-- First repeated module name, if the registry contains two contributions with the same identity. -/
-def firstDuplicateModuleName? : List CapsuleModule → Option String
-  | [] => none
-  | module :: rest =>
-      if rest.any (fun candidate => candidate.name == module.name) then
-        some module.name
-      else
-        firstDuplicateModuleName? rest
+def firstDuplicateModuleName? (modules : Array CapsuleModule) : Option String :=
+  modules.findSome? fun module =>
+    if 1 < (modules.filter fun candidate => candidate.name == module.name).size then
+      some module.name
+    else
+      none
 
 /-- First repeated capsule identity after flattening, if one exists. -/
-def firstDuplicateCapsuleName? : List KernelCapsule → Option String
-  | [] => none
-  | capsule :: rest =>
-      if rest.any capsule.sameIdentity then
-        some capsule.name
-      else
-        firstDuplicateCapsuleName? rest
+def firstDuplicateCapsuleName? (capsules : Array KernelCapsule) : Option String :=
+  capsules.findSome? fun capsule =>
+    if 1 < (capsules.filter capsule.sameIdentity).size then
+      some capsule.name
+    else
+      none
 
 /--
 Validate the identities that make registry ordering meaningful.
@@ -64,7 +62,7 @@ Validate the identities that make registry ordering meaningful.
 Different providers may implement the same operation. What is rejected is registering the same
 named module twice or repeating the same capsule name, operation, provider, and device tuple.
 -/
-def validateModules (modules : List CapsuleModule) : Except String Unit := do
+def validateModules (modules : Array CapsuleModule) : Except String Unit := do
   if let some name := firstDuplicateModuleName? modules then
     throw s!"duplicate backend capsule module `{name}`"
   if let some name := firstDuplicateCapsuleName? (flatten modules) then
@@ -72,8 +70,8 @@ def validateModules (modules : List CapsuleModule) : Except String Unit := do
 
 /-- Maintained operation/provider modules. A new architecture does not modify this list; only a new
 primitive implementation or provider does. -/
-def maintainedModules : List CapsuleModule :=
-  [ { name := "attention", capsules := Attention.capsules }
+def maintainedModules : Array CapsuleModule :=
+  #[ { name := "attention", capsules := Attention.capsules }
   , { name := "native-cuda", capsules := NativeCUDA.capsules }
   , { name := "reference", capsules := Reference.capsules }
   ]

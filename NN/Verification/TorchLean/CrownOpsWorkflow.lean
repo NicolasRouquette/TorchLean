@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.API.Verification
 public import NN.Verification.TorchLean.Lowering
 
 /-!
@@ -54,15 +55,11 @@ def softmaxXShape : Spec.Shape := .dim softmaxInDim .scalar
 def softmaxYShape : Spec.Shape := .dim softmaxOutDim .scalar
 
 /-- TorchLean model: `Linear -> Softmax`. -/
-def softmaxModel : nn.Sequential softmaxXShape softmaxYShape := by
-  letI : Spec.Shape.AxisInBounds 0 softmaxYShape := by
-    unfold softmaxYShape softmaxOutDim
-    infer_instance
-  exact
+def softmaxModel : nn.Sequential [softmaxInDim] [softmaxOutDim] :=
   nn.build 0 <|
     nn.Sequential![
       nn.linear softmaxInDim softmaxOutDim,
-      nn.softmax 0
+      nn.softmax (shape := [softmaxOutDim]) 0
     ]
 
 /-- Parameter shapes for `softmaxModel`. -/
@@ -72,8 +69,8 @@ def softmaxParamShapes : List Spec.Shape := nn.stateShapes softmaxModel
 ($\mathrm{lo}_0-\mathrm{hi}_1$). -/
 def softmaxMargin {α : Type} [Context α]
     (lo hi : Spec.Tensor α softmaxYShape) : α :=
-  let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
-  let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
+  let lo0 := _root_.Spec.Tensor.getScalar lo ⟨0, by decide⟩
+  let hi1 := _root_.Spec.Tensor.getScalar hi ⟨1, by decide⟩
   lo0 - hi1
 
 /--
@@ -86,14 +83,10 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
   IO.println "== Workflow 1: linear -> softmax (vector) =="
   let cast : Float → α := Runtime.ofFloat
 
-  let params : TensorPack α softmaxParamShapes :=
-    TensorPack!
-      (NN.Tensor.ofListOfLength (α := α) [3, 2]
-        [ cast 1.0, cast (-0.5)
-        , cast 0.2, cast 0.7
-        , cast (-0.3), cast 0.1
-        ] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [3] [cast 0.1, cast (-0.2), cast 0.0] (by rfl))
+  let params : _root_.TorchLean.TensorPack α softmaxParamShapes :=
+    _root_.TorchLean.TensorPack!
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3, 2] #[1.0, -0.5, 0.2, 0.7, -0.3, 0.1])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3] #[0.1, -0.2, 0.0]))
 
   let lowered ←
     match Verification.lowerProgramToIR
@@ -105,9 +98,9 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
   IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
   let x0 : Spec.Tensor α softmaxXShape :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 0.2, cast (-0.1)] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.2, -0.1])
   let eps : α := Runtime.ofFloat 0.05
-  let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
+  let xB : FlatBox α := NN.Verification.TorchLean.lInfBall (α := α) x0 eps
   let ps : ParamStore α := lowered.seedInputBox xB
 
   -- IBP
@@ -141,9 +134,9 @@ def runSoftmax {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToStrin
       IO.println s!"[CROWN] {msg}"
 
   -- Backward/dual CROWN for the margin objective: p0 - p1.
-  let objV : Spec.Tensor α (.dim softmaxOutDim .scalar) :=
-    NN.Tensor.ofListOfLength (α := α) [3] [cast 1.0, cast (-1.0), cast 0.0] (by rfl)
-  let obj : FlatVec α := { n := softmaxOutDim, v := objV }
+  let objV : Spec.Tensor α [softmaxOutDim] :=
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3] #[1.0, -1.0, 0.0])
+  let obj : FlatTensor α := { n := softmaxOutDim, v := objV }
   match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outC =>
       let loM : α := getAtOrZero outC.lo [0]
@@ -179,9 +172,11 @@ def mseLossModel {α : Type} [Context α] [DecidableEq Spec.Shape] :
   fun {m} _ _ =>
     fun w b target x =>
       (do
-        let yhat ← Ops.linear (m := m) (α := α) (inDim := mseInDim) (outDim := mseOutDim) w b x
-        Ops.mseLoss (m := m) (α := α) (s := mseYShape) yhat target
-        : m (Ops.RefTy (m := m) (α := α) Spec.Shape.scalar))
+        let yhat ← Runtime.linear
+          (m := m) (α := α)
+          (leading := []) (inDim := mseInDim) (outDim := mseOutDim) w b x
+        Runtime.mseLoss (m := m) (α := α) (s := mseYShape) yhat target
+        : m (Runtime.ValueRef (m := m) (α := α) Spec.Shape.scalar))
 
 /--
 Run the MSE-loss workflow under a chosen scalar backend `α`.
@@ -194,12 +189,11 @@ def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α
   IO.println "== Workflow 2: linear -> mse_loss (scalar) =="
   let cast : Float → α := Runtime.ofFloat
 
-  let params : TensorPack α mseParamShapes :=
-    TensorPack!
-      (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 0.4, cast (-0.3), cast 1.2, cast 0.1] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.05, cast (-0.02)] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 1.0] (by rfl))
+  let params : _root_.TorchLean.TensorPack α mseParamShapes :=
+    _root_.TorchLean.TensorPack!
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2, 2] #[0.4, -0.3, 1.2, 0.1])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.05, -0.02])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.0, 1.0]))
 
   let lowered ←
     match Verification.lowerProgramToIR
@@ -212,9 +206,9 @@ def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α
   IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
   let x0 : Spec.Tensor α mseXShape :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 0.3, cast (-0.4)] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.3, -0.4])
   let eps : α := Runtime.ofFloat 0.05
-  let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
+  let xB : FlatBox α := NN.Verification.TorchLean.lInfBall (α := α) x0 eps
   let ps : ParamStore α := lowered.seedInputBox xB
 
   -- IBP
@@ -235,7 +229,7 @@ def runMSE {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α
       IO.println s!"[CROWN] {msg}"
 
   -- Backward/dual CROWN for the loss objective itself (obj = 1).
-  let obj : FlatVec α := { n := 1, v := Spec.fill (α := α) Numbers.one (.dim 1 .scalar) }
+  let obj : FlatTensor α := { n := 1, v := Spec.fill (α := α) Numbers.one (.dim 1 .scalar) }
   match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outC =>
       IO.println s!"[CROWN-backward] loss lo = {pretty outC.lo}"

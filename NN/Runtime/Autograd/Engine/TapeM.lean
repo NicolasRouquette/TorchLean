@@ -29,7 +29,7 @@ for common patterns (reading scalar losses, extracting typed grads, simple SGD l
 
 - `NN.Runtime.Autograd.Engine.Core` contains the pure tape and low-level node constructors.
 - `TapeM.run` / `TapeM.eval` / `TapeM.exec` are the main control-flow wrappers.
-- The op wrappers below (`add`, `linear`, `conv2d`, etc.) mirror the `Tape` namespace while
+- The op wrappers below (`add`, `linear`, `conv`, etc.) mirror the `Tape` namespace while
   threading state implicitly.
 -/
 
@@ -198,21 +198,15 @@ def matmul {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Pro
   set t'
   pure id
 
-/--
-StateT wrapper around `Tape.conv2d`.
-
-PyTorch comparison: `torch.nn.functional.conv2d` (this codebase uses a single-image specialization;
-see `Tape.conv2d` for the exact shape conventions).
--/
-def conv2d {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-  {inC outC kH kW stride padding inH inW : Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-  (kernelId biasId inputId : Nat) : TapeM α Nat := do
+/-- State wrapper around arbitrary-rank `Tape.conv`. -/
+def conv {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+    [DecidableEq Shape] {d inC outC : Nat}
+    {kernel stride padding inSpatial : Spec.Tensor Nat [d]}
+    (kernelId biasId inputId : Nat) (name : String := "conv") : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.conv2d (t := t)
-    (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-    (stride := stride) (padding := padding) (inH := inH) (inW := inW)
-    (h1 := h1) (h2 := h2) (h3 := h3) kernelId biasId inputId)
+  let (t', id) ← liftM (Tape.conv (t := t) (d := d) (inC := inC) (outC := outC)
+    (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
+    kernelId biasId inputId (name := name))
   set t'
   pure id
 
@@ -225,8 +219,8 @@ PyTorch comparison: `torch.nn.functional.conv_transpose{d}d` specialized to a si
 def convTranspose {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   [DecidableEq Shape]
   {d inC outC : Nat}
-  {kernel stride padding : Vector Nat d}
-  {inSpatial : Vector Nat d}
+  {kernel stride padding : Spec.Tensor Nat [d]}
+  {inSpatial : Spec.Tensor Nat [d]}
   (kernelId biasId inputId : Nat) (name : String := "conv_transpose") : TapeM α Nat := do
   let t ← get
   let (t', id) ← liftM (Tape.convTranspose (t := t)
@@ -236,86 +230,37 @@ def convTranspose {α : Type} [Context α] [DecidableRel ((· > ·) : α → α 
   set t'
   pure id
 
-/--
-StateT wrapper around `Tape.conv_transpose2d`.
-
-PyTorch comparison: `torch.nn.functional.conv_transpose2d` (single-image specialization; see
-`Tape.conv_transpose2d` for exact shape conventions).
--/
-def convTranspose2d {α : Type} [Context α] [DecidableEq Shape]
-  {inC outC kH kW stride padding inH inW : Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0}
-  (kernelId biasId inputId : Nat) : TapeM α Nat := do
+/-- State wrapper around arbitrary-rank `Tape.maxPool`. -/
+def maxPool {α : Type} [Context α] [DecidableEq Shape]
+    {d C : Nat} {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0} (xId : Nat) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.convTranspose2d (t := t)
-    (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-    (stride := stride) (padding := padding) (inH := inH) (inW := inW)
-    (h1 := h1) (h2 := h2) (h3 := h3) kernelId biasId inputId)
+  let (t', id) ← liftM (Tape.maxPool (t := t) (d := d) (C := C)
+    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
+    (hKernel := hKernel) xId)
   set t'
   pure id
 
-/-- StateT wrapper around `Tape.max_pool2d`. PyTorch comparison: `torch.nn.functional.max_pool2d`.
-  -/
-def maxPool2d {α : Type} [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  (xId : Nat) : TapeM α Nat := do
+/-- State wrapper around arbitrary-rank `Tape.smoothMaxPool`. -/
+def smoothMaxPool {α : Type} [Context α] [DecidableEq α] [DecidableEq Shape]
+    {d C : Nat} {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    (xId : Nat) (beta : α) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.maxPool2d (t := t)
-    (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-    (h1 := h1) (h2 := h2) xId)
+  let (t', id) ← liftM (Tape.smoothMaxPool (t := t) (d := d) (C := C)
+    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
+    (hKernel := hKernel) xId beta)
   set t'
   pure id
 
-/-- StateT wrapper around `Tape.max_pool2d_pad`. PyTorch comparison:
-  `torch.nn.functional.max_pool2d` with padding. -/
-def maxPool2dPad {α : Type} [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride padding : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  (xId : Nat) : TapeM α Nat := do
+/-- State wrapper around arbitrary-rank `Tape.avgPool`. -/
+def avgPool {α : Type} [Context α] [DecidableEq Shape]
+    {d C : Nat} {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
+    (hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0) (xId : Nat) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.maxPool2dPad (t := t)
-    (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-      padding)
-    (h1 := h1) (h2 := h2) xId)
-  set t'
-  pure id
-
-/--
- StateT wrapper around `Tape.smooth_max_pool2d`.
-
- This is a differentiable (soft) approximation to max-pooling controlled by `beta`.
- -/
-def smoothMaxPool2d {α : Type} [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  (xId : Nat) (beta : α) : TapeM α Nat := do
-  let t ← get
-  let (t', id) ← liftM (Tape.smoothMaxPool2d (t := t)
-    (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-    (h1 := h1) (h2 := h2) xId beta)
-  set t'
-  pure id
-
-/-- StateT wrapper around `Tape.avg_pool2d`. PyTorch comparison: `torch.nn.functional.avg_pool2d`.
-  -/
-def avgPool2d {α : Type} [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
-  (xId : Nat) : TapeM α Nat := do
-  let t ← get
-  let (t', id) ← liftM (Tape.avgPool2d (t := t)
-    (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-    (h1 := h1) (h2 := h2) xId)
-  set t'
-  pure id
-
-/-- StateT wrapper around `Tape.avg_pool2d_pad`. PyTorch comparison:
-  `torch.nn.functional.avg_pool2d` with padding. -/
-def avgPool2dPad {α : Type} [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride padding : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
-  (xId : Nat) : TapeM α Nat := do
-  let t ← get
-  let (t', id) ← liftM (Tape.avgPool2dPad (t := t)
-    (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding :=
-      padding)
-    (h1 := h1) (h2 := h2) xId)
+  let (t', id) ← liftM (Tape.avgPool (t := t) (d := d) (C := C)
+    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
+    hKernel xId)
   set t'
   pure id
 
@@ -330,17 +275,14 @@ def layerNorm {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → 
   set t'
   pure id
 
-/-- StateT wrapper around `Tape.batchnorm_channel_first`. PyTorch comparison: `torch.nn.BatchNorm2d`
-  in channel-first layout. -/
-def batchNormChannelFirst {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-  [DecidableEq Shape]
-  {channels height width : Nat}
-  (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
-  (xId gammaId betaId : Nat) : TapeM α Nat := do
+/-- State wrapper around batch normalization over an arbitrary spatial shape. -/
+def batchNorm {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+    [DecidableEq Shape] {channels : Nat} {sSpatial : Shape}
+    (hWellFormed : (Shape.dim channels sSpatial).wellFormed)
+    (xId gammaId betaId : Nat) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.batchNormChannelFirst (t := t)
-    (channels := channels) (height := height) (width := width)
-    (h_c := h_c) (h_h := h_h) (h_w := h_w) xId gammaId betaId)
+  let (t', id) ← liftM (Tape.batchNorm (t := t)
+    (channels := channels) (sSpatial := sSpatial) hWellFormed xId gammaId betaId)
   set t'
   pure id
 
@@ -350,7 +292,7 @@ def multiHeadAttention {α : Type} [Context α] [DecidableRel ((· > ·) : α �
   Shape]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (wqId wkId wvId woId xId : Nat)
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) : TapeM α Nat := do
+  (mask : Option (Tensor Bool [n, n]) := none) : TapeM α Nat := do
   let t ← get
   let (t', id) ← liftM (Tape.multiHeadAttention (t := t)
     (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)
@@ -447,7 +389,7 @@ def sum {α : Type} [Add α] [Zero α] [DecidableEq Shape]
  gradient tensors.
  -/
 def backwardScalar {α : Type} [Add α] [One α] [DecidableEq Shape]
-  (outId : Nat) : TapeM α (Std.HashMap Nat (Spec.PackedTensor α)) := do
+  (outId : Nat) : TapeM α (Std.HashMap Nat (Spec.SomeTensor α)) := do
   let t ← get
   liftM (Tape.backwardScalar (t := t) outId)
 

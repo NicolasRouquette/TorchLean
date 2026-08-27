@@ -6,19 +6,19 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor.Constructors
+public import NN.Spec.Core.Tensor.Core
+public import NN.Spec.Core.Tensor.Linalg
 
 /-!
 # Tensor
 
 Umbrella module for the core tensor API.
 
-Most downstream modules import this umbrella. The concrete tensor definitions live in focused files
-and are re-exported through `NN.Spec.Core.Tensor.API`:
+Most downstream modules import this umbrella. The concrete tensor definitions live in focused files:
 - `NN.Spec.Core.Tensor.Core`          (datatype + accessors)
 - `NN.Spec.Core.Tensor.Constructors`  (total builders)
-- `NN.Spec.Core.Tensor.Linalg`        (matrix/vector ops)
-- `NN.Spec.Core.Tensor.Vec`           (the vector-specialized tensor interface)
+- `NN.Spec.Core.Tensor.Linalg`        (matrix and vector operations)
 
 Elementwise ops and reductions remain in:
 - `NN.Spec.Core.TensorOps`
@@ -33,9 +33,9 @@ namespace Tensor
 
 -- Convenience re-exports: make accessors/constructors from `Spec` available as `Spec.Tensor.*`,
 -- so `open Tensor` brings them into scope.
-export Spec (shapeOf getSpec getAtSpec get get2 getAtOrZero finZero getHead getTail
+  export Spec (shapeOf getSpec get get2 getAtOrZero finZero getHead getTail
   tensorCast replicate
-  sliceSpec sliceRangeSpec
+  sliceRangeSpec
   fill singleton padLeft
   identityTensorSpec matMulSpec matVecMulSpec vecMatMulSpec outerProductSpec)
 

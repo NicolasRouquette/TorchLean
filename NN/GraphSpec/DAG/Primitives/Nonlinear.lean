@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.GraphSpec.DAG.Primitives.Core
+public import NN.Spec.Core.Sequence
 public import NN.Spec.Layers.Attention
 
 /-!
@@ -23,7 +24,7 @@ namespace DAG
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 namespace PrimOp
 
@@ -75,49 +76,47 @@ def gelu (s : Shape) : PrimOp [s] s :=
     (gelu s).specFwd (.cons input .nil) = _root_.Activation.geluSpec input := by
   rfl
 
-/--
-Multi-head self-attention with an explicit leading batch axis.
+/-- Multi-head self-attention over an arbitrary leading shape.
 
-The pure semantics applies the canonical `Spec.MultiHeadAttention.forward` independently to every
-batch element. The executable side uses the corresponding backend-generic TorchLean operation, so
-backends may fuse the batch and head contractions without changing the mathematical operation.
+The pure semantics applies `Spec.MultiHeadAttention.forward` independently at every leading index.
+The executable path uses the prefix-polymorphic TorchLean operation and may flatten those axes for
+backend execution without changing the mathematical operation.
 -/
-def multiHeadAttention (batch n numHeads dModel headDim : Nat) (hN : 0 < n) :
+def multiHeadAttention (leading : Shape) (n numHeads dModel headDim : Nat) (hN : 0 < n) :
     PrimOp
-      [ .dim dModel (.dim (numHeads * headDim) .scalar),
-        .dim dModel (.dim (numHeads * headDim) .scalar),
-        .dim dModel (.dim (numHeads * headDim) .scalar),
-        .dim (numHeads * headDim) (.dim dModel .scalar),
-        .dim batch (.dim n (.dim dModel .scalar)) ]
-      (.dim batch (.dim n (.dim dModel .scalar))) :=
-  { name := s!"multiHeadAttention({batch},{n},{numHeads},{dModel},{headDim})"
+      [ [dModel, numHeads * headDim],
+        [dModel, numHeads * headDim],
+        [dModel, numHeads * headDim],
+        [numHeads * headDim, dModel],
+        leading.concat [n, dModel] ]
+      (leading.concat [n, dModel]) :=
+  { name := s!"multiHeadAttention({n},{numHeads},{dModel},{headDim})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons wq (.cons wk (.cons wv (.cons wo (.cons (.dim inputs) .nil)))) =>
+      | .cons wq (.cons wk (.cons wv (.cons wo (.cons input .nil)))) =>
           let attention : _root_.Spec.MultiHeadAttention α numHeads dModel headDim :=
             { queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo }
-          .dim fun i => attention.forward n (Nat.ne_of_gt hN) (inputs i) none
+          _root_.Spec.Tensor.mapEach leading
+            (fun inputs => attention.forward n (Nat.ne_of_gt hN) inputs none) input
     program := fun {α} _ _ =>
       fun {m} _ _ => fun wq wk wv wo input =>
         Runtime.Autograd.TorchLean.multiHeadAttention (m := m) (α := α)
+          (leadingShape := leading)
           (Nat.ne_of_gt hN) wq wk wv wo input none }
 
-/-- Pure evaluation of batched multi-head attention. -/
+/-- Pure evaluation of prefix-polymorphic multi-head attention. -/
 @[simp] theorem multiHeadAttention_specFwd
-    {batch n numHeads dModel headDim : Nat} (hN : 0 < n)
+    {leading : Shape} {n numHeads dModel headDim : Nat} (hN : 0 < n)
     {α : Type} [Context α]
-    (wq wk wv : _root_.Spec.Tensor α
-      (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wo : _root_.Spec.Tensor α
-      (.dim (numHeads * headDim) (.dim dModel .scalar)))
-    (input : _root_.Spec.Tensor α (.dim batch (.dim n (.dim dModel .scalar)))) :
-    (multiHeadAttention batch n numHeads dModel headDim hN).specFwd
+    (wq wk wv : _root_.Spec.Tensor α [dModel, numHeads * headDim])
+    (wo : _root_.Spec.Tensor α [numHeads * headDim, dModel])
+    (input : _root_.Spec.Tensor α (leading.concat [n, dModel])) :
+    (multiHeadAttention leading n numHeads dModel headDim hN).specFwd
         (.cons wq (.cons wk (.cons wv (.cons wo (.cons input .nil))))) =
-      .dim fun i =>
+      _root_.Spec.Tensor.mapEach leading (fun inputs =>
         ({ queryWeight := wq, keyWeight := wk, valueWeight := wv, outputWeight := wo } :
           _root_.Spec.MultiHeadAttention α numHeads dModel headDim).forward
-          n (Nat.ne_of_gt hN) (_root_.Spec.get input i) none := by
-  cases input
+          n (Nat.ne_of_gt hN) inputs none) input := by
   rfl
 
 

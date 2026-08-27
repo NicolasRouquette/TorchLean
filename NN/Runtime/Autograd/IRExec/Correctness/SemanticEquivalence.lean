@@ -11,6 +11,7 @@ public import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon
 public import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceOpCases
 public import NN.Runtime.Autograd.IRExec.Correctness.Ops.Activations
 public import NN.Runtime.Autograd.IRExec.Correctness.Ops.Constants
+public import NN.Runtime.Autograd.IRExec.Correctness.Ops.Convolution
 public import NN.Runtime.Autograd.IRExec.Correctness.Ops.Elementwise
 public import NN.Runtime.Autograd.IRExec.Correctness.Ops.LinearAlgebra
 public import NN.Runtime.Autograd.IRExec.Correctness.Ops.Normalization
@@ -26,9 +27,13 @@ public import NN.Runtime.Autograd.IRExec.Correctness.Ops.Unary
 
 End-to-end semantic equivalence proof for the IR -> executable SSA graph bridge.
 
-This module proves semantic equivalence between:
+This module proves equivalence between two Lean-level graph interpretations:
 - `NN.IR.Graph.denoteAll*` (IR denotational semantics), and
-- `Runtime.Autograd.IRExec.lowerToForwardGraph` / `ForwardGraph.eval` (forward execution).
+- `Runtime.Autograd.IRExec.lowerToForwardGraph` / `ForwardGraph.eval` (the shape-indexed reference
+  evaluator).
+
+It does not identify that reference evaluator with eager tensor execution, native CPU kernels,
+CUDA, or LibTorch. Those implementations require their own refinement boundary.
 
 This module ties the per-op correctness lemmas together into the recursive preservation argument.
 
@@ -88,16 +93,16 @@ private theorem buildFrom_preserves_denotation
       st') :
     ∀ x : Tensor α inShape,
       NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-        (input := Spec.PackedTensor.mk (α := α) inShape x)
+        (input := Spec.SomeTensor.mk (α := α) inShape x)
         (i := i) (vals := denoteAllState (α := α) inShape st x) =
         .ok (denoteAllState (α := α) inShape st' x) := by
   classical
   intro x
   rcases st with ⟨ss, gd⟩
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
   -- The runtime context corresponding to the already-lowered prefix.
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
 
   by_cases hi : i < g.nodes.size
@@ -120,7 +125,7 @@ private theorem buildFrom_preserves_denotation
         -- Reduce the successful `getNode` and eliminate the resulting `do`-binder.
         simp (config := { failIfUnchanged := false })
           [hN] at hBuild
-        let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+        let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
         -- Tail correctness helper: wrap the recursive call so the termination side-goal is solved
         -- immediately at the call site.
         have tail
@@ -147,10 +152,10 @@ private theorem buildFrom_preserves_denotation
           (hEval :
             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                 (input := input) (vals := vals0) (i := i) =
-              .ok (Spec.PackedTensor.mk (α := α) τ (nodeData.eval ctx)))
+              .ok (Spec.SomeTensor.mk (α := α) τ (nodeData.eval ctx)))
           (hStep :
             denoteAllState (α := α) inShape st1 x =
-              vals0.push (Spec.PackedTensor.mk (α := α) τ (nodeData.eval ctx))) :
+              vals0.push (Spec.SomeTensor.mk (α := α) τ (nodeData.eval ctx))) :
             NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
                 (input := input) (i := i) (vals := vals0) =
               .ok (denoteAllState (α := α) inShape st' x) := by
@@ -208,26 +213,14 @@ private theorem buildFrom_preserves_denotation
           | minElem =>
               exact buildFrom_denoteAllFrom_min_elem (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n) hN hk hi hBuild0 tail
-            | maxPool2d kH kW stride =>
-                exact buildFrom_denoteAllFrom_max_pool2d (α := α) (g := g) (payload := payload)
-                  (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                  (kH := kH) (kW := kW) (stride := stride) hN hk hi hBuild0
-                  (fun st1 hRec => tail (st1 := st1) hRec)
-            | maxPool2dPad kH kW stride padding =>
-                exact buildFrom_denoteAllFrom_max_pool2d_pad (α := α) (g := g) (payload := payload)
-                  (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                  (kH := kH) (kW := kW) (stride := stride) (padding := padding) hN hk hi hBuild0
-                  (fun st1 hRec => tail (st1 := st1) hRec)
-            | avgPool2d kH kW stride =>
-                exact buildFrom_denoteAllFrom_avg_pool2d (α := α) (g := g) (payload := payload)
-                  (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                  (kH := kH) (kW := kW) (stride := stride) hN hk hi hBuild0
-                  (fun st1 hRec => tail (st1 := st1) hRec)
-            | avgPool2dPad kH kW stride padding =>
-                exact buildFrom_denoteAllFrom_avg_pool2d_pad (α := α) (g := g) (payload := payload)
-                  (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                  (kH := kH) (kW := kW) (stride := stride) (padding := padding) hN hk hi hBuild0
-                  (fun st1 hRec => tail (st1 := st1) hRec)
+          | maxPool config =>
+              exact buildFrom_denoteAllFrom_maxPool (α := α) (g := g) (payload := payload)
+                (gd := gd) (i := i) (st' := st') (x := x) (n := n) (config := config)
+                hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
+          | avgPool config =>
+              exact buildFrom_denoteAllFrom_avgPool (α := α) (g := g) (payload := payload)
+                (gd := gd) (i := i) (st' := st') (x := x) (n := n) (config := config)
+                hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
           | broadcastTo s₁ s₂ =>
               exact buildFrom_denoteAllFrom_broadcastTo (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n)
@@ -252,16 +245,14 @@ private theorem buildFrom_preserves_denotation
               exact buildFrom_denoteAllFrom_linear (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n)
                 hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
-          | conv2d inC outC kH kW stride padding =>
-              exact buildFrom_denoteAllFrom_conv2d (α := α) (g := g) (payload := payload)
-                (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride)
-                (padding := padding)
+          | conv config =>
+              exact buildFrom_denoteAllFrom_conv (α := α) (g := g) (payload := payload)
+                (gd := gd) (i := i) (st' := st') (x := x) (n := n) (config := config)
                 hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
-          | batchNorm2dNchwEval channels =>
-              exact buildFrom_denoteAllFrom_batchNorm2dNchwEval (α := α) (g := g)
+          | batchNormEval channelAxis channels =>
+              exact buildFrom_denoteAllFrom_batchNormEval (α := α) (g := g)
                 (payload := payload) (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                (channels := channels) hN hk hi hBuild0
+                (channelAxis := channelAxis) (channels := channels) hN hk hi hBuild0
                 (fun st1 hRec => tail (st1 := st1) hRec)
           | relu =>
               exact buildFrom_denoteAllFrom_relu (α := α) (g := g) (payload := payload)
@@ -315,14 +306,11 @@ private theorem buildFrom_preserves_denotation
           | concat axis =>
               have : False := (hNoConcat i n hN axis) hk
               cases this
-          | swap_first_two =>
-              exact buildFrom_denoteAllFrom_swap_first_two (α := α) (g := g) (payload := payload)
+          | transpose axis₁ axis₂ =>
+              exact buildFrom_denoteAllFrom_transpose (α := α) (g := g) (payload := payload)
                 (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
-          | transpose3dLastTwo =>
-              exact buildFrom_denoteAllFrom_transpose3dLastTwo (α := α) (g := g) (payload := payload)
-                (gd := gd) (i := i) (st' := st') (x := x) (n := n)
-                hN hk hi hBuild0 (fun st1 hRec => tail (st1 := st1) hRec)
+                (axis₁ := axis₁) (axis₂ := axis₂) hN hk hi hBuild0
+                (fun st1 hRec => tail (st1 := st1) hRec)
           | mseLoss =>
               have : False := (hNoMSE i n hN) hk
               cases this
@@ -354,7 +342,7 @@ theorem denoteAll_eq_of_lowerToForwardGraph
     (h : lowerToForwardGraph (α := α) g payload = .ok exec) :
     ∀ x : Tensor α exec.inShape,
       NN.IR.Graph.denoteAll (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) exec.inShape x) =
+          (input := Spec.SomeTensor.mk (α := α) exec.inShape x) =
         .ok (ForwardGraph.denoteAll (α := α) (e := exec) x) := by
   classical
   -- Unfold the lowering pass.
@@ -406,21 +394,21 @@ theorem denoteAll_eq_of_lowerToForwardGraph
               -- Evaluate node 0 (`.input`), then apply the semantic equivalence lemma from `i=1`.
               have h0 :
                   NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
-                      (input := Spec.PackedTensor.mk (α := α) n0.outShape x) (vals := #[]) (i := 0) =
-                    .ok (Spec.PackedTensor.mk (α := α) n0.outShape x) := by
+                      (input := Spec.SomeTensor.mk (α := α) n0.outShape x) (vals := #[]) (i := 0) =
+                    .ok (Spec.SomeTensor.mk (α := α) n0.outShape x) := by
                 simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
                   NN.IR.Graph.normalizeNodeOutput, hN0, hk0, NN.IR.Graph.expectShape,
                   throw_eq_error]
                 rfl
               have hTail :
                   NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-                      (input := Spec.PackedTensor.mk (α := α) n0.outShape x)
-                      (i := 1) (vals := #[Spec.PackedTensor.mk (α := α) n0.outShape x]) =
+                      (input := Spec.SomeTensor.mk (α := α) n0.outShape x)
+                      (i := 1) (vals := #[Spec.SomeTensor.mk (α := α) n0.outShape x]) =
                     .ok (denoteAllState (α := α) n0.outShape stFinal x) := by
                 have hInit :
                     denoteAllState (α := α) n0.outShape (st := (⟨[], .nil⟩ : State α n0.outShape)) x
                       =
-                      #[Spec.PackedTensor.mk (α := α) n0.outShape x] := by
+                      #[Spec.SomeTensor.mk (α := α) n0.outShape x] := by
                   simp
                 simpa [hInit] using
                   (buildFrom_preserves_denotation (α := α) (g := g) (payload := payload) (inShape :=

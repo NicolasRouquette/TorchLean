@@ -7,7 +7,8 @@ Authors: TorchLean Team
 module
 
 public import NN.API.CLI
-public import NN.API.Trainer.Manual.Core
+public import NN.API.Module
+public import NN.API.Trainer.Memory
 public import NN.API.Seeded
 public import NN.Runtime.Training.Log
 
@@ -50,19 +51,21 @@ deriving Repr
 
 /-- One fixed-sample run for an arbitrary scalar backend. -/
 def steps
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α] [_root_.TorchLean.Runtime.FromFloat α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {σ τ : Spec.Shape}
-    (mkModel : TorchLean.nn.Builder (TorchLean.nn.Sequential σ τ))
+    {α : Type} [_root_.Context α] [DecidableEq Shape] [ToString α] [_root_.TorchLean.Runtime.FromFloat α]
+    [Runtime.TensorTransfer α]
+    {inputShape targetShape : List Nat}
+    (mkModel : TorchLean.nn.Builder
+      (TorchLean.nn.Sequential inputShape targetShape))
     (mkModuleDef :
-      (model : TorchLean.nn.Sequential σ τ) →
-        TorchLean.Module.ObjectiveDef (TorchLean.nn.stateShapes model) [σ, τ])
+      (model : TorchLean.nn.Sequential inputShape targetShape) →
+        TorchLean.Module.ObjectiveDef Unit (TorchLean.nn.stateShapes model)
+          [Shape.ofList inputShape, Shape.ofList targetShape])
     (mkOptim :
-      (cast : Float → α) → (paramShapes : List Spec.Shape) →
+      (cast : Float → α) → (paramShapes : List Shape) →
         _root_.Runtime.Autograd.TorchLean.Optim.Optimizer α paramShapes)
     (cast : Float → α)
     (opts : _root_.Runtime.Autograd.Torch.Options)
-    (sample : TorchLean.Sample.Supervised α σ τ)
+    (sample : TorchLean.Sample.Supervised α inputShape targetShape)
     (steps : Nat)
     (cudaMemWatch : Nat := 0) :
     IO (LossPair α) := do
@@ -86,15 +89,17 @@ def steps
 
 /-- Fixed-sample run over Lean's `Float`, returning a full per-step loss curve. -/
 def curve
-    {σ τ : Spec.Shape}
-    (mkModel : TorchLean.nn.Builder (TorchLean.nn.Sequential σ τ))
+    {inputShape targetShape : List Nat}
+    (mkModel : TorchLean.nn.Builder
+      (TorchLean.nn.Sequential inputShape targetShape))
     (mkModuleDef :
-      (model : TorchLean.nn.Sequential σ τ) →
-        TorchLean.Module.ObjectiveDef (TorchLean.nn.stateShapes model) [σ, τ])
+      (model : TorchLean.nn.Sequential inputShape targetShape) →
+        TorchLean.Module.ObjectiveDef Unit (TorchLean.nn.stateShapes model)
+          [Shape.ofList inputShape, Shape.ofList targetShape])
     (mkOptim :
-      (paramShapes : List Spec.Shape) → _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float paramShapes)
+      (paramShapes : List Shape) → _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float paramShapes)
     (opts : _root_.Runtime.Autograd.Torch.Options)
-    (sample : TorchLean.Sample.Supervised Float σ τ)
+    (sample : TorchLean.Sample.Supervised Float inputShape targetShape)
     (steps : Nat)
     (cudaMemWatch : Nat := 0) :
     IO _root_.Runtime.Training.Curve := do

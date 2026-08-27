@@ -43,7 +43,7 @@ structure BackendProfile where
   /-- Operating-system, architecture, and accelerator capabilities available to planning. -/
   target : Target
   /-- Capsule modules used to construct and validate the profile's planning registry. -/
-  capsuleModules : List Registry.CapsuleModule := Registry.maintainedModules
+  capsuleModules : Array Registry.CapsuleModule := Registry.maintainedModules
   /-- Whether accepted nodes remain separate or share compatible scheduling/audit groups. -/
   groupingMode : GroupingMode := .coalesced
   deriving Repr
@@ -57,7 +57,7 @@ selection, grouping, or assurance policy.
 A new contribution replaces an existing module with the same name. Duplicate names within `modules`
 are still rejected when the profile is planned.
 -/
-def withCapsuleModules (p : BackendProfile) (modules : List Registry.CapsuleModule) :
+def withCapsuleModules (p : BackendProfile) (modules : Array Registry.CapsuleModule) :
     BackendProfile :=
   let names := modules.map (·.name)
   { p with
@@ -69,16 +69,16 @@ def availability (p : BackendProfile) : Availability :=
   p.target.declaredAvailability
 
 /-- Capsule registry selected by the profile. -/
-def registry (p : BackendProfile) : List KernelCapsule :=
+def registry (p : BackendProfile) : Array KernelCapsule :=
   Registry.flatten p.capsuleModules
 
 /-- Select capsules using the profile registry, target, and kernel policy. -/
-def planOps (p : BackendProfile) (ops : List BackendOp) : Except String KernelPlan := do
+def planOps (p : BackendProfile) (ops : Array BackendOp) : Except String KernelPlan := do
   Registry.validateModules p.capsuleModules
   NN.Backend.planOpsAvailable p.policy p.availability p.registry ops
 
 /-- Gate a planned operation sequence under the profile's assurance policy. -/
-def gateOps (p : BackendProfile) (ops : List BackendOp) : Except String GateResult := do
+def gateOps (p : BackendProfile) (ops : Array BackendOp) : Except String GateResult := do
   let plan ← p.planOps ops
   pure <| plan.gate p.policy.assurance
 

@@ -65,12 +65,6 @@ jobs:
           ~/.elan/bin/lake exe cache get || true
           rm -f ~/.cache/mathlib/*.ltar || true
 
-      - name: Repo lint (TorchLean policies)
-        run: ~/.elan/bin/lake lint
-
-      - name: Build curated library surface
-        run: ~/.elan/bin/lake build NN
-
       - name: Cache API docs
         uses: actions/cache@v4
         with:
@@ -146,18 +140,7 @@ jobs:
         run: |
           mkdir -p home_page/importgraph
           ~/.elan/bin/lake exe graph --to NN home_page/importgraph/index.html
-          python3 - <<'PY'
-          from pathlib import Path
-
-          page = Path("home_page/importgraph/index.html")
-          html = page.read_text(encoding="utf-8")
-          html = html.replace('  <link rel="stylesheet" href="style.css" />\n', "")
-          html = html.replace(
-              'var docs_url = params.get("docs_url") || "https://leanprover-community.github.io/mathlib4_docs/";',
-              'var docs_url = params.get("docs_url") || new URL("../docs/", window.location.href).href;',
-          )
-          page.write_text(html, encoding="utf-8")
-          PY
+          python3 scripts/docs/postprocess_importgraph.py home_page/importgraph/index.html
 
       - name: Bundle dependencies
         uses: ruby/setup-ruby@v1

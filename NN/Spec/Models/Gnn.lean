@@ -90,13 +90,13 @@ The `h_n : n > 0` assumption is only used to make the mean pooling well-defined 
 def GCN2Spec.forward
   {n inDim hidDim outDim : Nat}
   (m : GCN2Spec n inDim hidDim outDim α)
-  (x : Tensor α (.dim n (.dim inDim .scalar)))
+  (x : Tensor α [n, inDim])
   (h_n : n > 0) :
-  Tensor α (.dim outDim .scalar) :=
-  let hiddenFeatures : Tensor α (.dim n (.dim hidDim .scalar)) :=
+  Tensor α [outDim] :=
+  let hiddenFeatures : Tensor α [n, hidDim] :=
     reluSpec (Spec.gcnLayerSpec (α := α) (n := n) (inDim := inDim) (outDim := hidDim)
       m.inputLayer x)
-  let outputFeatures : Tensor α (.dim n (.dim outDim .scalar)) :=
+  let outputFeatures : Tensor α [n, outDim] :=
     Spec.gcnLayerSpec (α := α) (n := n) (inDim := hidDim) (outDim := outDim)
       m.outputLayer hiddenFeatures
   have hn0 : n ≠ 0 := Nat.ne_of_gt h_n
@@ -113,11 +113,11 @@ This mirrors the tuple returned by `Spec.gcn_layer_backward_spec`:
 -/
 structure GCNLayerGrads (n inDim outDim : Nat) (α : Type) where
   /-- d A. -/
-  dA : Tensor α (.dim n (.dim n .scalar))
+  dA : Tensor α [n, n]
   /-- d W. -/
-  dW : Tensor α (.dim inDim (.dim outDim .scalar))
+  dW : Tensor α [inDim, outDim]
   /-- db. -/
-  db : Tensor α (.dim outDim .scalar)
+  db : Tensor α [outDim]
 
 /-- Gradients for both layers of `GCN2Spec`. -/
 structure GCN2Grads (n inDim hidDim outDim : Nat) (α : Type) where
@@ -139,19 +139,19 @@ PyTorch analogy: this corresponds to what autograd would do for a graph built fr
 def GCN2Spec.backward
   {n inDim hidDim outDim : Nat}
   (m : GCN2Spec n inDim hidDim outDim α)
-  (x : Tensor α (.dim n (.dim inDim .scalar)))
-  (grad_output : Tensor α (.dim outDim .scalar))
+  (x : Tensor α [n, inDim])
+  (grad_output : Tensor α [outDim])
   (h_n : n > 0) :
   (GCN2Grads n inDim hidDim outDim α ×
-   Tensor α (.dim n (.dim inDim .scalar))) :=
+   Tensor α [n, inDim]) :=
 
   have hn0 : n ≠ 0 := Nat.ne_of_gt h_n
 
   -- Recompute forward intermediates (small and keeps the backward spec self-contained).
-  let hiddenPreActivation : Tensor α (.dim n (.dim hidDim .scalar)) :=
+  let hiddenPreActivation : Tensor α [n, hidDim] :=
     Spec.gcnLayerSpec (α := α) (n := n) (inDim := inDim) (outDim := hidDim)
       m.inputLayer x
-  let hiddenFeatures : Tensor α (.dim n (.dim hidDim .scalar)) :=
+  let hiddenFeatures : Tensor α [n, hidDim] :=
     reluSpec hiddenPreActivation
 
   -- Backprop through node-mean pooling:
@@ -161,7 +161,7 @@ def GCN2Spec.backward
     apply Shape.CanBroadcastTo.dim_eq
     exact Shape.CanBroadcastTo.scalar
 
-  let outputFeatureGrad : Tensor α (.dim n (.dim outDim .scalar)) :=
+  let outputFeatureGrad : Tensor α [n, outDim] :=
     scaleSpec (broadcastTo hB grad_output) (1 / (n : α))
 
   -- Output layer backward.
@@ -170,7 +170,7 @@ def GCN2Spec.backward
       m.outputLayer hiddenFeatures outputFeatureGrad hn0
 
   -- ReLU backward: dZ = dH ⊙ ReLU'(Z).
-  let hiddenPreActivationGrad : Tensor α (.dim n (.dim hidDim .scalar)) :=
+  let hiddenPreActivationGrad : Tensor α [n, hidDim] :=
     mulSpec hiddenFeatureGrad (reluDerivSpec hiddenPreActivation)
 
   -- Input layer backward.

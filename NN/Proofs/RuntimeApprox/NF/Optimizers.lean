@@ -82,8 +82,8 @@ def sgdContract : NumericalStepContract R (toSpec (β := β) (fexp := fexp) (rnd
   updateBound := fun lrError paramsError gradsError state params grads _ =>
     sgdStepBound (β := β) (fexp := fexp) (rnd := rnd)
       lrError paramsError gradsError state params grads
-  stateBoundReport := fun lrError => [("learning rate", lrError)]
-  stepDataReport := fun _ => []
+  stateBoundReport := fun lrError => #[("learning rate", lrError)]
+  stepDataReport := fun _ => #[]
   updateSound := by
     intro s stateS stateR lrError paramsS paramsR paramsError gradsS gradsR gradsError
       _stepData hlr hparams hgrads _hvalid
@@ -176,8 +176,9 @@ def momentumSGDContract :
     momentumSGDStepBound (β := β) (fexp := fexp) (rnd := rnd)
       stateError paramsError gradsError state params grads
   stateBoundReport := fun error =>
-    [("learning rate", error.lr), ("momentum", error.momentum), ("momentum buffer", error.buf)]
-  stepDataReport := fun _ => []
+    #[("learning rate", error.lr), ("momentum", error.momentum),
+      ("momentum buffer", error.buf)]
+  stepDataReport := fun _ => #[]
   updateSound := by
     intro s stateS stateR stateError paramsS paramsR paramsError gradsS gradsR gradsError
       _stepData hstate hparams hgrads _hvalid
@@ -605,11 +606,11 @@ def adamWContract : NumericalStepContract R
     adamWStepBound (β := β) (fexp := fexp) (rnd := rnd)
       stateError paramsError gradsError state params grads data
   stateBoundReport := fun error =>
-    [("learning rate", error.lr), ("beta1", error.beta1), ("beta2", error.beta2),
+    #[("learning rate", error.lr), ("beta1", error.beta1), ("beta2", error.beta2),
       ("epsilon", error.epsilon), ("weight decay", error.weightDecay),
       ("first moment", error.moment1), ("second moment", error.moment2)]
   stepDataReport := fun data =>
-    [("eta", data.eta), ("1 - beta1", data.derived.oneMinusBeta1),
+    #[("eta", data.eta), ("1 - beta1", data.derived.oneMinusBeta1),
       ("1 - beta2", data.derived.oneMinusBeta2),
       ("bias inverse 1", data.derived.biasInv1),
       ("bias inverse 2", data.derived.biasInv2),

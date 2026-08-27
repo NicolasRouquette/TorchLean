@@ -11,6 +11,7 @@ public import NN.MLTheory.CROWN.Cert.AlphaCROWN
 public import NN.MLTheory.CROWN.Proofs.GraphCertSoundness
 public import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
 public import NN.MLTheory.CROWN.Proofs.AlphaReLULowerBound
+public import NN.MLTheory.CROWN.Proofs.AlphaBetaReLUScalarSoundness
 public import NN.Proofs.Tensor.Basic
 import Mathlib.Tactic.Linarith
 
@@ -34,6 +35,7 @@ open Proofs.TensorAlgebra
 
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Cert
+open NN.MLTheory.CROWN.Proofs
 
 namespace AlphaCrownTransferSoundness
 
@@ -61,7 +63,7 @@ open CertSoundness
 /-- The designated input entry in `inputs` matches the concrete point `x` (up to a `castDimScalar`).
   -/
 def InputsMatch (inputs : Std.HashMap Nat Val) (ctx : AffineCtx)
-    (x : Tensor ℝ (.dim ctx.inputDim .scalar)) : Prop :=
+    (x : Tensor ℝ [ctx.inputDim]) : Prop :=
   ∃ v : Val,
     inputs[ctx.inputId]? = some v ∧
     ∃ h : v.n = ctx.inputDim,
@@ -76,18 +78,18 @@ def IBPEnclosesVals (ibp : Array (Option (FlatBox ℝ))) (vals : Array (Option V
     | _, _ => True
 
 /-- Well-formedness condition for α vectors: each component lies in `[0,1]`. -/
-def AlphaOK (alpha : Array (Option (FlatVec ℝ))) : Prop :=
+def AlphaOK (alpha : Array (Option (FlatTensor ℝ))) : Prop :=
   ∀ id : Nat, id < alpha.size →
     match alpha[id]! with
     | none => True
-    | some a => ∀ i : Fin a.n, (0 : ℝ) ≤ toVec a.v i ∧ toVec a.v i ≤ (1 : ℝ)
+    | some a => ∀ i : Fin a.n, (0 : ℝ) ≤ getScalar a.v i ∧ getScalar a.v i ≤ (1 : ℝ)
 
-/-! ## `Theorems.Semantics.encloses` ↔ componentwise inequalities (via `toVec`) -/
+/-! ## `Theorems.Semantics.encloses` ↔ componentwise inequalities (via `getScalar`) -/
 
-lemma encloses_iff_toVec {n : Nat}
-    (lo hi x : Tensor ℝ (.dim n .scalar)) :
+lemma encloses_iff_getScalar {n : Nat}
+    (lo hi x : Tensor ℝ [n]) :
     Theorems.Semantics.encloses (α := ℝ) { dim := n, lo := lo, hi := hi } x ↔
-      ∀ i : Fin n, toVec lo i ≤ toVec x i ∧ toVec x i ≤ toVec hi i := by
+      ∀ i : Fin n, getScalar lo i ≤ getScalar x i ∧ getScalar x i ≤ getScalar hi i := by
   cases lo with
   | dim flo =>
     cases hi with
@@ -103,7 +105,7 @@ lemma encloses_iff_toVec {n : Nat}
             | scalar u =>
               cases hx : fx i with
               | scalar v =>
-                simpa [Theorems.Semantics.encloses, getDimScalarFn, toVec, hlo, hhi, hx] using hi
+                simpa [Theorems.Semantics.encloses, getDimScalarFn, getScalar, hlo, hhi, hx] using hi
         · intro h i
           have hi := h i
           cases hlo : flo i with
@@ -112,17 +114,12 @@ lemma encloses_iff_toVec {n : Nat}
             | scalar u =>
               cases hx : fx i with
               | scalar v =>
-                simpa [Theorems.Semantics.encloses, getDimScalarFn, toVec, hlo, hhi, hx] using hi
+                simpa [Theorems.Semantics.encloses, getDimScalarFn, getScalar, hlo, hhi, hx] using hi
 
 /-! ## Small tensor algebra helpers -/
 
-@[simp] lemma real_numbers_one : (Numbers.one : ℝ) = (1 : ℝ) := rfl
-@[simp] lemma real_numbers_zero : (Numbers.zero : ℝ) = (0 : ℝ) := rfl
-@[simp] lemma real_one_one : (One.one : ℝ) = (1 : ℝ) := rfl
-@[simp] lemma real_zero_zero : (Zero.zero : ℝ) = (0 : ℝ) := rfl
-
 lemma add_spec_fill_zero_right {n : Nat}
-    (t : Tensor ℝ (.dim n .scalar)) :
+    (t : Tensor ℝ [n]) :
     Tensor.addSpec (α := ℝ) t (Spec.fill (α := ℝ) (0 : ℝ) (.dim n .scalar)) = t := by
   cases t with
   | dim ft =>
@@ -134,8 +131,8 @@ lemma add_spec_fill_zero_right {n : Nat}
           simp [Tensor.map2Spec, Spec.fill]
 
 lemma linear_spec_bias_zero_eq_matvec {m n : Nat}
-    (W : Tensor ℝ (.dim m (.dim n .scalar)))
-    (x : Tensor ℝ (.dim n .scalar)) :
+    (W : Tensor ℝ [m, n])
+    (x : Tensor ℝ [n]) :
     Spec.linearSpec (α := ℝ)
         { weights := W
           bias := Spec.fill (α := ℝ) (0 : ℝ) (.dim m .scalar) } x
@@ -148,7 +145,7 @@ lemma linear_spec_bias_zero_eq_matvec {m n : Nat}
 
 /-- `castDimScalar` composes as expected under transitive equalities. -/
 lemma castDimScalar_trans {n n' n'' : Nat}
-    (h₁ : n = n') (h₂ : n' = n'') (t : Tensor ℝ (.dim n .scalar)) :
+    (h₁ : n = n') (h₂ : n' = n'') (t : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) (Eq.trans h₁ h₂) t
       = castDimScalar (α := ℝ) h₂ (castDimScalar (α := ℝ) h₁ t) := by
   cases h₁
@@ -157,25 +154,25 @@ lemma castDimScalar_trans {n n' n'' : Nat}
 
 /-- `castDimScalar` is proof-irrelevant in its equality argument. -/
 lemma castDimScalar_proof_irrel {n n' : Nat}
-    (h₁ h₂ : n = n') (t : Tensor ℝ (.dim n .scalar)) :
+    (h₁ h₂ : n = n') (t : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) h₁ t = castDimScalar (α := ℝ) h₂ t := by
   have : h₁ = h₂ := Subsingleton.elim _ _
   cases this
   rfl
 
 @[simp] lemma castDimScalar_self {n : Nat}
-    (h : n = n) (t : Tensor ℝ (.dim n .scalar)) :
+    (h : n = n) (t : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) h t = t := by
   exact castDimScalar_proof_irrel h rfl t
 
-/-- `toVec` commutes with `castDimScalar` (up to `Fin.cast`). -/
-lemma toVec_castDimScalar {n n' : Nat} (h : n = n') (t : Tensor ℝ (.dim n .scalar)) (i : Fin n') :
-    toVec (castDimScalar (α := ℝ) (n := n) (n' := n') h t) i = toVec t (Fin.cast h.symm i) := by
+/-- `getScalar` commutes with `castDimScalar` (up to `Fin.cast`). -/
+lemma getScalar_castDimScalar {n n' : Nat} (h : n = n') (t : Tensor ℝ [n]) (i : Fin n') :
+    getScalar (castDimScalar (α := ℝ) (n := n) (n' := n') h t) i = getScalar t (Fin.cast h.symm i) := by
   cases h
   simp [castDimScalar]
 
 /-- `Activation.relu_spec` commutes with `castDimScalar`. -/
-lemma relu_spec_castDimScalar {n n' : Nat} (h : n = n') (t : Tensor ℝ (.dim n .scalar)) :
+lemma relu_spec_castDimScalar {n n' : Nat} (h : n = n') (t : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) (n := n) (n' := n') h (Activation.reluSpec (α := ℝ) t)
       =
     Activation.reluSpec (α := ℝ) (castDimScalar (α := ℝ) (n := n) (n' := n') h t) := by
@@ -183,7 +180,7 @@ lemma relu_spec_castDimScalar {n n' : Nat} (h : n = n') (t : Tensor ℝ (.dim n 
   rfl
 
 /-- A small `mat_vec_mul` cast lemma used for single-row “sum” encodings. -/
-lemma mat_vec_mul_fill1_castDimScalar {n n' : Nat} (h : n = n') (v : Tensor ℝ (.dim n .scalar)) :
+lemma mat_vec_mul_fill1_castDimScalar {n n' : Nat} (h : n = n') (v : Tensor ℝ [n]) :
     Spec.matVecMulSpec (α := ℝ)
         (Spec.fill (α := ℝ) (1 : ℝ) (.dim 1 (.dim n .scalar))) v
       =
@@ -195,7 +192,7 @@ lemma mat_vec_mul_fill1_castDimScalar {n n' : Nat} (h : n = n') (v : Tensor ℝ 
 
 /-- `affineEvalAt` commutes with casting the output dimension of an affine form. -/
 lemma affineEvalAt_castAffineOut {inDim outDim outDim' : Nat}
-    (h : outDim = outDim') (aff : AffineVec ℝ inDim outDim) (x : Tensor ℝ (.dim inDim .scalar)) :
+    (h : outDim = outDim') (aff : AffineVec ℝ inDim outDim) (x : Tensor ℝ [inDim]) :
     CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim := outDim')
         (NN.MLTheory.CROWN.Cert.castAffineOut (α := ℝ) (n := inDim) (m := outDim) (m' := outDim') h
           aff) x
@@ -207,7 +204,7 @@ lemma affineEvalAt_castAffineOut {inDim outDim outDim' : Nat}
 
 /-- `boundsEvalAt` commutes with casting the output dimension of affine bounds. -/
 lemma boundsEvalAt_castAffineOut (xin : FlatAffineBounds ℝ) {outDim' : Nat}
-    (h : xin.outDim = outDim') (x : Tensor ℝ (.dim xin.inDim .scalar)) :
+    (h : xin.outDim = outDim') (x : Tensor ℝ [xin.inDim]) :
     CrownCertSoundness.boundsEvalAt (α := ℝ)
         { inDim := xin.inDim
           outDim := outDim'
@@ -224,7 +221,7 @@ lemma boundsEvalAt_castAffineOut (xin : FlatAffineBounds ℝ) {outDim' : Nat}
 
 /-- `Semantics.encloses` is preserved under casting a box and point to an equal dimension. -/
 lemma sem_encloses_castDim {B : FlatBox ℝ} {n' : Nat}
-    (h : B.dim = n') (x : Tensor ℝ (.dim B.dim .scalar)) :
+    (h : B.dim = n') (x : Tensor ℝ [B.dim]) :
     Theorems.Semantics.encloses (α := ℝ) B x →
       Theorems.Semantics.encloses (α := ℝ)
         { dim := n'
@@ -239,7 +236,7 @@ lemma sem_encloses_castDim {B : FlatBox ℝ} {n' : Nat}
 
 /-- `Semantics.encloses` respects definitional equality of boxes. -/
 lemma sem_encloses_of_eq {B1 B2 : FlatBox ℝ}
-    (h : B1 = B2) (x : Tensor ℝ (.dim B1.dim .scalar)) :
+    (h : B1 = B2) (x : Tensor ℝ [B1.dim]) :
     Theorems.Semantics.encloses (α := ℝ) B1 x →
       Theorems.Semantics.encloses (α := ℝ) B2
         (castDimScalar (α := ℝ) (congrArg FlatBox.dim h) x) := by
@@ -249,7 +246,7 @@ lemma sem_encloses_of_eq {B1 B2 : FlatBox ℝ}
 
 /-- `Semantics.encloses` respects definitional equality of values. -/
 lemma sem_encloses_value_eq {B : FlatBox ℝ}
-    {x y : Tensor ℝ (.dim B.dim .scalar)} (hxy : x = y) :
+    {x y : Tensor ℝ [B.dim]} (hxy : x = y) :
     Theorems.Semantics.encloses (α := ℝ) B x →
       Theorems.Semantics.encloses (α := ℝ) B y := by
   intro hx
@@ -258,8 +255,8 @@ lemma sem_encloses_value_eq {B : FlatBox ℝ}
 
 /-- `EnclosesAtInput` is preserved under casting the output dimension of bounds and value payloads.
   -/
-lemma enclosesAtInput_castOut (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
-    (xin : FlatAffineBounds ℝ) (vp : FlatVec ℝ) {outDim' : Nat}
+lemma enclosesAtInput_castOut (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
+    (xin : FlatAffineBounds ℝ) (vp : FlatTensor ℝ) {outDim' : Nat}
     (hout : xin.outDim = outDim') (hvout : vp.n = outDim') :
     CrownCertSoundness.EnclosesAtInput (α := ℝ) ctx x xin vp →
       CrownCertSoundness.EnclosesAtInput (α := ℝ) ctx x
@@ -308,7 +305,7 @@ lemma enclosesAtInput_castOut (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputD
   -- Avoid rewriting dependent `boundsEvalAt` equalities: transfer componentwise between the
   -- explicit cast box
   -- and `boundsEvalAt` of the casted affine bound.
-  let x0 : Tensor ℝ (.dim xin.inDim .scalar) :=
+  let x0 : Tensor ℝ [xin.inDim] :=
     castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim) hinDim.symm x
   let B1 : FlatBox ℝ :=
     boundsEvalAt (α := ℝ)
@@ -337,9 +334,9 @@ lemma enclosesAtInput_castOut (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputD
 
   have hB1 : Theorems.Semantics.encloses (α := ℝ) B1 (castDimScalar (α := ℝ) hvout vp.v) := by
     have hcomp :=
-      (encloses_iff_toVec (n := outDim') (lo := B2.lo) (hi := B2.hi)
+      (encloses_iff_getScalar (n := outDim') (lo := B2.lo) (hi := B2.hi)
         (x := castDimScalar (α := ℝ) hvout vp.v)).1 hB2
-    refine (encloses_iff_toVec (n := outDim') (lo := B1.lo) (hi := B1.hi)
+    refine (encloses_iff_getScalar (n := outDim') (lo := B1.lo) (hi := B1.hi)
       (x := castDimScalar (α := ℝ) hvout vp.v)).2 ?_
     intro i
     have hi := hcomp i
@@ -354,7 +351,7 @@ lemma enclosesAtInput_castOut (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputD
 /-! ## Matrix sign-splitting bound (pointwise, over `ℝ`) -/
 
 lemma get2_mat_pos {m n : Nat}
-    (W : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) :
+    (W : Tensor ℝ [m, n]) (i : Fin m) (j : Fin n) :
     Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i j =
       (if Spec.get2 W i j > 0 then Spec.get2 W i j else 0) := by
   cases W with
@@ -366,7 +363,7 @@ lemma get2_mat_pos {m n : Nat}
         simp [NN.MLTheory.CROWN.IBP.matPos, Spec.get2_eq, Spec.get_eq, hrow, hcol]
 
 lemma get2_mat_neg {m n : Nat}
-    (W : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) :
+    (W : Tensor ℝ [m, n]) (i : Fin m) (j : Fin n) :
     Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i j =
       (if Spec.get2 W i j > 0 then 0 else Spec.get2 W i j) := by
   cases W with
@@ -398,9 +395,9 @@ lemma signSplit_term_lower (w l u x : ℝ) (hlx : l ≤ x) (hxu : x ≤ u) :
     simpa [hw, add_assoc, add_left_comm, add_comm] using this
 
 theorem encloses_linear_signSplit {m n : Nat}
-    (W : Tensor ℝ (.dim m (.dim n .scalar)))
-    (b : Tensor ℝ (.dim m .scalar))
-    (lo hi x : Tensor ℝ (.dim n .scalar))
+    (W : Tensor ℝ [m, n])
+    (b : Tensor ℝ [m])
+    (lo hi x : Tensor ℝ [n])
     (hx : Theorems.Semantics.encloses (α := ℝ) { dim := n, lo := lo, hi := hi } x) :
     Theorems.Semantics.encloses (α := ℝ)
       { dim := m
@@ -422,105 +419,105 @@ theorem encloses_linear_signSplit {m n : Nat}
             b }
       (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) W x) b) := by
   classical
-  have hx' := (encloses_iff_toVec (lo := lo) (hi := hi) (x := x)).1 hx
-  refine (encloses_iff_toVec (n := m) (lo := _) (hi := _) (x := _)).2 ?_
+  have hx' := (encloses_iff_getScalar (lo := lo) (hi := hi) (x := x)).1 hx
+  refine (encloses_iff_getScalar (n := m) (lo := _) (hi := _) (x := _)).2 ?_
   intro i
   -- Expand all mat-vec products into finite sums.
   have hW :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ) W x) i =
-        ∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k) := by
-    simpa using (Spec.toVec_mat_vec_mul_spec (A := W) (v := x) (i := i))
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ) W x) i =
+        ∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k) := by
+    simpa using (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := W) (v := x) (i := i))
   have hPos_lo :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ)
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ)
           (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) lo) i =
         ∑ k : Fin n,
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             lo k) := by
     simpa using
-      (Spec.toVec_mat_vec_mul_spec
+      (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec
         (A := NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) (v := lo) (i := i))
   have hNeg_hi :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ)
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ)
           (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) hi) i =
         ∑ k : Fin n,
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             hi k) := by
     simpa using
-      (Spec.toVec_mat_vec_mul_spec
+      (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec
         (A := NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) (v := hi) (i := i))
   have hPos_hi :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ)
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ)
           (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) hi) i =
         ∑ k : Fin n,
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             hi k) := by
     simpa using
-      (Spec.toVec_mat_vec_mul_spec
+      (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec
         (A := NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) (v := hi) (i := i))
   have hNeg_lo :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ)
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ)
           (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) lo) i =
         ∑ k : Fin n,
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             lo k) := by
     simpa using
-      (Spec.toVec_mat_vec_mul_spec
+      (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec
         (A := NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) (v := lo) (i := i))
 
   have hUpperTerm :
       ∀ k : Fin n,
-        (Spec.get2 W i k) * (Spec.toVec x k) ≤
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+        (Spec.get2 W i k) * (Spec.Tensor.getScalar x k) ≤
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             hi k) +
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             lo k) := by
     intro k
     have hk := hx' k
     have hpos := get2_mat_pos (W := W) i k
     have hneg := get2_mat_neg (W := W) i k
-    have := signSplit_term_upper (w := Spec.get2 W i k) (l := Spec.toVec lo k) (u := Spec.toVec hi
+    have := signSplit_term_upper (w := Spec.get2 W i k) (l := Spec.Tensor.getScalar lo k) (u := Spec.Tensor.getScalar hi
       k)
-      (x := Spec.toVec x k) hk.1 hk.2
+      (x := Spec.Tensor.getScalar x k) hk.1 hk.2
     simpa [hpos, hneg, mul_add, add_mul, add_assoc, add_left_comm, add_comm] using this
 
   have hLowerTerm :
       ∀ k : Fin n,
-        (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+        (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
           lo k) +
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             hi k)
-            ≤ (Spec.get2 W i k) * (Spec.toVec x k) := by
+            ≤ (Spec.get2 W i k) * (Spec.Tensor.getScalar x k) := by
     intro k
     have hk := hx' k
     have hpos := get2_mat_pos (W := W) i k
     have hneg := get2_mat_neg (W := W) i k
-    have := signSplit_term_lower (w := Spec.get2 W i k) (l := Spec.toVec lo k) (u := Spec.toVec hi
+    have := signSplit_term_lower (w := Spec.get2 W i k) (l := Spec.Tensor.getScalar lo k) (u := Spec.Tensor.getScalar hi
       k)
-      (x := Spec.toVec x k) hk.1 hk.2
+      (x := Spec.Tensor.getScalar x k) hk.1 hk.2
     simpa [hpos, hneg, mul_add, add_mul, add_assoc, add_left_comm, add_comm] using this
 
   have hUpperSum :
-      (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) ≤
+      (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) ≤
         (∑ k : Fin n,
           ((Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) *
-            (Spec.toVec hi k) +
+            (Spec.Tensor.getScalar hi k) +
            (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) *
-             (Spec.toVec lo k))) := by
+             (Spec.Tensor.getScalar lo k))) := by
     classical
     simpa using (Finset.sum_le_sum (s := Finset.univ) (fun k _ => hUpperTerm k))
 
   have hLowerSum :
       (∑ k : Fin n,
-        ((Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+        ((Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
           lo k) +
-         (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+         (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
            hi k)))
-          ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) := by
+          ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) := by
     classical
     simpa using (Finset.sum_le_sum (s := Finset.univ) (fun k _ => hLowerTerm k))
 
   have hlo :
-      Spec.toVec
+      Spec.Tensor.getScalar
           (Tensor.addSpec (α := ℝ)
             (Tensor.addSpec (α := ℝ)
               (Spec.matVecMulSpec (α := ℝ) (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n :=
@@ -529,27 +526,27 @@ theorem encloses_linear_signSplit {m n : Nat}
                 n) W) hi))
             b) i
         ≤
-  Spec.toVec (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) W x) b) i := by
-    -- Rewrite `sum (a+b)` into `sum a + sum b` to match `toVec` expansions.
+  Spec.Tensor.getScalar (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) W x) b) i := by
+    -- Rewrite `sum (a+b)` into `sum a + sum b` to match `getScalar` expansions.
     have hLowerSum' :
         (∑ k : Fin n,
             (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) *
-              (Spec.toVec lo k)) +
+              (Spec.Tensor.getScalar lo k)) +
           (∑ k : Fin n,
             (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) *
-              (Spec.toVec hi k))
-            ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) := by
+              (Spec.Tensor.getScalar hi k))
+            ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) := by
       -- Start from `hLowerSum` and distribute the sum.
       let f : Fin n → ℝ :=
         fun k =>
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             lo k)
       let g : Fin n → ℝ :=
         fun k =>
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             hi k)
       have hLowerSum_fg :
-          (∑ k : Fin n, (f k + g k)) ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) := by
+          (∑ k : Fin n, (f k + g k)) ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) := by
         simpa [f, g] using hLowerSum
       have hdist : (∑ k : Fin n, (f k + g k)) = (∑ k : Fin n, f k) + (∑ k : Fin n, g k) := by
         simp [Finset.sum_add_distrib, f, g]
@@ -557,18 +554,18 @@ theorem encloses_linear_signSplit {m n : Nat}
     have hLowerSum_swapped :
         (∑ k : Fin n,
             (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) *
-              (Spec.toVec hi k)) +
+              (Spec.Tensor.getScalar hi k)) +
           (∑ k : Fin n,
             (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) *
-              (Spec.toVec lo k))
-          ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) := by
+              (Spec.Tensor.getScalar lo k))
+          ≤ (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) := by
       simpa [add_comm, add_left_comm, add_assoc] using hLowerSum'
-    simp [toVec_add_spec, hW, hPos_lo, hNeg_hi, hLowerSum_swapped, add_comm]
+    simp [getScalar_add_spec, hW, hPos_lo, hNeg_hi, hLowerSum_swapped, add_comm]
 
   have hhi :
-      Spec.toVec (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) W x) b) i
+      Spec.Tensor.getScalar (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) W x) b) i
         ≤
-      Spec.toVec
+      Spec.Tensor.getScalar
           (Tensor.addSpec (α := ℝ)
             (Tensor.addSpec (α := ℝ)
               (Spec.matVecMulSpec (α := ℝ) (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n :=
@@ -577,37 +574,37 @@ theorem encloses_linear_signSplit {m n : Nat}
                 n) W) lo))
             b) i := by
     have hUpperSum' :
-        (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) ≤
+        (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) ≤
           (∑ k : Fin n,
               (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) *
-                (Spec.toVec hi k)) +
+                (Spec.Tensor.getScalar hi k)) +
             (∑ k : Fin n,
               (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) *
-                (Spec.toVec lo k)) := by
+                (Spec.Tensor.getScalar lo k)) := by
       let f : Fin n → ℝ :=
         fun k =>
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             hi k)
       let g : Fin n → ℝ :=
         fun k =>
-          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.toVec
+          (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) * (Spec.Tensor.getScalar
             lo k)
       have hUpperSum_fg :
-          (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) ≤ (∑ k : Fin n, (f k + g k)) := by
+          (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) ≤ (∑ k : Fin n, (f k + g k)) := by
         simpa [f, g] using hUpperSum
       have hdist : (∑ k : Fin n, (f k + g k)) = (∑ k : Fin n, f k) + (∑ k : Fin n, g k) := by
         simp [Finset.sum_add_distrib, f, g]
       simpa [hdist, f, g] using hUpperSum_fg
     have hUpperSum_swapped :
-        (∑ k : Fin n, (Spec.get2 W i k) * (Spec.toVec x k)) ≤
+        (∑ k : Fin n, (Spec.get2 W i k) * (Spec.Tensor.getScalar x k)) ≤
           (∑ k : Fin n,
               (Spec.get2 (NN.MLTheory.CROWN.IBP.matNeg (α := ℝ) (m := m) (n := n) W) i k) *
-                (Spec.toVec lo k)) +
+                (Spec.Tensor.getScalar lo k)) +
             (∑ k : Fin n,
               (Spec.get2 (NN.MLTheory.CROWN.IBP.matPos (α := ℝ) (m := m) (n := n) W) i k) *
-                (Spec.toVec hi k)) := by
+                (Spec.Tensor.getScalar hi k)) := by
       simpa [add_comm, add_left_comm, add_assoc] using hUpperSum'
-    simp [toVec_add_spec, hW, hPos_hi, hNeg_lo, hUpperSum_swapped, add_comm]
+    simp [getScalar_add_spec, hW, hPos_hi, hNeg_lo, hUpperSum_swapped, add_comm]
 
   exact ⟨hlo, hhi⟩
 
@@ -709,50 +706,12 @@ lemma phaseRelaxLowerScalar_slope_nonneg (l u a : ℝ) (ph : ReLUPhase) (ha0 : 0
     0 ≤ (phaseRelaxLowerScalar (α := ℝ) l u a ph).slope := by
   cases ph <;> simp [phaseRelaxLowerScalar, alphaRelaxLowerScalar_slope_nonneg, ha0]
 
-lemma phaseRelaxLowerScalar_sound
-    (l u a x : ℝ) (hlx : l ≤ x) (hxu : x ≤ u) (ha0 : 0 ≤ a) (ha1 : a ≤ 1)
-    (ph : ReLUPhase) (hcons : phaseConsistentScalar? (α := ℝ) l u ph = some ()) :
-    let rp := phaseRelaxLowerScalar (α := ℝ) l u a ph
-    rp.slope * x + rp.bias ≤ Activation.Math.reluSpec (α := ℝ) x := by
-  cases ph with
-  | inactive =>
-      -- rp = 0, so this is `0 ≤ relu(x)`.
-      simp [phaseRelaxLowerScalar, Activation.Math.reluSpec]
-  | active =>
-      have hl0 : (0 : ℝ) ≤ l := phaseConsistentScalar?_active (l := l) (u := u) hcons
-      have hx0 : (0 : ℝ) ≤ x := le_trans hl0 hlx
-      simp [phaseRelaxLowerScalar, Activation.Math.reluSpec, max_eq_left hx0]
-  | unstable =>
-      -- Reduce to α-CROWN's lower relaxation.
-      simpa [phaseRelaxLowerScalar] using
-        (NN.MLTheory.CROWN.Proofs.alphaRelaxLowerScalar_sound
-          (lower := l) (upper := u) (alpha := a) (input := x) hlx hxu ha0 ha1)
-
-lemma phaseRelaxUpperScalar_sound
-    (l u x : ℝ) (hlx : l ≤ x) (hxu : x ≤ u)
-    (ph : ReLUPhase) (hcons : phaseConsistentScalar? (α := ℝ) l u ph = some ()) :
-    let rp := phaseRelaxUpperScalar (α := ℝ) l u ph
-    Activation.Math.reluSpec (α := ℝ) x ≤ rp.slope * x + rp.bias := by
-  cases ph with
-  | inactive =>
-      have hu0 : u ≤ 0 := phaseConsistentScalar?_inactive (l := l) (u := u) hcons
-      have hx0 : x ≤ 0 := le_trans hxu hu0
-      simp [phaseRelaxUpperScalar, Activation.Math.reluSpec, max_eq_right hx0]
-  | active =>
-      have hl0 : (0 : ℝ) ≤ l := phaseConsistentScalar?_active (l := l) (u := u) hcons
-      have hx0 : (0 : ℝ) ≤ x := le_trans hl0 hlx
-      simp [phaseRelaxUpperScalar, Activation.Math.reluSpec, max_eq_left hx0]
-  | unstable =>
-      -- Reduce to the runtime upper relaxation.
-      simpa [phaseRelaxUpperScalar] using
-        (relu_relax_scalar_upper_real_runtime (l := l) (u := u) (x := x) hlx hxu)
-
-/-! ## ReLU transfer helpers (toVec-level) -/
+/-! ## ReLU transfer helpers (getScalar-level) -/
 
 lemma defaultAlphaVec_range {n : Nat}
-    (lo hi : Tensor ℝ (.dim n .scalar)) :
-    ∀ i : Fin n, (0 : ℝ) ≤ toVec (defaultAlphaVec (α := ℝ) (n := n) lo hi) i ∧
-      toVec (defaultAlphaVec (α := ℝ) (n := n) lo hi) i ≤ (1 : ℝ) := by
+    (lo hi : Tensor ℝ [n]) :
+    ∀ i : Fin n, (0 : ℝ) ≤ getScalar (defaultAlphaVec (α := ℝ) (n := n) lo hi) i ∧
+      getScalar (defaultAlphaVec (α := ℝ) (n := n) lo hi) i ≤ (1 : ℝ) := by
   classical
   cases lo with
   | dim flo =>
@@ -768,23 +727,23 @@ lemma defaultAlphaVec_range {n : Nat}
           have hzero : (Numbers.zero : ℝ) = (0 : ℝ) := by rfl
           by_cases h : u > (-l)
           ·
-            simp [defaultAlphaVec, toVec, hlo, hhi, h, hone, hzero]
+            simp [defaultAlphaVec, getScalar, hlo, hhi, h, hone, hzero]
           ·
-            simp [defaultAlphaVec, toVec, hlo, hhi, h, hone, hzero]
+            simp [defaultAlphaVec, getScalar, hlo, hhi, h, hone, hzero]
 
-lemma toVec_relu_spec {n : Nat} (t : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
-    toVec (Activation.reluSpec (α := ℝ) t) i =
-      Activation.Math.reluSpec (α := ℝ) (toVec t i) := by
+lemma getScalar_relu_spec {n : Nat} (t : Tensor ℝ [n]) (i : Fin n) :
+    getScalar (Activation.reluSpec (α := ℝ) t) i =
+      Activation.Math.reluSpec (α := ℝ) (getScalar t i) := by
   cases t with
   | dim ft =>
       cases hti : ft i with
       | scalar x =>
-          simp [Activation.reluSpec, Tensor.mapSpec, toVec, hti]
+          simp [Activation.reluSpec, Tensor.mapSpec, getScalar, hti]
 
-lemma toVec_runtime_relu_relax_vector {n : Nat}
-    (lo hi : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
-    toVec (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ) (n := n) lo hi) i =
-      NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) (toVec lo i) (toVec hi i) := by
+lemma getScalar_runtime_relu_relax_vector {n : Nat}
+    (lo hi : Tensor ℝ [n]) (i : Fin n) :
+    getScalar (NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := ℝ) (n := n) lo hi) i =
+      NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxScalar (α := ℝ) (getScalar lo i) (getScalar hi i) := by
   classical
   cases lo with
   | dim flo =>
@@ -794,12 +753,12 @@ lemma toVec_runtime_relu_relax_vector {n : Nat}
       | scalar l =>
         cases hhi : fhi i with
         | scalar u =>
-          simp [NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector, toVec, hlo, hhi]
+          simp [NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector, getScalar, hlo, hhi]
 
-lemma toVec_alphaRelaxLowerVec {n : Nat}
-    (lo hi αv : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
-    toVec (alphaRelaxLowerVec (α := ℝ) (n := n) lo hi αv) i =
-      alphaRelaxLowerScalar (α := ℝ) (toVec lo i) (toVec hi i) (toVec αv i) := by
+lemma getScalar_alphaRelaxLowerVec {n : Nat}
+    (lo hi αv : Tensor ℝ [n]) (i : Fin n) :
+    getScalar (alphaRelaxLowerVec (α := ℝ) (n := n) lo hi αv) i =
+      alphaRelaxLowerScalar (α := ℝ) (getScalar lo i) (getScalar hi i) (getScalar αv i) := by
   classical
   cases lo with
   | dim flo =>
@@ -813,25 +772,25 @@ lemma toVec_alphaRelaxLowerVec {n : Nat}
           | scalar u =>
             cases ha : fa i with
             | scalar a =>
-              simp [alphaRelaxLowerVec, toVec, hlo, hhi, ha]
+              simp [alphaRelaxLowerVec, getScalar, hlo, hhi, ha]
 
-lemma toVec_affineEvalAt_relu_propagate_affine
+lemma getScalar_affineEvalAt_relu_propagate_affine
     {inDim hidDim : Nat}
-    (relax : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax ℝ) (.dim hidDim .scalar))
+    (relax : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax ℝ) [hidDim])
     (aff : AffineVec ℝ inDim hidDim)
-    (x : Tensor ℝ (.dim inDim .scalar)) (i : Fin hidDim) :
-    toVec
+    (x : Tensor ℝ [inDim]) (i : Fin hidDim) :
+    getScalar
         (CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim := hidDim)
           (NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine (α := ℝ)
             (inDim := inDim) (hidDim := hidDim) relax aff) x) i
       =
-      let rp := toVec relax i
+      let rp := getScalar relax i
       rp.slope *
-          toVec (CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim := hidDim) aff x)
+          getScalar (CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim := hidDim) aff x)
             i +
         rp.bias := by
   classical
-  -- Reduce everything to scalar coordinates via `toVec_*` lemmas.
+  -- Reduce everything to scalar coordinates via `getScalar_*` lemmas.
   cases relax with
   | dim r =>
     cases aff with
@@ -860,20 +819,20 @@ lemma toVec_affineEvalAt_relu_propagate_affine
                 cases hcol : cols j with
                 | scalar aij =>
                   simp [NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine, Spec.get2, Spec.get,
-                    Spec.getAtSpec,
+                    Spec.get,
                     hri, hrow, hcol]
             have hc' :
-                toVec
+                getScalar
                     (NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine (α := ℝ)
                       (inDim := inDim) (hidDim := hidDim) (Tensor.dim r)
                         { A := Tensor.dim rows, c := Tensor.dim bias }).c
                     i
                   =
-                  rp.slope * toVec (Tensor.dim bias) i + rp.bias := by
+                  rp.slope * getScalar (Tensor.dim bias) i + rp.bias := by
               cases hbi : bias i with
               | scalar ci =>
-                simp [NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine, toVec, hri, hbi]
-            -- Compute both sides pointwise using `toVec_add_spec` and `toVec_mat_vec_mul_spec`.
+                simp [NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine, getScalar, hri, hbi]
+            -- Compute both sides pointwise using `getScalar_add_spec` and `getScalar_mat_vec_mul_spec`.
             let A' :=
               (NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine (α := ℝ)
                 (inDim := inDim) (hidDim := hidDim) (Tensor.dim r)
@@ -884,58 +843,58 @@ lemma toVec_affineEvalAt_relu_propagate_affine
                   { A := Tensor.dim rows, c := Tensor.dim bias }).c
 
             have hL_add :
-                toVec (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) A' x) c') i
+                getScalar (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) A' x) c') i
                   =
-                  toVec (Spec.matVecMulSpec (α := ℝ) A' x) i + toVec c' i := by
-              simp [Spec.toVec_add_spec]
+                  getScalar (Spec.matVecMulSpec (α := ℝ) A' x) i + getScalar c' i := by
+              simp [Spec.getScalar_add_spec]
 
             have hR_add :
-                toVec (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) (Tensor.dim rows) x)
+                getScalar (Tensor.addSpec (α := ℝ) (Spec.matVecMulSpec (α := ℝ) (Tensor.dim rows) x)
                   (Tensor.dim bias)) i
                   =
-                  toVec (Spec.matVecMulSpec (α := ℝ) (Tensor.dim rows) x) i + toVec (Tensor.dim
+                  getScalar (Spec.matVecMulSpec (α := ℝ) (Tensor.dim rows) x) i + getScalar (Tensor.dim
                     bias) i := by
-              simp [Spec.toVec_add_spec]
+              simp [Spec.getScalar_add_spec]
 
             -- Expand the mat-vec products.
             have hL_mat :
-                toVec (Spec.matVecMulSpec (α := ℝ) A' x) i
+                getScalar (Spec.matVecMulSpec (α := ℝ) A' x) i
                   =
-                  ∑ k : Fin inDim, (Spec.get2 A' i k) * (toVec x k) := by
-              exact (Spec.toVec_mat_vec_mul_spec (A := A') (v := x) (i := i))
+                  ∑ k : Fin inDim, (Spec.get2 A' i k) * (getScalar x k) := by
+              exact (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := A') (v := x) (i := i))
             have hR_mat :
-                toVec (Spec.matVecMulSpec (α := ℝ) (Tensor.dim rows) x) i
+                getScalar (Spec.matVecMulSpec (α := ℝ) (Tensor.dim rows) x) i
                   =
-                  ∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k) * (toVec x k) := by
-              exact (Spec.toVec_mat_vec_mul_spec (A := (Tensor.dim rows)) (v := x) (i := i))
+                  ∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k) * (getScalar x k) := by
+              exact (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := (Tensor.dim rows)) (v := x) (i := i))
 
             -- Rewrite the scaled-matrix sum to factor out `rp.slope`.
             have hscale :
-                (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k * rp.slope) * toVec x k)
+                (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k * rp.slope) * getScalar x k)
                   =
-                  rp.slope * (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k) * toVec x k) := by
+                  rp.slope * (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k) * getScalar x k) := by
               calc
-                (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k * rp.slope) * toVec x k)
+                (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k * rp.slope) * getScalar x k)
                     =
-                    ∑ k : Fin inDim, rp.slope * ((Spec.get2 (Tensor.dim rows) i k) * toVec x k) :=
+                    ∑ k : Fin inDim, rp.slope * ((Spec.get2 (Tensor.dim rows) i k) * getScalar x k) :=
                       by
                       refine Finset.sum_congr rfl ?_
                       intro k hk
-                      simp [mul_left_comm, mul_comm]
-                _ = rp.slope * (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k) * toVec x k) :=
+                      ring
+                _ = rp.slope * (∑ k : Fin inDim, (Spec.get2 (Tensor.dim rows) i k) * getScalar x k) :=
                   by
                       simpa using
                         (Finset.mul_sum (a := rp.slope) (s := Finset.univ)
-                          (f := fun k : Fin inDim => (Spec.get2 (Tensor.dim rows) i k) * toVec x
+                          (f := fun k : Fin inDim => (Spec.get2 (Tensor.dim rows) i k) * getScalar x
                             k)).symm
 
             have hscaleAlt :
-                (∑ k : Fin inDim, rp.slope * (toVec x k * Spec.get2 (Tensor.dim rows) i k))
+                (∑ k : Fin inDim, rp.slope * (getScalar x k * Spec.get2 (Tensor.dim rows) i k))
                   =
-                  rp.slope * (∑ k : Fin inDim, toVec x k * Spec.get2 (Tensor.dim rows) i k) := by
+                  rp.slope * (∑ k : Fin inDim, getScalar x k * Spec.get2 (Tensor.dim rows) i k) := by
               simpa [mul_assoc, mul_left_comm, mul_comm] using
                 (Finset.mul_sum (a := rp.slope) (s := Finset.univ)
-                  (f := fun k : Fin inDim => toVec x k * Spec.get2 (Tensor.dim rows) i k)).symm
+                  (f := fun k : Fin inDim => getScalar x k * Spec.get2 (Tensor.dim rows) i k)).symm
 
             -- Put everything together.
             have hget2' :
@@ -946,14 +905,14 @@ lemma toVec_affineEvalAt_relu_propagate_affine
 
             -- Unfold `affineEvalAt` on both sides and finish by ring.
             have :
-                toVec
+                getScalar
                     (CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim := hidDim)
                       (NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine (α := ℝ)
                         (inDim := inDim) (hidDim := hidDim) (Tensor.dim r)
                           { A := Tensor.dim rows, c := Tensor.dim bias }) x) i
                   =
                   rp.slope *
-                      toVec (CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim :=
+                      getScalar (CrownCertSoundness.affineEvalAt (α := ℝ) (inDim := inDim) (outDim :=
                         hidDim)
                         { A := Tensor.dim rows, c := Tensor.dim bias } x) i +
                     rp.bias := by
@@ -963,8 +922,9 @@ lemma toVec_affineEvalAt_relu_propagate_affine
               -- Replace `get2 A'` by `get2 rows * rp.slope`.
               simp [hget2'] at *
               -- Normalize the sum and finish.
-              simp [mul_add, add_assoc, add_comm, mul_left_comm, mul_comm, hscaleAlt] at *
-            simpa [A', c', toVec, hri] using this
+              rw [hscale]
+              ring
+            simpa [A', c', getScalar, hri] using this
 
 /-!
 β phase vectors (`AlphaBetaCROWN.phaseRelaxVec?`) are executable, so to reason about them we
@@ -993,16 +953,16 @@ lemma List.all_eq_true_of_mem {α : Type} (p : α → Bool) (xs : List α) :
       | inr hxmem =>
           exact ih hxs x hxmem
 
-lemma phaseRelaxVec?_some_toVec {n : Nat}
-    (lo hi αv : Tensor ℝ (.dim n .scalar)) (phases : Array Int)
-    (relaxLo relaxHi : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax ℝ) (.dim n .scalar))
+lemma phaseRelaxVec?_some_getScalar {n : Nat}
+    (lo hi αv : Tensor ℝ [n]) (phases : Array Int)
+    (relaxLo relaxHi : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax ℝ) [n])
     (h : phaseRelaxVec? (α := ℝ) (n := n) lo hi αv phases = some (relaxLo, relaxHi)) :
     phases.size = n ∧
       ∀ i : Fin n,
         ∃ ph : ReLUPhase,
-          phaseConsistentScalar? (α := ℝ) (toVec lo i) (toVec hi i) ph = some () ∧
-          toVec relaxHi i = phaseRelaxUpperScalar (α := ℝ) (toVec lo i) (toVec hi i) ph ∧
-          toVec relaxLo i = phaseRelaxLowerScalar (α := ℝ) (toVec lo i) (toVec hi i) (toVec αv i) ph
+          phaseConsistentScalar? (α := ℝ) (getScalar lo i) (getScalar hi i) ph = some () ∧
+          getScalar relaxHi i = phaseRelaxUpperScalar (α := ℝ) (getScalar lo i) (getScalar hi i) ph ∧
+          getScalar relaxLo i = phaseRelaxLowerScalar (α := ℝ) (getScalar lo i) (getScalar hi i) (getScalar αv i) ph
             := by
   classical
   by_cases hlen : phases.size = n
@@ -1050,17 +1010,17 @@ lemma phaseRelaxVec?_some_toVec {n : Nat}
                             have hcons' : phaseConsistentScalar? (α := ℝ) l u ph = some () := by
                               simpa using hcons
                             refine ⟨ph, ?_, ?_, ?_⟩
-                            · simpa [toVec, hlo, hhi] using hcons'
+                            · simpa [getScalar, hlo, hhi] using hcons'
                             ·
                               -- Rewrite to the definitional `dim`-tensor produced by
                               -- `phaseRelaxVec?`.
                               rw [← hHiEq]
-                              simp [toVec, hlo, hhi, hph']
+                              simp [getScalar, hlo, hhi, hph']
                             ·
                               -- Rewrite to the definitional `dim`-tensor produced by
                               -- `phaseRelaxVec?`.
                               rw [← hLoEq]
-                              simp [toVec, hlo, hhi, ha, hph']
+                              simp [getScalar, hlo, hhi, ha, hph']
   ·
     have hnone : phaseRelaxVec? (α := ℝ) (n := n) lo hi αv phases = none := by
       simp [phaseRelaxVec?, hlen]
@@ -1071,7 +1031,7 @@ lemma phaseRelaxVec?_some_toVec {n : Nat}
 /-! ## Evaluating `linear_bounds_from_affine` at a point -/
 
 lemma get2_add_spec {m n : Nat}
-    (A B : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) :
+    (A B : Tensor ℝ [m, n]) (i : Fin m) (j : Fin n) :
     Spec.get2 (Tensor.addSpec (α := ℝ) A B) i j = Spec.get2 A i j + Spec.get2 B i j := by
   cases A with
   | dim rowsA =>
@@ -1089,82 +1049,82 @@ lemma get2_add_spec {m n : Nat}
                 hBj]
 
 theorem mat_vec_add_matrix {m n : Nat}
-    (A B : Tensor ℝ (.dim m (.dim n .scalar)))
-    (x : Tensor ℝ (.dim n .scalar)) :
+    (A B : Tensor ℝ [m, n])
+    (x : Tensor ℝ [n]) :
     Spec.matVecMulSpec (α := ℝ) (Tensor.addSpec (α := ℝ) A B) x =
       Tensor.addSpec (α := ℝ)
         (Spec.matVecMulSpec (α := ℝ) A x)
         (Spec.matVecMulSpec (α := ℝ) B x) := by
   classical
-  have htoVec :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ) (Tensor.addSpec (α := ℝ) A B) x) =
-        Spec.toVec
+  have hgetScalar :
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ) (Tensor.addSpec (α := ℝ) A B) x) =
+        Spec.Tensor.getScalar
           (Tensor.addSpec (α := ℝ)
             (Spec.matVecMulSpec (α := ℝ) A x)
             (Spec.matVecMulSpec (α := ℝ) B x)) := by
     funext i
-    rw [Spec.toVec_mat_vec_mul_spec (A := Tensor.addSpec (α := ℝ) A B) (v := x) (i := i)]
-    simp [Spec.toVec_add_spec]
-    rw [Spec.toVec_mat_vec_mul_spec (A := A) (v := x) (i := i)]
-    rw [Spec.toVec_mat_vec_mul_spec (A := B) (v := x) (i := i)]
+    rw [Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := Tensor.addSpec (α := ℝ) A B) (v := x) (i := i)]
+    simp [Spec.getScalar_add_spec]
+    rw [Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := A) (v := x) (i := i)]
+    rw [Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := B) (v := x) (i := i)]
     -- Distribute `get2 (A+B)` and split the sum.
     have :
-        (∑ k : Fin n, (Spec.get2 (Tensor.addSpec (α := ℝ) A B) i k) * (Spec.toVec x k)) =
-          (∑ k : Fin n, (Spec.get2 A i k) * (Spec.toVec x k)) +
-          (∑ k : Fin n, (Spec.get2 B i k) * (Spec.toVec x k)) := by
+        (∑ k : Fin n, (Spec.get2 (Tensor.addSpec (α := ℝ) A B) i k) * (Spec.Tensor.getScalar x k)) =
+          (∑ k : Fin n, (Spec.get2 A i k) * (Spec.Tensor.getScalar x k)) +
+          (∑ k : Fin n, (Spec.get2 B i k) * (Spec.Tensor.getScalar x k)) := by
       classical
       calc
-        (∑ k : Fin n, (Spec.get2 (Tensor.addSpec (α := ℝ) A B) i k) * (Spec.toVec x k))
-            = ∑ k : Fin n, ((Spec.get2 A i k + Spec.get2 B i k) * (Spec.toVec x k)) := by
+        (∑ k : Fin n, (Spec.get2 (Tensor.addSpec (α := ℝ) A B) i k) * (Spec.Tensor.getScalar x k))
+            = ∑ k : Fin n, ((Spec.get2 A i k + Spec.get2 B i k) * (Spec.Tensor.getScalar x k)) := by
                 refine Finset.sum_congr rfl ?_
                 intro k _
                 simp [get2_add_spec]
-        _ = ∑ k : Fin n, ((Spec.get2 A i k) * (Spec.toVec x k) + (Spec.get2 B i k) * (Spec.toVec x
+        _ = ∑ k : Fin n, ((Spec.get2 A i k) * (Spec.Tensor.getScalar x k) + (Spec.get2 B i k) * (Spec.Tensor.getScalar x
           k)) := by
               simp [add_mul]
-        _ = (∑ k : Fin n, (Spec.get2 A i k) * (Spec.toVec x k)) +
-            (∑ k : Fin n, (Spec.get2 B i k) * (Spec.toVec x k)) := by
+        _ = (∑ k : Fin n, (Spec.get2 A i k) * (Spec.Tensor.getScalar x k)) +
+            (∑ k : Fin n, (Spec.get2 B i k) * (Spec.Tensor.getScalar x k)) := by
               simp [Finset.sum_add_distrib]
     simp [this]
-  have hTensor := congrArg Spec.ofVec htoVec
+  have hTensor := congrArg Spec.Tensor.ofFn hgetScalar
   simpa using
-    (Eq.trans (Spec.ofVec_toVec (t := Spec.matVecMulSpec (α := ℝ) (Tensor.addSpec (α := ℝ) A B)
+    (Eq.trans (Spec.Tensor.ofFn_getScalar (t := Spec.matVecMulSpec (α := ℝ) (Tensor.addSpec (α := ℝ) A B)
       x)).symm
-      (Eq.trans hTensor (Spec.ofVec_toVec (t := Tensor.addSpec (α := ℝ)
+      (Eq.trans hTensor (Spec.Tensor.ofFn_getScalar (t := Tensor.addSpec (α := ℝ)
         (Spec.matVecMulSpec (α := ℝ) A x)
         (Spec.matVecMulSpec (α := ℝ) B x)))))
 
 lemma mat_vec_mul_spec_fill_zero {m n : Nat}
-    (x : Tensor ℝ (.dim n .scalar)) :
+    (x : Tensor ℝ [n]) :
     Spec.matVecMulSpec (α := ℝ) (Spec.fill (α := ℝ) (0 : ℝ) (.dim m (.dim n .scalar))) x =
       Spec.fill (α := ℝ) (0 : ℝ) (.dim m .scalar) := by
   classical
-  have htoVec :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ) (Spec.fill (α := ℝ) (0 : ℝ) (.dim m (.dim n
+  have hgetScalar :
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ) (Spec.fill (α := ℝ) (0 : ℝ) (.dim m (.dim n
         .scalar))) x) =
-        Spec.toVec (Spec.fill (α := ℝ) (0 : ℝ) (.dim m .scalar)) := by
+        Spec.Tensor.getScalar (Spec.fill (α := ℝ) (0 : ℝ) (.dim m .scalar)) := by
     funext i
     -- Expand the mat-vec coordinate as a finite sum; all terms are zero.
-    rw [Spec.toVec_mat_vec_mul_spec (A := Spec.fill (α := ℝ) (0 : ℝ) (.dim m (.dim n .scalar))) (v
+    rw [Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := Spec.fill (α := ℝ) (0 : ℝ) (.dim m (.dim n .scalar))) (v
       := x) (i := i)]
-    simp [Spec.fill, Spec.get2_eq, Spec.get_eq, Spec.toVec]
-  have hTensor := congrArg Spec.ofVec htoVec
+    simp [Spec.fill, Spec.get2_eq, Spec.get_eq, Spec.Tensor.getScalar]
+  have hTensor := congrArg Spec.Tensor.ofFn hgetScalar
   simpa using
-    (Eq.trans (Spec.ofVec_toVec (t := Spec.matVecMulSpec (α := ℝ)
+    (Eq.trans (Spec.Tensor.ofFn_getScalar (t := Spec.matVecMulSpec (α := ℝ)
         (Spec.fill (α := ℝ) (0 : ℝ) (.dim m (.dim n .scalar))) x)).symm
-      (Eq.trans hTensor (Spec.ofVec_toVec (t := Spec.fill (α := ℝ) (0 : ℝ) (.dim m .scalar)))))
+      (Eq.trans hTensor (Spec.Tensor.ofFn_getScalar (t := Spec.fill (α := ℝ) (0 : ℝ) (.dim m .scalar)))))
 
 lemma mat_vec_mul_spec_aff_identity {n : Nat}
-    (x : Tensor ℝ (.dim n .scalar)) :
+    (x : Tensor ℝ [n]) :
     Spec.matVecMulSpec (α := ℝ) (Cert.affIdentity (α := ℝ) n).A x = x := by
   classical
-  have htoVec :
-      Spec.toVec (Spec.matVecMulSpec (α := ℝ) (Cert.affIdentity (α := ℝ) n).A x) = Spec.toVec x := by
+  have hgetScalar :
+      Spec.Tensor.getScalar (Spec.matVecMulSpec (α := ℝ) (Cert.affIdentity (α := ℝ) n).A x) = Spec.Tensor.getScalar x := by
     funext i
     cases x with
     | dim f =>
     -- Expand mat-vec coordinate; only the diagonal term survives.
-      rw [Spec.toVec_mat_vec_mul_spec (A := (Cert.affIdentity (α := ℝ) n).A) (v := Tensor.dim f) (i := i)]
+      rw [Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (A := (Cert.affIdentity (α := ℝ) n).A) (v := Tensor.dim f) (i := i)]
       let coord : Fin n → ℝ := fun k =>
         match f k with
         | Tensor.scalar x => x
@@ -1178,19 +1138,19 @@ lemma mat_vec_mul_spec_aff_identity {n : Nat}
           simp [hji]
         · intro hnot
           exact False.elim (hnot (Finset.mem_univ i))
-      simp only [Cert.affIdentity, Spec.get2_eq, Spec.get_eq, Spec.toVec]
+      simp only [Cert.affIdentity, Spec.get2_eq, Spec.get_eq, Spec.Tensor.getScalar]
       convert hsum
       all_goals
         simp [coord]
         cases f _
         rfl
-  have hTensor := congrArg Spec.ofVec htoVec
+  have hTensor := congrArg Spec.Tensor.ofFn hgetScalar
   simpa using
-    (Eq.trans (Spec.ofVec_toVec (t := Spec.matVecMulSpec (α := ℝ) (Cert.affIdentity (α := ℝ) n).A
+    (Eq.trans (Spec.Tensor.ofFn_getScalar (t := Spec.matVecMulSpec (α := ℝ) (Cert.affIdentity (α := ℝ) n).A
       x)).symm
-      (Eq.trans hTensor (Spec.ofVec_toVec (t := x))))
+      (Eq.trans hTensor (Spec.Tensor.ofFn_getScalar (t := x))))
 
-lemma boundsEvalAt_bounds_identity {n : Nat} (x : Tensor ℝ (.dim n .scalar)) :
+lemma boundsEvalAt_bounds_identity {n : Nat} (x : Tensor ℝ [n]) :
     boundsEvalAt (α := ℝ) (Cert.boundsIdentity (α := ℝ) n) x = { dim := n, lo := x, hi := x } := by
   classical
   have hMat :
@@ -1201,7 +1161,7 @@ lemma boundsEvalAt_bounds_identity {n : Nat} (x : Tensor ℝ (.dim n .scalar)) :
   ext <;> simp [boundsEvalAt, Cert.boundsIdentity, affineEvalAt, hMat, hC]
 
 lemma boundsEvalAt_bounds_const {inDim outDim : Nat}
-    (lo hi : Tensor ℝ (.dim outDim .scalar)) (x : Tensor ℝ (.dim inDim .scalar)) :
+    (lo hi : Tensor ℝ [outDim]) (x : Tensor ℝ [inDim]) :
     boundsEvalAt (α := ℝ) (Cert.boundsConst (α := ℝ) inDim outDim lo hi) x =
       { dim := outDim
         lo := lo
@@ -1244,11 +1204,11 @@ lemma add_spec_pair_distrib {s : Shape}
 
 lemma boundsEvalAt_linear_bounds_from_affine
     {n m : Nat}
-    (W : Tensor ℝ (.dim m (.dim n .scalar)))
-    (b : Tensor ℝ (.dim m .scalar))
+    (W : Tensor ℝ [m, n])
+    (b : Tensor ℝ [m])
     (xB : FlatAffineBounds ℝ)
     (hout : xB.outDim = n)
-    (x : Tensor ℝ (.dim xB.inDim .scalar)) :
+    (x : Tensor ℝ [xB.inDim]) :
     boundsEvalAt (α := ℝ)
         (Cert.linearBoundsFromAffine (α := ℝ) (inDim := xB.inDim) (n := n) (m := m) W b xB hout) x =
       { dim := m
@@ -1304,14 +1264,14 @@ lemma boundsEvalAt_linear_bounds_from_affine
 
 /-- Wrapper around `alphaCrownStepNode?` in the `CrownTransferSound` “step function” shape. -/
 def stepAlpha (g : Graph) (ps : ParamStore ℝ)
-    (ibp : Array (Option (FlatBox ℝ))) (alpha : Array (Option (FlatVec ℝ))) (ctx : AffineCtx) :
+    (ibp : Array (Option (FlatBox ℝ))) (alpha : Array (Option (FlatTensor ℝ))) (ctx : AffineCtx) :
     Array (Option (FlatAffineBounds ℝ)) → Nat → Option (FlatAffineBounds ℝ) :=
   fun cert id => alphaCrownStepNode? (α := ℝ) g.nodes ps ibp alpha cert ctx id
 
 /-- Wrapper around `alphaBetaCrownStepNode?` in the `CrownTransferSound` “step function” shape. -/
 def stepAlphaBeta (g : Graph) (ps : ParamStore ℝ)
     (ibp : Array (Option (FlatBox ℝ)))
-    (alpha : Array (Option (FlatVec ℝ)))
+    (alpha : Array (Option (FlatTensor ℝ)))
     (beta : Array (Option (Array Int)))
     (ctx : AffineCtx) :
     Array (Option (FlatAffineBounds ℝ)) → Nat → Option (FlatAffineBounds ℝ) :=

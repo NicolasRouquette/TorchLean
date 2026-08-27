@@ -21,7 +21,7 @@ given the *same* initialized parameters, both front-ends produce the same output
 
 This is not a performance test; it is a regression guard for:
 - parameter ordering conventions (W,b pairs),
-- shape conventions (Vec/Mat layout),
+- vector and matrix tensor layout conventions,
 - and the meaning of `Linear → ReLU → Linear`.
 -/
 
@@ -42,8 +42,8 @@ def run : IO Unit := do
   let inDim : Nat := 2
   let hidDim : Nat := 3
   let outDim : Nat := 1
-  let xShape : Shape := .dim inDim .scalar
-  let yShape : Shape := .dim outDim .scalar
+  let xShape : Shape := [inDim]
+  let yShape : Shape := [outDim]
 
   -- TorchLean MLP (deterministic init via explicit seeds).
   let model :=
@@ -53,7 +53,7 @@ def run : IO Unit := do
 
   -- One input vector.
   let x : Tensor Float xShape :=
-    Tensor.dim (fun i => Tensor.scalar ([0.5, 0.8][i.val]!))
+    Tensor.ofFn fun i => [0.5, 0.8][i.val]!
 
   -- Extract TorchLean parameters and reinterpret them as Spec `LinearSpec`s.
   let ps := Runtime.Autograd.TorchLean.NN.Seq.initState (m := model)
@@ -75,7 +75,7 @@ def run : IO Unit := do
 
   let args : TorchLean.TensorPack Float (Runtime.Autograd.TorchLean.NN.Seq.stateShapes model ++ [xShape])
     :=
-    TensorPack! w1, b1, w2, b2, x
+    _root_.TorchLean.TensorPack! w1, b1, w2, b2, x
 
   let yTorch : Tensor Float yShape :=
     _root_.Runtime.Autograd.Torch.TypedGraph.forward graph args

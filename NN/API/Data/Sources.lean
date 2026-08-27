@@ -7,11 +7,14 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Data.TensorDataset
+public import NN.Data.IO
 
 /-!
-# Dataset Sources
+# File-Backed Dataset Sources
 
-Typed NPY and CSV sources for supervised and labeled datasets.
+Typed NPY and CSV sources for supervised and labeled datasets. This module owns the boundary
+between external files and TorchLean tensors; importing `Data.SampleStream` does not pull
+in these parsers.
 -/
 
 @[expose] public section
@@ -19,70 +22,90 @@ Typed NPY and CSV sources for supervised and labeled datasets.
 namespace TorchLean
 namespace Data
 
-/-- Load an N-D tensor from a `.npy` file, checking the on-disk shape matches `dims`. -/
-def readNpyTensor (path : System.FilePath) (dims : List Nat) :
-    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
-  let res ← readNpy path
-  match res with
-  | .error e => pure (.error e)
-  | .ok data =>
-      if data.shape != dims then
-        pure (.error s!"npy: shape mismatch, expected {dims}, got {data.shape}")
-      else
-        pure <| NN.Tensor.ofList (α := Float) dims data.values.toList
+export _root_.TorchLean.Data.IO
+  (CsvOptions readCsvFloatRows readNpy readNpyLeadingAxisPrefix)
+
+/-- Require that every path exists, adding `hint` to a missing-file error when supplied. -/
+def requireFiles (exeName : String) (paths : Array System.FilePath) (hint : String := "") :
+    IO Unit := do
+  for path in paths do
+    unless (← path.pathExists) do
+      let suffix := if hint.isEmpty then "" else "\n" ++ hint
+      throw <| IO.userError s!"{exeName}: missing data file: {path}{suffix}"
+
+/-- Require one named data file to exist. -/
+def requireFile
+    (exeName : String) (label : String) (path : System.FilePath) (hint : String := "") :
+    IO Unit := do
+  unless (← path.pathExists) do
+    let suffix := if hint.isEmpty then "" else "\n" ++ hint
+    throw <| IO.userError s!"{exeName}: missing {label}: {path}{suffix}"
+
+/-- Require paired supervised input and target files to exist. -/
+def requirePairedFiles
+    (exeName : String)
+    (xLabel : String) (xPath : System.FilePath)
+    (yLabel : String) (yPath : System.FilePath)
+    (hint : String := "") : IO Unit := do
+  requireFile exeName xLabel xPath hint
+  requireFile exeName yLabel yPath hint
 
 /--
-Load an N-D tensor from a `.npy` file, allowing the file to contain more rows on the leading axis.
+Read an `.npy` row count while checking all trailing dimensions.
 
-This is the dataset-loader analogue of taking `tensor[:n]` in PyTorch. The rank and trailing
-dimensions must still match exactly; only the leading dimension may be larger than requested.
-
-We use this for dataset sources rather than the stricter `readNpyTensor` because an exported
-dataset usually has a fixed full size, while local runs often request a bounded prefix. For example,
-a CIFAR file may have shape `(50000, 3, 32, 32)` while an example command asks for `n = 80`; the
-resulting TorchLean tensor has type-level shape
-`(80, 3, 32, 32)`.
-
-This is still a checked loader, not an implicit reshape:
-
-- rank must agree;
-- all trailing dimensions must agree;
-- the file must contain at least the requested number of rows;
-- only C-order NPY files can be prefix-loaded efficiently by the low-level parser.
+For shape `(N, d₁, ..., dₖ)`, this returns `N` exactly when the trailing shape is `tailShape`.
 -/
-def readNpyTensorPrefix (path : System.FilePath) (dims : List Nat) :
-    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
-  let res ← readNpyLeadingAxisPrefix path dims
-  match res with
+def availableNpyRows
+    (path : System.FilePath) (tailShape : List Nat) (expectedDesc : String) :
+    IO (Except String Nat) := do
+  match ← readNpy path with
   | .error e => pure (.error e)
   | .ok data =>
-      match hDims : dims with
-      | expectedN :: expectedTail =>
-          match data.shape with
-          | actualN :: actualTail =>
-              if actualTail != expectedTail then
-                pure (.error
-                  s!"npy: shape mismatch, expected trailing dims {expectedTail}, got {actualTail}")
-              else if actualN < expectedN then
-                pure (.error s!"npy: expected at least {expectedN} rows, got {actualN}")
-              else
-                let dims' := expectedN :: expectedTail
-                let count := dims'.foldl (fun acc n => acc * n) 1
-                pure <| (NN.Tensor.ofList (α := Float) dims'
-                  (data.values.toList.take count)).map (fun t => by
-                    simpa [hDims] using t)
-          | [] =>
-              pure (.error s!"npy: shape mismatch, expected {dims}, got {data.shape}")
-      | [] =>
-          match data.shape with
-          | [] =>
-              pure <| (NN.Tensor.ofList (α := Float) [] data.values.toList).map (fun t => by
-                simpa [hDims] using t)
-          | _ =>
-              pure (.error s!"npy: shape mismatch, expected {dims}, got {data.shape}")
+      match data.shape[0]? with
+      | some rows =>
+          let trailingShape := data.shape.extract 1 data.shape.size
+          if trailingShape.toList = tailShape then
+            pure (.ok rows)
+          else
+            pure (.error s!"expected {expectedDesc}, got {data.shape}")
+      | none => pure (.error s!"expected {expectedDesc}, got {data.shape}")
+
+/-- How a file's physical shape is matched against the requested tensor shape. -/
+private inductive TensorShapeMatch where
+  /-- Require every physical dimension to equal the requested dimension. -/
+  | exact
+  /-- Permit a larger first dimension and read its requested prefix. -/
+  | leadingPrefix
+deriving BEq, Repr
+
+/--
+Load an arbitrary-rank tensor from a `.npy` file under an explicit shape-matching policy.
+
+With `exact`, every dimension must match. With `leadingPrefix`, rank and trailing dimensions must
+still match, while the file may contain more entries on its first axis. Prefix loading requires a
+C-order NPY file because the requested values must form one contiguous prefix.
+-/
+private def readNpyTensor (path : System.FilePath) (dims : List Nat)
+    (shapeMatch : TensorShapeMatch := .exact) :
+    IO (Except String (Tensor Float dims)) := do
+  match shapeMatch with
+  | .exact =>
+      let res ← readNpy path
+      match res with
+      | .error e => pure (.error e)
+      | .ok data =>
+          if data.shape.toList != dims then
+            pure (.error s!"npy: shape mismatch, expected {dims}, got {data.shape}")
+          else
+            pure <| TorchLean.Tensor.ofArray (α := Float) dims data.values
+  | .leadingPrefix =>
+      let res ← readNpyLeadingAxisPrefix path dims.toArray
+      match res with
+      | .error e => pure (.error e)
+      | .ok data => pure <| TorchLean.Tensor.ofArray (α := Float) dims data.values
 
 /-- Parse a float-encoded class label as a `Nat` in `[0, classes)`. -/
-def finLabelOfFloat (tag : String) (classes : Nat) (x : Float) : Except String (Fin classes) := do
+private def finLabelOfFloat (tag : String) (classes : Nat) (x : Float) : Except String (Fin classes) := do
   let n : Nat := x.toUInt64.toNat
   if (n : Float) != x then
     throw s!"{tag}: expected an integer class label, got {x}"
@@ -97,43 +120,48 @@ Labeled dataset from a batched tensor `X : (n, σ)` and a label vector `y : (n,)
 Labels are stored as floats (common when exporting from NumPy); we validate each label is an
 integer in `[0, classes)`, then one-hot encode it.
 -/
-def labeledFromLeadingAxis {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
+private def labeledFromLeadingAxis {α : Type} [_root_.Context α]
+    [_root_.TorchLean.Runtime.FromFloat α]
     (tag : String) (classes : Nat)
-    {n : Nat} {σ : Spec.Shape}
-    (X : Spec.Tensor Float (.dim n σ))
-    (y : Spec.Tensor Float (.dim n .scalar)) :
-    Except String (Dataset (_root_.TorchLean.TensorPack α [σ, .dim classes .scalar])) := do
-  let samples : List (Spec.Tensor Float σ × Fin classes) ←
-    (List.finRange n).mapM (fun i => do
-      let x := Spec.getAtSpec X i
-      let labelF : Float := Spec.Tensor.item (Spec.getAtSpec y i)
+    {n : Nat} {inputShape : List Nat}
+    (X : Tensor Float (n :: inputShape))
+    (y : Tensor Float [n]) :
+    Except String
+      (SampleStream (_root_.TorchLean.TensorPack α [inputShape, [classes]])) := do
+  let samples : Array (Tensor Float inputShape × Fin classes) ←
+    (Array.ofFn (fun i : Fin n => i)).mapM (fun i => do
+      let x := Spec.get X i
+      let labelF : Float := Tensor.item (Spec.get y i)
       let label ← finLabelOfFloat tag classes labelF
       pure (x, label))
-  pure <| labeled (α := α) (σ := σ) classes samples
+  pure <| TensorDataset.ofLabeledFloatPairs
+    (α := α) (inputShape := inputShape) classes samples
 
 /--
 Load a supervised dataset from a CSV with `inDim + outDim` columns per row:
 
 `x1, ..., x_inDim, y1, ..., y_outDim`.
 -/
-def readCsvSupervised {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
+def readCsvSupervised {α : Type} [_root_.Context α]
+    [_root_.TorchLean.Runtime.FromFloat α]
     (path : System.FilePath) (inDim outDim : Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [.dim inDim .scalar,
-      .dim outDim .scalar]))) := do
+    IO (Except String (SampleStream (_root_.TorchLean.TensorPack α [[inDim],
+      [outDim]]))) := do
   let rowsRes ← readCsvFloatRows path opts
   match rowsRes with
   | .error e => pure (.error e)
   | .ok rows =>
       let samplesRes :
-          Except String (List (Spec.Tensor Float (.dim inDim .scalar) × Spec.Tensor Float
-            (.dim outDim .scalar))) :=
+          Except String (Array (Tensor Float [inDim] × Tensor Float
+            [outDim])) :=
         rows.mapM (fun row => do
           let xs := row.take inDim
           let ys := row.drop inDim
-          let xF ← vectorOfList (tag := "csv") (n := inDim) xs
-          let yF ← vectorOfList (tag := "csv") (n := outDim) ys
+          let xF ← (Tensor.ofArray [inDim] xs).mapError fun msg => s!"csv: {msg}"
+          let yF ← (Tensor.ofArray [outDim] ys).mapError fun msg => s!"csv: {msg}"
           pure (xF, yF))
-      pure <| samplesRes.map (fun samplesF => supervised (α := α) samplesF)
+      pure <| samplesRes.map (fun samplesF =>
+        TensorDataset.ofSupervisedFloatPairs (α := α) samplesF)
 
 /-!
 ## File Sources
@@ -154,7 +182,7 @@ Policy for external ecosystems:
 
 /-- File formats supported directly by the Lean side unified data-source loader. -/
 inductive TensorFormat where
-  /-- NumPy `.npy`, supporting the subset decoded by `readNpyTensor`. -/
+  /-- NumPy `.npy`, supporting numeric C-order arrays decoded by TorchLean's NPY reader. -/
   | npy
   /-- Numeric CSV table. CSV sources are interpreted as 2D tensors `[rows, cols]`. -/
   | csv
@@ -194,24 +222,24 @@ Supported shapes:
 - `[rows, cols]`: ordinary numeric table,
 - `[n]`: either one column with `n` rows or one row with `n` columns.
 -/
-def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
+private def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions := {}) :
+    IO (Except String (Tensor Float dims)) := do
   match hDims : dims with
   | [rowsExpected, colsExpected] =>
       let rowsRes ← readCsvFloatRows path opts
       match rowsRes with
       | .error e => pure (.error e)
       | .ok rows =>
-          if rows.length != rowsExpected then
-            pure (.error s!"csv: expected {rowsExpected} rows, got {rows.length}")
+          if rows.size != rowsExpected then
+            pure (.error s!"csv: expected {rowsExpected} rows, got {rows.size}")
           else
-            let bad? := rows.zipIdx.find? (fun (row, _i) => row.length != colsExpected)
+            let bad? := rows.zipIdx.find? (fun (row, _i) => row.size != colsExpected)
             match bad? with
             | some (row, i) =>
-                pure (.error s!"csv: row {i + 1}: expected {colsExpected} columns, got {row.length}")
+                pure (.error s!"csv: row {i + 1}: expected {colsExpected} columns, got {row.size}")
             | none =>
-                let flat := rows.foldr (fun row acc => row ++ acc) []
-                pure <| (NN.Tensor.ofList (α := Float) [rowsExpected, colsExpected] flat).map
+                let flat := rows.foldl (fun acc row => acc ++ row) #[]
+                pure <| (TorchLean.Tensor.ofArray (α := Float) [rowsExpected, colsExpected] flat).map
                   (fun t => by
                     simpa [hDims] using t)
   | [n] =>
@@ -219,54 +247,43 @@ def loadCsvTensor (path : System.FilePath) (dims : List Nat) (opts : CsvOptions 
       match rowsRes with
       | .error e => pure (.error e)
       | .ok rows =>
-          let flat? : Except String (List Float) :=
-            if rows.length = n then
+          let flat? : Except String (Array Float) :=
+            if rows.size = n then
               rows.zipIdx.mapM fun (row, i) =>
-                match row with
-                | [value] => pure value
-                | _ => throw s!"csv: row {i + 1}: expected one column, got {row.length}"
+                match row[0]? with
+                | some value =>
+                    if row.size = 1 then pure value
+                    else throw s!"csv: row {i + 1}: expected one column, got {row.size}"
+                | none => throw s!"csv: row {i + 1}: expected one column, got 0"
             else
-              match rows with
-              | [row] =>
-                  if row.length = n then .ok row
-                  else .error s!"csv: expected one row with {n} columns, got {row.length}"
-              | _ =>
-                  .error s!"csv: expected a length-{n} vector as one column or one row"
+              match rows[0]? with
+              | some row =>
+                  if rows.size = 1 then
+                    if row.size = n then .ok row
+                    else .error s!"csv: expected one row with {n} columns, got {row.size}"
+                  else .error s!"csv: expected {n} values as one column or one row"
+              | none => .error s!"csv: expected {n} values as one column or one row"
           match flat? with
           | .error e => pure (.error e)
           | .ok flat =>
-              pure <| (NN.Tensor.ofList (α := Float) [n] flat).map
+              pure <| (TorchLean.Tensor.ofArray (α := Float) [n] flat).map
                 (fun t => by
                   simpa [hDims] using t)
   | _ =>
       pure (.error s!"csv: TensorSource expects dims=[rows, cols] or dims=[n], got {dims}")
 
-/-- Load a Float tensor from a path/format/dimension tuple. -/
-def loadFloatAs (format : TensorFormat) (path : System.FilePath)
-    (dims : List Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
+/-- Load a Float tensor from a path/format/dimension tuple under one shape-matching policy. -/
+private def loadFloatAs (format : TensorFormat) (path : System.FilePath)
+    (dims : List Nat) (opts : CsvOptions := {})
+    (shapeMatch : TensorShapeMatch := .exact) :
+    IO (Except String (Tensor Float dims)) := do
   match format with
-  | .npy => readNpyTensor path dims
-  | .csv => loadCsvTensor path dims opts
-
-/--
-Load a Float tensor, allowing NPY files to contain more rows than requested on the leading axis.
-
-`TensorSource.loadFloatAs` is exact: the file shape must equal `dims`.  This prefix variant is for
-dataset-style sources where `dims` starts with the number of rows requested by the current run.  CSV
-sources remain exact because CSV has no binary prefix contract; NPY sources use
-`readNpyTensorPrefix`.
--/
-def loadFloatLeadingPrefixAs (format : TensorFormat) (path : System.FilePath)
-    (dims : List Nat) (opts : CsvOptions := {}) :
-    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList dims))) := do
-  match format with
-  | .npy => readNpyTensorPrefix path dims
+  | .npy => readNpyTensor path dims shapeMatch
   | .csv => loadCsvTensor path dims opts
 
 /-- Load a `TensorSource` as a Float tensor with statically reflected dimensions. -/
-def loadFloat (src : TensorSource) :
-    IO (Except String (Spec.Tensor Float (Spec.Shape.ofList src.dims))) := do
+opaque loadFloat (src : TensorSource) :
+    IO (Except String (Tensor Float src.dims)) := do
   loadFloatAs src.format src.path src.dims src.csvOptions
 
 end TensorSource
@@ -303,29 +320,30 @@ Load a supervised dataset by slicing the leading batch axis from the two tensors
 This is the preferred public loader for regression/operator-learning examples, regardless of
 whether the backing files are `.npy` or small numeric CSV tables.
 -/
-def load {α : Type} [_root_.TorchLean.Runtime.FromFloat α] (src : SupervisedSource) :
-    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [Spec.Shape.ofList src.xDims,
-      Spec.Shape.ofList src.yDims]))) := do
+opaque load {α : Type} [_root_.TorchLean.Runtime.FromFloat α] (src : SupervisedSource) :
+    IO (Except String
+      (SampleStream (_root_.TorchLean.TensorPack α [src.xDims, src.yDims]))) := do
   -- Dataset sources interpret `src.n` as "number of rows to use in this run."  For NPY files, the
   -- physical file is allowed to contain more rows; for CSV files, the requested shape remains exact.
-  let xRes ← TensorSource.loadFloatLeadingPrefixAs src.x.format src.x.path (src.n :: src.xDims)
-    src.x.csvOptions
-  let yRes ← TensorSource.loadFloatLeadingPrefixAs src.y.format src.y.path (src.n :: src.yDims)
-    src.y.csvOptions
+  let xRes ← TensorSource.loadFloatAs src.x.format src.x.path
+    (src.n :: src.xDims)
+    src.x.csvOptions .leadingPrefix
+  let yRes ← TensorSource.loadFloatAs src.y.format src.y.path
+    (src.n :: src.yDims)
+    src.y.csvOptions .leadingPrefix
   match xRes with
   | .error e => pure (.error e)
   | .ok X =>
       match yRes with
       | .error e => pure (.error e)
-      | .ok Y => pure (.ok (TensorDataset.supervisedFloat (α := α) X Y))
+      | .ok Y =>
+          let X' : Tensor Float (src.n :: src.xDims) := X
+          let Y' : Tensor Float (src.n :: src.yDims) := Y
+          pure (.ok <| TensorDataset.ofBatchedFloat
+            (α := α) (shapes := [src.xDims, src.yDims])
+            (_root_.TorchLean.TensorPack! X', Y'))
 
 end SupervisedSource
-
-/-- Paired `.npy` source for supervised regression or operator-learning datasets. -/
-def supervisedNpySource
-    (xPath yPath : System.FilePath) (n : Nat)
-    (xDims yDims : List Nat) : SupervisedSource :=
-  SupervisedSource.ofPaths .npy xPath yPath n xDims yDims
 
 /--
 Load paired `.npy` files as concrete `Float` supervised samples.
@@ -336,10 +354,10 @@ This is useful for reporting, custom evaluation loops, and native kernels that n
 def loadSupervisedNpy
     (xPath yPath : System.FilePath) (n : Nat)
     (xDims yDims : List Nat) :
-    IO (Except String (Array (TorchLean.Sample.Supervised Float (Spec.Shape.ofList xDims)
-      (Spec.Shape.ofList yDims)))) := do
-  let ds ← SupervisedSource.load (α := Float) (supervisedNpySource xPath yPath n xDims yDims)
-  pure <| ds.map (fun d => d.toList.toArray)
+  IO (Except String (Array (TorchLean.Sample.Supervised Float xDims yDims))) := do
+  let ds ← SupervisedSource.load (α := Float)
+    (SupervisedSource.ofPaths .npy xPath yPath n xDims yDims)
+  pure <| ds.map (fun d => d.toArray)
 
 /--
 Two tensor sources representing labeled classification data:
@@ -373,22 +391,28 @@ Load a labeled classification dataset by slicing the leading batch axis and one-
 For CSV label vectors, store labels as a single-column table with `dims = [n, 1]` and use a custom
 `TensorSource` if needed; the path constructor above is aimed at `.npy` label vectors.
 -/
-def load {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α] (src : LabeledSource) :
-    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [Spec.Shape.ofList src.xDims,
-      .dim src.classes .scalar]))) := do
+opaque load {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
+    (src : LabeledSource) :
+    IO (Except String
+      (SampleStream (_root_.TorchLean.TensorPack α [src.xDims, [src.classes]]))) := do
   -- Labels use the same prefix-row convention as supervised tensors. This lets one full exported
   -- label vector back different bounded runs without making separate copies on disk.
-  let xRes ← TensorSource.loadFloatLeadingPrefixAs src.x.format src.x.path (src.n :: src.xDims)
-    src.x.csvOptions
-  let yRes ← TensorSource.loadFloatLeadingPrefixAs src.y.format src.y.path [src.n] src.y.csvOptions
+  let xRes ← TensorSource.loadFloatAs src.x.format src.x.path
+    (src.n :: src.xDims)
+    src.x.csvOptions .leadingPrefix
+  let yRes ← TensorSource.loadFloatAs src.y.format src.y.path [src.n]
+    src.y.csvOptions .leadingPrefix
   match xRes with
   | .error e => pure (.error e)
   | .ok X =>
       match yRes with
       | .error e => pure (.error e)
       | .ok y =>
-          pure <| labeledFromLeadingAxis (α := α) (σ := Spec.Shape.ofList src.xDims)
-            "data-source" src.classes X y
+          let X' : Tensor Float (src.n :: src.xDims) := X
+          let y' : Tensor Float [src.n] := y
+          pure <| by
+            simpa using labeledFromLeadingAxis (α := α) (inputShape := src.xDims)
+              "data-source" src.classes X' y'
 
 end LabeledSource
 
@@ -411,10 +435,10 @@ structure TabularSupervisedSource where
 namespace TabularSupervisedSource
 
 /-- Load a single-table supervised CSV source. -/
-def load {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
+opaque load {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
     (src : TabularSupervisedSource) :
-    IO (Except String (Dataset (_root_.TorchLean.TensorPack α [.dim src.inDim .scalar,
-      .dim src.outDim .scalar]))) :=
+    IO (Except String (SampleStream (_root_.TorchLean.TensorPack α [[src.inDim],
+      [src.outDim]]))) :=
   readCsvSupervised (α := α) src.path src.inDim src.outDim src.csvOptions
 
 end TabularSupervisedSource

@@ -6,41 +6,33 @@ This directory contains model definitions built out of the primitives in:
 - `NN/Spec/Layers/*` (layer forward/backward specs),
 - `NN/Spec/Module/*` (optional wrappers for composition/export metadata).
 
-Most files here are compact baselines: they spell out a complete forward pass, and many also include
-an explicit backward/VJP so you can train with gradient descent without relying on a separate
-autograd engine.
+Most files here are compact mathematical baselines. They spell out a complete forward pass, and
+many include an explicit backward or VJP that can be studied independently of the runtime autograd
+engine. Executable architecture constructors, including ResNet, ViT, and U-Net families, live in
+`NN/API/Models` and are built from the same typed layer operations.
 
 ## How To Navigate
 
-- Neural models: `mlp.lean`, `cnn.lean`, `transformer.lean`, `resnet.lean`,
-  `vit.lean`, `seq2seq.lean`, or `unet.lean`.
-- If you want classical baselines: `linear_regression.lean`, `logistic_regression.lean`, `svm.lean`,
-  `knn.lean`, `naive_bayes.lean`, `pca.lean`, `random_forest.lean`, `gradient_boosted_trees.lean`,
-  `gmm.lean`, `hmm.lean`.
-- If you want shared math helpers: `common_helpers.lean`.
+- Neural models: `Mlp.lean`, `Cnn.lean`, `Transformer.lean`, `Seq2seq.lean`, `Mamba.lean`,
+  `S4.lean`, and the generative-model files.
+- Classical baselines: `LinearRegression.lean`, `LogisticRegression.lean`, `Svm.lean`,
+  `Knn.lean`, `NaiveBayes.lean`, `Pca.lean`, `RandomForest.lean`,
+  `GradientBoostedTrees.lean`, `Gmm.lean`, and `Hmm.lean`.
 
 ## File Index
 
-- `common_helpers.lean`: shared linear-algebra utilities used by multiple classical models.
-- `mlp.lean`: small MLP wiring example (linear layer plus activation).
-- `cnn.lean`: a small CNN baseline with an explicit backward pass.
-- `transformer.lean`: transformer encoder stack (+ a small decoder layer), and explicit backward for the encoder.
-- `vit.lean`: ViT patch embedding + transformer encoder + classifier head, with explicit backward.
-- `seq2seq.lean`: encoder decoder RNN baseline with a differentiable one hot training path and gradients.
-- `resnet.lean`: ResNet style blocks (basic blocks include backward specs; bottleneck blocks are forward only).
-- `unet.lean`: a 2 level U-Net with explicit backward (conv/pool/conv transpose/concat/ReLU).
-- `gnn.lean`: a small GCN style model (graph convolution baseline).
-- `hopfield.lean`: Hopfield network definitions (states, energy, dynamics) with references.
-- `gmm.lean`: Gaussian mixture model (forward, VJP, and EM training).
-- `hmm.lean`: HMM likelihood and Baum-Welch (EM) training.
-- `gradient_boosted_trees.lean`: tree ensembles (CART style training plus a boosting step).
-- `random_forest.lean`: random forest built on top of the tree code.
-- `naive_bayes.lean`: multinomial Naive Bayes baseline.
-- `knn.lean`: kNN classification/regression baseline.
-- `linear_regression.lean`: linear regression baseline (plus a few feature helpers).
-- `logistic_regression.lean`: logistic regression baseline (gradient descent on NLL).
-- `svm.lean`: linear SVM baseline with explicit objective gradients and a small trainer.
-- `pca.lean`: PCA baseline (data centering, covariance, projection).
+- `Mlp.lean`: small MLP wiring example (linear layer plus activation).
+- `Cnn.lean`: a convolutional baseline with an explicit backward pass.
+- `Transformer.lean`: Transformer encoder and decoder definitions, including an encoder backward.
+- `Seq2seq.lean`: encoder-decoder RNN baseline with a differentiable one-hot training path.
+- `Mamba.lean` and `S4.lean`: state-space sequence models.
+- `Gnn.lean`: a compact graph-convolution baseline.
+- `Autoencoder.lean`, `Vae.lean`, `VqVae.lean`, and `Gan.lean`: generative-model specifications.
+- `Hopfield.lean`: Hopfield states, energy, and dynamics.
+- `Gmm.lean` and `Hmm.lean`: mixture and hidden-Markov models with EM-style training.
+- `GradientBoostedTrees.lean` and `RandomForest.lean`: tree ensembles.
+- `NaiveBayes.lean`, `Knn.lean`, `LinearRegression.lean`, `LogisticRegression.lean`, `Svm.lean`,
+  and `Pca.lean`: classical statistical and machine-learning baselines.
 
 ## Adding A New Model
 
@@ -58,13 +50,14 @@ Practical checklist:
    - Use `namespace Models` and open `Spec`/`Tensor` as the other files do.
 
 2. Choose the input convention (and be explicit)
-   - For vision we use the single-image convention `(C,H,W)` (no batch axis).
-   - For sequences we typically use `(T,D)` (token/time axis first).
-   - If you need batching, prefer adding an outer `.dim N` and mapping your single-example forward.
+   - Describe semantic axes in the declaration instead of encoding a layout in its name.
+   - Use a leading shape for independently mapped axes such as batch or ensemble dimensions.
+   - Represent every remaining spatial extent by a `Tensor Nat [d]` when the operation is
+     rank-polymorphic. Its type records the number of spatial axes.
 
 3. Define a parameter record
    - Use `structure <Model>Spec ... where ...` and store weights/biases as `Tensor α <shape>`.
-   - Prefer reusing layer-spec parameter records when they exist (`Conv2dSpec`, `LinearSpec`, etc.).
+   - Prefer reusing layer-spec parameter records when they exist (`ConvSpec`, `LinearSpec`, etc.).
 
 4. Implement `forward`
    - Name it `<Model>Spec.forward`.
@@ -73,7 +66,7 @@ Practical checklist:
 
 5. If you want the model to be trainable, add an explicit backward/VJP
    - Name it `<Model>Spec.backward` or `<Model>Spec.<loss>_grad_*`.
-   - Reuse existing backward specs (`linear_backward_spec`, `conv2d_backward_spec`, attention/encoder backprops, etc.).
+   - Reuse existing backward specs (`linear_backward_spec`, `convBackwardSpec`, attention/encoder backprops, etc.).
    - If you recompute intermediates, say so once (and keep the recomputation structurally aligned with the forward).
 
 6. Hook it into the public spec entrypoint

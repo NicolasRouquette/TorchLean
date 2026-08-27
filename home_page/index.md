@@ -44,32 +44,32 @@
   </div>
 </section>
 
-## Working Paths
+## Explore TorchLean
 
 <div class="workflow-list">
   <a href="{{ '/blueprint/Runtime___-Autograd___-and-Interop/Differentiation-By-Example/' | relative_url }}">
     <span>01</span>
     <strong>Write and run models</strong>
-    <em>Use Lean-native training loops, tensors, and autograd examples.</em>
+    <em>Define typed tensors and models, then train them with Lean-native autograd.</em>
   </a>
   <a href="{{ '/blueprint/Semantics-and-Graphs/The-Canonical-Graph-IR/' | relative_url }}">
     <span>02</span>
     <strong>Lower to graph IR</strong>
-    <em>Inspect shapes, payloads, graph semantics, and executable traces.</em>
+    <em>Inspect operation nodes, shapes, payloads, semantics, and execution traces.</em>
   </a>
-  <a href="{{ '/installation/#what-a-kernel-capsule-looks-like' | relative_url }}">
+  <a href="{{ '/installation/#from-a-model-to-a-kernel' | relative_url }}">
     <span>03</span>
     <strong>Choose a backend</strong>
-    <em>Keep one model while choosing CPU, CUDA, LibTorch, or named future accelerator targets.</em>
+    <em>Run on CPU or CUDA, with explicit contracts for native and external providers.</em>
   </a>
   <a href="{{ '/blueprint/Verification-and-Certificates/' | relative_url }}">
     <span>04</span>
     <strong>Check verification artifacts</strong>
-    <em>Replay bounds and certificates, then read the Lean statements they support.</em>
+    <em>Replay robustness bounds and certificates against their Lean predicates.</em>
   </a>
   <a href="{{ '/examples/bug-zoo/' | relative_url }}">
     <span>05</span>
     <strong>Turn bugs into contracts</strong>
-    <em>Study small checked examples for masks, losses, normalization, caches, and runtime edges.</em>
+    <em>See causal masks, stable losses, normalization, and KV-cache bugs reduced to precise claims.</em>
   </a>
 </div>

@@ -22,7 +22,7 @@ namespace DAG
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 namespace Term
 
@@ -35,7 +35,7 @@ def sum {Γ : List Shape} (s : Shape) (terms : List (Term Γ s)) : Term Γ s :=
 
 /-- Pure evaluation commutes with `Term.sum`. -/
 theorem eval_sum {Γ : List Shape} {s : Shape} {α : Type} [Context α]
-    (env : Runtime.Autograd.Torch.TList α Γ) (terms : List (Term Γ s)) :
+    (env : TorchLean.TensorPack α Γ) (terms : List (Term Γ s)) :
     Term.eval env (sum s terms) =
       terms.foldl (fun total term => _root_.Spec.Tensor.addSpec total (Term.eval env term))
         (_root_.Spec.fill 0 s) := by

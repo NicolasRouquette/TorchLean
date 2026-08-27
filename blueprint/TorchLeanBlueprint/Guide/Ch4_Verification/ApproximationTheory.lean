@@ -60,7 +60,7 @@ theorem relu_universal_approximation_Icc
         (l1 : LinearSpec ℝ 1 hidDim)
         (l2 : LinearSpec ℝ hidDim 1),
       ∀ x ∈ Set.Icc a b,
-        |f x - mlpEval1d hidDim l1 l2 x| < ε
+        |f x - mlpEvalScalar hidDim l1 l2 x| < ε
 ```
 
 The assumptions are not decoration. $`a<b` gives a nonempty interval with positive length.
@@ -102,7 +102,7 @@ line should display a conclusion of the form
 
 ```
 ∃ l1 l2, ∀ x ∈ Set.Icc a b,
-  |f x - mlpEval1d (reluApproximationWidth L a b ε) l1 l2 x| < ε
+  |f x - mlpEvalScalar (reluApproximationWidth L a b ε) l1 l2 x| < ε
 ```
 
 There is a revealing variation. Try:
@@ -224,8 +224,8 @@ cannot be treated as an ordinary ordered singleton, so the proof correctly refus
 
 The one-dimensional hinge proof is constructive and quantitative. The higher-dimensional
 development uses a different route. In
-[`UniversalApproximationND`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/Approximation/Universal/UniversalApproximationND.lean),
-`TensorVec n` is identified with `Fin n → ℝ` by a homeomorphism. Coordinate functions generate a
+[`StoneWeierstrass`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/Approximation/Universal/StoneWeierstrass.lean),
+`Tensor ℝ [n]` is identified with `Fin n → ℝ` by a homeomorphism. Coordinate functions generate a
 subalgebra of continuous functions, and the proof establishes that this subalgebra separates
 points. Stone-Weierstrass then supplies density on compact domains.
 

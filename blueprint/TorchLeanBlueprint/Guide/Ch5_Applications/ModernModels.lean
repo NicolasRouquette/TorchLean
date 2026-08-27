@@ -29,6 +29,13 @@ A constructor such as `nn.models.resnet` is reusable and
 rank-polymorphic; the `resnet` command chooses a deliberately small CIFAR configuration so that a
 reader can run the whole data and training path locally.
 
+Use the focused public imports when a file does not need the whole API:
+
+```
+import NN.API.Models.CausalTransformer
+import NN.API.Neural.Layers
+```
+
 # From A Formula To A Typed Model
 
 Consider an ordinary one-hidden-layer network
@@ -45,8 +52,8 @@ The TorchLean constructor records the outer contract as
 
 ```
 nn.Sequential
-  (shape![batch, inDim])
-  (shape![batch, outDim])
+  [batch, inDim]
+  [batch, outDim]
 ```
 
 and composes layers only when their intermediate shapes agree. The runtime still performs ordinary
@@ -70,9 +77,12 @@ the reusable configuration is indexed by the number $`d` of spatial axes:
 ```
 structure ResNetConfig (d : Nat) where
   inChannels     : Nat
-  spatial        : Vector Nat d
-  spatialNonzero : ∀ i, spatial.get i ≠ 0
+  spatial        : Tensor Nat [d]
+  spatialNonzero : ∀ i, spatial.getScalar i ≠ 0
   hiddenChannels : Nat
+  block           : ConvGeometry d
+  blockPreservesSpatial :
+    convOutSpatial spatial block.kernel block.stride block.padding = spatial
   numClasses     : Nat
 ```
 
@@ -84,12 +94,11 @@ $$`\operatorname{input}
 $$`\operatorname{output}=L\mathbin{+\!+}(C_{\mathrm{class}}).`
 
 The constructor uses a convolutional stem, two residual blocks, global average pooling over all
-$`d` spatial axes, and a linear classifier. The pooling operation is parameterized by the spatial
-vector. The CIFAR example instantiates $`d=2` and $`L=(B)`; the model API itself is not tied to
-images, two dimensions, or one batch axis.
-
-The next chapter runs this compact CIFAR application and inspects the resulting loss log. Here we
-stay with the architectural question: where must the two residual branches agree?
+$`d` spatial axes, and a linear classifier. `block` records the kernel, stride, and padding once for
+the whole residual trunk. Its preservation equation is exactly what permits the residual additions.
+`ConvGeometry.samePadding radius` supplies the common odd-kernel, unit-stride case for any spatial
+rank. The CIFAR example instantiates $`d=2` and $`L=(B)`; the model API itself is not tied to images,
+two dimensions, or one batch axis.
 
 ## Try A Shape Change
 
@@ -130,11 +139,10 @@ and scaled dot-product attention is
 $$`\operatorname{Attention}(Q,K,V)
 =\operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{D_h}}+M\right)V.`
 
-The current ViT application uses one encoder block and flattens all patch tokens before the final
-classifier. It is a compact architecture check, not an implementation of a particular pretrained
-ViT checkpoint.
-The next chapter runs it beside the compact ResNet so their different spatial conventions can be
-compared on the same prepared data.
+The reusable constructor accepts any number of encoder blocks. A learned positional table is added
+before the stack, and the classifier can use either mean token pooling or a learned class slot. The
+small CIFAR application selects two blocks and class-slot pooling; those choices keep the example
+quick without changing the architecture represented by the public API.
 
 # Recurrence, Attention, And Causality
 
@@ -226,13 +234,6 @@ so the retained low- and high-frequency bands do not overlap. The portable imple
 dense multidimensional DFT. The CUDA Burgers application selects a fused real-FFT path backed by
 cuFFT. Both paths implement the same typed field-to-field interface, but their numerical and trust
 boundaries are recorded separately.
-
-# From Architectures To Runs
-
-We have seen how the model families are assembled. The next chapter turns them into three case
-studies spanning four runs: a character Transformer, ResNet and ViT on the same vision data, and a
-Fourier neural operator. It prepares their data, launches training, and inspects the artifacts they
-leave behind.
 
 # References
 

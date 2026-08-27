@@ -52,9 +52,9 @@ def sequence
   {seqLen inputSize hiddenSize outputSize : Nat}
   (rnnSpec : RNNSpec α inputSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
-  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+  Spec.Module.Chain α ([seqLen, inputSize]) ([seqLen, outputSize]) :=
   let rnnModule := Spec.Module.rnn rnnSpec
-  let linearModule := Spec.Module.mapLeading (Spec.Module.linear linearSpec)
+  let linearModule := Spec.Module.mapEach (Spec.Module.linear linearSpec)
   Spec.Module.Chain.single rnnModule
     |>.append linearModule
 
@@ -73,9 +73,10 @@ def classifier
   (rnnSpec : RNNSpec α inputSize hiddenSize)
   (classifierHead : LinearSpec α hiddenSize numClasses)
   (h : seqLen ≠ 0) :
-  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
+  Spec.Module.Chain α ([seqLen, inputSize]) ([numClasses]) :=
   let rnnModule := Spec.Module.rnn rnnSpec
-  let lastOutput := Spec.Module.selectLeading (⟨Nat.pred seqLen, Nat.pred_lt h⟩)
+  let lastOutput := Spec.Module.select (shape := [seqLen, hiddenSize]) 0
+    (⟨Nat.pred seqLen, Nat.pred_lt h⟩)
   let classifierModule := Spec.Module.linear classifierHead
   Spec.Module.Chain.single rnnModule
     |>.append lastOutput
@@ -92,10 +93,10 @@ def stacked
   (firstSpec : RNNSpec α inputSize hiddenSize)
   (secondSpec : RNNSpec α hiddenSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
-  Spec.Module.Chain α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+  Spec.Module.Chain α ([seqLen, inputSize]) ([seqLen, outputSize]) :=
   let firstModule := Spec.Module.rnn firstSpec
   let secondModule := Spec.Module.rnn secondSpec
-  let linearModule := Spec.Module.mapLeading (Spec.Module.linear linearSpec)
+  let linearModule := Spec.Module.mapEach (Spec.Module.linear linearSpec)
   Spec.Module.Chain.single firstModule
     |>.append secondModule
     |>.append linearModule
@@ -114,10 +115,10 @@ def languageModel
   (embeddingSpec : LinearSpec α vocabSize hiddenSize)
   (rnnSpec : RNNSpec α hiddenSize hiddenSize)
   (outputSpec : LinearSpec α hiddenSize vocabSize) :
-  Spec.Module.Chain α (.dim seqLen (.dim vocabSize .scalar)) (.dim seqLen (.dim vocabSize .scalar)) :=
-  let embeddingModule := Spec.Module.mapLeading (Spec.Module.linear embeddingSpec)
+  Spec.Module.Chain α ([seqLen, vocabSize]) ([seqLen, vocabSize]) :=
+  let embeddingModule := Spec.Module.mapEach (Spec.Module.linear embeddingSpec)
   let rnnModule := Spec.Module.rnn rnnSpec
-  let outputModule := Spec.Module.mapLeading (Spec.Module.linear outputSpec)
+  let outputModule := Spec.Module.mapEach (Spec.Module.linear outputSpec)
   Spec.Module.Chain.single embeddingModule
     |>.append rnnModule
     |>.append outputModule
@@ -137,13 +138,13 @@ structure Model (α : Type) (inputSize hiddenSize outputSize : Nat) where
 /-- Parameter gradients for a recurrent model and its linear output head. -/
 structure Grads (α : Type) (inputSize hiddenSize outputSize : Nat) where
   /-- Gradient of the recurrent weight matrix. -/
-  rnnWeight : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
+  rnnWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Gradient of the recurrent bias. -/
-  rnnBias : Tensor α (.dim hiddenSize .scalar)
+  rnnBias : Tensor α [hiddenSize]
   /-- Gradient of the output projection weight. -/
-  outputWeight : Tensor α (.dim outputSize (.dim hiddenSize .scalar))
+  outputWeight : Tensor α [outputSize, hiddenSize]
   /-- Gradient of the output projection bias. -/
-  outputBias : Tensor α (.dim outputSize .scalar)
+  outputBias : Tensor α [outputSize]
 
 /--
 Bundle of parameters for a multi-layer RNN model.
@@ -204,9 +205,9 @@ and the linear head.
 -/
 def Model.forward {inputSize hiddenSize outputSize : Nat}
   (model : Model α inputSize hiddenSize outputSize)
-  (input : Tensor α (.dim inputSize .scalar))
-  (hidden : Tensor α (.dim hiddenSize .scalar)) :
-  (Tensor α (.dim outputSize .scalar) × Tensor α (.dim hiddenSize .scalar)) :=
+  (input : Tensor α [inputSize])
+  (hidden : Tensor α [hiddenSize]) :
+  (Tensor α [outputSize] × Tensor α [hiddenSize]) :=
   let nextHidden := rnnCellSpec model.rnn input hidden
   let output := linearSpec model.outputLayer nextHidden
   (output, nextHidden)
@@ -219,15 +220,15 @@ returns both the per-step outputs and the final hidden state.
 -/
 def Model.forwardSequence {seqLen inputSize hiddenSize outputSize : Nat}
   (model : Model α inputSize hiddenSize outputSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initialHidden : Tensor α (.dim hiddenSize .scalar)) (h : 0 < seqLen) :
-  (Tensor α (.dim seqLen (.dim outputSize .scalar)) × Tensor α (.dim hiddenSize .scalar))  :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (initialHidden : Tensor α [hiddenSize]) (h : 0 < seqLen) :
+  (Tensor α [seqLen, outputSize] × Tensor α [hiddenSize])  :=
   let hiddenStates := rnnSequenceSpec model.rnn inputs initialHidden
-  let outputs := Tensor.mapLeading (.dim seqLen .scalar)
+  let outputs := Tensor.mapEach ([seqLen])
     (linearSpec model.outputLayer) hiddenStates
   have hLast : seqLen - 1 < seqLen := by
     simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
-  let finalHidden := getAtSpec hiddenStates ⟨seqLen - 1, hLast⟩
+  let finalHidden := get hiddenStates ⟨seqLen - 1, hLast⟩
   (outputs, finalHidden)
 
 /--
@@ -238,13 +239,13 @@ classifier head.
 -/
 def Classifier.forward {seqLen inputSize hiddenSize numClasses : Nat}
   (model : Classifier α inputSize hiddenSize numClasses)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initialHidden : Tensor α (.dim hiddenSize .scalar)) (h : 0 < seqLen) :
-  Tensor α (.dim numClasses .scalar) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (initialHidden : Tensor α [hiddenSize]) (h : 0 < seqLen) :
+  Tensor α [numClasses] :=
   let hiddenStates := rnnSequenceSpec model.rnn inputs initialHidden
   have hLast : seqLen - 1 < seqLen := by
     simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
-  let finalHidden := getAtSpec hiddenStates ⟨seqLen - 1, hLast⟩
+  let finalHidden := get hiddenStates ⟨seqLen - 1, hLast⟩
   linearSpec model.classifier finalHidden
 
 /--
@@ -255,16 +256,16 @@ back into vocabulary space.
 -/
 def Generator.forward {seqLen vocabSize hiddenSize : Nat}
   (model : Generator α vocabSize hiddenSize)
-  (inputTokens : Tensor α (.dim seqLen (.dim vocabSize .scalar)))
-  (initialHidden : Tensor α (.dim hiddenSize .scalar)) (h : 0 < seqLen) :
-  (Tensor α (.dim seqLen (.dim vocabSize .scalar)) × Tensor α (.dim hiddenSize .scalar)) :=
-  let embedded := Tensor.mapLeading (.dim seqLen .scalar) (linearSpec model.embedding) inputTokens
+  (inputTokens : Tensor α [seqLen, vocabSize])
+  (initialHidden : Tensor α [hiddenSize]) (h : 0 < seqLen) :
+  (Tensor α [seqLen, vocabSize] × Tensor α [hiddenSize]) :=
+  let embedded := Tensor.mapEach ([seqLen]) (linearSpec model.embedding) inputTokens
   let hiddenStates := rnnSequenceSpec model.rnn embedded initialHidden
-  let outputs := Tensor.mapLeading (.dim seqLen .scalar)
+  let outputs := Tensor.mapEach ([seqLen])
     (linearSpec model.outputProjection) hiddenStates
   have hLast : seqLen - 1 < seqLen := by
     simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
-  let finalHidden := getAtSpec hiddenStates ⟨seqLen - 1, hLast⟩
+  let finalHidden := get hiddenStates ⟨seqLen - 1, hLast⟩
   (outputs, finalHidden)
 
 /--
@@ -275,18 +276,18 @@ two state streams per time step, and applies the output head.
 -/
 def BidirectionalModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
   (model : BidirectionalModel α inputSize hiddenSize outputSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (forwardHidden : Tensor α (.dim hiddenSize .scalar))
-  (backwardHidden : Tensor α (.dim hiddenSize .scalar)) :
-  Tensor α (.dim seqLen (.dim outputSize .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (forwardHidden : Tensor α [hiddenSize])
+  (backwardHidden : Tensor α [hiddenSize]) :
+  Tensor α [seqLen, outputSize] :=
   let forwardStates := rnnSequenceSpec model.forwardRnn inputs forwardHidden
-  let reversedInputs := Tensor.reverseLeadingAxis inputs
+  let reversedInputs := Tensor.reverseAxis 0 inputs
   let reversedBackwardStates := rnnSequenceSpec model.backwardRnn reversedInputs backwardHidden
-  let backwardStates := Tensor.reverseLeadingAxis reversedBackwardStates
-  let combinedStates := Tensor.zipWithLeading (.dim seqLen .scalar)
-    (.dim (hiddenSize + hiddenSize) .scalar)
-    Tensor.concatLeadingAxisSpec forwardStates backwardStates
-  Tensor.mapLeading (.dim seqLen .scalar) (linearSpec model.outputLayer) combinedStates
+  let backwardStates := Tensor.reverseAxis 0 reversedBackwardStates
+  let combinedStates := Tensor.zipEach ([seqLen])
+    ([(hiddenSize + hiddenSize)])
+    (Tensor.concatAxisSpec .scalar) forwardStates backwardStates
+  Tensor.mapEach ([seqLen]) (linearSpec model.outputLayer) combinedStates
 
 -- One-step helper used by some compact examples (single cell update + output projection).
 /--
@@ -297,9 +298,9 @@ This is used by some compact examples that do not build a full `Spec.Module.Chai
 def cellWithHead {inputSize hiddenSize outputSize : Nat}
   (cell : RNNSpec α inputSize hiddenSize)
   (outputLayer : LinearSpec α hiddenSize outputSize)
-  (inputs : Tensor α (.dim inputSize .scalar))
-  (hidden : Tensor α (.dim hiddenSize .scalar)) :
-  (Tensor α (.dim outputSize .scalar) × Tensor α (.dim hiddenSize .scalar)) :=
+  (inputs : Tensor α [inputSize])
+  (hidden : Tensor α [hiddenSize]) :
+  (Tensor α [outputSize] × Tensor α [hiddenSize]) :=
   let nextHidden := rnnCellSpec cell inputs hidden
   let output := linearSpec outputLayer nextHidden
   (output, nextHidden)
@@ -314,21 +315,23 @@ This is a spec-level reference implementation; performance is not a goal here.
 -/
 def Model.backward {seqLen inputSize hiddenSize outputSize : Nat}
   (model : Model α inputSize hiddenSize outputSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddenStates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (gradOutputs : Tensor α (.dim seqLen (.dim outputSize .scalar))) (h : 0 < seqLen) :
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddenStates : Tensor α [seqLen, hiddenSize])
+  (gradOutputs : Tensor α [seqLen, outputSize]) (h : 0 < seqLen) :
   Grads α inputSize hiddenSize outputSize ×
-    Tensor α (.dim seqLen (.dim inputSize .scalar)) :=
+    Tensor α [seqLen, inputSize] :=
 
-  let gradHiddenFromOutput := Tensor.mapLeading (.dim seqLen .scalar)
+  let gradHiddenFromOutput := Tensor.mapEach ([seqLen])
     (fun gradOutput => linearInputDerivSpec model.outputLayer.weights gradOutput) gradOutputs
-  let gradOutputWeights := Tensor.sumLeadingAxis
-    (Tensor.zipWithLeading (.dim seqLen .scalar)
-      (Shape.dim outputSize (Shape.dim hiddenSize Shape.scalar))
-      linearWeightsDerivSpec hiddenStates gradOutputs) h.ne'
-  let gradOutputBias := Tensor.sumLeadingAxis gradOutputs h.ne'
+  let gradOutputWeights := Tensor.reduceSum 0
+    (Tensor.zipEach ([seqLen])
+      [outputSize, hiddenSize]
+      linearWeightsDerivSpec hiddenStates gradOutputs)
+    (Shape.hasNonemptyAxisZeroOfNe h.ne').proof
+  let gradOutputBias := Tensor.reduceSum 0 gradOutputs
+    (Shape.hasNonemptyAxisZeroOfNe h.ne').proof
 
-  let initialHidden := fill 0 (.dim hiddenSize .scalar)
+  let initialHidden := fill 0 ([hiddenSize])
   let (gradRnnWeights, gradRnnBias, gradInputs, _gradInitialHidden) :=
     rnnSequenceBackwardSpec model.rnn inputs initialHidden hiddenStates gradHiddenFromOutput
 
@@ -346,10 +349,10 @@ Map a scalar-valued function over two aligned sequences, producing a sequence of
 This helper lifts a scalar comparison over aligned sequence elements.
 -/
 def mapSequence2 {seqLen dim1 dim2 : Nat}
-  (f : Tensor α (.dim dim1 .scalar) → Tensor α (.dim dim2 .scalar) → α)
-  (leftSeq : Tensor α (.dim seqLen (.dim dim1 .scalar)))
-  (rightSeq : Tensor α (.dim seqLen (.dim dim2 .scalar))) :
-  Tensor α (.dim seqLen .scalar) :=
+  (f : Tensor α [dim1] → Tensor α [dim2] → α)
+  (leftSeq : Tensor α [seqLen, dim1])
+  (rightSeq : Tensor α [seqLen, dim2]) :
+  Tensor α [seqLen] :=
   match leftSeq, rightSeq with
   | Tensor.dim func, Tensor.dim rightFn =>
     Tensor.dim (fun i => Tensor.scalar (f (func i) (rightFn i)))
@@ -364,9 +367,9 @@ This is the spec-level analogue of a per-time-step classification loss, averaged
 PyTorch analogue: `torch.nn.CrossEntropyLoss` applied per step and then averaged.
 -/
 def classificationLoss {seqLen numClasses : Nat}
-  [Shape.HasNonemptyAxis 0 (.dim numClasses .scalar)]
-  (predictions : Tensor α (.dim seqLen (.dim numClasses .scalar)))
-  (targets : Tensor α (.dim seqLen (.dim numClasses .scalar))) :
+  [Shape.HasNonemptyAxis 0 ([numClasses])]
+  (predictions : Tensor α [seqLen, numClasses])
+  (targets : Tensor α [seqLen, numClasses]) :
   α :=
   let losses := Internal.mapSequence2 (crossEntropySpec 0) predictions targets
   meanSpec losses
@@ -379,10 +382,10 @@ meaning of the module.
 -/
 def Model.toModule {seqLen inputSize hiddenSize outputSize : Nat}
   (model : Model α inputSize hiddenSize outputSize) (h : 0 < seqLen) :
-  Spec.Module α (.dim seqLen (.dim inputSize .scalar)) (.dim seqLen (.dim outputSize .scalar)) :=
+  Spec.Module α ([seqLen, inputSize]) ([seqLen, outputSize]) :=
 {
   forward := fun inputs =>
-    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    let initialHidden := fill 0 ([hiddenSize])
     (model.forwardSequence inputs initialHidden h).1,
   kind := "SimpleRNN",
   pythonExpr := s!"SimpleRNN(input_size={inputSize}, hidden_size={hiddenSize}, output_size={outputSize})"
@@ -395,10 +398,10 @@ This plugs the classifier into the common module pipeline and records a PyTorch-
 -/
 def Classifier.toModule {seqLen inputSize hiddenSize numClasses : Nat}
   (model : Classifier α inputSize hiddenSize numClasses) (h : 0 < seqLen) :
-  Spec.Module α (.dim seqLen (.dim inputSize .scalar)) (.dim numClasses .scalar) :=
+  Spec.Module α ([seqLen, inputSize]) ([numClasses]) :=
 {
   forward := fun inputs =>
-    let initialHidden := fill 0 (.dim hiddenSize .scalar)
+    let initialHidden := fill 0 ([hiddenSize])
     model.forward inputs initialHidden h,
   kind := "RNNClassifier",
   pythonExpr := s!"RNNClassifier(input_size={inputSize}, hidden_size={hiddenSize}, num_classes={numClasses})"

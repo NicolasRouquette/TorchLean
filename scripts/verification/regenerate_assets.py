@@ -61,7 +61,7 @@ COMMANDS: tuple[Command, ...] = (
     Command(
         group="digits",
         kind="bundled fixture",
-        description="Export the per-example logit-margin certificate for the digits workflow.",
+        description="Export the per-example logit-bound report for the digits workflow.",
         argv=(
             "python3",
             str(SCRIPTS_DIR / "robustness" / "export_margin_cert.py"),

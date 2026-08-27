@@ -6,8 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Core
-public import NN.Runtime.Autograd.Engine.Cuda.Ops
 public import NN.Runtime.Autograd.TorchLean.Session
 public import NN.Tensor
 public import NN.Tests.Runtime.Cuda.Utils
@@ -31,9 +29,10 @@ open Runtime.Autograd
 
 /-- Exercise arbitrary-axis softmax through the public CUDA session, including its VJP. -/
 def checkInteriorAxisSession : IO Unit := do
-  let s : Shape := shape![2, 2, 2]
-  let x : Tensor Float s := tensorOfList! [2, 2, 2] [0, 2, 1, 4, 3, 8, 7, 9]
-  let upstream : Tensor Float s := tensorOfList! [2, 2, 2] [1, -2, 3, 4, -1, 2, 5, -3]
+  let s : Shape := [2, 2, 2]
+  let x : Tensor Float s := tensorOfArray! [2, 2, 2] #[0, 2, 1, 4, 3, 8, 7, 9]
+  let upstream : Tensor Float s :=
+    tensorOfArray! [2, 2, 2] #[1.0, -2.0, 3.0, 4.0, -1.0, 2.0, 5.0, -3.0]
   let sess ← Runtime.Autograd.TorchLean.Session.new (α := Float)
     { execution := .eager, device := .cuda }
   let xRef ← Runtime.Autograd.TorchLean.Session.input sess x
@@ -47,62 +46,48 @@ def checkInteriorAxisSession : IO Unit := do
   Utils.assertTensorApprox (s := s) "softmax interior-axis backward" gradient expectedGradient
     (tol := 2e-3)
 
+def evalSoftmax (device : NN.Backend.Device) (x upstream : Tensor Float [2, 3]) :
+    IO (Tensor Float [2, 3] × Tensor Float [2, 3]) := do
+  let sess ← Runtime.Autograd.TorchLean.Session.new (α := Float)
+    { execution := .eager, device := device }
+  let xRef ← Runtime.Autograd.TorchLean.Session.input sess x
+    (name := some "softmax_input") (requiresGrad := true)
+  let yRef ← Runtime.Autograd.TorchLean.Session.softmax sess 1 xRef
+  let y ← Runtime.Autograd.TorchLean.Session.getValue sess yRef
+  let gradient ← Runtime.Autograd.TorchLean.Session.vjp sess yRef upstream xRef
+  pure (y, gradient)
+
+def evalLogSoftmax (device : NN.Backend.Device)
+    (x upstream : Tensor Float [2, 3]) :
+    IO (Tensor Float [2, 3] × Tensor Float [2, 3]) := do
+  let sess ← Runtime.Autograd.TorchLean.Session.new (α := Float)
+    { execution := .eager, device := device }
+  let xRef ← Runtime.Autograd.TorchLean.Session.input sess x
+    (name := some "log_softmax_input") (requiresGrad := true)
+  let yRef ← Runtime.Autograd.TorchLean.Session.logSoftmax sess 1 xRef
+  let y ← Runtime.Autograd.TorchLean.Session.getValue sess yRef
+  let gradient ← Runtime.Autograd.TorchLean.Session.vjp sess yRef upstream xRef
+  pure (y, gradient)
+
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: softmax ==="
 
-  let s : Shape := shape![2, 3]
+  let s : Shape := [2, 3]
   let x : Tensor Float s :=
-    tensorOfList! [2, 3] [
+    tensorOfArray! [2, 3] #[
       0.10, -0.20, 0.30,
       0.05,  0.25, -0.15
     ]
-
-  -- CPU tape: y = softmax(x)
-  let t0 : Tape Float := Tape.empty
-  let (t1, xId) := Tape.leaf (t := t0) x (name := some "x")
-  let (t2, yId) ← Utils.okOrThrow (Tape.softmaxLast (α := Float) (t := t1) (s := s) xId)
-  let yCpu ← Utils.cpuValue (s := s) t2 yId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) s)
-  let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
-  let dxCpu ← Utils.cpuGrad (s := s) gradsCpu xId
-
-  -- CUDA tape: y = softmax(x)
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
-    (name := some "x")
-  let (t2c, yIdc) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.softmaxLast (t := t1c) (s := s) xIdc)
-  let yCuda ← Utils.cudaValue (s := s) t2c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := s, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size s)) 1.0 }
-  let gradsCuda ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t2c) yIdc seedCuda)
-  let dxCuda ← Utils.cudaGrad (s := s) gradsCuda xIdc
+  let upstream : Tensor Float s := fill 1.0 s
+  let (yCpu, dxCpu) ← evalSoftmax .cpu x upstream
+  let (yCuda, dxCuda) ← evalSoftmax .cuda x upstream
 
   -- Compare (float32 vs float64, so use a modest tolerance).
   Utils.assertTensorApprox (s := s) "softmax forward" yCuda yCpu (tol := 2e-3)
   Utils.assertTensorApprox (s := s) "softmax backward" dxCuda dxCpu (tol := 2e-3)
 
-  -- CPU tape: y = stable log_softmax(x)
-  let t0Log : Tape Float := Tape.empty
-  let (t1Log, xIdLog) := Tape.leaf (t := t0Log) x (name := some "x_log")
-  let (t2Log, yIdLog) ←
-    Utils.okOrThrow (Tape.logSoftmaxLast (α := Float) (t := t1Log) (s := s) xIdLog)
-  let yLogCpu ← Utils.cpuValue (s := s) t2Log yIdLog
-  let seedLogCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) s)
-  let gradsLogCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2Log) yIdLog seedLogCpu)
-  let dxLogCpu ← Utils.cpuGrad (s := s) gradsLogCpu xIdLog
-
-  -- CUDA tape: y = stable log_softmax(x)
-  let t0cLog : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1cLog, xIdcLog) := Runtime.Autograd.Cuda.Tape.leaf (t := t0cLog) (Utils.tensorToAnyBuffer x)
-    (name := some "x_log")
-  let (t2cLog, yIdcLog) ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.logSoftmaxLast (t := t1cLog)
-    (s := s) xIdcLog)
-  let yLogCuda ← Utils.cudaValue (s := s) t2cLog yIdcLog
-  let seedLogCuda : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := s, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size s)) 1.0 }
-  let gradsLogCuda ← Utils.okOrThrow (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t2cLog)
-    yIdcLog seedLogCuda)
-  let dxLogCuda ← Utils.cudaGrad (s := s) gradsLogCuda xIdcLog
+  let (yLogCpu, dxLogCpu) ← evalLogSoftmax .cpu x upstream
+  let (yLogCuda, dxLogCuda) ← evalLogSoftmax .cuda x upstream
 
   Utils.assertTensorApprox (s := s) "log_softmax forward" yLogCuda yLogCpu (tol := 2e-3)
   Utils.assertTensorApprox (s := s) "log_softmax backward" dxLogCuda dxLogCpu (tol := 2e-3)

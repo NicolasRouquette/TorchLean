@@ -161,7 +161,7 @@ theorem scale_hasExactColumnGram_of_square_eq_one {m n : Nat}
   unfold HasExactColumnGram columnGram
   apply matrix_ext
   intro i j
-  have hgram' : matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q =
+  have hgram' : matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q =
       identityTensorSpec (α := ℝ) n := by
     simpa [HasExactColumnGram, columnGram] using hgram
   have hentry :
@@ -169,15 +169,15 @@ theorem scale_hasExactColumnGram_of_square_eq_one {m n : Nat}
         get2 (identityTensorSpec (α := ℝ) n) i j := by
     calc
       (∑ r : Fin m, get2 Q r i * get2 Q r j)
-          = get2 (matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q) i j := by
+          = get2 (matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q) i j := by
             symm
             calc
-              get2 (matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q) i j
+              get2 (matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q) i j
                   = ∑ r : Fin m,
-                      get2 (Spec.Tensor.matrixTransposeSpec Q) i r * get2 Q r j := by
+                      get2 (Spec.Tensor.swapAdjacentAxes Q 0) i r * get2 Q r j := by
                     simpa using
                       (get2_mat_mul_spec
-                        (A := Spec.Tensor.matrixTransposeSpec Q) (B := Q) (i := i) (j := j))
+                        (A := Spec.Tensor.swapAdjacentAxes Q 0) (B := Q) (i := i) (j := j))
               _ = ∑ r : Fin m, get2 Q r i * get2 Q r j := by
                     refine Finset.sum_congr rfl ?_
                     intro r _
@@ -186,13 +186,13 @@ theorem scale_hasExactColumnGram_of_square_eq_one {m n : Nat}
             exact congrArg (fun M => get2 M i j) hgram'
   calc
     get2
-        (matMulSpec (Spec.Tensor.matrixTransposeSpec (scaleSpec Q k)) (scaleSpec Q k)) i j
+        (matMulSpec (Spec.Tensor.swapAdjacentAxes (scaleSpec Q k) 0) (scaleSpec Q k)) i j
         = ∑ r : Fin m,
-            get2 (Spec.Tensor.matrixTransposeSpec (scaleSpec Q k)) i r *
+            get2 (Spec.Tensor.swapAdjacentAxes (scaleSpec Q k) 0) i r *
               get2 (scaleSpec Q k) r j := by
           simpa using
             (get2_mat_mul_spec
-              (A := Spec.Tensor.matrixTransposeSpec (scaleSpec Q k)) (B := scaleSpec Q k)
+              (A := Spec.Tensor.swapAdjacentAxes (scaleSpec Q k) 0) (B := scaleSpec Q k)
               (i := i) (j := j))
     _ = ∑ r : Fin m, (get2 Q r i * k) * (get2 Q r j * k) := by
           refine Finset.sum_congr rfl ?_
@@ -220,7 +220,7 @@ theorem scale_hasApproxColumnGram_of_exact_column_gram_of_square_error {m n : Na
     (heps : 0 ≤ eps) :
     HasApproxColumnGram eps (scaleSpec Q k) := by
   intro i j
-  have hgram' : matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q =
+  have hgram' : matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q =
       identityTensorSpec (α := ℝ) n := by
     simpa [HasExactColumnGram, columnGram] using hgram
   have hentry :
@@ -228,15 +228,15 @@ theorem scale_hasApproxColumnGram_of_exact_column_gram_of_square_error {m n : Na
         get2 (identityTensorSpec (α := ℝ) n) i j := by
     calc
       (∑ r : Fin m, get2 Q r i * get2 Q r j)
-          = get2 (matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q) i j := by
+          = get2 (matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q) i j := by
             symm
             calc
-              get2 (matMulSpec (Spec.Tensor.matrixTransposeSpec Q) Q) i j
+              get2 (matMulSpec (Spec.Tensor.swapAdjacentAxes Q 0) Q) i j
                   = ∑ r : Fin m,
-                      get2 (Spec.Tensor.matrixTransposeSpec Q) i r * get2 Q r j := by
+                      get2 (Spec.Tensor.swapAdjacentAxes Q 0) i r * get2 Q r j := by
                     simpa using
                       (get2_mat_mul_spec
-                        (A := Spec.Tensor.matrixTransposeSpec Q) (B := Q) (i := i) (j := j))
+                        (A := Spec.Tensor.swapAdjacentAxes Q 0) (B := Q) (i := i) (j := j))
               _ = ∑ r : Fin m, get2 Q r i * get2 Q r j := by
                     refine Finset.sum_congr rfl ?_
                     intro r _
@@ -249,15 +249,15 @@ theorem scale_hasApproxColumnGram_of_exact_column_gram_of_square_error {m n : Na
     calc
       get2 (columnGram (scaleSpec Q k)) i j
           = get2
-              (matMulSpec (Spec.Tensor.matrixTransposeSpec (scaleSpec Q k)) (scaleSpec Q k))
+              (matMulSpec (Spec.Tensor.swapAdjacentAxes (scaleSpec Q k) 0) (scaleSpec Q k))
               i j := by
             rfl
       _ = ∑ r : Fin m,
-            get2 (Spec.Tensor.matrixTransposeSpec (scaleSpec Q k)) i r *
+            get2 (Spec.Tensor.swapAdjacentAxes (scaleSpec Q k) 0) i r *
               get2 (scaleSpec Q k) r j := by
             simpa using
               (get2_mat_mul_spec
-                (A := Spec.Tensor.matrixTransposeSpec (scaleSpec Q k)) (B := scaleSpec Q k)
+                (A := Spec.Tensor.swapAdjacentAxes (scaleSpec Q k) 0) (B := scaleSpec Q k)
                 (i := i) (j := j))
       _ = ∑ r : Fin m, (get2 Q r i * k) * (get2 Q r j * k) := by
             refine Finset.sum_congr rfl ?_
@@ -494,12 +494,12 @@ theorem qrOrthogonalizer_exact_of_positive_pivots {m n : Nat}
   apply matrix_ext
   intro i j
   calc
-    get2 (matMulSpec (Spec.Tensor.matrixTransposeSpec (qrQSpec buffer)) (qrQSpec buffer)) i j
-        = ∑ k : Fin m, get2 (Spec.Tensor.matrixTransposeSpec (qrQSpec buffer)) i k *
+    get2 (matMulSpec (Spec.Tensor.swapAdjacentAxes (qrQSpec buffer) 0) (qrQSpec buffer)) i j
+        = ∑ k : Fin m, get2 (Spec.Tensor.swapAdjacentAxes (qrQSpec buffer) 0) i k *
             get2 (qrQSpec buffer) k j := by
           simpa using
             (get2_mat_mul_spec
-              (A := Spec.Tensor.matrixTransposeSpec (qrQSpec buffer))
+              (A := Spec.Tensor.swapAdjacentAxes (qrQSpec buffer) 0)
               (B := qrQSpec buffer) (i := i) (j := j))
     _ = ∑ k : Fin m, get2 (qrQSpec buffer) k i * get2 (qrQSpec buffer) k j := by
           refine Finset.sum_congr rfl ?_

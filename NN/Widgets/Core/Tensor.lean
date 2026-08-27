@@ -6,9 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public meta import NN.Runtime.Context
+public meta import NN.Spec.Core.Tensor.SomeTensor
 public meta import NN.Spec.Core.Tensor
-public meta import NN.Spec.Core.Tensor.API
 public meta import NN.Widgets.Core.UI
 public meta import ProofWidgets.Component.HtmlDisplay
 public meta import ProofWidgets.Demos.Macro
@@ -87,6 +86,10 @@ namespace TensorInternal
 def join (sep : String) (xs : List String) : String :=
   String.intercalate sep xs
 
+/-- Join an array of strings without introducing a list-backed numerical intermediate. -/
+def joinArray (sep : String) (xs : Array String) : String :=
+  xs.foldl (fun acc x => if acc.isEmpty then x else acc ++ sep ++ x) ""
+
 /-- Render shape dimensions as a bracketed list string. -/
 def dimsString (s : Shape) : String :=
   match Shape.toList s with
@@ -100,18 +103,18 @@ def fmtMaybe (x : Option String) : ProofWidgets.Html :=
 
 /-- Render a 1D tensor as a clipped single-row table. -/
 def renderVector {α : Type} [TensorElemView α] (maxCols : Nat) {n : Nat}
-    (t : Tensor α (.dim n .scalar)) : ProofWidgets.Html :=
-  let xs := (toList (s := .dim n .scalar) t).take maxCols;
+    (t : Tensor α [n]) : ProofWidgets.Html :=
+  let xs := (toArray (s := .dim n .scalar) t).extract 0 maxCols;
   let clipped : Bool := decide (n > maxCols);
   <div>
     <div style={json% {"margin-bottom": "6px"}}>
-      {pill s!"vector len={n}"} {pill s!"showing={xs.length}"} {pill s!"clipped={clipped}"}
+      {pill s!"rank one, size={n}"} {pill s!"showing={xs.size}"} {pill s!"clipped={clipped}"}
     </div>
     <div style={json% {"overflow-x": "auto"}}>
       <table style={json% {"border-collapse": "collapse"}}>
         <tbody>
           <tr>
-            {... xs.toArray.map (fun x =>
+            {... xs.map (fun x =>
               <td style={json% {"border": "1px solid #ddd", "padding": "4px 6px", "text-align":
                 "right"}}>
                 {TensorElemView.render x}
@@ -130,24 +133,24 @@ def renderVector {α : Type} [TensorElemView α] (maxCols : Nat) {n : Nat}
 
 /-- Render a 2D tensor as a clipped grid table. -/
 def renderMatrix {α : Type} [TensorElemView α] (maxRows maxCols : Nat) {n m : Nat}
-    (t : Tensor α (.dim n (.dim m .scalar))) : ProofWidgets.Html :=
+    (t : Tensor α [n, m]) : ProofWidgets.Html :=
   let rows :=
-    (List.finRange n).take maxRows |>.map (fun i =>
-      let row : Tensor α (.dim m .scalar) := getAtSpec t i
-      (toList (s := .dim m .scalar) row).take maxCols);
+    (Array.finRange n).extract 0 maxRows |>.map (fun i =>
+      let row : Tensor α [m] := get t i
+      (toArray (s := .dim m .scalar) row).extract 0 maxCols);
   let clippedRows : Bool := decide (n > maxRows);
   let clippedCols : Bool := decide (m > maxCols);
   <div>
     <div style={json% {"margin-bottom": "6px"}}>
-      {pill s!"matrix {n}×{m}"} {pill s!"rows={rows.length}"} {pill s!"clippedRows={clippedRows}"}
+      {pill s!"matrix {n}×{m}"} {pill s!"rows={rows.size}"} {pill s!"clippedRows={clippedRows}"}
         {pill s!"clippedCols={clippedCols}"}
     </div>
     <div style={json% {"overflow": "auto", "max-height": "420px"}}>
       <table style={json% {"border-collapse": "collapse"}}>
         <tbody>
-          {... rows.toArray.map (fun row =>
+          {... rows.map (fun row =>
             <tr>
-              {... row.toArray.map (fun x =>
+              {... row.map (fun x =>
                 <td style={json% {"border": "1px solid #ddd", "padding": "4px 6px", "text-align":
                   "right"}}>
                   {TensorElemView.render x}
@@ -173,15 +176,14 @@ def renderMatrix {α : Type} [TensorElemView α] (maxRows maxCols : Nat) {n m : 
 
 def renderFlatPreview {α : Type} [ToString α] (maxElems : Nat) {s : Shape}
     (t : Tensor α s) : ProofWidgets.Html :=
-  let xs := (toList (s := s) t);
-  -- `prefix` is a Lean keyword (notation command), so we avoid it as a local name.
-  let head := xs.take maxElems;
-  let clipped : Bool := decide (xs.length > maxElems);
+  let xs := toArray (s := s) t;
+  let head := xs.extract 0 maxElems;
+  let clipped : Bool := decide (xs.size > maxElems);
   let preview :=
     if head.isEmpty then
       "(empty?)"
     else
-      "[" ++ join ", " (head.map toString) ++ (if clipped then ", ..." else "") ++ "]";
+      "[" ++ joinArray ", " (head.map toString) ++ (if clipped then ", ..." else "") ++ "]";
   <details style={json% {"margin-top": "10px"}}>
     <summary>{.text s!"Flat preview (first {maxElems})"}</summary>
     <div style={json% {"margin-top": "6px"}}>
@@ -238,7 +240,7 @@ def tensorHtml {α : Type} [ToString α] {s : Shape} (t : Tensor α s)
                     </summary>
                 <div style={json% {"margin-top": "8px"}}>
                   {... idxs.toArray.map (fun i =>
-                    let slice : Tensor α s' := getAtSpec (Tensor.dim f) i;
+                    let slice : Tensor α s' := get (Tensor.dim f) i;
                     <details style={json% {"margin": "8px 0"}}>
                       <summary>{.text s!"[{i.1}]"}</summary>
                       <div style={json% {"margin-top": "6px", "padding-left": "8px"}}>
@@ -289,8 +291,8 @@ def tensorHtml {α : Type} [ToString α] {s : Shape} (t : Tensor α s)
 ## Runtime Wrappers
 -/
 
-/-- Render a `Spec.PackedTensor` with the same UI as `tensorHtml`. -/
-def packedTensorHtml {α : Type} [ToString α] (v : Spec.PackedTensor α)
+/-- Render a `Spec.SomeTensor` with the same UI as `tensorHtml`. -/
+def packedTensorHtml {α : Type} [ToString α] (v : Spec.SomeTensor α)
     (maxRows : Nat := 16) (maxCols : Nat := 16) (maxElems : Nat := 64) : ProofWidgets.Html :=
   tensorHtml (α := α) (s := v.shape) v.tensor (maxRows := maxRows) (maxCols := maxCols) (maxElems :=
     maxElems)
@@ -315,14 +317,15 @@ def sqrt' {α : Type} [Context α] (x : α) : α :=
 
 def tensorStatsHtml {α : Type} [Context α] [ToString α] {s : Shape} (t : Tensor α s) :
   ProofWidgets.Html :=
-  let xs : List α := Spec.toList (α := α) (s := s) t
-  match xs with
-  | [] =>
+  let xs : Array α := Spec.Tensor.toArray (α := α) (s := s) t
+  match xs[0]? with
+  | none =>
       <div style={json% {"padding": "10px"}}>
         {pill "Tensor stats"} {pill "empty tensor"} {pill s!"shape={dimsString s}"}
       </div>
-  | x :: rest =>
-      let n : Nat := (x :: rest).length
+  | some x =>
+      let rest := xs.extract 1 xs.size
+      let n : Nat := xs.size
       let mn := rest.foldl (fun acc y => min acc y) x
       let mx := rest.foldl (fun acc y => max acc y) x
       let sum := rest.foldl (fun acc y => acc + y) x

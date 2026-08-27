@@ -38,7 +38,7 @@ The `dimensions` metadata field is not meaningful for flatten because the output
 the whole input shape; exporters should recompute the shape from the typed input.
 -/
 def flatten (α : Type) [Context α] (s : Shape) :
-  Spec.Module α s (.dim (Spec.Shape.size s) .scalar) :=
+  Spec.Module α s ([(Spec.Shape.size s)]) :=
 { forward := fun x => flattenSpec x, kind := "Flatten", pythonExpr := "nn.Flatten()" }
 
 end Spec.Module

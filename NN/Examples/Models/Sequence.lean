@@ -19,9 +19,9 @@ public import NN.Examples.Models.Sequence.CharGpt
 /-!
 # Sequence Model Examples
 
-Runnable sequence-model examples, organized by the workflow each command demonstrates:
+Runnable sequence-model examples, organized by workflow.
 
-The “main” entrypoints most people should look at first:
+Main entrypoints:
 
 - `CharGpt` (`torchlean chargpt`): Karpathy-style char-level GPT on a single text file (Tiny Shakespeare).
   This is the teaching path for character tokenization; keep it to a 1-step quick check.

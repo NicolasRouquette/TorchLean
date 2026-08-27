@@ -64,7 +64,7 @@ open UI
 private structure Row where
   id : Nat
   op : String
-  parents : List Nat
+  parents : Array Nat
   declared : Shape
   inferred? : Option Shape
   err? : Option String

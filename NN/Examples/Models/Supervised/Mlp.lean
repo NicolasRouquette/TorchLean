@@ -60,14 +60,14 @@ def hidDim : Nat := 32
 def outDim : Nat := 1
 
 /-- Input shape: a minibatch of Auto MPG feature vectors. -/
-abbrev σ : Shape := .dim batch (.dim inDim .scalar)
+abbrev σ : List Nat := [batch, inDim]
 
 /-- Output shape: one scalar regression prediction per row. -/
-abbrev τ : Shape := .dim batch (.dim outDim .scalar)
+abbrev τ : List Nat := [batch, outDim]
 
 /-- One-hidden-layer ReLU MLP from the public block API. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.blocks.mlp inDim outDim { hidden := [hidDim] } (.dim batch .scalar)
+  nn.blocks.mlp inDim outDim { hidden := [hidDim] } [batch]
 
 /--
 Auto MPG as a public TorchLean dataset.
@@ -77,7 +77,7 @@ count. Runtime scalar selection stays inside `Trainer`, so the same dataset work
 typed graph, eager, and checked scalar modes.
 -/
 def data (path : System.FilePath) (seed : Nat) :
-    Trainer.DataSource σ τ :=
+    Trainer.Dataset σ τ :=
   Data.tabularCsvDataset path batch inDim outDim
     (csvOptions := { skipHeader := true }) (shuffle := true) (seed := seed)
 

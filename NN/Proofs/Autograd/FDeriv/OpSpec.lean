@@ -45,12 +45,12 @@ noncomputable section
 ## Basic tensor/vector roundtrip
 
 Most analytic statements here are written in Euclidean space (`Vec n`) because Mathlib’s `fderiv`
-and adjoint API lives there. The following lemma just re-exports the `ofVecE/toVecE` roundtrip in a
+and adjoint API lives there. The following lemma just re-exports the `ofFnE/getScalarE` roundtrip in a
 form that is convenient for rewriting.
 -/
 
-@[simp] lemma ofVecE_toVec {n : Nat} (t : Tensor ℝ (.dim n .scalar)) :
-    ofVecE (n := n) (toVecE t) = t := by
+@[simp] lemma ofFnE_getScalar {n : Nat} (t : Tensor ℝ [n]) :
+    ofFnE (n := n) (getScalarE t) = t := by
   simp
 
 /--
@@ -71,19 +71,19 @@ structure OpSpecFDerivCorrect (inDim outDim : Nat) where
   hasFDerivAt :
       ∀ xV : Vec inDim,
         HasFDerivAt
-          (fun xV : Vec inDim => toVecE (correct.op.forward (ofVecE xV)))
+          (fun xV : Vec inDim => getScalarE (correct.op.forward (ofFnE xV)))
           (deriv xV) xV
   /-- jvp eq. -/
   jvp_eq :
       ∀ xV dxV : Vec inDim,
-        toVecE (correct.jvp (ofVecE xV) (ofVecE dxV)) = (deriv xV) dxV
+        getScalarE (correct.jvp (ofFnE xV) (ofFnE dxV)) = (deriv xV) dxV
 
 namespace OpSpecFDerivCorrect
 
 /-- The induced forward function on Euclidean vectors. -/
 def forwardVec {inDim outDim : Nat} (C : OpSpecFDerivCorrect inDim outDim) : Vec inDim → Vec outDim
   :=
-  fun xV => toVecE (C.correct.op.forward (ofVecE xV))
+  fun xV => getScalarE (C.correct.op.forward (ofFnE xV))
 
 /--
 Main analytic soundness statement for a single `OpSpecFDerivCorrect`:
@@ -94,38 +94,38 @@ This is the analytic justification for reverse-mode: it says the implemented VJP
 Jacobian-transpose product.
 -/
 theorem backward_eq_adjoint_fderiv {inDim outDim : Nat} (C : OpSpecFDerivCorrect inDim outDim)
-    (x : Tensor ℝ (.dim inDim .scalar)) (δ : Tensor ℝ (.dim outDim .scalar)) :
-    toVecE (C.correct.op.backward x δ) =
-      VJP[C.forwardVec, toVecE x] (toVecE δ) := by
+    (x : Tensor ℝ [inDim]) (δ : Tensor ℝ [outDim]) :
+    getScalarE (C.correct.op.backward x δ) =
+      VJP[C.forwardVec, getScalarE x] (getScalarE δ) := by
   classical
-  -- Reduce to the `x = ofVecE xV` case.
-  let xV : Vec inDim := toVecE x
-  have hx : x = ofVecE (n := inDim) xV := by
+  -- Reduce to the `x = ofFnE xV` case.
+  let xV : Vec inDim := getScalarE x
+  have hx : x = ofFnE (n := inDim) xV := by
     simp [xV]
   -- Prove the statement at `xV` and then rewrite.
-  have h_ofVec :
-      toVecE (C.correct.op.backward (ofVecE xV) δ) =
-        VJP[C.forwardVec, xV] (toVecE δ) := by
+  have h_ofFn :
+      getScalarE (C.correct.op.backward (ofFnE xV) δ) =
+        VJP[C.forwardVec, xV] (getScalarE δ) := by
     -- Use the dot-level correctness to characterize the backward cotangent via inner products.
     have hf : HasFDerivAt (C.forwardVec) (C.deriv xV) xV := by
       change HasFDerivAt
-        (fun xV : Vec inDim => toVecE (C.correct.op.forward (ofVecE xV))) (C.deriv xV) xV
+        (fun xV : Vec inDim => getScalarE (C.correct.op.forward (ofFnE xV))) (C.deriv xV) xV
       exact C.hasFDerivAt xV
     have hfderiv : fderiv ℝ (C.forwardVec) xV = C.deriv xV := by
       simpa using hf.fderiv
 
     have hinner :
         ∀ dxV : Vec inDim,
-          inner ℝ ((C.deriv xV) dxV) (toVecE δ) =
-            inner ℝ dxV (toVecE (C.correct.op.backward (ofVecE xV) δ)) := by
+          inner ℝ ((C.deriv xV) dxV) (getScalarE δ) =
+            inner ℝ dxV (getScalarE (C.correct.op.backward (ofFnE xV) δ)) := by
       intro dxV
-      have hdot := C.correct.correct (x := ofVecE xV) (dx := ofVecE dxV) (δ := δ)
+      have hdot := C.correct.correct (x := ofFnE xV) (dx := ofFnE dxV) (δ := δ)
       -- Convert `dot` to `inner` and rewrite the JVP via `jvp_eq`.
       have hinner' :
-          inner ℝ (toVecE (C.correct.jvp (ofVecE xV) (ofVecE dxV))) (toVecE δ) =
-            inner ℝ (toVecE (ofVecE dxV)) (toVecE (C.correct.op.backward (ofVecE xV) δ)) := by
+          inner ℝ (getScalarE (C.correct.jvp (ofFnE xV) (ofFnE dxV))) (getScalarE δ) =
+            inner ℝ (getScalarE (ofFnE dxV)) (getScalarE (C.correct.op.backward (ofFnE xV) δ)) := by
         simpa [dot_eq_inner_vec] using hdot
-      -- Replace the JVP with the analytic derivative and simplify `toVecE (ofVecE dxV)`.
+      -- Replace the JVP with the analytic derivative and simplify `getScalarE (ofFnE dxV)`.
       have hinner'' := hinner'
       -- Rewrite the JVP term using the analytic identification.
       rw [C.jvp_eq xV dxV] at hinner''
@@ -133,18 +133,18 @@ theorem backward_eq_adjoint_fderiv {inDim outDim : Nat} (C : OpSpecFDerivCorrect
 
     -- Identify the unique element satisfying the adjointness law.
     let A : Vec inDim →L[ℝ] Vec outDim := C.deriv xV
-    let u : Vec inDim := toVecE (C.correct.op.backward (ofVecE xV) δ)
-    let v : Vec inDim := A.adjoint (toVecE δ)
+    let u : Vec inDim := getScalarE (C.correct.op.backward (ofFnE xV) δ)
+    let v : Vec inDim := A.adjoint (getScalarE δ)
     have hforall : ∀ dxV : Vec inDim, inner ℝ dxV u = inner ℝ dxV v := by
       intro dxV
       -- Both sides equal `⟪A dxV, δ⟫`.
       calc
         inner ℝ dxV u
-            = inner ℝ ((C.deriv xV) dxV) (toVecE δ) := by
+            = inner ℝ ((C.deriv xV) dxV) (getScalarE δ) := by
                 simpa [u] using (hinner (dxV := dxV)).symm
-        _ = inner ℝ dxV (A.adjoint (toVecE δ)) := by
+        _ = inner ℝ dxV (A.adjoint (getScalarE δ)) := by
               simpa [A] using
-                (ContinuousLinearMap.adjoint_inner_right (A := A) (x := dxV) (y := toVecE δ)).symm
+                (ContinuousLinearMap.adjoint_inner_right (A := A) (x := dxV) (y := getScalarE δ)).symm
         _ = inner ℝ dxV v := by simp [v]
 
     have h0 : inner ℝ (u - v) (u - v) = 0 := by
@@ -160,14 +160,14 @@ theorem backward_eq_adjoint_fderiv {inDim outDim : Nat} (C : OpSpecFDerivCorrect
 
     -- Rewrite `v` using `fderiv` and finish.
     calc
-      toVecE (C.correct.op.backward (ofVecE xV) δ) = v := by simpa [u] using huv'
-      _ = (fderiv ℝ (C.forwardVec) xV).adjoint (toVecE δ) := by
+      getScalarE (C.correct.op.backward (ofFnE xV) δ) = v := by simpa [u] using huv'
+      _ = (fderiv ℝ (C.forwardVec) xV).adjoint (getScalarE δ) := by
             simp [v, A, hfderiv]
 
-  -- Rewrite `x` to `ofVecE xV` everywhere.
+  -- Rewrite `x` to `ofFnE xV` everywhere.
   rw [hx]
-  -- `toVecE (ofVecE xV) = xV`.
-  simpa using h_ofVec
+  -- `getScalarE (ofFnE xV) = xV`.
+  simpa using h_ofFn
 
 /--
 Composition preserves analytic correctness (chain rule).
@@ -186,43 +186,43 @@ def compose {inDim midDim outDim : Nat}
     -- Use the chain rule in Euclidean space and then rewrite the forward function.
     have hf : HasFDerivAt (f.forwardVec) (f.deriv xV) xV := by
       change HasFDerivAt
-        (fun xV : Vec inDim => toVecE (f.correct.op.forward (ofVecE xV))) (f.deriv xV) xV
+        (fun xV : Vec inDim => getScalarE (f.correct.op.forward (ofFnE xV))) (f.deriv xV) xV
       exact f.hasFDerivAt xV
     have hg : HasFDerivAt (g.forwardVec) (g.deriv (f.forwardVec xV)) (f.forwardVec xV) := by
       change HasFDerivAt
-        (fun xV : Vec midDim => toVecE (g.correct.op.forward (ofVecE xV)))
+        (fun xV : Vec midDim => getScalarE (g.correct.op.forward (ofFnE xV)))
         (g.deriv (f.forwardVec xV)) (f.forwardVec xV)
       exact g.hasFDerivAt (f.forwardVec xV)
     have hcomp : HasFDerivAt (fun xV => g.forwardVec (f.forwardVec xV))
         ((g.deriv (f.forwardVec xV)).comp (f.deriv xV)) xV := hg.comp xV hf
-    -- The composed `OpSpecCorrect` forward is definitionally `g ∘ f` up to `ofVecE/toVecE`
+    -- The composed `OpSpecCorrect` forward is definitionally `g ∘ f` up to `ofFnE/getScalarE`
     -- roundtrips.
     simpa [OpSpecFDerivCorrect.forwardVec, OpSpecCorrect.compose, Spec.OpSpec.compose] using hcomp
   jvp_eq := by
     intro xV dxV
-    -- Expand the composed JVP and rewrite inputs/outputs through `ofVecE/toVecE`.
-    have h_fwd : f.correct.op.forward (ofVecE xV) = ofVecE (f.forwardVec xV) := by
-      -- `ofVecE (toVecE t) = t`.
+    -- Expand the composed JVP and rewrite inputs/outputs through `ofFnE/getScalarE`.
+    have h_fwd : f.correct.op.forward (ofFnE xV) = ofFnE (f.forwardVec xV) := by
+      -- `ofFnE (getScalarE t) = t`.
       simp [OpSpecFDerivCorrect.forwardVec]
     have h_jvp :
-        f.correct.jvp (ofVecE xV) (ofVecE dxV) = ofVecE ((f.deriv xV) dxV) := by
-      -- Apply `ofVecE` to the analytic JVP equality.
-      have hv := congrArg (ofVecE (n := midDim)) (f.jvp_eq xV dxV)
-      -- Peel off the `ofVecE ∘ toVecE` roundtrip on the left explicitly.
+        f.correct.jvp (ofFnE xV) (ofFnE dxV) = ofFnE ((f.deriv xV) dxV) := by
+      -- Apply `ofFnE` to the analytic JVP equality.
+      have hv := congrArg (ofFnE (n := midDim)) (f.jvp_eq xV dxV)
+      -- Peel off the `ofFnE ∘ getScalarE` roundtrip on the left explicitly.
       calc
-        f.correct.jvp (ofVecE xV) (ofVecE dxV)
-            = ofVecE (n := midDim) (toVecE (f.correct.jvp (ofVecE xV) (ofVecE dxV))) := by
+        f.correct.jvp (ofFnE xV) (ofFnE dxV)
+            = ofFnE (n := midDim) (getScalarE (f.correct.jvp (ofFnE xV) (ofFnE dxV))) := by
                 simp
-        _ = ofVecE (n := midDim) ((f.deriv xV) dxV) := hv
+        _ = ofFnE (n := midDim) ((f.deriv xV) dxV) := hv
     -- Now use `g.jvp_eq` at the intermediate point.
-    -- (The cast `h_fwd`/`h_jvp` makes the arguments match `ofVecE` form.)
-    -- Expand the composed JVP and rewrite to the `ofVecE` form expected by `g.jvp_eq`.
+    -- (The cast `h_fwd`/`h_jvp` makes the arguments match `ofFnE` form.)
+    -- Expand the composed JVP and rewrite to the `ofFnE` form expected by `g.jvp_eq`.
     calc
-      toVecE ((OpSpecCorrect.compose f.correct g.correct).jvp (ofVecE xV) (ofVecE dxV))
-          = toVecE (g.correct.jvp (f.correct.op.forward (ofVecE xV))
-              (f.correct.jvp (ofVecE xV) (ofVecE dxV))) := by
+      getScalarE ((OpSpecCorrect.compose f.correct g.correct).jvp (ofFnE xV) (ofFnE dxV))
+          = getScalarE (g.correct.jvp (f.correct.op.forward (ofFnE xV))
+              (f.correct.jvp (ofFnE xV) (ofFnE dxV))) := by
                 rfl
-      _ = toVecE (g.correct.jvp (ofVecE (f.forwardVec xV)) (ofVecE ((f.deriv xV) dxV))) := by
+      _ = getScalarE (g.correct.jvp (ofFnE (f.forwardVec xV)) (ofFnE ((f.deriv xV) dxV))) := by
             simp [h_fwd, h_jvp]
       _ = (g.deriv (f.forwardVec xV)) ((f.deriv xV) dxV) := by
             simpa using (g.jvp_eq (f.forwardVec xV) ((f.deriv xV) dxV))

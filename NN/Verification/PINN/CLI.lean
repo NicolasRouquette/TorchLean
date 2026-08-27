@@ -142,19 +142,21 @@ def computePrimsAt (g : Graph) (ps : ParamStore Float) (uMethod : UBoundsMethod 
   let uLo := Spec.Tensor.sumSpec outB.lo
   let uHi := Spec.Tensor.sumSpec outB.hi
   -- Determine input dimension from graph's input node shape
-  let inDim : Nat :=
+  let inDim : Nat ←
     match g.nodes[0]? with
-    | some n0 => (match n0.outShape with | .dim n .scalar => n | _ => 1)
-    | none => 1
-  let hasY : Bool :=
-    match inDim with
-    | 0 => false
-    | 1 => false
-    | _ => true
+    | some n0 =>
+      match n0.outShape with
+      | .dim n .scalar => pure n
+      | _ => throw <| IO.userError "PINN input node must have a one-dimensional vector shape"
+    | none => throw <| IO.userError "PINN graph has no input node"
   -- First/second derivative along X (dir 0)
-  let seedX := FlatBox.ofTensor (NN.Tensor.oneHotNatOrZero (α := Float) inDim 0)
+  let seedX ←
+    if h : 0 < inDim then
+      pure <| FlatBox.ofTensor (TorchLean.Tensor.oneHot (α := Float) inDim ⟨0, h⟩)
+    else
+      throw <| IO.userError "PINN input dimension must be positive"
   let d1x := runDirectionalDerivative (α:=Float) g ps ibp seedX
-  let d2x := runSecondDerivative1D (α:=Float) g ps ibp d1x
+  let d2x := runScalarSecondDerivative (α:=Float) g ps ibp d1x
   let d1xOpt := (NN.MLTheory.CROWN.Graph.outputBox? d1x outId).toOption
   let d2xOpt := (NN.MLTheory.CROWN.Graph.outputBox? d2x outId).toOption
   let (duX, d2uX) :=
@@ -165,18 +167,18 @@ def computePrimsAt (g : Graph) (ps : ParamStore Float) (uMethod : UBoundsMethod 
     | _, _ => (none, none)
   -- First/second derivative along Y (dir 1) if available
   let duY : Option (Float × Float) :=
-    if hasY then
-      let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNatOrZero (α := Float) inDim 1)
+    if h : 1 < inDim then
+      let seedY := FlatBox.ofTensor (TorchLean.Tensor.oneHot (α := Float) inDim ⟨1, h⟩)
       let d1y := runDirectionalDerivative (α:=Float) g ps ibp seedY
       match NN.MLTheory.CROWN.Graph.outputBox? d1y outId with
       | .ok dyB => some (Spec.Tensor.sumSpec dyB.lo, Spec.Tensor.sumSpec dyB.hi)
       | .error _ => none
     else none
   let d2uY : Option (Float × Float) :=
-    if hasY then
-      let seedY := FlatBox.ofTensor (NN.Tensor.oneHotNatOrZero (α := Float) inDim 1)
+    if h : 1 < inDim then
+      let seedY := FlatBox.ofTensor (TorchLean.Tensor.oneHot (α := Float) inDim ⟨1, h⟩)
       let d1y := runDirectionalDerivative (α:=Float) g ps ibp seedY
-      let d2y := runSecondDerivative1D (α:=Float) g ps ibp d1y
+      let d2y := runScalarSecondDerivative (α:=Float) g ps ibp d1y
       match NN.MLTheory.CROWN.Graph.outputBox? d2y outId with
       | .ok d2yB => some (Spec.Tensor.sumSpec d2yB.lo, Spec.Tensor.sumSpec d2yB.hi)
       | .error _ => none
@@ -341,14 +343,21 @@ def main (args : List String) : IO Unit := do
       let eps? := parseFloat epsStr
       match x?, eps? with
       | some x, some eps => do
+        unless x.isFinite do
+          throw <| IO.userError s!"x must be finite, got {x}"
+        unless eps.isFinite && eps ≥ 0.0 do
+          throw <| IO.userError s!"eps must be finite and nonnegative, got {eps}"
         let expr ←
           match parseExpr (fun _ => none) pdeStr with
           | .ok e => pure e
           | .error msg => throw <| IO.userError s!"Parse error: {msg}"
-        let (g, baseParams) ← loadWeightsOrDefault weights? 1 buildGraph seedParamsFloat
+        let (g, baseParams) ←
+          loadWeightsOrDefault weights? 1 (buildReferenceGraph 1) (referenceParams 1)
         let evalAt : Float → Float → IO (Float × Float) :=
           fun xc epsc => do
-            let ps := seedInputFloat baseParams xc epsc
+            let center : Spec.Tensor Float [1] :=
+              Spec.Tensor.dim fun _ => Spec.Tensor.scalar xc
+            let ps := seedInput baseParams center epsc
             let prims ← computePrimsAt g ps uMethod backend
             match eval prims expr with
             | some (lo, hi) => pure (lo, hi)
@@ -381,14 +390,21 @@ def main (args : List String) : IO Unit := do
       let eps? := parseFloat epsStr
       match x?, y?, eps? with
       | some x, some y, some eps => do
+        unless x.isFinite && y.isFinite do
+          throw <| IO.userError s!"x and y must be finite, got ({x}, {y})"
+        unless eps.isFinite && eps ≥ 0.0 do
+          throw <| IO.userError s!"eps must be finite and nonnegative, got {eps}"
         let expr ←
           match parseExpr (fun _ => none) pdeStr with
           | .ok e => pure e
           | .error msg => throw <| IO.userError s!"Parse error: {msg}"
-        let (g, baseParams) ← loadWeightsOrDefault weights? 2 buildGraph2D seedParamsFloat2D
+        let (g, baseParams) ←
+          loadWeightsOrDefault weights? 2 (buildReferenceGraph 2) (referenceParams 2)
         let evalAt : Float → Float → Float → IO (Float × Float) :=
           fun xc yc epsc => do
-            let ps := seedInputFloat2D baseParams xc yc epsc
+            let center : Spec.Tensor Float [2] :=
+              Spec.Tensor.dim fun i => Spec.Tensor.scalar <| if i.val = 0 then xc else yc
+            let ps := seedInput baseParams center epsc
             let prims ← computePrimsAt g ps uMethod backend
             match eval prims expr with
             | some (lo, hi) => pure (lo, hi)

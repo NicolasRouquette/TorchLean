@@ -61,36 +61,22 @@ shortTitle := "TorchLean"
 tag := "torchlean"
 %%%
 
-TorchLean is a Lean 4 library for writing, training, and verifying neural networks. The quickest
-way to understand it is to follow one prediction through the system. A pair of input features enters
-a shape-typed model, concrete parameters turn that model into a program, the runtime records the
-operations needed for differentiation, and a graph records the computation so that preservation and
-verification questions can be stated explicitly.
-The value may travel through several representations, but none of those handoffs is meant to be
-invisible.
+TorchLean is a Lean 4 library for writing, training, and reasoning about neural networks. Tensor
+dimensions appear in types, model definitions are executable, and supported programs can be
+recorded as graphs for differentiation, export, and verification.
 
-Our companion for that trip is a small nonlinear regression network. At first it looks pleasantly
-ordinary: two linear layers with a ReLU between them. We will train it, inspect its parameter shapes,
-watch a backward pass accumulate gradients, move selected operations to CUDA, and finally ask what
-can be proved about its outputs. By returning to the same model, the guide can explain why a theorem
-about an exact real-valued specification is relevant to a particular floating-point GPU run without
-automatically proving that run correct.
+The running example is a nonlinear regression model with two linear layers and a ReLU. We train it,
+inspect its parameters and gradients, run it through different numerical backends, and state exact
+claims about the corresponding mathematical definitions. The distinction matters: a theorem about
+real-valued matrix multiplication does not by itself verify the floating-point instructions issued
+by a GPU kernel.
 
-Once that path feels familiar, the larger examples are variations on the same theme. Transformers
-add token and attention structure; ResNets add spatial layouts and skip connections; Fourier neural
-operators work with sampled functions; diffusion and reinforcement learning make randomness and
-state explicit. The numerical chapters supply generic formats, executable binary32 arithmetic, and
-error bounds. The verification chapters build interval, affine, lowering, autograd, and certificate
-arguments on top of those definitions.
+Later chapters use the same ideas for transformers, ResNets, Fourier neural operators, diffusion,
+and reinforcement learning. They also introduce executable binary32 arithmetic, error bounds,
+autograd proofs, robustness analysis, and certificate checking. Each claim identifies its evidence:
+an implementation, a test, a checked certificate, or a Lean theorem.
 
-One reading habit matters throughout: ask what kind of evidence is attached to a claim. An
-*implemented* path can be executed. A *tested* path has a regression or conformance check. A
-*proved* statement has a Lean theorem with the hypotheses visible in its type. A *planned* feature
-is only future work. The guide includes successful runs and deliberately rejected inputs so that
-these differences can be observed rather than guessed from an impressive module name.
-
-The examples are meant to be run from the repository root. No theorem-proving background is needed
-to begin. Readers new to Lean may also use
+All commands are run from the repository root. Readers new to Lean may also use
 [*Functional Programming in Lean*](https://lean-lang.org/functional_programming_in_lean/),
 [*Theorem Proving in Lean 4*](https://lean-lang.org/theorem_proving_in_lean4/), and
 [*The Lean Language Reference*](https://lean-lang.org/doc/reference/latest/).
@@ -118,11 +104,8 @@ code, and then write the regression model that will stay with us through the res
 
 # Building Models
 
-An architecture is still only a recipe. It cannot make a prediction until shapes meet data and a
-seed produces parameters. Here we turn the model into a small training program, one ordinary step
-at a time: load a batch, evaluate the forward map, measure a loss, run backward, and update the
-parameters. Each step leaves an object we can inspect rather than hiding the whole loop behind a
-single call.
+An architecture cannot make a prediction until it has parameters and data. This chapter constructs
+a batch, evaluates the forward map, computes a loss, runs reverse mode, and updates the parameters.
 
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.TensorsAndShapes}
 
@@ -142,8 +125,8 @@ optimizer buffers accumulate history. None of that appears in the clean equation
 
 $$`f_\theta(x)=W_2\,\operatorname{ReLU}(W_1x+b_1)+b_2`.
 
-We will follow one step through the runtime, then move the same operation to typed graph execution,
-CUDA, and LibTorch.
+The chapter follows one update through eager execution and typed graph execution, then examines the
+CUDA and LibTorch boundaries.
 
 {include 2 TorchLeanBlueprint.Guide.Ch2_Frontend.ExecutionModes}
 

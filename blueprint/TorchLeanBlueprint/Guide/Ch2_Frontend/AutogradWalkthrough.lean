@@ -57,7 +57,7 @@ import NN.API
 open TorchLean
 
 def sumsq :
-    autograd.func.TensorFunction (shape![2]) Shape.scalar :=
+    autograd.func.TensorFunction [2] ([] : List Nat) :=
   fun x => do
     let y ← nn.functional.square x
     nn.functional.mean y
@@ -84,7 +84,7 @@ The executable call is:
 
 ```
 def example : IO Unit := do
-  let x : Tensor Float (shape![2]) :=
+  let x : Tensor Float [2] :=
     tensor! [0.5, -1.2]
   let (value, grad) ←
     autograd.func.valueAndGradScalar
@@ -155,13 +155,13 @@ The TorchLean definition and VJP are:
 
 ```
 def square :
-    autograd.func.TensorFunction (shape![2]) (shape![2]) :=
+    autograd.func.TensorFunction [2] [2] :=
   fun x => nn.functional.square x
 
 def vjpExample : IO Unit := do
-  let x : Tensor Float (shape![2]) :=
+  let x : Tensor Float [2] :=
     tensor! [0.5, -1.2]
-  let seed : Tensor Float (shape![2]) :=
+  let seed : Tensor Float [2] :=
     tensor! [1.0, 1.0]
   let dx ←
     autograd.func.vjp

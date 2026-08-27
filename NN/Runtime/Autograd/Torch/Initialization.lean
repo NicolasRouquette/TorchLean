@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Tensor.API
+public import NN.Tensor
 public import NN.Runtime.Autograd.TorchLean.Random
 
 /-!
@@ -87,12 +87,12 @@ def tensor (sch : Scheme) (seed : Nat := 0) : {s : Shape} → Tensor Float s
 
 /-- Initialize a matrix with the Xavier/Glorot uniform distribution and gain `1`. -/
 def xavierW (outDim inDim : Nat) (seed : Nat := 0) :
-    Tensor Float (.dim outDim (.dim inDim .scalar)) :=
+    Tensor Float [outDim, inDim] :=
   tensor (s := .dim outDim (.dim inDim .scalar)) (.xavierUniform inDim outDim) seed
 
 /-- Initialize a matrix with the Kaiming/He uniform distribution for ReLU networks. -/
 def kaimingW (outDim inDim : Nat) (seed : Nat := 0) :
-    Tensor Float (.dim outDim (.dim inDim .scalar)) :=
+    Tensor Float [outDim, inDim] :=
   tensor (s := .dim outDim (.dim inDim .scalar)) (.kaimingUniform inDim) seed
 
 end Init

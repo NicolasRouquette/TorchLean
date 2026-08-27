@@ -90,7 +90,7 @@ The resulting `model.json` is accepted by `Import.PyTorch.loadWeights?`.
 -/
 def generateJsonBridgeScript (opts : JsonBridgeOptions := {}) : String :=
   joinLines
-    [ "import argparse"
+    #[ "import argparse"
     , "import json"
     , "import torch"
     , ""

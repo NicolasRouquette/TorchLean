@@ -42,7 +42,7 @@ variable {α : Type} [Context α]
 /-- A trainable table with `vocab` rows of width `embedDim`. -/
 structure Embedding (vocab embedDim : Nat) (α : Type) where
   /-- Embedding table, stored row-major by executable backends. -/
-  weight : Tensor α (.dim vocab (.dim embedDim .scalar))
+  weight : Tensor α [vocab, embedDim]
 
 namespace Embedding
 
@@ -50,12 +50,12 @@ namespace Embedding
 Look up every finite index in a tensor and append the embedding dimension to its shape.
 
 The index type is `Fin vocab`, rather than `Nat`, so this specification has no out-of-range case.
-Executable APIs may accept natural-number tensors at file or tokenizer boundaries, but must check
-them before interpreting them as indices into this table.
+File and tokenizer boundaries may begin with natural-number identifiers, but executable APIs must
+validate them before interpreting them as indices into this table.
 -/
 def lookup {vocab embedDim : Nat} (embedding : Embedding vocab embedDim α) :
     {shape : Shape} → Tensor (Fin vocab) shape → Tensor α (shape.appendDim embedDim)
-  | .scalar, .scalar index => getAtSpec embedding.weight index
+  | .scalar, .scalar index => get embedding.weight index
   | .dim _ _, .dim values => Tensor.dim (fun i => lookup embedding (values i))
 
 /--
@@ -65,8 +65,8 @@ Embed a batch/sequence of one-hot vectors:
 -/
 def oneHot {vocab embedDim seqLen : Nat}
     (embedding : Embedding vocab embedDim α)
-    (oneHot : Tensor α (.dim seqLen (.dim vocab .scalar))) :
-    Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
+    (oneHot : Tensor α [seqLen, vocab]) :
+    Tensor α [seqLen, embedDim] :=
   matMulSpec oneHot embedding.weight
 
 /-!
@@ -92,11 +92,12 @@ named VJP is useful for:
 /-- VJP for `Embedding.oneHot`, returning gradients for the input and table. -/
 def oneHotVjp {vocab embedDim seqLen : Nat}
     (embedding : Embedding vocab embedDim α)
-    (oneHot : Tensor α (.dim seqLen (.dim vocab .scalar)))
-    (dY : Tensor α (.dim seqLen (.dim embedDim .scalar))) :
-    (Tensor α (.dim seqLen (.dim vocab .scalar))) × (Tensor α (.dim vocab (.dim embedDim .scalar)))
+    (oneHot : Tensor α [seqLen, vocab])
+    (dY : Tensor α [seqLen, embedDim]) :
+    (Tensor α [seqLen, vocab]) × (Tensor α [vocab, embedDim])
       :=
-  matMulBackwardSpec (α := α) (m := seqLen) (n := vocab) (p := embedDim)
+  matmulBackwardSpec (α := α) (m := seqLen) (n := vocab) (p := embedDim)
+    (Shape.CanBroadcastTo.refl .scalar) (Shape.CanBroadcastTo.refl .scalar)
     oneHot embedding.weight dY
 
 end Embedding

@@ -30,14 +30,11 @@ def expectApprox (name : String) (actual expected : Float) (tol : Float := 1e-6)
   unless Float.abs (actual - expected) <= tol do
     throw <| IO.userError s!"{name}: expected {expected}, got {actual}"
 
-def singletonVector (x : Float) : Tensor Float (.dim 1 .scalar) :=
-  Tensor.dim fun _ => Tensor.scalar x
+def singletonTensor (x : Float) : Tensor Float [1] :=
+  Tensor.ofFn fun _ => x
 
-def singletonValue (x : Tensor Float (.dim 1 .scalar)) : Float :=
-  match x with
-  | .dim f =>
-      match f ⟨0, Nat.zero_lt_one⟩ with
-      | .scalar value => value
+def singletonValue (x : Tensor Float [1]) : Float :=
+  Tensor.getScalar x ⟨0, Nat.zero_lt_one⟩
 
 def run : IO Unit := do
   let (_, _, slope, bias) := Arithmetic.affAbs (-1.0 : Float) 2.0
@@ -65,10 +62,10 @@ def run : IO Unit := do
 
   let bnParams : BatchNorm.BatchNormParams Float :=
     { dim := 1
-      running_mean := singletonVector 1.0
-      running_var := singletonVector (-4.0)
-      gamma := singletonVector 2.0
-      beta := singletonVector 3.0
+      running_mean := singletonTensor 1.0
+      running_var := singletonTensor (-4.0)
+      gamma := singletonTensor 2.0
+      beta := singletonTensor 3.0
       eps := 1.0 }
   expectApprox "BatchNorm CROWN scale uses spec variance totalization"
     (singletonValue (BatchNorm.computeScale bnParams)) 2.0

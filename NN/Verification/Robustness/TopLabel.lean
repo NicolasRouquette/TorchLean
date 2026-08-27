@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Tensor.API
+public import NN.Tensor
 
 /-!
 # Certified label checks
@@ -46,10 +46,10 @@ def strictTopLabelBy {α : Type} [Max α] (n label : Nat)
 
 /-- Check a label directly from tensor lower/upper bounds. -/
 def certifiesLabelFromTensorBounds {α : Type} [Context α] {n : Nat}
-    (lo hi : Tensor α (.dim n .scalar)) (label : Nat) : Bool :=
+    (lo hi : Tensor α [n]) (label : Nat) : Bool :=
   strictTopLabelBy n label
-    (fun i => Tensor.vecGet lo i)
-    (fun i => Tensor.vecGet hi i)
+    (fun i => Tensor.getScalar lo i)
+    (fun i => Tensor.getScalar hi i)
     Context.gtBool
 
 /-- Check a label from JSON-style array lower/upper bounds. -/

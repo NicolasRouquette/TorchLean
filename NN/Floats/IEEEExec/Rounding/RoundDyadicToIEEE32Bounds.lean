@@ -93,18 +93,6 @@ private lemma match_pow2_23_decLe_isFalse (x : Nat) (h : ¬ pow2 23 ≤ x) :
       (eq_iff_iff.mp (Nat.ble_eq (x := pow2 23) (y := x))).1 hEq
     exact h hxle
   simp [Nat.decLe, hcond]
-private lemma match_pow2_23_decLe_isFalse_const1 (x : Nat) (h : ¬ pow2 23 ≤ x) :
-    (match (pow2 23).decLe x with
-    | isTrue _ => ofBits (mkBits false 1 0)
-    | isFalse _ => ofBits (mkBits false 0 1)) =
-      ofBits (mkBits false 0 1) := by
-  -- Same as `match_pow2_23_decLe_isFalse`, but the `isFalse` branch is a constant (`1`).
-  have hcond : ¬ Eq (Nat.ble (pow2 23) x) true := by
-    intro hEq
-    have hxle : pow2 23 ≤ x :=
-      (eq_iff_iff.mp (Nat.ble_eq (x := pow2 23) (y := x))).1 hEq
-    exact h hxle
-  simp [Nat.decLe, hcond]
 /-!
 ## Bit-length bounds used to rule out impossible carries
 In the normal regime, `roundDyadicToIEEE32` computes a 24-bit mantissa `m24`.

@@ -28,8 +28,9 @@ Build:
 
 - `lake build NN.Examples.Data.Loaders.Npy`
 
-The tutorial code is compiled with the rest of TorchLean. For command-line model training, use the
-`torchlean` executable examples in `NN/Examples/Models`.
+The tutorial code is compiled with the rest of TorchLean and is directly runnable as
+`lake exe torchlean data_npy`. It checks the array metadata before constructing the typed dataset,
+then trains through the same public trainer used by the model examples.
 
 Optional flags (tutorial-specific):
 
@@ -62,8 +63,8 @@ def inDim : Nat := 2
 def outDim : Nat := 1
 
 /-- A small 2-layer batched MLP `2 -> 8 -> 1`. -/
-def mkModel {batch : Nat} : nn.Builder (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
-  nn.blocks.mlp inDim outDim { hidden := [8] } (.dim batch .scalar)
+def mkModel {batch : Nat} : nn.Builder (nn.Sequential [batch, inDim] [batch, outDim]) :=
+  nn.blocks.mlp inDim outDim { hidden := [8] } [batch]
 
 /-- Command-line help for the NPY loader tutorial. -/
 def usage : String :=
@@ -129,8 +130,8 @@ def main (args : List String) : IO Unit := do
   let data := Data.batchDataset batch data0 (shuffle := true) (seed := seed)
   let trained ← trainer.train data { steps := steps }
   trained.printSummary
-  let heldout : Tensor Float (.dim batch (.dim inDim .scalar)) :=
-    Tensor.fill 0.25 (.dim batch (.dim inDim .scalar))
+  let heldout : Tensor Float [batch, inDim] :=
+    Tensor.full [batch, inDim] 0.25
   trained.printPrediction "predict(batch=heldout)" heldout
 
 end NN.Examples.Data.Loaders.Npy

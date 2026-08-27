@@ -27,9 +27,8 @@ The data path is explicit:
 5. train a decoder head to reconstruct the original image vector.
 
 The architecture uses one transformer encoder block and a linear pixel decoder rather than a large
-asymmetric MAE decoder. The important pieces are the MAE pieces exercised by the
-example: image patch masking, patch embedding, transformer tokens, and reconstruction of the
-original image.
+asymmetric MAE decoder. It exercises image patch masking, patch embedding, transformer tokens, and
+reconstruction of the original image.
 -/
 
 @[expose] public section
@@ -93,14 +92,14 @@ patch embedding, transformer token, decoder, data loading, and CUDA training pat
 def cfg : nn.models.VitMaeConfig 2 :=
   { encoder :=
       { inChannels := inC
-        spatial := #v[inH, inW]
+        spatial := tensor! [inH, inW]
         patch :=
           { outChannels := dModel
-            kernel := #v[patchH, patchW]
-            stride := #v[stride, stride]
-            padding := #v[padding, padding]
+            kernel := tensor! [patchH, patchW]
+            stride := tensor! [stride, stride]
+            padding := tensor! [padding, padding]
             kernelNonzero := by intro i; fin_cases i <;> decide
-            strideNonzero := by intro i; fin_cases i <;> simp [stride, Vector.get] }
+            strideNonzero := by intro i; fin_cases i <;> simp [stride] }
         outDim := reconDim
         numHeads := numHeads
         headDim := headDim
@@ -118,10 +117,10 @@ def maskPeriod : Nat := 4
 def maskOffset : Nat := 0
 
 /-- Leading sample axis used by this batched training example. -/
-abbrev batchShape : Shape := .dim batch .scalar
+abbrev batchShape : List Nat := [batch]
 
 /-- Input shape: a real batched CIFAR image tensor. -/
-abbrev σ := cfg.inputShape batchShape
+abbrev σ := cfg.encoder.inputShape batchShape
 
 /-- Output shape: flattened image reconstruction. -/
 abbrev τ := cfg.outputShape batchShape
@@ -138,12 +137,6 @@ loads data, and trains it.
 def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.vitMaskedAutoencoder cfg batchShape
     (h_inC := by decide)
-    (h_seqLen := by
-      norm_num [nn.models.VitMaeConfig.seqLen, nn.models.VitConfig.seqLen,
-        nn.models.VitConfig.patchSpatial, cfg, Spec.convOutSpatial,
-        Spec.Shape.slidingWindowOutDim,
-        inH, inW, patchH, patchW, stride, padding, Spec.Shape.ofList, Spec.Shape.size,
-        Vector.get, Vector.toList, Vector.ofFn])
     (h_dModel := by decide)
 
 /--
@@ -154,13 +147,21 @@ flattened to a vector because the current decoder head predicts a batched matrix
 -/
 def mkMaeSample
     (b : Sample.Supervised Float
-      (.dim batch (.dim cfg.encoder.inChannels (.dim inH (.dim inW .scalar))))
-      (.dim batch (.dim RealData.cifarClasses .scalar))) :
-  Sample.Supervised Float σ τ :=
-  ssl.BlockMAE.sample (.dim batch .scalar) cfg.reconDim
-    #v[cfg.encoder.inChannels, inH, inW]
-    #v[none, some patchH, some patchW]
-    maskPeriod maskOffset (by decide) (Sample.x b)
+      [batch, cfg.encoder.inChannels, inH, inW]
+      [batch, RealData.cifarClasses]) :
+  Sample.Supervised Float σ τ := by
+  let dataShape : Tensor Nat [3] :=
+    tensor! [cfg.encoder.inChannels, inH, inW]
+  let blocks : Tensor (Option Nat) [3] :=
+    tensor! [none, some patchH, some patchW]
+  have hInputShape :
+      [batch, cfg.encoder.inChannels, inH, inW] = [batch] ++ dataShape.toList := by
+    simp [dataShape]
+  let x : Tensor Float ([batch] ++ dataShape.toList) := hInputShape ▸ Sample.x b
+  simpa [σ, τ, nn.models.VitMaeConfig.outputShape,
+    nn.models.VitConfig.inputShape, batchShape, cfg, dataShape] using
+    ssl.BlockMAE.sample [batch] cfg.reconDim dataShape blocks
+      maskPeriod maskOffset (by decide) x
 
 /--
 Public singleton dataset for masked-image reconstruction on one real CIFAR batch.
@@ -168,7 +169,7 @@ Public singleton dataset for masked-image reconstruction on one real CIFAR batch
 Like the compact vector generative examples, the sample itself is loaded as `Float` from the real
 data boundary, then cast into the runtime-selected scalar by the public dataset constructor.
 -/
-def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
+def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset σ τ :=
   Data.singletonFloatIO do
     let sampleBatch ←
       RealData.loadCifarBatch exeName batch flags.nRows flags.seed

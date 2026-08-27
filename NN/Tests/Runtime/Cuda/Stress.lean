@@ -173,8 +173,8 @@ def runWrapperLifetimeStress : IO Unit := do
 def runGradientAliasingStress : IO Unit := do
   IO.println "== CUDA tape gradient aliasing regression =="
 
-  let s : Shape := shape![4]
-  let x : Tensor Float s := tensorOfList! [4] [0.25, -0.50, 0.75, -1.00]
+  let s : Shape := [4]
+  let x : Tensor Float s := tensorOfArray! [4] #[0.25, -0.50, 0.75, -1.00]
 
   let t0 : Cuda.Tape := Cuda.Tape.empty
   let (t1, xId) := Cuda.Tape.leaf (t := t0) (Utils.tensorToAnyBuffer x) (name := some "x")
@@ -185,14 +185,14 @@ def runGradientAliasingStress : IO Unit := do
   let seed : Cuda.AnyBuffer := { s := Shape.scalar, buf := Buffer.full 1 1.0 }
   let grads ← Utils.okOrThrow (Cuda.Tape.backwardDenseAll (t := t3) outId seed)
   let dx ← Utils.cudaGrad (s := s) grads xId
-  let expected : Tensor Float s := tensorOfList! [4] [2.0, 2.0, 2.0, 2.0]
+  let expected : Tensor Float s := tensorOfArray! [4] #[2.0, 2.0, 2.0, 2.0]
   Utils.assertTensorApprox (s := s) "add backward duplicate-parent gradient" dx expected
 
 /-- Shape-erased CUDA entrypoints must reject malformed native lengths before launching kernels. -/
 def runMalformedBufferValidationStress : IO Unit := do
   IO.println "== malformed CUDA buffer validation =="
 
-  let vectorShape : Shape := shape![4]
+  let vectorShape : Shape := [4]
   let shortBuffer ← Buffer.fullIO 3 1.0
   let malformed : Cuda.AnyBuffer := { s := vectorShape, buf := shortBuffer }
   match Cuda.AnyBuffer.validate malformed with
@@ -242,7 +242,7 @@ def runMalformedBufferValidationStress : IO Unit := do
   discard <| Buffer.releaseIO vectorBuffer
 
   let oversized : Cuda.AnyBuffer :=
-    { s := .dim UInt32.size .scalar, buf := Buffer.zeros 0 }
+    { s := [UInt32.size], buf := Buffer.zeros 0 }
   match Cuda.AnyBuffer.validate oversized with
   | .ok _ =>
       throw <| IO.userError "AnyBuffer.validate accepted a shape whose numel exceeds UInt32"
@@ -284,8 +284,8 @@ def runSparseLifetimeStress : IO Unit := do
   IO.println "== repeated sparse-backward ownership =="
 
   let before ← Buffer.allocatorStatsWithToken 100
-  let s : Shape := shape![4]
-  let x : Tensor Float s := tensorOfList! [4] [0.25, -0.50, 0.75, -1.00]
+  let s : Shape := [4]
+  let x : Tensor Float s := tensorOfArray! [4] #[0.25, -0.50, 0.75, -1.00]
   let t0 : Cuda.Tape := Cuda.Tape.empty
   let (t1, xId) := Cuda.Tape.leaf (t := t0) (Utils.tensorToAnyBuffer x) (name := some "x")
   let (t2, outId) ← Utils.okOrThrow (Cuda.Tape.sum (t := t1) (s := s) xId)
@@ -299,7 +299,7 @@ def runSparseLifetimeStress : IO Unit := do
       | some dx => pure dx
       | none => throw <| IO.userError s!"sparse backward pass {pass}: missing leaf gradient"
     let dx ← Utils.anyBufferToTensor (s := s) dx
-    let expected : Tensor Float s := tensorOfList! [4] [1.0, 1.0, 1.0, 1.0]
+    let expected : Tensor Float s := tensorOfArray! [4] #[1.0, 1.0, 1.0, 1.0]
     Utils.assertTensorApprox (s := s) s!"sparse backward pass {pass}" dx expected
     Cuda.Tape.releaseSparseGrads grads
 
@@ -370,17 +370,17 @@ def runMatmulStress : IO Unit := do
 
   -- Rectangular case: catches row-major/column-major leading-dimension mistakes that square
   -- matrices can accidentally hide.
-  let sA1 : Shape := shape![3, 4]
-  let sB1 : Shape := shape![4, 5]
-  let sY1 : Shape := shape![3, 5]
+  let sA1 : Shape := [3, 4]
+  let sB1 : Shape := [4, 5]
+  let sY1 : Shape := [3, 5]
   let a1 : Tensor Float sA1 :=
-    tensorOfList! [3, 4] [
+    tensorOfArray! [3, 4] #[
       0.10, -0.20, 0.30, -0.40,
       0.55, 0.65, -0.75, 0.85,
       -0.15, 0.25, -0.35, 0.45
     ]
   let b1 : Tensor Float sB1 :=
-    tensorOfList! [4, 5] [
+    tensorOfArray! [4, 5] #[
       0.20, -0.10, 0.05, 0.30, -0.40,
       -0.15, 0.25, -0.35, 0.45, 0.10,
       0.50, -0.60, 0.70, -0.80, 0.90,
@@ -394,13 +394,13 @@ def runMatmulStress : IO Unit := do
 
   -- Dot-product-shaped case: small but asymmetric enough to exercise the degenerate leading
   -- dimensions in the DGEMM bridge.
-  let sA2 : Shape := shape![1, 7]
-  let sB2 : Shape := shape![7, 1]
-  let sY2 : Shape := shape![1, 1]
+  let sA2 : Shape := [1, 7]
+  let sB2 : Shape := [7, 1]
+  let sY2 : Shape := [1, 1]
   let a2 : Tensor Float sA2 :=
-    tensorOfList! [1, 7] [0.25, -0.50, 0.75, -1.00, 1.25, -1.50, 1.75]
+    tensorOfArray! [1, 7] #[0.25, -0.50, 0.75, -1.00, 1.25, -1.50, 1.75]
   let b2 : Tensor Float sB2 :=
-    tensorOfList! [7, 1] [0.10, 0.20, -0.30, 0.40, -0.50, 0.60, -0.70]
+    tensorOfArray! [7, 1] #[0.10, 0.20, -0.30, 0.40, -0.50, 0.60, -0.70]
   let yRef2 := FastKernels.matmulReference (α := Float) (m := 1) (n := 7) (p := 1) a2 b2
   let yFp322 := FastKernels.Cuda.matmulCublas .fp32 (m := 1) (n := 7) (p := 1) a2 b2
   let yFp642 := FastKernels.Cuda.matmulCublas .fp64 (m := 1) (n := 7) (p := 1) a2 b2

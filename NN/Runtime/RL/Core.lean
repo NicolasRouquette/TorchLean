@@ -10,7 +10,7 @@ public import NN.Spec.Core.Context
 public import NN.Spec.Core.TensorOps
 public import NN.Spec.RL.Core
 
-public import NN.Tensor.API
+public import NN.Tensor
 
 /-!
 # Core Reinforcement-Learning Runtime Helpers
@@ -74,12 +74,12 @@ structure IndexedTransition (α : Type) (nStates nActions : Nat) where
 ## Fixed-Horizon Tensor Trajectory Helpers
 
 Many RL implementations store a rollout buffer in fixed-size tensors (e.g. `T × ...` for a time
-window, or `N × ...` for a batch). The spec-layer definitions in `NN.Spec.RL.Core` are list-based
-because episode length is data-dependent, but it is still useful to have “PyTorch-shaped”
-fixed-horizon variants when:
+window, or `N × ...` for a batch). The spec-layer definitions in `NN.Spec.RL.Core` use arrays when
+episode length is data-dependent, while this module provides fixed-horizon tensor operations for
+code that knows the rollout length statically.
 
-- you already committed to a horizon `n`, and
-- you want to keep the data in typed tensors all the way through your update step.
+- The horizon `n` appears in each tensor shape.
+- Rewards, values, termination flags, returns, and advantages remain tensors throughout the update.
 
 The helpers below are the tensor analogues of:
 
@@ -87,8 +87,7 @@ The helpers below are the tensor analogues of:
 - `generalizedAdvantageEstimation`,
 - `returnsFromAdvantages`.
 
-  They are total and use an internal array-backed right-to-left scan (no list conversion), while the
-  public API stays tensor-shaped.
+They are total and use an internal array-backed right-to-left scan without list conversion.
 
 References:
 - Sutton and Barto, *Reinforcement Learning: An Introduction*, Section 3 (returns) and 12
@@ -97,12 +96,13 @@ References:
   (2015): https://arxiv.org/abs/1506.02438
 -/
 
-  /-- Fixed-horizon discounted returns with a bootstrap on the far right:
-  `G_t = r_t + γ G_{t+1}`.
+/-- Fixed-horizon discounted returns with a bootstrap on the far right:
+`G_t = r_t + γ G_{t+1}`.
 
-  This is the tensor-shaped sibling of `Spec.RL.discountedReturnsFrom`. -/
-  def discountedReturnsVecFrom {n : Nat} (gamma : α) (rewards : Tensor α (.dim n .scalar))
-      (bootstrap : α := 0) : Tensor α (.dim n .scalar) :=
+This is the tensor-shaped sibling of `Spec.RL.discountedReturnsFrom`. -/
+def discountedReturnsTensorFrom {n : Nat} (gamma : α)
+    (rewards : Tensor α [n]) (bootstrap : α := 0) :
+    Tensor α [n] :=
     let rArr : Array α :=
       Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
     let out : Array α :=
@@ -117,17 +117,17 @@ References:
         return returns
     Tensor.dim (fun i : Fin n => Tensor.scalar (out[i.val]!))
 
-  /-- Fixed-horizon discounted returns for a terminal trajectory (bootstrap defaults to `0`). -/
-  def discountedReturnsVec {n : Nat} (gamma : α) (rewards : Tensor α (.dim n .scalar)) :
-      Tensor α (.dim n .scalar) :=
-  discountedReturnsVecFrom (α := α) (n := n) gamma rewards 0
+/-- Fixed-horizon discounted returns for a terminal trajectory (bootstrap defaults to `0`). -/
+def discountedReturnsTensor {n : Nat} (gamma : α) (rewards : Tensor α [n]) :
+    Tensor α [n] :=
+  discountedReturnsTensorFrom (α := α) (n := n) gamma rewards 0
 
-  /-- Fixed-horizon discounted returns with explicit termination markers.
+/-- Fixed-horizon discounted returns with explicit termination markers.
 
-  When `done_t = true`, the future return is reset before bootstrapping the current reward. -/
-  def discountedReturnsVecDone {n : Nat} (gamma : α)
-      (rewards : Tensor α (.dim n .scalar)) (dones : Tensor Bool (.dim n .scalar))
-      (bootstrap : α := 0) : Tensor α (.dim n .scalar) :=
+When `done_t = true`, the future return is reset before bootstrapping the current reward. -/
+def discountedReturnsTensorDone {n : Nat} (gamma : α)
+    (rewards : Tensor α [n]) (dones : Tensor Bool [n])
+    (bootstrap : α := 0) : Tensor α [n] :=
     let rArr : Array α :=
       Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
     let dArr : Array Bool :=
@@ -144,13 +144,13 @@ References:
         return returns
     Tensor.dim (fun i : Fin n => Tensor.scalar (out[i.val]!))
 
-  /-- Fixed-horizon Generalized Advantage Estimation (GAE) as a vector tensor.
+/-- Fixed-horizon Generalized Advantage Estimation (GAE) as a rank-one tensor.
 
-  This is the tensor-shaped sibling of `Spec.RL.generalizedAdvantageEstimation`. -/
-  def generalizedAdvantageEstimationVec {n : Nat} (gamma lam : α)
-      (rewards values nextValues : Tensor α (.dim n .scalar))
-      (dones : Tensor Bool (.dim n .scalar)) :
-      Tensor α (.dim n .scalar) :=
+This is the tensor-shaped sibling of `Spec.RL.generalizedAdvantageEstimation`. -/
+def generalizedAdvantageEstimationTensor {n : Nat} (gamma lam : α)
+    (rewards values nextValues : Tensor α [n])
+    (dones : Tensor Bool [n]) :
+    Tensor α [n] :=
     let rArr : Array α :=
       Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
     let vArr : Array α :=
@@ -175,8 +175,8 @@ References:
     Tensor.dim (fun i : Fin n => Tensor.scalar (out[i.val]!))
 
 /-- Fixed-horizon lambda-returns from advantages and baseline values via `R_t = A_t + V_t`. -/
-def returnsFromAdvantagesVec {n : Nat}
-    (advantages values : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
+def returnsFromAdvantagesTensor {n : Nat}
+    (advantages values : Tensor α [n]) : Tensor α [n] :=
   addSpec advantages values
 
 /-- Squared-error helper used by critic / TD objectives. -/

@@ -94,7 +94,7 @@ rejects NaN, infinity, malformed payloads, missing constants, and out-of-range i
 
 A successful replay means that this concrete binary32 execution passed the stored graph
 certificate. It does not, by itself, turn an interval endpoint calculation into a theorem about
-every real input. For that statement, pair the checked replay with `CheckedRealExecution`, which
+every real input. For that statement, pair the checked replay with `ProvedRealEnclosure`, which
 supplies the exact-real inclusion theorem for the same graph and source region.
 
 ## Forward, Backward, and the Optimizer
@@ -146,7 +146,7 @@ let _ <- Proofs.RuntimeApprox.NumericalCertificate.requireNumericalCoverage regi
 If all primitives are covered, certificate generation and replay work unchanged. If one operation
 is missing, add its executable `GraphRangeContract` and prove the corresponding exact-real
 enclosure rule. The former extends range generation; the latter is needed before the generated
-range can support `CheckedRealExecution`. If execution needs a new provider, add a `KernelCapsule`
+range can support `ProvedRealEnclosure`. If execution needs a new provider, add a `KernelCapsule`
 and place it in a `CapsuleModule`. The registry and planner then make that implementation available
 to every architecture that uses the operation.
 

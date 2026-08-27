@@ -86,7 +86,7 @@ private def runFirstDerivativeWithSeed
       let d := node.outShape.size
       let z := Spec.fill (α:=α) Numbers.zero (.dim d .scalar)
       drs.set! id (some { dim := d, lo := z, hi := z })
-    | .maxPool2d .. | .avgPool2d .. | .maxPool2dPad .. | .avgPool2dPad .. =>
+    | .maxPool .. | .avgPool .. =>
       -- Not supported by the derivative-bound passes (used by PINN tooling).
       drs
     | .hardMaskedSoftmax _ =>
@@ -95,14 +95,14 @@ private def runFirstDerivativeWithSeed
       drs
     | .sum =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]! with
         | some dXin => drs.set! id (some (boxSum (α := α) dXin))
         | none => drs
       | _ => drs
     | .linear =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ps.linearWB[id]? with
         | some dXin, some p =>
           if h : dXin.dim = p.n then
@@ -118,7 +118,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .matmul =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ps.matmulW[id]? with
         | some dXin, some p =>
           if h : dXin.dim = p.n then
@@ -134,7 +134,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .relu =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]! with
         | some dIn =>
           let z := Spec.fill (α:=α) Numbers.zero (.dim dIn.dim .scalar)
@@ -147,7 +147,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .tanh =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]! with
         | some dZ =>
           match boxMulElem (α := α) dZ (tanhDerivBox (α := α) dZ.dim) with
@@ -157,7 +157,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .sigmoid =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]! with
         | some dZ =>
           match boxMulElem (α := α) dZ (sigmoidDerivBox (α := α) dZ.dim) with
@@ -168,7 +168,7 @@ private def runFirstDerivativeWithSeed
     | .softmax _ =>
       if !NonlinearBoundOps.supportsIdealCoupledDerivatives (α := α) then drs else
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ibp[id]! with
         | some dZ, some yB =>
           -- The formulas below construct one dense softmax Jacobian. They are sound only when
@@ -246,7 +246,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .sin =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ibp[p1]! with
         | some dZ, some zB =>
           match boxUnaryEnclosure? (α := α) NonlinearBoundOps.cosBounds zB with
@@ -259,7 +259,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .cos =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ibp[p1]! with
         | some dZ, some zB =>
           match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sinBounds zB with
@@ -272,7 +272,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .exp =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ibp[p1]! with
         | some dZ, some zB =>
           match derivBoxExp? (α := α) zB with
@@ -285,7 +285,7 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .log =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ibp[p1]! with
         | some dZ, some zB =>
           match derivBoxLog? (α := α) zB with
@@ -298,21 +298,21 @@ private def runFirstDerivativeWithSeed
       | _ => drs
     | .add =>
       match node.parents with
-      | p1 :: p2 :: _ =>
+      | #[p1, p2] =>
         match drs[p1]!, drs[p2]! with
         | some d1, some d2 => some (boxAdd (α:=α) d1 d2) |> fun r => drs.set! id r
         | _, _ => drs
       | _ => drs
     | .sub =>
       match node.parents with
-      | p1 :: p2 :: _ =>
+      | #[p1, p2] =>
         match drs[p1]!, drs[p2]! with
         | some d1, some d2 => some (boxSub (α:=α) d1 d2) |> fun r => drs.set! id r
         | _, _ => drs
       | _ => drs
     | .mul_elem =>
       match node.parents with
-      | p1 :: p2 :: _ =>
+      | #[p1, p2] =>
         match drs[p1]!, drs[p2]!, ibp[p1]!, ibp[p2]! with
         | some dx, some dy, some xB, some yB =>
           match boxMulElem (α:=α) dx yB, boxMulElem (α:=α) xB dy with
@@ -327,7 +327,7 @@ private def runFirstDerivativeWithSeed
       -- term.
       if !NonlinearBoundOps.supportsIdealCoupledDerivatives (α := α) then drs else
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match drs[p1]!, ibp[p1]! with
         | some dXin, some Xin =>
           let n := Xin.dim
@@ -429,25 +429,28 @@ private def runFirstDerivativeWithSeed
           else drs
         | _, _ => drs
       | _ => drs
-    | .reshape _ _ | .flatten _ | .concat _ | .swap_first_two | .transpose3dLastTwo | .permute _
+    | .reshape _ _ | .flatten _ | .concat _ | .transpose _ _ | .permute _
       =>
       match node.parents with
-      | p1 :: _ => drs.set! id (drs[p1]!)
+      | #[p1] => drs.set! id (drs[p1]!)
       | _ => drs
     | .abs | .sqrt | .inv | .maxElem | .minElem | .broadcastTo .. | .reduceSum .. | .reduceMean
       .. =>
       drs
     | .mseLoss => drs
-    | .conv2d .. | .batchNorm2dNchwEval .. => drs
-  (List.finRange g.nodes.size).foldl propagate init
+    | .conv .. | .batchNormEval .. => drs
+  if crownGraphSemanticsSupported (α := α) g ps then
+    (List.finRange g.nodes.size).foldl propagate init
+  else
+    init
 
 /--
-Propagate first-derivative intervals from a one-dimensional input.
+Propagate first-derivative intervals from a scalar input.
 
 The input derivative is the all-ones vector. The pass uses value-IBP boxes to bound activation
 derivatives and leaves an entry empty when it encounters an unsupported local derivative.
 -/
-def runFirstDerivative1D
+def runScalarDerivative
     (g : Graph) (ps : ParamStore α) (ibp : Array (Option (FlatBox α))) :
     Array (Option (FlatBox α)) :=
   runFirstDerivativeWithSeed g ps ibp fun B =>
@@ -505,7 +508,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       let d := node.outShape.size
       let z := Spec.fill (α:=α) Numbers.zero (.dim d .scalar)
       d2s.set! id (some { dim := d, lo := z, hi := z })
-    | .maxPool2d .. | .avgPool2d .. | .maxPool2dPad .. | .avgPool2dPad .. =>
+    | .maxPool .. | .avgPool .. =>
       -- Not supported by the second-derivative bound pass.
       d2s
     | .hardMaskedSoftmax _ =>
@@ -513,7 +516,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       d2s
     | .linear =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match d2s[p1]!, ps.linearWB[id]? with
         | some d2Xin, some p =>
           if h : d2Xin.dim = p.n then
@@ -529,7 +532,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .matmul =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match d2s[p1]!, ps.matmulW[id]? with
         | some d2Xin, some p =>
           if h : d2Xin.dim = p.n then
@@ -545,21 +548,21 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .add =>
       match node.parents with
-      | p1 :: p2 :: _ =>
+      | #[p1, p2] =>
         match d2s[p1]!, d2s[p2]! with
         | some a, some b => d2s.set! id (some (boxAdd (α:=α) a b))
         | _, _ => d2s
       | _ => d2s
     | .sub =>
       match node.parents with
-      | p1 :: p2 :: _ =>
+      | #[p1, p2] =>
         match d2s[p1]!, d2s[p2]! with
         | some a, some b => d2s.set! id (some (boxSub (α:=α) a b))
         | _, _ => d2s
       | _ => d2s
     | .mul_elem =>
       match node.parents with
-      | p1 :: p2 :: _ =>
+      | #[p1, p2] =>
         match ibp[p1]!, ibp[p2]!, dLeft[p1]!, dRight[p1]!, dLeft[p2]!, dRight[p2]!,
             d2s[p1]!, d2s[p2]! with
         | some xB, some yB, some dxLeft, some dxRight, some dyLeft, some dyRight,
@@ -577,7 +580,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .relu =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match ibp[p1]! with
         | some zB =>
           let z := Spec.fill (α:=α) Numbers.zero (.dim zB.dim .scalar)
@@ -586,7 +589,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .tanh =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some dzLeft, some dzRight, some d2z =>
           match boxMulElem (α := α) dzLeft dzRight with
@@ -601,7 +604,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .sin =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match ibp[p1]!, dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some zB, some dzLeft, some dzRight, some d2z =>
           -- D²sin(z)[u,v] = -sin(z) Dz[u] Dz[v] + cos(z) D²z[u,v].
@@ -620,7 +623,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .cos =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match ibp[p1]!, dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some zB, some dzLeft, some dzRight, some d2z =>
           -- D²cos(z)[u,v] = -cos(z) Dz[u] Dz[v] - sin(z) D²z[u,v].
@@ -639,7 +642,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .sigmoid =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some dzLeft, some dzRight, some d2z =>
           match boxMulElem (α := α) dzLeft dzRight with
@@ -654,7 +657,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .exp =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match ibp[p1]!, dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some zB, some dzLeft, some dzRight, some d2z =>
           match derivBoxExp? (α := α) zB with
@@ -671,7 +674,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .log =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match ibp[p1]!, dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some zB, some dzLeft, some dzRight, some d2z =>
           match derivBoxLog? (α := α) zB, secondDerivBoxLog? (α := α) zB with
@@ -688,15 +691,15 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | _ => d2s
     | .sum =>
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match d2s[p1]! with
         | some d2Xin => d2s.set! id (some (boxSum (α := α) d2Xin))
         | none => d2s
       | _ => d2s
-    | .reshape _ _ | .flatten _ | .concat _ | .swap_first_two | .transpose3dLastTwo | .permute _
+    | .reshape _ _ | .flatten _ | .concat _ | .transpose _ _ | .permute _
       =>
       match node.parents with
-      | p1 :: _ => d2s.set! id (d2s[p1]!)
+      | #[p1] => d2s.set! id (d2s[p1]!)
       | _ => d2s
     | .mseLoss => d2s
     | .softmax _ =>
@@ -704,7 +707,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       -- J = diag(y) - y yᵀ and H derived from ∂J/∂z (bounded via y-bounds).
       if !NonlinearBoundOps.supportsIdealCoupledDerivatives (α := α) then d2s else
       match node.parents with
-      | p1 :: _ =>
+      | #[p1] =>
         match ibp[id]!, dLeft[p1]!, dRight[p1]!, d2s[p1]! with
         | some yB, some dzLeft, some dzRight, some d2z =>
           -- The Hessian below is for one vector-valued softmax row.
@@ -874,8 +877,11 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
     | .abs | .sqrt | .inv | .maxElem | .minElem | .broadcastTo .. | .reduceSum .. | .reduceMean
       .. =>
       d2s
-    | .conv2d .. | .batchNorm2dNchwEval .. => d2s
-  (List.finRange g.nodes.size).foldl propagate init
+    | .conv .. | .batchNormEval .. => d2s
+  if crownGraphSemanticsSupported (α := α) g ps then
+    (List.finRange g.nodes.size).foldl propagate init
+  else
+    init
 
 /-- Propagate the second directional derivative `D²f[v, v]` from one first-derivative pass. -/
 def runSecondDirectionalDerivative (g : Graph) (ps : ParamStore α)
@@ -897,7 +903,7 @@ def runHessianVectorProduct {inputDim : Nat} (g : Graph) (ps : ParamStore α)
   fun i => runMixedSecondDerivative g ps ibp (coordinateDerivatives i) directionalDerivative
 
 /-- One-dimensional second derivatives are the all-ones directional special case. -/
-def runSecondDerivative1D (g : Graph) (ps : ParamStore α)
+def runScalarSecondDerivative (g : Graph) (ps : ParamStore α)
     (ibp d1 : Array (Option (FlatBox α))) : Array (Option (FlatBox α)) :=
   runSecondDirectionalDerivative g ps ibp d1
 

@@ -27,24 +27,26 @@ namespace Tape
 ## Linear algebra
 -/
 
-/-- Matrix multiply node for tensors of shape `(m,n)` and `(n,p)`. -/
+namespace Internal
+
+/-- Backend matrix kernel for a single pair of matrices. -/
 def matmul {m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
   let m32 ← AnyBuffer.natToU32Checked m
   let n32 ← AnyBuffer.natToU32Checked n
   let p32 ← AnyBuffer.natToU32Checked p
   let one32 : UInt32 := 1
-  let σ₁ : Shape := .dim m (.dim n .scalar)
-  let σ₂ : Shape := .dim n (.dim p .scalar)
-  let τ : Shape := .dim m (.dim p .scalar)
-  binary (t := t) "matmul" aId bId σ₁ σ₂ τ
+  let leftShape : Shape := [m, n]
+  let rightShape : Shape := [n, p]
+  let outShape : Shape := [m, p]
+  binary (t := t) "matmul" aId bId leftShape rightShape outShape
     (forward := fun a b => Buffer.bmm a b one32 m32 n32 p32)
     (backward := fun a b dLdy =>
       let dA := Buffer.bmmRightTranspose dLdy b one32 m32 p32 n32
       let dB := Buffer.bmmLeftTranspose a dLdy one32 n32 m32 p32
       (dA, dB))
 
-/-- Batched matrix multiply for `(batch,m,n) × (batch,n,p)` CUDA buffers. -/
-def bmm {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
+/-- Backend matrix kernel over a flattened leading shape. -/
+def matmulFlattened {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) := do
   let b32 ← AnyBuffer.natToU32Checked batch
   let m32 ← AnyBuffer.natToU32Checked m
   let n32 ← AnyBuffer.natToU32Checked n
@@ -58,6 +60,10 @@ def bmm {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tape × Nat) :=
       let dA := Buffer.bmmRightTranspose dLdy b b32 m32 p32 n32
       let dB := Buffer.bmmLeftTranspose a dLdy b32 n32 m32 p32
       (dA, dB))
+
+end Internal
+
+namespace Internal
 
 /--
 Fused real-FFT spectral convolution used by the CUDA FNO1D path.
@@ -93,17 +99,19 @@ def spectralConv1dRfft {grid width modes : Nat}
     { name := some "spectralConv1dRfft"
       value := { s := xShape, buf := y }
       requiresGrad := true
-      parents := [xId, wReId, wImId]
+      parents := #[xId, wReId, wImId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny xShape
         let dx := Buffer.spectralConv1dRfftBwdX x wRe wIm dLdy.buf grid32 width32 modes32
         let dWRe := Buffer.spectralConv1dRfftBwdWRe x wRe wIm dLdy.buf grid32 width32 modes32
         let dWIm := Buffer.spectralConv1dRfftBwdWIm x wRe wIm dLdy.buf grid32 width32 modes32
-        pure
-          [ (xId, { s := xShape, buf := dx })
+        pure #[
+            (xId, { s := xShape, buf := dx })
           , (wReId, { s := wShape, buf := dWRe })
           , (wImId, { s := wShape, buf := dWIm }) ] }
   pure (t.addNode node)
+
+end Internal
 
 /-!
 ## Linear layer / losses
@@ -123,16 +131,16 @@ def linear {outDim inDim : Nat} (t : Tape) (wId bId xId : Nat) : Result (Tape ×
     { name := some "linear"
       value := { s := .dim outDim .scalar, buf := yBuf }
       requiresGrad := true
-      parents := [wId, bId, xId]
-      cleanup := [wx]
+      parents := #[wId, bId, xId]
+      cleanup := #[wx]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny (.dim outDim .scalar)
         let g := dLdy.buf
         let dW := Buffer.bmm g xBuf one32 out32 one32 in32
         let db := Buffer.copy g
         let dx := Buffer.bmmLeftTranspose wBuf g one32 in32 out32 one32
-        pure
-          [ (wId, { s := .dim outDim (.dim inDim .scalar), buf := dW })
+        pure #[
+            (wId, { s := .dim outDim (.dim inDim .scalar), buf := dW })
           , (bId, { s := .dim outDim .scalar, buf := db })
           , (xId, { s := .dim inDim .scalar, buf := dx }) ] }
   pure (t.addNode node)
@@ -150,8 +158,8 @@ def mseLoss {s : Shape} (t : Tape) (yhatId targetId : Nat) : Result (Tape × Nat
     { name := some "mse_loss"
       value := { s := Shape.scalar, buf := mean }
       requiresGrad := true
-      parents := [yhatId, targetId]
-      cleanup := [diff, squared, sum]
+      parents := #[yhatId, targetId]
+      cleanup := #[diff, squared, sum]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny Shape.scalar
         let gBroad := broadcastScalarToShape dLdy.buf s
@@ -161,7 +169,7 @@ def mseLoss {s : Shape} (t : Tape) (yhatId targetId : Nat) : Result (Tape × Nat
         let dTarget := Buffer.releaseThen gBroad <|
           Buffer.releaseThen diffGrad <|
             Buffer.scale dYhat (-1.0)
-        pure [
+        pure #[
           (yhatId, { s := s, buf := dYhat }),
           (targetId, { s := s, buf := dTarget })
         ] }

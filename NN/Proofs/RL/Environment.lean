@@ -6,7 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import Mathlib.Data.List.Basic
 public import NN.Spec.RL.Environment
 
 /-!
@@ -36,57 +35,56 @@ variable {State : Type u} {Action : Type v} {Observation : Type w} {Reward : Typ
 
 /-- `statesFrom` records the initial state plus one state per action. -/
 theorem statesFrom_length
-    (env : Env State Action Observation Reward) (state : State) (actions : List Action) :
-    (statesFrom env state actions).length = actions.length + 1 := by
-  induction actions generalizing state with
-  | nil =>
-      simp [statesFrom]
-  | cons action actions ih =>
-      simp [statesFrom, ih, Nat.add_assoc]
+    (env : Env State Action Observation Reward) (state : State) (actions : Array Action) :
+    (statesFrom env state actions).size = actions.size + 1 := by
+  simp [statesFrom]
 
 /-- `states` records the initial state plus one successor per action. -/
 theorem states_length
-    (env : Env State Action Observation Reward) (actions : List Action) :
-    (states env actions).length = actions.length + 1 := by
+    (env : Env State Action Observation Reward) (actions : Array Action) :
+    (states env actions).size = actions.size + 1 := by
   simpa [states] using statesFrom_length (env := env) (state := env.initialState) (actions := actions)
 
 /-- `rolloutFrom` emits exactly one observed transition per action. -/
 theorem rolloutFrom_length
-    (env : Env State Action Observation Reward) (state : State) (actions : List Action) :
-    (rolloutFrom env state actions).length = actions.length := by
-  induction actions generalizing state with
-  | nil =>
-      simp [rolloutFrom]
-  | cons action actions ih =>
-      simp [rolloutFrom, ih]
+    (env : Env State Action Observation Reward) (state : State) (actions : Array Action) :
+    (rolloutFrom env state actions).size = actions.size := by
+  simp [rolloutFrom]
 
 /-- `rollout` emits exactly one observed transition per action. -/
 theorem rollout_length
-    (env : Env State Action Observation Reward) (actions : List Action) :
-    (rollout env actions).length = actions.length := by
+    (env : Env State Action Observation Reward) (actions : Array Action) :
+    (rollout env actions).size = actions.size := by
   simpa [rollout] using rolloutFrom_length (env := env) (state := env.initialState) (actions := actions)
+
+/-- An action-valid prefix preserves the environment invariant. -/
+private theorem stateAfter_safe
+    (env : SafeEnv State Action Observation Reward)
+    (state : State) (actions : Array Action)
+    (hInv : env.Invariant state)
+    (hOk : env.actionPathOk state actions) :
+    ∀ n, n ≤ actions.size → env.Invariant (stateAfter env.toEnv state actions n)
+  | 0, _ => hInv
+  | n + 1, hSize => by
+      have hn : n < actions.size := by grind
+      rw [stateAfter, Array.getElem?_eq_getElem hn]
+      exact env.step_safe
+        (stateAfter_safe env state actions hInv hOk n (by grind))
+        (hOk ⟨n, hn⟩)
 
 /-- Safe environments preserve the invariant along any valid action path. -/
 theorem evolveFrom_safe
     (env : SafeEnv State Action Observation Reward)
-    {state : State} {actions : List Action}
+    {state : State} {actions : Array Action}
     (hInv : env.Invariant state)
     (hOk : env.actionPathOk state actions) :
     env.Invariant (evolveFrom env.toEnv state actions) := by
-  induction actions generalizing state with
-  | nil =>
-      simpa [evolveFrom] using hInv
-  | cons action actions ih =>
-      have hAction : env.ActionOk state action := hOk.1
-      have hNext : env.Invariant (env.toEnv.step state action).state :=
-        env.step_safe hInv hAction
-      have hTail : env.actionPathOk (env.toEnv.step state action).state actions := hOk.2
-      simpa [evolveFrom] using ih hNext hTail
+  exact stateAfter_safe env state actions hInv hOk actions.size (by simp)
 
 /-- Safe environments preserve the invariant from reset under any valid action path. -/
 theorem evolve_safe
     (env : SafeEnv State Action Observation Reward)
-    {actions : List Action}
+    {actions : Array Action}
     (hOk : env.actionPathOk env.toEnv.initialState actions) :
     env.Invariant (evolve env.toEnv actions) := by
   simpa [evolve] using
@@ -95,26 +93,21 @@ theorem evolve_safe
 /-- Every state in `statesFrom` satisfies the invariant along a valid action path. -/
 theorem statesFrom_safe
     (env : SafeEnv State Action Observation Reward)
-    {state : State} {actions : List Action}
+    {state : State} {actions : Array Action}
     (hInv : env.Invariant state)
     (hOk : env.actionPathOk state actions) :
-    List.Forall env.Invariant (statesFrom env.toEnv state actions) := by
-  induction actions generalizing state with
-  | nil =>
-      simp [statesFrom, hInv]
-  | cons action actions ih =>
-      have hAction : env.ActionOk state action := hOk.1
-      have hNext : env.Invariant (env.toEnv.step state action).state :=
-        env.step_safe hInv hAction
-      have hTail : env.actionPathOk (env.toEnv.step state action).state actions := hOk.2
-      simpa [List.Forall, statesFrom, hInv] using ih hNext hTail
+    ∀ state' ∈ statesFrom env.toEnv state actions, env.Invariant state' := by
+  intro state' hState
+  simp only [statesFrom, Array.mem_ofFn] at hState
+  obtain ⟨i, rfl⟩ := hState
+  exact stateAfter_safe env state actions hInv hOk i (by grind)
 
 /-- Every state in `states` satisfies the invariant from reset along a valid action path. -/
 theorem states_safe
     (env : SafeEnv State Action Observation Reward)
-    {actions : List Action}
+    {actions : Array Action}
     (hOk : env.actionPathOk env.toEnv.initialState actions) :
-    List.Forall env.Invariant (states env.toEnv actions) := by
+    ∀ state ∈ states env.toEnv actions, env.Invariant state := by
   simpa [states] using
     statesFrom_safe (env := env) (state := env.toEnv.initialState) (actions := actions) env.init_safe hOk
 

@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.BoundOps
+public import NN.Verification.Util.Array
 public import NN.Verification.Util.Json
 
 /-!
@@ -54,6 +55,10 @@ structure Instance where
   /-- Unsafe output-region specification. -/
   spec : Spec
 
+/-- Whether two endpoint arrays define a finite-dimensional, componentwise ordered input box. -/
+def inputBoxValid (lo hi : Array Float) : Bool :=
+  lo.size == hi.size && allPairwise lo hi NN.Verification.Util.Array.floatLe
+
 /--
 Load the compact VNNLIB suite JSON format used by TorchLean checkers.
 
@@ -69,6 +74,8 @@ def loadSuite (path : String) : IO (Array Instance) := do
     let id ← expectFieldNat exo "id" "instance"
     let lo ← expectFieldFiniteFloatArray exo "input_lo" "instance"
     let hi ← expectFieldFiniteFloatArray exo "input_hi" "instance"
+    if !inputBoxValid lo hi then
+      throw <| IO.userError s!"instance {id}: input box endpoints are mismatched or reversed"
     let specArr ← expectFieldArray exo "spec" "instance"
     let mut specOut : Spec := #[]
     for t in specArr do

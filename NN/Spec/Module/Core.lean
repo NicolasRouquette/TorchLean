@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.Tensor
+public import NN.Spec.Core.TensorOps
 
 /-!
 # Mathematical modules
@@ -59,19 +59,19 @@ def append {α : Type} {s t u : Shape}
   .comp a (.single b)
 
 /-- Return operation names in evaluation order. -/
-def kinds {α : Type} {s t : Shape} : Chain α s t → List String
-  | .single m => [m.kind]
+def kinds {α : Type} {s t : Shape} : Chain α s t → Array String
+  | .single m => #[m.kind]
   | .comp a b => kinds a ++ kinds b
 
 /-- Return operation names and Python expressions in evaluation order. -/
-def layerInfo {α : Type} {s t : Shape} : Chain α s t → List (String × String)
-  | .single m => [(m.kind, m.pythonExpr)]
+def layerInfo {α : Type} {s t : Shape} : Chain α s t → Array (String × String)
+  | .single m => #[(m.kind, m.pythonExpr)]
   | .comp a b => layerInfo a ++ layerInfo b
 
 end Chain
 
 /-- Apply the same module independently to every element of a leading dimension. -/
-def mapLeading
+def mapEach
   {α : Type} [Context α]
     {n : Nat} {elemIn elemOut : Shape} (m : Module α elemIn elemOut) :
     Module α (.dim n elemIn) (.dim n elemOut) where
@@ -80,13 +80,13 @@ def mapLeading
   kind := m.kind
   pythonExpr := m.pythonExpr
 
-/-- Select one element from the leading dimension. -/
-def selectLeading {α : Type} {n : Nat} {elem : Shape} (i : Fin n) :
-    Module α (.dim n elem) elem where
-  forward
-    | .dim values => values i
-  kind := "SelectLeading"
-  pythonExpr := s!"SelectLeading({i.val})"
+/-- Select one coordinate along any valid axis. -/
+def select {α : Type} {shape : Shape} (axis : Nat)
+    [Shape.AxisInBounds axis shape] (i : Fin (Shape.axisSize shape axis)) :
+    Module α shape (shape.eraseAxis axis) where
+  forward x := Tensor.selectSpec axis x i
+  kind := "Select"
+  pythonExpr := s!"Select(axis={axis}, index={i.val})"
 
 end Module
 end Spec

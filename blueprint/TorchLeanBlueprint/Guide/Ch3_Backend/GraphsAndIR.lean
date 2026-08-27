@@ -88,9 +88,9 @@ import NN.IR.Graph
 open NN.IR
 open Spec
 
-def xShape : Shape := shape![4]
-def hShape : Shape := shape![5]
-def yShape : Shape := shape![3]
+def xShape : Shape := [4]
+def hShape : Shape := [5]
+def yShape : Shape := [3]
 
 def graph : Graph :=
   let n0 : Node :=
@@ -163,10 +163,9 @@ Try changing only node 2's declared output from `[5]` to `[4]`. The graph remain
 well formed, but the shape checker rejects the edge into the second linear layer. This is why a
 claim that an imported graph is “validated” should name both checks.
 
-The distinction also matters in the backend adapter:
-`NN.Backend.IR.checkedPlanGraphNodesWithRegistry` currently calls `checkWellFormed` before planning,
-but it does not replace an importer's shape check. A caller accepting untrusted graph data must not
-infer shape validity from a successful plan alone.
+The distinction also matters in the backend adapter. `NN.Backend.IR.checkedPlanGraph` calls
+`checkWellFormed` before selecting kernels, but it does not replace an importer's shape check. A
+caller accepting untrusted graph data must not infer shape validity from a successful plan alone.
 
 # Parameters Live In A Payload
 
@@ -198,7 +197,7 @@ node claims output shape `[5]`, the graph structure is unchanged but evaluation 
 payload is not trusted merely because its key exists.
 
 The shared `NN.IR.Payload` currently has typed records for constants, linear weights and bias,
-convolution parameters, and eval-mode NCHW BatchNorm parameters. Other operations obtain their
+convolution parameters, and eval-mode channel-axis BatchNorm parameters. Other operations obtain their
 values from parent edges. Adding a new payload-backed operation requires coordinated changes to the
 payload type, shape inference, denotation, import/export adapters, and every runtime or verifier
 that claims to support it.
@@ -208,15 +207,18 @@ that claims to support it.
 During evaluation, node 0 stores a vector, nodes 1 and 2 store `[5]`, node 3 stores `[3]`, and nodes
 4 and 5 store scalars. One homogeneous Lean array cannot directly contain all those tensor types.
 
-The evaluator uses the packed tensor type from the specification layer:
+The evaluator uses the specification layer's internal shape-erased tensor:
 
 ```
-Spec.PackedTensor α = Σ s : Shape, Spec.Tensor α s
+structure Spec.SomeTensor (α : Type) where
+  shape : Shape
+  tensor : Spec.Tensor α shape
 ```
 
-This is a dependent pair of a runtime shape tag and a tensor with exactly that shape. The table can
-hold packed tensors of different shapes, while `Graph.expectShape` recovers a statically typed
-tensor after checking the tag.
+This is a dependent pair of a runtime shape and a tensor with exactly that shape. The table can
+therefore hold differently shaped intermediate values. `Graph.expectShape` recovers a statically
+typed tensor only after checking the stored shape. Model code never needs to construct this table;
+its inputs and outputs remain `Tensor α shape`.
 
 For node 1, evaluation performs:
 
@@ -225,7 +227,7 @@ For node 1, evaluation performs:
 3. check the parent tag equals `[4]`;
 4. check the declared output equals `[5]`;
 5. call the pure `linearSpec`;
-6. store the result as a `Spec.PackedTensor α`.
+6. store the result as a `Spec.SomeTensor α`.
 
 Failures are reported as `Except String`; malformed imported data does not receive a fabricated
 proof cast.
@@ -316,7 +318,7 @@ The same structural graph can therefore be interpreted at:
 The graph is the same data, but the meaning of arithmetic changes with `α`. The equality of two
 interpretations is never automatic.
 
-`Spec.PackedTensor α` varies the shape while retaining the scalar contract introduced in
+`Spec.SomeTensor α` varies the shape while retaining the scalar contract introduced in
 *Tensors And Shapes*.
 
 For the six-node example:

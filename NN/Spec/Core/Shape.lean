@@ -82,6 +82,17 @@ inductive Shape where
   | dim : Nat → Shape → Shape
 deriving DecidableEq, Repr
 
+/-!
+Model code writes shapes as dimension lists. For example, `Tensor Float [4, 2]` is a four-by-two
+tensor of Lean `Float` values, while `Trainer.Dataset [2] [1]` describes supervised samples with
+two input values and one target value. The expected `Shape` type directs Lean to elaborate the list
+through `Shape.ofList`.
+
+The brackets are shape notation, not tensor storage: a value of type `Tensor Float [4, 2]` is still
+a `Tensor`, never a `List`. During elaboration the notation reduces to the recursive shape below,
+preserving the definitional equalities used by tensor programs and proofs. Ordinary model code
+should not write the expanded `.dim` form.
+-/
 namespace Shape
 
 /--
@@ -100,25 +111,45 @@ def slidingWindowOutDim (input kernel stride padding : Nat) : Nat :=
     (padded - kernel) / stride + 1
 
 /-- Build a shape from a list of dimensions (outermost first). -/
-def ofList : List Nat → Shape
+abbrev ofList : List Nat → Shape
   | [] => .scalar
   | n :: ns => .dim n (ofList ns)
 
-/-- Pretty-print a `Shape` for debugging / logs. -/
+/-- Build a shape from runtime dimensions stored outermost first. -/
+def ofArray (dims : Array Nat) : Shape :=
+  dims.foldr (fun extent rest => .dim extent rest) .scalar
+
+/-- Display list-shaped dimensions with the same notation accepted by model code. -/
+@[app_unexpander Spec.Shape.ofList]
+meta def ofListUnexpander : Lean.PrettyPrinter.Unexpander
+  | `($_ $dims) => pure dims
+  | _ => throw ()
+
+/-- Interpret a dimension list as a tensor shape. -/
+instance : Coe (List Nat) Shape where
+  coe := ofList
+
+/-- Convert to a list of dimensions, outermost first. -/
+def toList : Shape → List Nat
+  | .scalar => []
+  | .dim n rest => n :: toList rest
+
+/-- Print a shape using the same dimension-list convention as model code. -/
 def pretty (s : Shape) : String :=
-  match s with
-  | .scalar => "scalar"
-  | .dim n rest => s!"dim {n} ({pretty rest})"
+  "[" ++ String.intercalate ", " (s.toList.map toString) ++ "]"
 
 /-- Swap two adjacent dimensions at a given depth (0‑based from the outermost). -/
-def swapAdjacentAtDepth (s : Shape) (depth : Nat) : Shape :=
+@[reducible] def swapAdjacentAtDepth (s : Shape) (depth : Nat) : Shape :=
   match depth, s with
   | 0, .dim m (.dim n rest) => .dim n (.dim m rest)
   | d+1, .dim m rest => .dim m (swapAdjacentAtDepth rest d)
   | _, _ => s  -- invalid depth, return unchanged
 
+@[simp] theorem swapAdjacentAtDepth_zero_rank_two (m n : Nat) :
+    ([m, n] : Shape).swapAdjacentAtDepth 0 = [n, m] := rfl
+
 /-- Swapping adjacent dims at depth `depth` twice returns the original shape. -/
-theorem swapAdjacentAtDepth_involutive (s : Shape) (depth : Nat) :
+@[simp] theorem swapAdjacentAtDepth_involutive (s : Shape) (depth : Nat) :
     (s.swapAdjacentAtDepth depth).swapAdjacentAtDepth depth = s := by
   induction depth generalizing s with
   | zero =>
@@ -135,7 +166,7 @@ def applyAdjacentSwaps : Shape → List Nat → Shape
   | s, depth :: depths => applyAdjacentSwaps (s.swapAdjacentAtDepth depth) depths
 
 /-- Adjacent swaps that move `axis` to the innermost position of a rank-`rank` shape. -/
-def moveAxisToLastSwaps (rank axis : Nat) : List Nat :=
+def moveAxisToInnermostSwaps (rank axis : Nat) : List Nat :=
   (List.range (rank - (axis + 1))).map (axis + ·)
 
 @[simp]
@@ -165,11 +196,37 @@ def appendDim (s : Shape) (n : Nat) : Shape :=
   | .scalar => .dim n .scalar
   | .dim m rest => .dim m (appendDim rest n)
 
+/-- Add a new outermost dimension. -/
+@[reducible]
+def prependDim (s : Shape) (n : Nat) : Shape :=
+  .dim n s
+
 /-- Concatenate two shapes, preserving the dimensions of the first shape as leading axes. -/
 @[reducible]
 def concat : Shape → Shape → Shape
   | .scalar, suffix => suffix
   | .dim n rest, suffix => .dim n (concat rest suffix)
+
+/-- Shape concatenation is associative. -/
+@[simp] theorem concat_assoc (left middle right : Shape) :
+    (left.concat middle).concat right = left.concat (middle.concat right) := by
+  induction left with
+  | scalar => rfl
+  | dim n rest ih => simp only [concat, ih]
+
+/-- Converting an appended dimension list is shape concatenation. -/
+@[simp] theorem ofList_append (left right : List Nat) :
+    ofList (left ++ right) = (ofList left).concat (ofList right) := by
+  induction left with
+  | nil => rfl
+  | cons n left ih => simp [ofList, concat, ih]
+
+/-- The list view of concatenated shapes is the concatenation of their list views. -/
+@[simp] theorem toList_concat (left right : Shape) :
+    (left.concat right).toList = left.toList ++ right.toList := by
+  induction left with
+  | scalar => rfl
+      | dim n rest ih => simp [toList, ih]
 
 /-- Appending one dimension is concatenation with a one-axis suffix. -/
 theorem appendDim_eq_concat (s : Shape) (n : Nat) :
@@ -204,7 +261,7 @@ def size : Shape → Nat
     size (ofList dims) = dims.prod := by
   induction dims with
   | nil => rfl
-  | cons dim dims ih => simp [ofList, size, ih]
+  | cons dim dims ih => simp [size, ih]
 
 /-- A shape consisting only of singleton axes contains one scalar. -/
 @[simp] theorem size_ofList_replicate_one (n : Nat) :
@@ -213,12 +270,7 @@ def size : Shape → Nat
   | zero => rfl
   | succ n ih =>
       rw [List.replicate_succ]
-      simp [ofList, size, ih]
-
-/-- `size` for a 2D shape factors as $ab\,\operatorname{size}(s)$. -/
-theorem size_dim_mul (a b : Nat) (s : Shape) :
-    size (dim a (dim b s)) = a * b * size s := by
-  simp [size, Nat.mul_assoc]
+      simp [size, ih]
 
 /--
 `appendDim` multiplies the number of scalar elements by the appended dimension.
@@ -242,42 +294,19 @@ theorem size_concat (leading suffix : Shape) :
   | scalar => simp [size]
   | dim n rest ih => simp [size, ih, Nat.mul_assoc]
 
-/--
-Shape-size identity used in Transformer attention reshapes.
-
-If $\mathtt{dModel}=\mathtt{numHeads}\cdot\mathtt{headDim}$, then
-$(\mathtt{seqLen}\times\mathtt{dModel})$ has the same `size` as
-$(\mathtt{numHeads}\times\mathtt{seqLen}\times\mathtt{headDim})$.
--/
-theorem size_eq_of_dModel_eq_numHeads_mul_headDim
-  (seqLen numHeads dModel headDim : Nat)
-  (h : dModel = numHeads * headDim) :
-  size (dim seqLen (dim dModel scalar)) = size (dim numHeads (dim seqLen (dim headDim scalar))) :=
-    by
-  simp [size]
-  rw [h]
-  -- `Nat.mul_left_comm` proves `a * b * c = b * a * c`; we just reassociate to match our goal.
-  simpa [Nat.mul_assoc] using Nat.mul_left_comm seqLen numHeads headDim
-
-
-/-- Convert to a list of dimensions (outermost first). -/
-def toList : Shape → List Nat
-  | .scalar => []
-  | .dim n rest => n :: toList rest
-
 /-- `ofList` is a left inverse of `toList`. -/
 @[simp] theorem ofList_toList (s : Shape) : ofList (toList s) = s := by
   induction s with
   | scalar => rfl
   | dim n s ih =>
-    simp [ofList, toList, ih]
+    simp [toList, ih]
 
 /-- `toList` is a right inverse of `ofList`. -/
 @[simp] theorem toList_ofList (xs : List Nat) : toList (ofList xs) = xs := by
   induction xs with
   | nil => rfl
   | cons n ns ih =>
-    simp [ofList, toList, ih]
+    simp [toList, ih]
 
 -- Tell `grind` about the standard shape normalization lemmas.
 attribute [grind =] size_appendDim size_ofList ofList_toList toList_ofList
@@ -300,11 +329,6 @@ instance : BEq Shape where
 /-- Default inhabitant for `Shape`, used only when Lean needs a canonical fallback value. -/
 instance : Inhabited Shape where
   default := .scalar
-
-/-- Return whether the shape has no tensor dimensions. -/
-def isScalar : Shape → Bool
-  | .scalar => true
-  | _ => false
 
 /-- Get dimension at index `i` (0‑based), or `none` if out of bounds. -/
 def getDim : Shape → Nat → Option Nat
@@ -335,6 +359,66 @@ PyTorch analogy:
 def rank : Shape → Nat
   | Shape.scalar => 0
   | Shape.dim _ rest => 1 + rank rest
+
+/-- Insert a dimension at an axis, where axis `0` is outermost.
+
+Callers that construct a tensor of this shape also carry a proof that the axis does not exceed the
+input rank. The out-of-bounds scalar case is therefore unreachable in typed tensor operations.
+-/
+@[reducible] def insertAxis : Shape → Nat → Nat → Shape
+  | shape, axis, extent =>
+      match axis with
+      | 0 => .dim extent shape
+      | axis + 1 =>
+          match shape with
+          | .dim n rest => .dim n (insertAxis rest axis extent)
+          | .scalar => .scalar
+
+/-- Inserting at axis zero adds a new outermost dimension. -/
+@[simp] theorem insertAxis_zero (shape : Shape) (extent : Nat) :
+    insertAxis shape 0 extent = .dim extent shape := by
+  cases shape <;> rfl
+
+/-- Appending one dimension increases the rank by one. -/
+@[simp] theorem rank_appendDim (s : Shape) (n : Nat) :
+    rank (s.appendDim n) = rank s + 1 := by
+  induction s with
+  | scalar => rfl
+  | dim _ rest ih => simp only [rank, ih, Nat.add_assoc]
+
+/-- The list view contains one entry for each tensor axis. -/
+@[simp] theorem length_toList (s : Shape) : s.toList.length = s.rank := by
+  induction s with
+  | scalar => rfl
+  | dim n rest ih => simp [toList, rank, ih, Nat.add_comm]
+
+/-- A shape decomposed into a leading prefix and a suffix of a prescribed rank. -/
+structure SuffixSplit (shape : Shape) (suffixRank : Nat) where
+  /-- Axes preceding the suffix. -/
+  leading : Shape
+  /-- Extents of the suffix axes. -/
+  suffix : List Nat
+  /-- The suffix has the requested number of axes. -/
+  suffix_length : suffix.length = suffixRank
+  /-- The decomposition reconstructs the original shape. -/
+  concat_eq : leading.concat (ofList suffix) = shape
+
+/-- Split the final `suffixRank` axes from a shape. -/
+def splitSuffix (shape : Shape) (suffixRank : Nat) (h : suffixRank ≤ shape.rank) :
+    SuffixSplit shape suffixRank := by
+  let dims := shape.toList
+  have hdims : suffixRank ≤ dims.length := by simpa [dims] using h
+  let split := dims.length - suffixRank
+  let suffixDims := dims.drop split
+  have hsuffix : suffixDims.length = suffixRank := by
+    simp [suffixDims, split, List.length_drop, Nat.sub_sub_self hdims]
+  refine
+    { leading := ofList (dims.take split)
+      suffix := suffixDims
+      suffix_length := hsuffix
+      concat_eq := ?_ }
+  rw [← ofList_append]
+  simp [split, suffixDims, dims]
 
 /-- Swap the first two axes after an arbitrary fixed leading shape. -/
 @[simp]
@@ -437,10 +521,6 @@ instance broadcastToExpandDims {n : Nat} {s₁ s₂ : Shape} [bc : BroadcastTo s
     BroadcastTo s₁ (Shape.dim n s₂) where
   proof := CanBroadcastTo.expand_dims bc.proof
 
-/-- `true` iff two shapes have the same number of elements. -/
-def isValidReshape (s₁ s₂ : Shape) : Bool :=
-  Spec.Shape.size s₁ == Spec.Shape.size s₂
-
 /-- Swap adjacent entries in an axis-ordering list, leaving invalid positions unchanged. -/
 def swapAdjacentAxes (axes : List Nat) (depth : Nat) : List Nat :=
   match axes, depth with
@@ -449,8 +529,7 @@ def swapAdjacentAxes (axes : List Nat) (depth : Nat) : List Nat :=
   | first :: second :: rest, 0 => second :: first :: rest
   | first :: rest, depth + 1 => first :: swapAdjacentAxes rest depth
 
-/-- Permute axes of a shape using a runtime permutation list (0-based). Returns `none` if invalid.
-  -/
+/-- Permute axes of a shape using a zero-based structural axis ordering. Returns `none` if invalid. -/
 def permute? (s : Shape) (perm : List Nat) : Option Shape :=
   let r := rank s
   if perm.length != r then
@@ -460,6 +539,52 @@ def permute? (s : Shape) (perm : List Nat) : Option Shape :=
   else
     let dims := toList s
     (perm.mapM fun i => dims[i]?).map ofList
+
+/-- Axis permutation that exchanges `axis₁` and `axis₂` and fixes every other axis. -/
+def transposePermutation (rank axis₁ axis₂ : Nat) : List Nat :=
+  (List.range rank).map fun axis =>
+    if axis = axis₁ then axis₂ else if axis = axis₂ then axis₁ else axis
+
+/-- Remove one axis from a shape. Invalid axes leave the shape unchanged. -/
+def eraseAxis : Shape → Nat → Shape
+  | .scalar, _ => .scalar
+  | .dim _ rest, 0 => rest
+  | .dim n rest, axis + 1 => .dim n (eraseAxis rest axis)
+
+/-- Replace the extent of one axis. Invalid axes leave the shape unchanged. -/
+def replaceAxis : Shape → Nat → Nat → Shape
+  | .scalar, _, _ => .scalar
+  | .dim _ rest, 0, extent => .dim extent rest
+  | .dim n rest, axis + 1, extent => .dim n (replaceAxis rest axis extent)
+
+/-- Erasing an in-bounds axis decreases the rank by one. -/
+theorem rank_eraseAxis {s : Shape} {axis : Nat} (h : axis < s.rank) :
+    (s.eraseAxis axis).rank = s.rank - 1 := by
+  induction s generalizing axis with
+  | scalar => simp [rank] at h
+  | dim n rest ih =>
+      cases axis with
+      | zero => simp [eraseAxis, rank]
+      | succ axis =>
+          have hAxis : axis < rest.rank := by
+            simp only [rank] at h
+            grind
+          simp only [eraseAxis, rank, ih hAxis]
+          grind
+
+/-- Replacing an in-bounds axis preserves rank. -/
+theorem rank_replaceAxis {s : Shape} {axis extent : Nat} (h : axis < s.rank) :
+    (s.replaceAxis axis extent).rank = s.rank := by
+  induction s generalizing axis with
+  | scalar => simp [rank] at h
+  | dim n rest ih =>
+      cases axis with
+      | zero => simp [replaceAxis, rank]
+      | succ axis =>
+          have hAxis : axis < rest.rank := by
+            simp only [rank] at h
+            grind
+          simp [replaceAxis, rank, ih hAxis]
 
 /-!
 ## Axis evidence
@@ -504,6 +629,16 @@ instance axisInBoundsSucc {n s axis} [h : AxisInBounds axis s] :
     AxisInBounds (axis + 1) (.dim n s) :=
   ⟨by simpa [rank, Nat.add_comm] using Nat.add_lt_add_right h.proof 1⟩
 
+/-- The extent of the leading axis is its outer dimension. -/
+@[simp] theorem axisSize_zero (n : Nat) (s : Shape) : axisSize (.dim n s) 0 = n := by
+  rfl
+
+/-- Looking through an outer dimension preserves the extent of an inner axis. -/
+@[simp] theorem axisSize_succ (n : Nat) (s : Shape) (axis : Nat)
+    [AxisInBounds axis s] [AxisInBounds (axis + 1) (.dim n s)] :
+    axisSize (.dim n s) (axis + 1) = axisSize s axis := by
+  simp only [axisSize, getDim]
+
 /-- Decide whether a natural number names a dimension of `s`, returning typed evidence. -/
 def axisInBounds? (axis : Nat) (s : Shape) : Option (PLift (AxisInBounds axis s)) :=
   if h : axis < rank s then some ⟨⟨h⟩⟩ else none
@@ -512,11 +647,6 @@ def axisInBounds? (axis : Nat) (s : Shape) : Option (PLift (AxisInBounds axis s)
 theorem axisInBounds?_isSome {axis : Nat} {s : Shape} [h : AxisInBounds axis s] :
     (axisInBounds? axis s).isSome := by
   simp [axisInBounds?, h.proof]
-
-/-- A positive-rank shape always has an innermost dimension. -/
-theorem axisInBoundsLast {s : Shape} (hRank : 0 < rank s) :
-    AxisInBounds (rank s - 1) s :=
-  ⟨Nat.sub_lt hRank Nat.zero_lt_one⟩
 
 /--
 `NonemptyAxis axis s` says that `axis` selects a positive-length dimension of `s`.
@@ -582,11 +712,6 @@ theorem hasNonemptyAxisZeroOfNe {n s} (h : n ≠ 0) : HasNonemptyAxis 0 (.dim n 
 theorem hasNonemptyAxisZeroOfPos {n s} (h : 0 < n) : HasNonemptyAxis 0 (.dim n s) :=
   hasNonemptyAxisZeroOfNe (Nat.ne_of_gt h)
 
-/-- Instance: axis `1` is valid for a 2D shape when the selected dimension is nonzero. -/
-theorem hasNonemptyAxisOne {n₁ n₂ s} (h₂ : n₂ ≠ 0) :
-    HasNonemptyAxis 1 (.dim n₁ (.dim n₂ s)) :=
-  ⟨NonemptyAxis.succ (hasNonemptyAxisZeroOfNe h₂).proof⟩
-
 /-- Nonemptiness of an inner axis is unchanged by an outer dimension. -/
 instance hasNonemptyAxisSucc {n s axis} [h : HasNonemptyAxis axis s] :
     HasNonemptyAxis (axis + 1) (.dim n s) :=
@@ -635,26 +760,39 @@ theorem size_pos_of_well_formed : ∀ {s : Shape}, s.wellFormed → 0 < Spec.Sha
       rcases hw with ⟨hn, hs⟩
       simpa [Spec.Shape.size] using Nat.mul_pos hn (size_pos_of_well_formed (s := s) hs)
 
-/--
-The innermost axis of a positive-rank, well-formed shape is nonempty.
--/
-theorem nonemptyLastAxis {s : Shape} (hRank : 0 < s.rank) (hw : s.wellFormed) :
-    NonemptyAxis (s.rank - 1) s := by
-  induction s with
-  | scalar => simp [rank] at hRank
-  | dim n rest ih =>
-      rcases hw with ⟨hn, hRestWf⟩
-      by_cases hRestRank : rest.rank = 0
-      · obtain ⟨m, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt hn)
-        simp [rank, hRestRank]
-      · have hInner := ih (Nat.pos_of_ne_zero hRestRank) hRestWf
-        have hLifted := NonemptyAxis.succ (n := n) hInner
-        simpa [rank, Nat.sub_add_cancel (Nat.one_le_iff_ne_zero.mpr hRestRank)] using hLifted
+/-- A shape of positive total size has no zero dimension. -/
+theorem wellFormed_of_size_pos : ∀ {s : Shape}, 0 < Spec.Shape.size s → s.wellFormed
+  | .scalar, _ => trivial
+  | .dim n s, h => by
+      have hn : n ≠ 0 := by
+        intro hn
+        simp [Spec.Shape.size, hn] at h
+      have hs : Spec.Shape.size s ≠ 0 := by
+        intro hs
+        simp [Spec.Shape.size, hs] at h
+      exact ⟨Nat.pos_of_ne_zero hn, wellFormed_of_size_pos (Nat.pos_of_ne_zero hs)⟩
 
-/-- Package `nonemptyLastAxis` as inferred reduction-axis evidence. -/
-theorem hasNonemptyLastAxis {s : Shape} (hRank : 0 < s.rank) (hw : s.wellFormed) :
-    HasNonemptyAxis (s.rank - 1) s :=
-  ⟨nonemptyLastAxis hRank hw⟩
+/-- Every in-bounds axis of a well-formed shape has positive extent. -/
+theorem nonemptyAxisOfWellFormed {s : Shape} (hw : s.wellFormed) {axis : Nat}
+    (hAxis : axis < s.rank) : NonemptyAxis axis s := by
+  induction s generalizing axis with
+  | scalar => simp [rank] at hAxis
+  | dim n rest ih =>
+      rcases hw with ⟨hn, hRest⟩
+      cases axis with
+      | zero =>
+          obtain ⟨m, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt hn)
+          exact .zero
+      | succ axis =>
+          apply NonemptyAxis.succ
+          apply ih hRest
+          simp only [rank] at hAxis
+          grind
+
+/-- Package a valid axis of a well-formed shape as inferred reduction-axis evidence. -/
+theorem hasNonemptyAxisOfWellFormed {s : Shape} (hw : s.wellFormed) {axis : Nat}
+    (hAxis : axis < s.rank) : HasNonemptyAxis axis s :=
+  ⟨nonemptyAxisOfWellFormed hw hAxis⟩
 
 /--
 Typeclass wrapper for `Shape.well_formed`.
@@ -675,10 +813,10 @@ instance : WellFormed .scalar where
 instance {n s} [Shape.WellFormed s] [NeZero n] : Shape.WellFormed (.dim n s) :=
   ⟨⟨Nat.pos_of_ne_zero (NeZero.ne n), Shape.WellFormed.proof⟩⟩
 
-/-- Infer that the innermost axis is nonempty from `WellFormed s`. -/
-theorem inferNonemptyLastAxis {s : Shape} [hw : WellFormed s] (hRank : 0 < s.rank) :
-    HasNonemptyAxis (s.rank - 1) s :=
-  hasNonemptyLastAxis hRank hw.proof
+/-- Infer nonemptiness of any valid axis from `WellFormed s`. -/
+theorem inferNonemptyAxis {s : Shape} [hw : WellFormed s] {axis : Nat}
+    (hAxis : axis < s.rank) : HasNonemptyAxis axis s :=
+  hasNonemptyAxisOfWellFormed hw.proof hAxis
 
 /-!
 `padLeft n s` prepends `n` singleton dimensions to a shape.

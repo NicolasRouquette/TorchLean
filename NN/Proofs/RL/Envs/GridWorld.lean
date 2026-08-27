@@ -42,15 +42,6 @@ open Spec.RL.FiniteStochastic
 
 variable {width height : Nat}
 
-/-- Stepping a GridWorld keeps the successor coordinates in range. -/
-theorem step_state_in_bounds
-    (gw : Spec.RL.Envs.GridWorld width height)
-    (state : Spec.RL.Envs.GridWorld.State width height)
-    (action : Spec.RL.Envs.GridWorld.Action) :
-    (gw.step state action).state.1.val < height ∧
-      (gw.step state action).state.2.val < width := by
-  exact ⟨(gw.step state action).state.1.isLt, (gw.step state action).state.2.isLt⟩
-
 /-- GridWorld rewards are bounded below by `-1`. -/
 theorem step_reward_ge_neg_one
     (gw : Spec.RL.Envs.GridWorld width height)
@@ -112,13 +103,13 @@ theorem toFiniteStochasticMDP_valid
     -- Entries are `0` or `1` by construction.
     by_cases hx : nextState = (gw.toFiniteMDP.step state action).state
     · simp [Spec.RL.Envs.GridWorld.toFiniteStochasticMDP, Spec.RL.Envs.GridWorld.oneHot,
-        Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item, hx]
+        Spec.Tensor.getScalar, Spec.get, Spec.Tensor.item, hx]
     · simp [Spec.RL.Envs.GridWorld.toFiniteStochasticMDP, Spec.RL.Envs.GridWorld.oneHot,
-        Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item, hx]
+        Spec.Tensor.getScalar, Spec.get, Spec.Tensor.item, hx]
   · intro state action
     -- A one-hot row sums to `1`.
     simp [Spec.RL.Envs.GridWorld.toFiniteStochasticMDP, Spec.RL.Envs.GridWorld.oneHot,
-      Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item,
+      Spec.Tensor.getScalar, Spec.get, Spec.Tensor.item,
       Finset.sum_ite_eq', Finset.mem_univ]
 
 /-!
@@ -149,7 +140,7 @@ theorem toFiniteStochasticMDP_expectedNextValue_eq_toFiniteMDP_successor
   simp [Spec.RL.FiniteStochastic.expectedNextValue,
     Spec.RL.Envs.GridWorld.toFiniteStochasticMDP,
     Spec.RL.Envs.GridWorld.oneHot,
-    Spec.Tensor.vecGet, Spec.get, Spec.getAtSpec, Spec.Tensor.item,
+    Spec.Tensor.getScalar, Spec.get, Spec.Tensor.item,
     Finset.sum_ite_eq', Finset.mem_univ]
 
 /--

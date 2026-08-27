@@ -92,6 +92,10 @@ home_page/manual/
 home_page/blueprint/
 home_page/blueprint
 
+# Rebuilt from the current Lean import graph by `scripts/docs/build_site.sh` and CI.
+home_page/graphs/dependency-audit.json
+home_page/importgraph/index.html
+
 # Bundler installs (avoid committing Ruby gems)
 home_page/vendor/
 home_page/.bundle/

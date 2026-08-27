@@ -75,47 +75,24 @@ def scalarVal (t : Tensor Float Shape.scalar) : Float :=
   | Tensor.scalar v => v
 
 /-- Read one coordinate from a vector tensor. -/
-def vecVal {n : Nat} (t : Tensor Float (.dim n .scalar)) (i : Fin n) : Float :=
-  match t with
-  | Tensor.dim f =>
-      match f i with
-      | Tensor.scalar v => v
+def vecVal {n : Nat} (t : Tensor Float [n]) (i : Fin n) : Float :=
+  Tensor.getScalar t i
 
 /-- Read one coordinate from a matrix tensor. -/
-def matVal {rows cols : Nat} (t : Tensor Float (.dim rows (.dim cols .scalar)))
+def matVal {rows cols : Nat} (t : Tensor Float [rows, cols])
     (i : Fin rows) (j : Fin cols) : Float :=
-  match t with
-  | Tensor.dim f =>
-      match f i with
-      | Tensor.dim g =>
-          match g j with
-          | Tensor.scalar v => v
+  Tensor.get2 t i j
 
-/-- Read one coordinate from a `C × H × W` tensor. -/
-def chwVal {c h w : Nat} (t : Tensor Float (.dim c (.dim h (.dim w .scalar))))
-    (ci : Fin c) (hi : Fin h) (wi : Fin w) : Float :=
-  match t with
-  | Tensor.dim f =>
-      match f ci with
-      | Tensor.dim fh =>
-          match fh hi with
-          | Tensor.dim fw =>
-              match fw wi with
-              | Tensor.scalar v => v
+/-- Read one scalar coordinate from a tensor of arbitrary rank.
 
-/-- Read one coordinate from an `N × C × H × W` tensor. -/
-def nchwVal {n c h w : Nat} (t : Tensor Float (.dim n (.dim c (.dim h (.dim w .scalar)))))
-    (ni : Fin n) (ci : Fin c) (hi : Fin h) (wi : Fin w) : Float :=
-  match t with
-  | Tensor.dim fn =>
-      match fn ni with
-      | Tensor.dim fc =>
-          match fc ci with
-          | Tensor.dim fh =>
-              match fh hi with
-              | Tensor.dim fw =>
-                  match fw wi with
-                  | Tensor.scalar v => v
+This helper is intentionally rank-neutral: tests pass the coordinates they are checking rather
+than introducing layout-specific accessors. An invalid coordinate is a test-authoring error and
+therefore fails immediately.
+-/
+def tensorVal {s : Shape} (t : Tensor Float s) (indices : List Nat) : Float :=
+  match Spec.getSpec t indices with
+  | some value => value
+  | none => panic! s!"tensor coordinate {indices} is invalid for shape {repr s}"
 
 end Utils
 end Floats

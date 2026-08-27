@@ -117,44 +117,39 @@ def step (opt : TensorOptimizer α) {s : Shape}
   opt.update current.1 current.2 grads
 
 /-- Run a finite stream of gradients through an optimizer. -/
-def runSteps (opt : TensorOptimizer α) {s : Shape} :
-    Step opt s → List (Tensor α s) → Step opt s
-  | current, [] => current
-  | current, grads :: rest => runSteps opt (opt.step current grads) rest
+def runSteps (opt : TensorOptimizer α) {s : Shape}
+    (current : Step opt s) (grads : Array (Tensor α s)) : Step opt s :=
+  grads.foldl (fun step grad => opt.step step grad) current
 
 /--
 Splitting a gradient stream and running the two pieces sequentially gives the same state and
 parameters as running the concatenated stream.
 -/
 theorem runSteps_append (opt : TensorOptimizer α) {s : Shape}
-    (current : Step opt s) (left right : List (Tensor α s)) :
+    (current : Step opt s) (left right : Array (Tensor α s)) :
     opt.runSteps current (left ++ right) = opt.runSteps (opt.runSteps current left) right := by
-  induction left generalizing current with
-  | nil =>
-      rfl
-  | cons grads rest ih =>
-      simp [runSteps, step, ih]
+  simp [runSteps]
 
 /-- Optimizer state after a finite gradient stream. -/
 def stateAfter (opt : TensorOptimizer α) {s : Shape}
-    (current : Step opt s) (grads : List (Tensor α s)) : opt.State s :=
+    (current : Step opt s) (grads : Array (Tensor α s)) : opt.State s :=
   (opt.runSteps current grads).1
 
 /-- Optimizer parameters after a finite gradient stream. -/
 def paramsAfter (opt : TensorOptimizer α) {s : Shape}
-    (current : Step opt s) (grads : List (Tensor α s)) : Tensor α s :=
+    (current : Step opt s) (grads : Array (Tensor α s)) : Tensor α s :=
   (opt.runSteps current grads).2
 
 /-- State projection of `runSteps_append`. -/
 theorem stateAfter_append (opt : TensorOptimizer α) {s : Shape}
-    (current : Step opt s) (left right : List (Tensor α s)) :
+    (current : Step opt s) (left right : Array (Tensor α s)) :
     opt.stateAfter current (left ++ right) =
       opt.stateAfter (opt.runSteps current left) right := by
   exact congrArg Prod.fst (opt.runSteps_append current left right)
 
 /-- Parameter projection of `runSteps_append`. -/
 theorem paramsAfter_append (opt : TensorOptimizer α) {s : Shape}
-    (current : Step opt s) (left right : List (Tensor α s)) :
+    (current : Step opt s) (left right : Array (Tensor α s)) :
     opt.paramsAfter current (left ++ right) =
       opt.paramsAfter (opt.runSteps current left) right := by
   exact congrArg Prod.snd (opt.runSteps_append current left right)
@@ -189,10 +184,10 @@ def step (law : StepSpec opt) {s : Shape}
   (law.nextState current.1 current.2 grads, law.nextParams current.1 current.2 grads)
 
 /-- Run a finite stream of gradients through the proof layer equations. -/
-def runSteps (law : StepSpec opt) {s : Shape} :
-    TensorOptimizer.Step opt s → List (Tensor α s) → TensorOptimizer.Step opt s
-  | current, [] => current
-  | current, grads :: rest => runSteps law (law.step current grads) rest
+def runSteps (law : StepSpec opt) {s : Shape}
+    (current : TensorOptimizer.Step opt s) (grads : Array (Tensor α s)) :
+    TensorOptimizer.Step opt s :=
+  grads.foldl (fun step grad => law.step step grad) current
 
 /-- A registered step spec agrees with the executable optimizer for one step. -/
 theorem step_eq_optimizer_step (law : StepSpec opt) {s : Shape}
@@ -207,13 +202,15 @@ A registered one-step optimizer spec agrees with the executable optimizer over a
 stream.  This is the general theorem optimizer-specific registrations feed into.
 -/
 theorem runSteps_eq_optimizer_runSteps (law : StepSpec opt) {s : Shape}
-    (current : TensorOptimizer.Step opt s) (grads : List (Tensor α s)) :
+    (current : TensorOptimizer.Step opt s) (grads : Array (Tensor α s)) :
     law.runSteps current grads = opt.runSteps current grads := by
-  induction grads generalizing current with
-  | nil =>
-      rfl
-  | cons grads rest ih =>
-      simp [runSteps, TensorOptimizer.runSteps, step_eq_optimizer_step, ih]
+  have hstep :
+      (fun (step : TensorOptimizer.Step opt s) (grad : Tensor α s) => law.step step grad) =
+        (fun step grad => opt.step step grad) := by
+    funext step grad
+    exact law.step_eq_optimizer_step step grad
+  unfold runSteps TensorOptimizer.runSteps
+  rw [hstep]
 
 /--
 The proof layer equations compose over concatenated gradient streams just like the executable
@@ -221,13 +218,9 @@ optimizer.
 -/
 theorem runSteps_append (law : StepSpec opt) {s : Shape}
     (current : TensorOptimizer.Step opt s)
-    (left right : List (Tensor α s)) :
+    (left right : Array (Tensor α s)) :
     law.runSteps current (left ++ right) = law.runSteps (law.runSteps current left) right := by
-  induction left generalizing current with
-  | nil =>
-      rfl
-  | cons grads rest ih =>
-      simp [runSteps, step, ih]
+  simp [runSteps]
 
 end StepSpec
 

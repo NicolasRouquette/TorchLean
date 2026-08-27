@@ -17,7 +17,6 @@ named optimizer to the projected gradient.
   AdamW, Adadelta, Muon-style orthogonalized momentum, and GaLore-style projected updates.
 - `Schedulers.lean`: deterministic learning-rate schedules, including constant, step, exponential,
   cosine, cyclic, one-cycle, and PyTorch-compatible variants where step-count conventions matter.
-- `GradientUtils.lean`: gradient clipping and utility operations shared by trainer code.
 
 ## Public API
 
@@ -28,7 +27,7 @@ import NN
 open TorchLean
 
 let opt := optim.adamW
-let sched := schedulers.cosine
+let sched := Trainer.Scheduler.warmupCosine 0.001 0.0001 100 10000
 ```
 
 The high-level trainer config exposes SGD, momentum SGD, AdaGrad, RMSProp, Adam, AdamW, and
@@ -39,8 +38,8 @@ Adadelta. Optimizer-adjacent extension points use explicit runtime names:
 - `optim.galore.sgd` is the GaLore-style projected-gradient path. The projection is
   explicit, and the optimizer applied after projection is still named.
 
-Import `NN.API` and use `TorchLean.optim` and `TorchLean.schedulers`. Runtime implementation files
-remain focused on update equations and state transitions.
+Import `NN.API` and use `TorchLean.optim` with `TorchLean.Trainer.Scheduler`. Runtime
+implementation files remain focused on update equations and state transitions.
 
 ## Proof Boundary
 

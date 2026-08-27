@@ -74,7 +74,7 @@ noncomputable def exactMaskedLogit (score : ℝ) (allowed : Bool) : EReal :=
 
 /-- Exact extended-real causal masking of one score-matrix coordinate. -/
 noncomputable def exactCausalMaskedScore {n : Nat}
-    (scores : Spec.Tensor ℝ (.dim n (.dim n .scalar))) (i j : Fin n) : EReal :=
+    (scores : Spec.Tensor ℝ [n, n]) (i j : Fin n) : EReal :=
   exactMaskedLogit (Spec.get2 scores i j) (Spec.get2 (Spec.causalMask n) i j)
 
 /--
@@ -85,7 +85,7 @@ This is the formal version of the PyTorch operation
 -/
 theorem exactCausalMaskedScore_future_eq_bot
     {n : Nat}
-    (scores : Spec.Tensor ℝ (.dim n (.dim n .scalar)))
+    (scores : Spec.Tensor ℝ [n, n])
     (i j : Fin n) (hij : i.val < j.val) :
     exactCausalMaskedScore scores i j = (⊥ : EReal) := by
   simp [exactCausalMaskedScore, exactMaskedLogit,
@@ -98,7 +98,7 @@ This is why TorchLean's attention spec writes this zero numerator directly.
 -/
 theorem exactCausalMaskedScore_future_exp_zero
     {n : Nat}
-    (scores : Spec.Tensor ℝ (.dim n (.dim n .scalar)))
+    (scores : Spec.Tensor ℝ [n, n])
     (i j : Fin n) (hij : i.val < j.val) :
     EReal.exp (exactCausalMaskedScore scores i j) = 0 := by
   simp [exactCausalMaskedScore_future_eq_bot scores i j hij]
@@ -112,7 +112,7 @@ zero attention mass for the current query row. In TorchLean this is represented 
 -/
 theorem trueInfinityMask_future_attention_weight_zero
     {n : Nat}
-    (scores : Spec.Tensor ℝ (.dim n (.dim n .scalar)))
+    (scores : Spec.Tensor ℝ [n, n])
     (i j : Fin n) (hij : i.val < j.val) :
     Spec.get2 (Spec.hardMaskedSoftmaxSpec scores (Spec.causalMask n)) i j = 0 :=
   NN.Proofs.Models.Attention.hardMaskedSoftmaxSpec_causal_future_zero scores i j hij

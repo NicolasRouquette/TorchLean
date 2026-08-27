@@ -10,7 +10,7 @@ public import NN.Floats.FP32
 public import NN.Proofs.RuntimeApprox.NF.Linalg
 public import NN.Spec.Layers.Activation
 public import NN.Spec.Layers.Linear
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 
 /-!
 # FP32 Layer Approximation
@@ -60,7 +60,7 @@ abbrev toSpec : R → ℝ :=
 /-- Explicit expression for the propagated infinity-norm error of an FP32 linear layer. -/
 def linearErrorBudget {inDim outDim : Nat}
     (epsW epsb epsx : ℝ) (WR : LinearSpec R inDim outDim)
-    (xR : Tensor R (.dim inDim .scalar)) : ℝ :=
+    (xR : Tensor R [inDim]) : ℝ :=
   linfNorm
     (Proofs.RuntimeApprox.NFBackend.addBoundTensor
       (β := β) (fexp := fexp) (rnd := rnd) (s := Shape.dim outDim .scalar)
@@ -85,8 +85,8 @@ existential. It combines the matrix-vector product budget with the final rounded
 This is the base layer theorem used by the MLP and CROWN/IBP FP32 wrappers.
 -/
 theorem approxTensor_linear_fp32 {inDim outDim : Nat}
-    {WS : LinearSpec ℝ inDim outDim} {xS : SpecTensor (.dim inDim .scalar)}
-    {WR : LinearSpec R inDim outDim} {xR : Tensor R (.dim inDim .scalar)}
+    {WS : LinearSpec ℝ inDim outDim} {xS : SpecTensor [inDim]}
+    {WR : LinearSpec R inDim outDim} {xR : Tensor R [inDim]}
     {epsW epsb epsx : ℝ}
     (hW : approxTensor (α := R) (toSpec := toSpec) WS.weights WR.weights epsW)
     (hb : approxTensor (α := R) (toSpec := toSpec) WS.bias WR.bias epsb)

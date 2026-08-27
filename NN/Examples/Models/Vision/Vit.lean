@@ -8,7 +8,7 @@ Real-data CUDA example:
   lake -R -K cuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
 
 This is a real-data ViT-style CIFAR-10 minibatch run:
-- patch embedding via Conv2d,
+- patch embedding via the generic convolution operation over two spatial axes,
 - reshape + transpose to tokens,
 - one Transformer encoder block,
 - flatten + linear head.
@@ -96,7 +96,7 @@ def dModel : Nat := 1
 /-- CIFAR class count, hence the output-logit width. -/
 def outDim : Nat := RealData.cifarClasses
 
-/-- Number of attention heads in the single encoder block. -/
+/-- Number of attention heads in each encoder block. -/
 def numHeads : Nat := 1
 
 /-- Per-head feature width; $\mathtt{numHeads}\cdot\mathtt{headDim}=\mathtt{dModel}$. -/
@@ -108,39 +108,37 @@ def ffnHidden : Nat := 2
 /-- Shared ViT configuration used by shapes and the reusable public model constructor. -/
 def cfg : nn.models.VitConfig 2 :=
   { inChannels := inC
-    spatial := #v[inH, inW]
+    spatial := tensor! [inH, inW]
     patch :=
       { outChannels := dModel
-        kernel := #v[patchH, patchW]
-        stride := #v[stride, stride]
-        padding := #v[padding, padding]
+        kernel := tensor! [patchH, patchW]
+        stride := tensor! [stride, stride]
+        padding := tensor! [padding, padding]
         kernelNonzero := by intro i; fin_cases i <;> decide
-        strideNonzero := by intro i; fin_cases i <;> simp [stride, Vector.get] }
+        strideNonzero := by intro i; fin_cases i <;> simp [stride] }
     outDim := outDim
     numHeads := numHeads
     headDim := headDim
-    ffnHidden := ffnHidden }
+    ffnHidden := ffnHidden
+    numLayers := 2
+    pooling := .cls }
 
 /-- Leading sample axis used by this batched training example. -/
-abbrev batchShape : Shape := .dim batch .scalar
+abbrev batchShape : List Nat := [batch]
 
-abbrev σ : Shape := cfg.inputShape batchShape
+abbrev σ : List Nat := [batch, inC, inH, inW]
 
-abbrev τ : Shape := cfg.outputShape batchShape
+abbrev τ : List Nat := [batch, outDim]
 
 /--
 Compact ViT-style classifier from the public model API.
 
-The constructor builds patch embedding, token reshape, one encoder block, and the classifier head.
+The constructor builds patch embedding, token reshape, positional embeddings, the configured
+encoder stack, token pooling, and the classifier head.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
   nn.models.vit cfg batchShape
     (hInChannels := by decide)
-    (hSeqLen := by
-      norm_num [nn.models.VitConfig.seqLen, nn.models.VitConfig.patchSpatial, cfg,
-        inH, inW, patchH, patchW, stride, padding,
-        Spec.convOutSpatial, Spec.Shape.slidingWindowOutDim, Spec.Shape.ofList, Spec.Shape.size,
-        Vector.get, Vector.toList, Vector.ofFn])
     (hModel := by decide)
 
 /-- Train the CIFAR ViT with the public `Trainer` surface. -/

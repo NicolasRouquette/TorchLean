@@ -16,7 +16,7 @@ import Mathlib.Tactic.Ring
 This file gives a constructive, fully proved approximation result:
 on $[-M,M]^2$, the function $(x_0,x_1)\mapsto x_0x_1$ can be uniformly approximated by a
   single-hidden-layer
-ReLU MLP on `Tensor ℝ (.dim 2 .scalar)`.
+ReLU MLP on `Tensor ℝ [2]`.
 -/
 
 @[expose] public section
@@ -30,21 +30,21 @@ open Examples
 open NN.MLTheory.Proofs.UniversalApproximation
 open NN.MLTheory.Proofs.ReLUMlpBridge
 
-/-- `TensorVec` specialized to the 2D (rank-2) tensor-vector shape. -/
-abbrev PlaneTensorVec : Type := TensorVec 2
+/-- First coordinate projection from a rank-one tensor with two entries. -/
+noncomputable def firstCoordinate (x : Tensor ℝ [2]) : ℝ :=
+  Spec.Tensor.getScalar x ⟨0, by decide⟩
 
-/-- First coordinate projection for `PlaneTensorVec`. -/
-noncomputable def firstCoordinate (x : PlaneTensorVec) : ℝ := toVec x ⟨0, by decide⟩
+/-- Second coordinate projection from a rank-one tensor with two entries. -/
+noncomputable def secondCoordinate (x : Tensor ℝ [2]) : ℝ :=
+  Spec.Tensor.getScalar x ⟨1, by decide⟩
 
-/-- Second coordinate projection for `PlaneTensorVec`. -/
-noncomputable def secondCoordinate (x : PlaneTensorVec) : ℝ := toVec x ⟨1, by decide⟩
-
-/-- The closed box domain $[-M,M]\times[-M,M]$ inside `PlaneTensorVec`. -/
-noncomputable def box (M : ℝ) : Set PlaneTensorVec :=
+/-- The closed box domain $[-M,M]\times[-M,M]$. -/
+noncomputable def box (M : ℝ) : Set (Tensor ℝ [2]) :=
   fun x => firstCoordinate x ∈ Set.Icc (-M) M ∧ secondCoordinate x ∈ Set.Icc (-M) M
 
 /-- The target multiplication map: multiply the two coordinates. -/
-noncomputable def mulFun (x : PlaneTensorVec) : ℝ := firstCoordinate x * secondCoordinate x
+noncomputable def mulFun (x : Tensor ℝ [2]) : ℝ :=
+  firstCoordinate x * secondCoordinate x
 
 /-- Ridge direction with `dot wPlus x` equal to the sum of the two coordinates. -/
 noncomputable def wPlus : Fin 2 → ℝ := fun _ => 1
@@ -53,13 +53,13 @@ noncomputable def wPlus : Fin 2 → ℝ := fun _ => 1
 noncomputable def wMinus : Fin 2 → ℝ := fun i => if i.1 = 0 then 1 else (-1 : ℝ)
 
 /-- Evaluate the ridge `wPlus`: it sums the two coordinates. -/
-lemma dot_wPlus (x : PlaneTensorVec) : dot wPlus x = firstCoordinate x + secondCoordinate x := by
+lemma dot_wPlus (x : Tensor ℝ [2]) : dot wPlus x = firstCoordinate x + secondCoordinate x := by
   classical
   -- Expand the `Fin 2` sum explicitly.
   simp [dot, wPlus, firstCoordinate, secondCoordinate, Fin.sum_univ_two]
 
 /-- Evaluate the ridge `wMinus`: $\operatorname{dot}(w_-,x)=x_0-x_1$. -/
-lemma dot_wMinus (x : PlaneTensorVec) : dot wMinus x = firstCoordinate x - secondCoordinate x := by
+lemma dot_wMinus (x : Tensor ℝ [2]) : dot wMinus x = firstCoordinate x - secondCoordinate x := by
   classical
   simp [dot, wMinus, firstCoordinate, secondCoordinate, Fin.sum_univ_two, sub_eq_add_neg]
 
@@ -68,11 +68,11 @@ lemma mul_identity (x y : ℝ) : x * y = ((x + y) * (x + y) - (x - y) * (x - y))
   ring
 
 /-- Unpack the defining bounds of membership in `box M`. -/
-lemma box_bounds {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box M) :
+lemma box_bounds {M : ℝ} (_hM : 0 ≤ M) {x : Tensor ℝ [2]} (hx : x ∈ box M) :
     firstCoordinate x ∈ Set.Icc (-M) M ∧ secondCoordinate x ∈ Set.Icc (-M) M := hx
 
 /-- If $x\in\operatorname{box}(M)$, then $x_0+x_1\in[-2M,2M]$. -/
-lemma sum_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box M) :
+lemma sum_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : Tensor ℝ [2]} (hx : x ∈ box M) :
     dot wPlus x ∈ Set.Icc (-2*M) (2*M) := by
   have hx0 := hx.1
   have hx1 := hx.2
@@ -86,7 +86,7 @@ lemma sum_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box
   simpa [dot_wPlus] using And.intro hl hu
 
 /-- If $x\in\operatorname{box}(M)$, then $x_0-x_1\in[-2M,2M]$. -/
-lemma diff_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : PlaneTensorVec} (hx : x ∈ box M) :
+lemma diff_mem_Icc {M : ℝ} (_hM : 0 ≤ M) {x : Tensor ℝ [2]} (hx : x ∈ box M) :
     dot wMinus x ∈ Set.Icc (-2*M) (2*M) := by
   have hx0 := hx.1
   have hx1 := hx.2
@@ -143,7 +143,7 @@ noncomputable def appendLinearSpec
     bias := appendDim a.bias b.bias }
 
 /-- Extract the `j`-th entry from a `1 × n` tensor interpreted as a row matrix. -/
-noncomputable def mat1Get {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar))) (j : Fin n) : ℝ :=
+noncomputable def mat1Get {n : Nat} (A : Tensor ℝ [1, n]) (j : Fin n) : ℝ :=
   match A with
   | .dim rows =>
     match rows ⟨0, by decide⟩ with
@@ -152,7 +152,7 @@ noncomputable def mat1Get {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar))) (
 /-- `mat1Get` agrees with the `Tensor.matrix` constructor. -/
 lemma singleRowMatrix_get_matrix {n : Nat} (f : Fin 1 → Fin n → ℝ) (j : Fin n) :
     mat1Get (Tensor.matrix (m := 1) (n := n) f) j = f 0 j := by
-  simp [mat1Get, Tensor.matrix, Tensor.vector, Tensor.item]
+  simp [mat1Get, Tensor.matrix, Tensor.ofFn, Tensor.item]
 
 /--
 Combine two scalar-output linear specs into one scalar-output spec on an appended hidden layer.
@@ -167,49 +167,46 @@ noncomputable def combineOutput
     Fin.addCases (fun j : Fin m => α * mat1Get a.weights j) (fun j : Fin n => β * mat1Get
       b.weights j)
   { weights := Tensor.matrix (m := 1) (n := m + n) (fun _ j => c j)
-    bias := Tensor.vector (n := 1)
+    bias := Tensor.ofFn (n := 1)
       (fun _ => γ + α * extractScalarOutput a.bias + β * extractScalarOutput b.bias) }
 
 /-- Reading the left component from an appended hidden vector. -/
-lemma vec_get_append_left {m n : Nat} (a : Tensor ℝ (.dim m .scalar)) (b : Tensor ℝ (.dim n
-  .scalar)) (i : Fin m) :
-    vecGet (appendDim a b) (Fin.castAdd n i) = vecGet a i := by
+lemma getScalar_append_left {m n : Nat} (a : Tensor ℝ [m]) (b : Tensor ℝ [n]) (i : Fin m) :
+    Spec.Tensor.getScalar (appendDim a b) (Fin.castAdd n i) = Spec.Tensor.getScalar a i := by
   cases a with
   | dim fa =>
     cases b with
     | dim fb =>
-      simp [appendDim, vecGet, Fin.append]
+      simp [appendDim, Spec.Tensor.getScalar, Fin.append]
 
 /-- Reading the right component from an appended hidden vector. -/
-lemma vec_get_append_right {m n : Nat} (a : Tensor ℝ (.dim m .scalar)) (b : Tensor ℝ (.dim n
-  .scalar)) (i : Fin n) :
-    vecGet (appendDim a b) (Fin.natAdd m i) = vecGet b i := by
+lemma getScalar_append_right {m n : Nat} (a : Tensor ℝ [m]) (b : Tensor ℝ [n]) (i : Fin n) :
+    Spec.Tensor.getScalar (appendDim a b) (Fin.natAdd m i) = Spec.Tensor.getScalar b i := by
   cases a with
   | dim fa =>
     cases b with
     | dim fb =>
-      simp [appendDim, vecGet, Fin.append]
+      simp [appendDim, Spec.Tensor.getScalar, Fin.append]
 
 /-- Pointwise behavior of the ReLU activation on tensor-vectors. -/
-lemma vec_get_relu {n : Nat} (z : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
-    vecGet (Activation.reluSpec (α := ℝ) (s := .dim n .scalar) z) i = relu (vecGet z i) := by
+lemma getScalar_relu {n : Nat} (z : Tensor ℝ [n]) (i : Fin n) :
+    Spec.Tensor.getScalar (Activation.reluSpec (α := ℝ) (s := .dim n .scalar) z) i = relu (Spec.Tensor.getScalar z i) := by
   cases z with
   | dim f =>
     cases hfi : f i with
     | scalar r =>
-      simp [Activation.reluSpec, Spec.Tensor.mapSpec, vecGet, relu, Activation.Math.reluSpec,
+      simp [Activation.reluSpec, Spec.Tensor.mapSpec, Spec.Tensor.getScalar, relu, Activation.Math.reluSpec,
         hfi, Tensor.item]
 
 /-- Matrix-vector multiplication for a `1 × n` matrix produces a single scalar coordinate. -/
-lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar))) (v : Tensor ℝ (.dim
-  n .scalar)) :
+lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ [1, n]) (v : Tensor ℝ [n]) :
     Spec.matVecMulSpec A v =
-      Tensor.dim (fun _ : Fin 1 => Tensor.scalar (∑ j : Fin n, mat1Get A j * vecGet v j)) := by
+      Tensor.dim (fun _ : Fin 1 => Tensor.scalar (∑ j : Fin n, mat1Get A j * Spec.Tensor.getScalar v j)) := by
   classical
   -- Put `A` and `v` into canonical `Tensor.matrix` / `Tensor.dim (Tensor.scalar ·)` forms,
   -- then use the general matrix×vector lemma from `relu_mlp_bridge.lean`.
   let c : Fin 1 → Fin n → ℝ := fun _ j => mat1Get A j
-  let vfun : Fin n → ℝ := fun j => vecGet v j
+  let vfun : Fin n → ℝ := fun j => Spec.Tensor.getScalar v j
   have hA : A = Tensor.matrix (m := 1) (n := n) c := by
     cases A with
     | dim rows =>
@@ -235,10 +232,10 @@ lemma mat_vec_mul_spec_oneRow {n : Nat} (A : Tensor ℝ (.dim 1 (.dim n .scalar)
       funext j
       cases hvj : valuesV j with
       | scalar r =>
-        simp [vfun, vecGet, Tensor.item, hvj]
+        simp [vfun, Spec.Tensor.getScalar, Tensor.item, hvj]
   -- Rewrite and apply the general lemma.
   rw [hA, hv]
-  simpa [c, vfun, singleRowMatrix_get_matrix, vecGet, Tensor.item] using
+  simpa [c, vfun, singleRowMatrix_get_matrix, Spec.Tensor.getScalar, Tensor.item] using
     (mat_vec_mul_spec_matrix_vector (m := 1) (n := n) (c := c) (v := vfun))
 
 /--
@@ -249,13 +246,13 @@ This is the main normalization lemma used to prove that `appendLinearSpec` toget
 -/
 lemma mlp_eval_nd_eq_bias_sum
     {inDim hidDim : Nat} (l1 : LinearSpec ℝ inDim hidDim) (l2 : LinearSpec ℝ hidDim 1)
-    (x : Tensor ℝ (.dim inDim .scalar)) :
-    mlpEvalNd (n := inDim) (hidDim := hidDim) l1 l2 x =
+    (x : Tensor ℝ [inDim]) :
+    mlpEval (n := inDim) (hidDim := hidDim) l1 l2 x =
       extractScalarOutput l2.bias
-        + ∑ j : Fin hidDim, (mat1Get l2.weights j) * relu (vecGet (Spec.linearSpec (α := ℝ) l1 x)
+        + ∑ j : Fin hidDim, (mat1Get l2.weights j) * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1 x)
           j) := by
   classical
-  unfold mlpEvalNd
+  unfold mlpEval
   rw [mlp_forward_eq_linear_relu_linear (n := inDim) (hidDim := hidDim) (l1 := l1) (l2 := l2) (x :=
     x)]
   dsimp
@@ -266,7 +263,7 @@ lemma mlp_eval_nd_eq_bias_sum
         Tensor.dim (fun _ : Fin 1 =>
           Tensor.scalar (∑ j : Fin hidDim,
             mat1Get l2.weights j *
-              vecGet (Activation.reluSpec (α := ℝ) (s := .dim hidDim .scalar) (Spec.linearSpec (α
+              Spec.Tensor.getScalar (Activation.reluSpec (α := ℝ) (s := .dim hidDim .scalar) (Spec.linearSpec (α
                 := ℝ) l1 x)) j)) := by
     simpa using mat_vec_mul_spec_oneRow (A := l2.weights)
       (v := Activation.reluSpec (α := ℝ) (s := .dim hidDim .scalar) (Spec.linearSpec (α := ℝ) l1
@@ -281,7 +278,7 @@ lemma mlp_eval_nd_eq_bias_sum
         Tensor.dim (fun _ : Fin 1 =>
           Tensor.scalar (∑ j : Fin hidDim,
             mat1Get l2.weights j *
-              vecGet
+              Spec.Tensor.getScalar
                 (Activation.reluSpec (α := ℝ) (s := .dim hidDim .scalar)
                   (Tensor.map2Spec (fun secondCoordinate x2 ↦ secondCoordinate + x2) (Spec.matVecMulSpec l1.weights x)
                     l1.bias))
@@ -292,16 +289,16 @@ lemma mlp_eval_nd_eq_bias_sum
     | scalar b0 =>
       simp [Spec.linearSpec, hmv', Spec.Tensor.addSpec, Spec.Tensor.map2Spec,
         extractScalarOutput,
-        vec_get_relu, hbias, hfb0, add_comm, Tensor.item]
+        getScalar_relu, hbias, hfb0, add_comm, Tensor.item]
 
 /-- Selecting the left block of a linear spec appended via `appendLinearSpec`. -/
-lemma vec_get_linear_spec_append_left
+lemma getScalar_linear_spec_append_left
     {inDim m n : Nat} (l1a : LinearSpec ℝ inDim m) (l1b : LinearSpec ℝ inDim n)
-    (x : Tensor ℝ (.dim inDim .scalar)) (i : Fin m) :
-    vecGet (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x) (Fin.castAdd n
+    (x : Tensor ℝ [inDim]) (i : Fin m) :
+    Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x) (Fin.castAdd n
       i)
       =
-    vecGet (Spec.linearSpec (α := ℝ) l1a x) i := by
+    Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1a x) i := by
   classical
   -- Unfold down to pointwise evaluation; `Fin.castAdd` selects the left half of the appended layer.
   cases l1a with
@@ -320,17 +317,17 @@ lemma vec_get_linear_spec_append_left
               | dim xv =>
                 simp [appendLinearSpec, appendDim, Spec.linearSpec, Spec.Tensor.addSpec,
                   Spec.Tensor.map2Spec,
-                  Spec.matVecMulSpec, vecGet, Fin.append, Fin.addCases,
+                  Spec.matVecMulSpec, Spec.Tensor.getScalar, Fin.append, Fin.addCases,
                   Tensor.item]
 
 /-- Selecting the right block of a linear spec appended via `appendLinearSpec`. -/
-lemma vec_get_linear_spec_append_right
+lemma getScalar_linear_spec_append_right
     {inDim m n : Nat} (l1a : LinearSpec ℝ inDim m) (l1b : LinearSpec ℝ inDim n)
-    (x : Tensor ℝ (.dim inDim .scalar)) (i : Fin n) :
-    vecGet (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x) (Fin.natAdd m
+    (x : Tensor ℝ [inDim]) (i : Fin n) :
+    Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x) (Fin.natAdd m
       i)
       =
-    vecGet (Spec.linearSpec (α := ℝ) l1b x) i := by
+    Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1b x) i := by
   classical
   cases l1a with
   | mk wa ba =>
@@ -348,7 +345,7 @@ lemma vec_get_linear_spec_append_right
               | dim xv =>
                 simp [appendLinearSpec, appendDim, Spec.linearSpec, Spec.Tensor.addSpec,
                   Spec.Tensor.map2Spec,
-                  Spec.matVecMulSpec, vecGet, Fin.append, Fin.addCases,
+                  Spec.matVecMulSpec, Spec.Tensor.getScalar, Fin.append, Fin.addCases,
                   Tensor.item]
 
 /--
@@ -360,13 +357,13 @@ $\gamma+\alpha\,\mathrm{net}_a(x)+\beta\,\mathrm{net}_b(x)$.
 theorem mlp_eval_append_linear
     {inDim m n : Nat} (l1a : LinearSpec ℝ inDim m) (l1b : LinearSpec ℝ inDim n)
     (l2a : LinearSpec ℝ m 1) (l2b : LinearSpec ℝ n 1)
-    (α β γ : ℝ) (x : Tensor ℝ (.dim inDim .scalar)) :
-    mlpEvalNd (n := inDim) (hidDim := m+n)
+    (α β γ : ℝ) (x : Tensor ℝ [inDim]) :
+    mlpEval (n := inDim) (hidDim := m+n)
         (appendLinearSpec (inDim := inDim) l1a l1b)
         (combineOutput (m := m) (n := n) α β γ l2a l2b) x
       =
-    γ + α * mlpEvalNd (n := inDim) (hidDim := m) l1a l2a x
-      + β * mlpEvalNd (n := inDim) (hidDim := n) l1b l2b x := by
+    γ + α * mlpEval (n := inDim) (hidDim := m) l1a l2a x
+      + β * mlpEval (n := inDim) (hidDim := n) l1b l2b x := by
   classical
   -- This lemma is a “network algebra” fact:
   -- appending hidden units + picking an output layer via `combineOutput` implements an affine
@@ -382,61 +379,61 @@ theorem mlp_eval_append_linear
   have hsplit :
       (∑ j : Fin (m + n),
           mat1Get (combineOutput (m := m) (n := n) α β γ l2a l2b).weights j *
-            relu (vecGet (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x)
+            relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x)
               j))
         =
       (∑ j : Fin m,
           (α * mat1Get l2a.weights j) *
-            relu (vecGet (Spec.linearSpec (α := ℝ) l1a x) j))
+            relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1a x) j))
       +
       (∑ j : Fin n,
           (β * mat1Get l2b.weights j) *
-            relu (vecGet (Spec.linearSpec (α := ℝ) l1b x) j)) := by
+            relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1b x) j)) := by
     classical
     -- Use `Fin.sum_univ_add` and then simplify the `Fin.addCases` selectors.
     have hsum :=
       (Fin.sum_univ_add (a := m) (b := n)
         (f := fun j : Fin (m+n) =>
           mat1Get (combineOutput (m := m) (n := n) α β γ l2a l2b).weights j *
-            relu (vecGet (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x)
+            relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) (appendLinearSpec (inDim := inDim) l1a l1b) x)
               j)))
     -- Rewrite the `castAdd` / `natAdd` branches using the selector lemmas above.
     -- `combineOutput` uses `Fin.addCases` in its weights.
     simpa [combineOutput, singleRowMatrix_get_matrix, relu,
-      vec_get_linear_spec_append_left (l1a := l1a) (l1b := l1b) (x := x),
-      vec_get_linear_spec_append_right (l1a := l1a) (l1b := l1b) (x := x),
+      getScalar_linear_spec_append_left (l1a := l1a) (l1b := l1b) (x := x),
+      getScalar_linear_spec_append_right (l1a := l1a) (l1b := l1b) (x := x),
       Fin.addCases_left, Fin.addCases_right, mul_assoc, mul_left_comm, mul_comm] using hsum
   -- Factor out the scalars `α`/`β` from the two sums.
   let sumA : ℝ :=
     ∑ j : Fin m,
-      mat1Get l2a.weights j * relu (vecGet (Spec.linearSpec (α := ℝ) l1a x) j)
+      mat1Get l2a.weights j * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1a x) j)
   let sumB : ℝ :=
     ∑ j : Fin n,
-      mat1Get l2b.weights j * relu (vecGet (Spec.linearSpec (α := ℝ) l1b x) j)
+      mat1Get l2b.weights j * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1b x) j)
   have hsumA :
       (∑ j : Fin m,
-          (α * mat1Get l2a.weights j) * relu (vecGet (Spec.linearSpec (α := ℝ) l1a x) j))
+          (α * mat1Get l2a.weights j) * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1a x) j))
         = α * sumA := by
     classical
     -- `∑ (α * t_j) = α * ∑ t_j` over `Fin m`.
     simpa [sumA, mul_assoc, mul_left_comm, mul_comm] using
       (Finset.mul_sum α (s := (Finset.univ : Finset (Fin m)))
           (f := fun j : Fin m =>
-            mat1Get l2a.weights j * relu (vecGet (Spec.linearSpec (α := ℝ) l1a x) j))).symm
+            mat1Get l2a.weights j * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1a x) j))).symm
   have hsumB :
       (∑ j : Fin n,
-          (β * mat1Get l2b.weights j) * relu (vecGet (Spec.linearSpec (α := ℝ) l1b x) j))
+          (β * mat1Get l2b.weights j) * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1b x) j))
         = β * sumB := by
     classical
     simpa [sumB, mul_assoc, mul_left_comm, mul_comm] using
       (Finset.mul_sum β (s := (Finset.univ : Finset (Fin n)))
           (f := fun j : Fin n =>
-            mat1Get l2b.weights j * relu (vecGet (Spec.linearSpec (α := ℝ) l1b x) j))).symm
+            mat1Get l2b.weights j * relu (Spec.Tensor.getScalar (Spec.linearSpec (α := ℝ) l1b x) j))).symm
   -- Finish by normalizing the combined output bias and collecting the two hidden sums.
   have hbias :
       extractScalarOutput (combineOutput (m := m) (n := n) α β γ l2a l2b).bias
         = γ + α * extractScalarOutput l2a.bias + β * extractScalarOutput l2b.bias := by
-    simp [combineOutput, extractScalarOutput, Tensor.vector, Tensor.item]
+    simp [combineOutput, extractScalarOutput, Tensor.ofFn, Tensor.item]
   rw [hbias, hsplit, hsumA, hsumB]
   simp [sumA, sumB, mul_add, add_assoc, add_left_comm]
 
@@ -455,7 +452,7 @@ that is lifted along the ridge directions `wPlus` and `wMinus`.
 theorem relu_mul_universal_approximation_box
     {M : ℝ} (hM : 0 < M) :
     ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ 2 hidDim) (l2 : LinearSpec ℝ hidDim 1),
-      ∀ x ∈ box M, |mulFun x - mlpEvalNd (n := 2) (hidDim := hidDim) l1 l2 x| < ε := by
+      ∀ x ∈ box M, |mulFun x - mlpEval (n := 2) (hidDim := hidDim) l1 l2 x| < ε := by
   intro ε hε
   have hM0 : 0 ≤ M := le_of_lt hM
   -- Step 1: approximate `square` on `[-2M,2M]` with error `δ = 2ε`.
@@ -476,8 +473,8 @@ theorem relu_mul_universal_approximation_box
   rcases relu_universal_approximation_Icc (f := fun u => u*u) (a := -2*M) (b := 2*M) (L := 4*M)
       h_ab hL h_lip δ hδ with ⟨hidSq, l1Sq, l2Sq, hSq⟩
   -- Step 2: lift to `u = firstCoordinate+secondCoordinate` and `u = firstCoordinate-secondCoordinate`.
-  let l1Plus : LinearSpec ℝ 2 hidSq := liftLayer1From1d (n := 2) l1Sq wPlus 0
-  let l1Minus : LinearSpec ℝ 2 hidSq := liftLayer1From1d (n := 2) l1Sq wMinus 0
+  let l1Plus : LinearSpec ℝ 2 hidSq := liftScalarLayer1 (n := 2) l1Sq wPlus 0
+  let l1Minus : LinearSpec ℝ 2 hidSq := liftScalarLayer1 (n := 2) l1Sq wMinus 0
   -- Step 3: combine the two lifted square nets to form a product approximator.
   let l1Prod : LinearSpec ℝ 2 (hidSq + hidSq) := appendLinearSpec (inDim := 2) l1Plus l1Minus
   let l2Prod : LinearSpec ℝ (hidSq + hidSq) 1 :=
@@ -489,30 +486,30 @@ theorem relu_mul_universal_approximation_box
   have hx_minus : dot wMinus x ∈ Set.Icc (-2*M) (2*M) := diff_mem_Icc (M := M) hM0 hx
   -- Use the lifted equality to rewrite the lifted nets as 1D evaluations.
   have hplus_eval :
-      mlpEvalNd (n := 2) (hidDim := hidSq) l1Plus l2Sq x =
-        mlpEval1d hidSq l1Sq l2Sq (dot wPlus x) := by
+      mlpEval (n := 2) (hidDim := hidSq) l1Plus l2Sq x =
+        mlpEvalScalar hidSq l1Sq l2Sq (dot wPlus x) := by
     simpa [l1Plus, add_comm] using
-      (mlp_eval_lift_from_1d (n := 2) (hidDim := hidSq) l1Sq l2Sq wPlus 0 x)
+      (mlp_eval_lift_from_scalar (n := 2) (hidDim := hidSq) l1Sq l2Sq wPlus 0 x)
   have hminus_eval :
-      mlpEvalNd (n := 2) (hidDim := hidSq) l1Minus l2Sq x =
-        mlpEval1d hidSq l1Sq l2Sq (dot wMinus x) := by
+      mlpEval (n := 2) (hidDim := hidSq) l1Minus l2Sq x =
+        mlpEvalScalar hidSq l1Sq l2Sq (dot wMinus x) := by
     simpa [l1Minus, add_comm] using
-      (mlp_eval_lift_from_1d (n := 2) (hidDim := hidSq) l1Sq l2Sq wMinus 0 x)
+      (mlp_eval_lift_from_scalar (n := 2) (hidDim := hidSq) l1Sq l2Sq wMinus 0 x)
   -- Evaluate the combined network as a linear combination of the two lifted nets.
   have hcomb :
-      mlpEvalNd (n := 2) (hidDim := hidSq + hidSq) l1Prod l2Prod x
+      mlpEval (n := 2) (hidDim := hidSq + hidSq) l1Prod l2Prod x
         =
-      (1/4 : ℝ) * mlpEvalNd (n := 2) (hidDim := hidSq) l1Plus l2Sq x
-        + (-1/4 : ℝ) * mlpEvalNd (n := 2) (hidDim := hidSq) l1Minus l2Sq x := by
+      (1/4 : ℝ) * mlpEval (n := 2) (hidDim := hidSq) l1Plus l2Sq x
+        + (-1/4 : ℝ) * mlpEval (n := 2) (hidDim := hidSq) l1Minus l2Sq x := by
     -- `mlp_eval_append_linear` gives the general linear combination form.
     have := mlp_eval_append_linear (inDim := 2) (m := hidSq) (n := hidSq)
       (l1a := l1Plus) (l1b := l1Minus) (l2a := l2Sq) (l2b := l2Sq)
       (α := (1/4 : ℝ)) (β := (-1/4 : ℝ)) (γ := 0) (x := x)
     simpa [l1Prod, l2Prod, add_assoc, add_left_comm, add_comm] using this
   -- Apply the square approximation bounds.
-  have hsq_plus : |(dot wPlus x) * (dot wPlus x) - mlpEval1d hidSq l1Sq l2Sq (dot wPlus x)| < δ :=
+  have hsq_plus : |(dot wPlus x) * (dot wPlus x) - mlpEvalScalar hidSq l1Sq l2Sq (dot wPlus x)| < δ :=
     hSq (dot wPlus x) hx_plus
-  have hsq_minus : |(dot wMinus x) * (dot wMinus x) - mlpEval1d hidSq l1Sq l2Sq (dot wMinus x)| <
+  have hsq_minus : |(dot wMinus x) * (dot wMinus x) - mlpEvalScalar hidSq l1Sq l2Sq (dot wMinus x)| <
     δ :=
     hSq (dot wMinus x) hx_minus
   -- Now finish via `xy = ((x+y)^2 - (x-y)^2)/4` and triangle inequality.
@@ -525,17 +522,17 @@ theorem relu_mul_universal_approximation_box
       this
   -- Rewrite goal into an error between the true formula and the approximated formula.
   -- Use `δ = 2ε` so the final bound is `< ε`.
-  have : |mulFun x - mlpEvalNd (n := 2) (hidDim := hidSq + hidSq) l1Prod l2Prod x| < ε := by
+  have : |mulFun x - mlpEval (n := 2) (hidDim := hidSq + hidSq) l1Prod l2Prod x| < ε := by
     -- Replace `mulFun` and the network output by the “difference of squares” forms.
     rw [hmul, hcomb, hplus_eval, hminus_eval]
     -- Let `e₁,e₂` be the square approximation errors.
-    set e1 := (dot wPlus x) * (dot wPlus x) - mlpEval1d hidSq l1Sq l2Sq (dot wPlus x) with he1
-    set e2 := (dot wMinus x) * (dot wMinus x) - mlpEval1d hidSq l1Sq l2Sq (dot wMinus x) with he2
+    set e1 := (dot wPlus x) * (dot wPlus x) - mlpEvalScalar hidSq l1Sq l2Sq (dot wPlus x) with he1
+    set e2 := (dot wMinus x) * (dot wMinus x) - mlpEvalScalar hidSq l1Sq l2Sq (dot wMinus x) with he2
     -- Reduce to bounding `|(e1 - e2)/4|`.
     have hrew :
         ((dot wPlus x) * (dot wPlus x) - (dot wMinus x) * (dot wMinus x)) / 4
-          - ((1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot wPlus x) +
-              (-1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot wMinus x))
+          - ((1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot wPlus x) +
+              (-1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot wMinus x))
         =
         (e1 - e2) / 4 := by
       -- Pure ring arithmetic.
@@ -569,13 +566,13 @@ theorem relu_mul_universal_approximation_box
     -- `hrew` turns the raw difference into `(e1-e2)/4`.
     -- Then `abs` agrees with `|·|`.
     have : |((dot wPlus x) * (dot wPlus x) - (dot wMinus x) * (dot wMinus x)) / 4
-          - ((1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot wPlus x) +
-              (-1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot wMinus x))| < ε := by
+          - ((1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot wPlus x) +
+              (-1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot wMinus x))| < ε := by
       -- rewrite to `(e1-e2)/4`
       have hrew' :
           ((dot wPlus x) * (dot wPlus x) - (dot wMinus x) * (dot wMinus x)) / 4
-              - ((4 : ℝ)⁻¹ * mlpEval1d hidSq l1Sq l2Sq (dot wPlus x) +
-                  (-1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot wMinus x))
+              - ((4 : ℝ)⁻¹ * mlpEvalScalar hidSq l1Sq l2Sq (dot wPlus x) +
+                  (-1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot wMinus x))
             =
           (e1 - e2) / 4 := by
         simpa [one_div] using hrew

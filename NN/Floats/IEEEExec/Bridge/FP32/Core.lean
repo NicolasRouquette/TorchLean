@@ -47,7 +47,7 @@ noncomputable abbrev fp32Round (x : ℝ) : ℝ :=
 
 /-- Rounding `0` to float32 yields `0`. -/
 theorem fp32Round_zero : fp32Round 0 = 0 := by
-  -- This proof proceeds by unfolding: `fp32Round` is defined via `neural_round`.
+  -- This proof proceeds by unfolding: `fp32Round` is defined via `neuralRound`.
   have hne0 : TorchLean.Floats.neuralNearestEven 0 = 0 := by
     simp [TorchLean.Floats.neuralNearestEven]
   have :
@@ -66,7 +66,7 @@ small facts that connect:
 
 - executable *bitfield* manipulations (extracting sign/exponent/fraction, flipping the sign bit),
 - exact *dyadic* arithmetic (what the decoded value means as a real),
-- and the `FP32` rounding model (which is expressed using `neural_magnitude` / nearest-even).
+- and the `FP32` rounding model (which is expressed using `neuralMagnitude` / nearest-even).
 
 These lemmas are local: they exist to keep the later op-level theorems readable.
 -/

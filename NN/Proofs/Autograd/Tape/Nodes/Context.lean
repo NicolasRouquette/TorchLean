@@ -348,7 +348,7 @@ Convenience constructor: build a tape `Node` from vector-level forward/JVP/VJP p
 The `correct_inner` field is exactly the local VJP/JVP law:
 `⟪jvp x dx, δ⟫ = ⟪dx, vjp x δ⟫`.
 -/
-def ofVec {Γ : List Shape} {τ : Shape}
+def ofFn {Γ : List Shape} {τ : Shape}
     (f : CtxVec Γ → Vec (Spec.Shape.size τ))
     (jvp : CtxVec Γ → CtxVec Γ → Vec (Spec.Shape.size τ))
     (vjp : CtxVec Γ → Vec (Spec.Shape.size τ) → CtxVec Γ)
@@ -368,7 +368,7 @@ def ofVec {Γ : List Shape} {τ : Shape}
         dot (vecToTensor (s := τ) (jvp xV dxV)) δ = inner ℝ (jvp xV dxV) δV := by
       simpa [δV] using (dot_eq_inner_tensorToVec (a := vecToTensor (s := τ) (jvp xV dxV)) (b := δ))
     have hR :
-        TList.dotList (ss := Γ) dctx (unflattenCtx (Γ := Γ) (vjp xV δV)) =
+        TensorPack.dotList (ss := Γ) dctx (unflattenCtx (Γ := Γ) (vjp xV δV)) =
           inner ℝ dxV (vjp xV δV) := by
       simpa [dxV] using
         (dotList_eq_inner_flattenCtx (Γ := Γ) (x := dctx) (y := unflattenCtx (Γ := Γ) (vjp xV δV)))
@@ -376,23 +376,23 @@ def ofVec {Γ : List Shape} {τ : Shape}
     simpa [xV, dxV, δV, hL, hR, tensorToVec_vecToTensor, flattenCtx_unflattenCtx] using hinner
 }
 
-@[simp] lemma forwardVec_ofVec {Γ : List Shape} {τ : Shape}
+@[simp] lemma forwardVec_ofFn {Γ : List Shape} {τ : Shape}
     (f) (jvp) (vjp) (h) :
-    (Node.forwardVec (Γ := Γ) (τ := τ) (ofVec (Γ := Γ) (τ := τ) f jvp vjp h)) = f := by
+    (Node.forwardVec (Γ := Γ) (τ := τ) (ofFn (Γ := Γ) (τ := τ) f jvp vjp h)) = f := by
   funext xV
-  simp [Node.forwardVec, ofVec]
+  simp [Node.forwardVec, ofFn]
 
-@[simp] lemma jvpVec_ofVec {Γ : List Shape} {τ : Shape}
+@[simp] lemma jvpVec_ofFn {Γ : List Shape} {τ : Shape}
     (f) (jvp) (vjp) (h) :
-    (Node.jvpVec (Γ := Γ) (τ := τ) (ofVec (Γ := Γ) (τ := τ) f jvp vjp h)) = jvp := by
+    (Node.jvpVec (Γ := Γ) (τ := τ) (ofFn (Γ := Γ) (τ := τ) f jvp vjp h)) = jvp := by
   funext xV dxV
-  simp [Node.jvpVec, ofVec]
+  simp [Node.jvpVec, ofFn]
 
-@[simp] lemma vjpVec_ofVec {Γ : List Shape} {τ : Shape}
+@[simp] lemma vjpVec_ofFn {Γ : List Shape} {τ : Shape}
     (f) (jvp) (vjp) (h) :
-    (Node.vjpVec (Γ := Γ) (τ := τ) (ofVec (Γ := Γ) (τ := τ) f jvp vjp h)) = vjp := by
+    (Node.vjpVec (Γ := Γ) (τ := τ) (ofFn (Γ := Γ) (τ := τ) f jvp vjp h)) = vjp := by
   funext xV δV
-  simp [Node.vjpVec, ofVec]
+  simp [Node.vjpVec, ofFn]
 
 end Node
 
@@ -423,24 +423,24 @@ def linear {inDim outDim : Nat} (m : Spec.LinearSpec ℝ inDim outDim) :
     -- The forward map is an affine function on Euclidean vectors.
     have hAffine :
         (fun xV : Vec inDim =>
-            toVecE ((linearCorrect (inDim := inDim) (outDim := outDim) m).op.forward (ofVecE xV)))
+            getScalarE ((linearCorrect (inDim := inDim) (outDim := outDim) m).op.forward (ofFnE xV)))
           =
         affine (inDim := inDim) (outDim := outDim)
-          (tensorToMatrix (m := outDim) (n := inDim) m.weights) (toVecE m.bias) := by
+          (tensorToMatrix (m := outDim) (n := inDim) m.weights) (getScalarE m.bias) := by
       funext xV
       simpa [linearCorrect, Spec.linearOp] using
-        (toVecE_linear_spec (inDim := inDim) (outDim := outDim) m (x := ofVecE xV))
+        (getScalarE_linear_spec (inDim := inDim) (outDim := outDim) m (x := ofFnE xV))
     have h :=
       hasFDerivAt_affine (inDim := inDim) (outDim := outDim)
-        (W := tensorToMatrix (m := outDim) (n := inDim) m.weights) (b := toVecE m.bias) (x := xV)
+        (W := tensorToMatrix (m := outDim) (n := inDim) m.weights) (b := getScalarE m.bias) (x := xV)
     -- rewrite the goal function from `affine` to the `OpSpec` forward
     exact (hAffine.symm ▸ h)
   jvp_eq := by
     intro xV dxV
     -- The JVP is the linear part of `linear_spec` (bias drops out), so this is just
     -- `matCLM` applied to `dxV`.
-    simpa [linearCorrect, Spec.linearOp, OpSpecCorrect.jvp, toVecE_ofVecE] using
-      (toVecE_mat_vec_mul_spec (m := outDim) (n := inDim) m.weights (ofVecE dxV))
+    simpa [linearCorrect, Spec.linearOp, OpSpecCorrect.jvp, getScalarE_ofFnE] using
+      (getScalarE_mat_vec_mul_spec (m := outDim) (n := inDim) m.weights (ofFnE dxV))
 }
 
 end OpSpecFDerivCorrect

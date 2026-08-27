@@ -80,7 +80,7 @@ def cudaValue {s : Shape} (t : Runtime.Autograd.Cuda.Tape) (id : Nat) : IO (Tens
   bufferToTensor (s := s) b
 
 /-- Extract a typed gradient tensor from the CPU dense-grad array (with a shape check). -/
-def cpuGrad {s : Shape} (grads : Array (Spec.PackedTensor Float)) (id : Nat) : IO (Tensor Float s) := do
+def cpuGrad {s : Shape} (grads : Array (Spec.SomeTensor Float)) (id : Nat) : IO (Tensor Float s) := do
   let g ← match grads[id]? with
     | some g => pure g
     | none => throw <| IO.userError s!"cuda test: gradient id out of bounds: {id}"

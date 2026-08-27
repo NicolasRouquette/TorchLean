@@ -42,64 +42,47 @@ def linear {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
   let y := Spec.linearSpec (α:=α) layer x
   let node : Node α :=
     { name := some "linear"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [wId, bId, xId]
+      parents := #[wId, bId, xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim outDim .scalar) dLdyAny
         let dW := Spec.linearWeightsDerivSpec (α:=α) x dLdy
         let db := Spec.linearBiasDerivSpec (α:=α) (dW) dLdy x
         let dx := Spec.linearInputDerivSpec (α:=α) W dLdy
-        pure [
-          (wId, Spec.PackedTensor.ofTensor dW),
-          (bId, Spec.PackedTensor.ofTensor db),
-          (xId, Spec.PackedTensor.ofTensor dx)
+        pure #[
+          (wId, Spec.SomeTensor.ofTensor dW),
+          (bId, Spec.SomeTensor.ofTensor db),
+          (xId, Spec.SomeTensor.ofTensor dx)
         ]
     }
   pure (t.addNode node)
 
 /--
-2D matrix multiplication.
+Matrix-rank multiplication with explicit batch-prefix broadcasting.
 
-PyTorch comparison: `torch.mm(a, b)`.
+`a` has shape `batchA ++ [m, n]`, `b` has shape `batchB ++ [n, p]`, and the result has
+shape `batch ++ [m, p]`. The empty-prefix defaults preserve ordinary 2D matrix multiplication.
+PyTorch comparison: `torch.matmul(a, b)` for operands of rank at least two.
 -/
 def matmul {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-  {m n p : Nat} (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do
-  let a ← requireValue (α:=α) (t:=t) (s:=.dim m (.dim n .scalar)) aId
-  let b ← requireValue (α:=α) (t:=t) (s:=.dim n (.dim p .scalar)) bId
-  let y := Spec.matMulSpec a b
+  {m n p : Nat} (t : Tape α) (aId bId : Nat)
+  (batchA : Shape := .scalar) (batchB : Shape := .scalar) (batch : Shape := .scalar)
+  [broadcastA : Shape.BroadcastTo batchA batch]
+  [broadcastB : Shape.BroadcastTo batchB batch] : Result (Tape α × Nat) := do
+  let a ← requireValue (α := α) (t := t) (s := batchA.concat [m, n]) aId
+  let b ← requireValue (α := α) (t := t) (s := batchB.concat [n, p]) bId
+  let y := Spec.Tensor.matmulSpec broadcastA.proof broadcastB.proof a b
   let node : Node α :=
     { name := some "matmul"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [aId, bId]
+      parents := #[aId, bId]
       backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := .dim m (.dim p .scalar)) dLdyAny
-        let (dA, dB) := Spec.Tensor.matMulBackwardSpec a b dLdy
-        pure [(aId, Spec.PackedTensor.ofTensor dA), (bId, Spec.PackedTensor.ofTensor dB)]
-    }
-  pure (t.addNode node)
-
-/--
-Batched matrix multiplication.
-
-PyTorch comparison: `torch.bmm(a, b)`.
--/
-def bmm {α : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
-  {batch m n p : Nat} (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do
-  let a ← requireValue (α:=α) (t:=t) (s:=.dim batch (.dim m (.dim n .scalar))) aId
-  let b ← requireValue (α:=α) (t:=t) (s:=.dim batch (.dim n (.dim p .scalar))) bId
-  let y := Spec.Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) a b
-  let node : Node α :=
-    { name := some "bmm"
-      value := Spec.PackedTensor.ofTensor y
-      requiresGrad := true
-      parents := [aId, bId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := .dim batch (.dim m (.dim p .scalar))) dLdyAny
-        let (dA, dB) := Spec.Tensor.bmmBackwardSpec (α := α) (batch := batch) (m := m) (n := n)
-          (p := p) a b dLdy
-        pure [(aId, Spec.PackedTensor.ofTensor dA), (bId, Spec.PackedTensor.ofTensor dB)]
+        let dLdy ← requireGrad (α := α) (τ := batch.concat [m, p]) dLdyAny
+        let (dA, dB) :=
+          Spec.Tensor.matmulBackwardSpec broadcastA.proof broadcastB.proof a b dLdy
+        pure #[(aId, Spec.SomeTensor.ofTensor dA), (bId, Spec.SomeTensor.ofTensor dB)]
     }
   pure (t.addNode node)
 
@@ -112,19 +95,19 @@ def concatLeadingAxis {α : Type} [DecidableEq Shape]
   {n m : Nat} {s : Shape} (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do
   let a ← requireValue (α := α) (t := t) (s := .dim n s) aId
   let b ← requireValue (α := α) (t := t) (s := .dim m s) bId
-  let y := Spec.Tensor.concatLeadingAxisSpec (α := α) (n := n) (m := m) (s := s) a b
+  let y := Spec.Tensor.concatAxisSpec .scalar (α := α) (n := n) (m := m) (suffix := s) a b
   let node : Node α :=
     { name := some "concat_leading_axis"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [aId, bId]
+      parents := #[aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := .dim (n + m) s) dLdyAny
         let dA := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy 0 n
           (by simp)
         let dB := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy n m
           (by simp)
-        pure [(aId, Spec.PackedTensor.ofTensor dA), (bId, Spec.PackedTensor.ofTensor dB)]
+        pure #[(aId, Spec.SomeTensor.ofTensor dA), (bId, Spec.SomeTensor.ofTensor dB)]
     }
   pure (t.addNode node)
 
@@ -141,4 +124,4 @@ def sliceLeadingAxisRange {α : Type} [Zero α] [DecidableEq Shape]
     "slice_leading_axis_range" xId
     (forward := fun x => Spec.sliceRangeSpec (α := α) (n := n) (s := s) x start len h)
     (backward := fun _x dLdz =>
-      Spec.Tensor.sliceLeadingAxisRangeBackwardSpec (α := α) (n := n) (s := s) start len h dLdz)
+      Spec.Tensor.sliceAxisRangeBackwardSpec (α := α) (s := .dim n s) 0 start len h dLdz)

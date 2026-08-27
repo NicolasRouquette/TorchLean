@@ -317,8 +317,8 @@ def selectiveScan : KernelCapsule :=
     .none
 
 /-- Native CUDA capsules, excluding attention which has a dedicated semantic split. -/
-def capsules : List KernelCapsule :=
-  [ matmul
+def capsules : Array KernelCapsule :=
+  #[ matmul
   , linear
   , mseLoss
   , relu

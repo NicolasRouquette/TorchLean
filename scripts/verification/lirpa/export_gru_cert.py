@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Export a deterministic GRU-gate interval certificate."""
-import math
 from typing import Any
 
-from common import affine_interval, centered_box, mul_down, mul_up, write_json
+from common import (
+    affine_interval,
+    centered_box,
+    mul_down,
+    mul_up,
+    sigmoid_range_interval,
+    tanh_range_interval,
+    write_json,
+)
 
 # GRU gate graph:
 # input -> gate linear -> sigmoid; input -> candidate linear -> tanh; multiply both branches.
@@ -22,34 +29,6 @@ def seed_input_box(eps: float = 0.5):
     """Return the input interval box centered at `[1, 2, 3]`."""
     input_center = [float(i + 1) for i in range(n)]
     return centered_box(input_center, eps)
-
-
-def ibp_sigmoid(lo: list[float], hi: list[float]) -> tuple[list[float], list[float]]:
-    """Propagate interval bounds through elementwise sigmoid."""
-    def s(x: float) -> float:
-        """Evaluate the logistic sigmoid at one scalar."""
-        return 1.0 / (1.0 + math.exp(-x))
-    out_lo = []
-    out_hi = []
-    for l, u in zip(lo, hi):
-        sl, su = s(l), s(u)
-        out_lo.append(min(sl, su))
-        out_hi.append(max(sl, su))
-    return out_lo, out_hi
-
-
-def ibp_tanh(lo: list[float], hi: list[float]) -> tuple[list[float], list[float]]:
-    """Propagate interval bounds through elementwise tanh."""
-    def t(x: float) -> float:
-        """Evaluate tanh at one scalar."""
-        return math.tanh(x)
-    out_lo = []
-    out_hi = []
-    for l, u in zip(lo, hi):
-        tl, tu = t(l), t(u)
-        out_lo.append(min(tl, tu))
-        out_hi.append(max(tl, tu))
-    return out_lo, out_hi
 
 
 def ibp_mul_elem(
@@ -89,10 +68,10 @@ def run_ibp() -> dict[str, Any]:
     """Compute the GRU-gate certificate payload consumed by Lean."""
     weight, bias = seed_params()
     x_lo, x_hi = seed_input_box(0.5)
-    gate_lo, gate_hi = affine_interval(weight, bias, x_lo, x_hi)
-    sigmoid_lo, sigmoid_hi = ibp_sigmoid(gate_lo, gate_hi)
-    candidate_lo, candidate_hi = affine_interval(weight, bias, x_lo, x_hi)
-    tanh_lo, tanh_hi = ibp_tanh(candidate_lo, candidate_hi)
+    affine_interval(weight, bias, x_lo, x_hi)
+    sigmoid_lo, sigmoid_hi = sigmoid_range_interval(n)
+    affine_interval(weight, bias, x_lo, x_hi)
+    tanh_lo, tanh_hi = tanh_range_interval(n)
     output_lo, output_hi = ibp_mul_elem(sigmoid_lo, sigmoid_hi, tanh_lo, tanh_hi)
     return {
         "graph": "gru_gate_workflow_v1",

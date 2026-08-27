@@ -54,23 +54,24 @@ def sumSpec {α : Type} [Add α] [Zero α] {s : Shape} (t : Tensor α s) : α :=
 def prodSpec {s : Shape} (t : Tensor α s) : α :=
   tensorFoldlSpec (· * ·) 1 t
 
-/-- Index of the first maximal entry in a nonempty vector.
+/-- Flattened row-major index of the first maximal entry in a nonempty tensor.
 
 The explicit nonemptiness hypothesis keeps the result total without inventing an index for an
-empty vector. Ties retain the smaller index, matching a left-to-right `argmax` traversal. -/
-def argmaxVector {n : Nat} (h : 0 < n) (x : Tensor α (.dim n .scalar)) : Fin n :=
-  let value (i : Fin n) :=
-    match get x i with
+empty tensor. Ties retain the smaller flattened index, matching a left-to-right traversal. -/
+def argmax {s : Shape} (h : 0 < Shape.size s) (x : Tensor α s) : Fin (Shape.size s) :=
+  let flat := flattenSpec x
+  let value (i : Fin (Shape.size s)) :=
+    match get flat i with
     | .scalar a => a
-  let rec loop (i : Nat) (best : Fin n) : Fin n :=
-    if hi : i < n then
-      let current : Fin n := ⟨i, hi⟩
+  let rec loop (i : Nat) (best : Fin (Shape.size s)) : Fin (Shape.size s) :=
+    if hi : i < Shape.size s then
+      let current : Fin (Shape.size s) := ⟨i, hi⟩
       loop (i + 1) (if value current > value best then current else best)
     else
       best
-  termination_by n - i
+  termination_by Shape.size s - i
   decreasing_by
-    simpa using Nat.sub_succ_lt_self (a := n) (i := i) hi
+    simpa using Nat.sub_succ_lt_self (a := Shape.size s) (i := i) hi
   loop 1 ⟨0, h⟩
 
 /-- Count the number of scalar entries in a tensor (= `Spec.Shape.size`). -/
@@ -114,7 +115,7 @@ def varianceSpec : ∀ {s : Shape}, Tensor α s → α
 
 -- Shape-level bookkeeping for reductions that drop one axis.
 /-- Output shape after summing along `axis` (drops that dimension). -/
-def shapeAfterSum : Shape → Nat → Shape
+@[reducible] def shapeAfterSum : Shape → Nat → Shape
   | .scalar, _ => .scalar
   | .dim _ inner, 0 => inner
   | .dim n inner, Nat.succ k => .dim n (shapeAfterSum inner k)
@@ -132,7 +133,7 @@ def shapeAfterSumKeepDim : Shape → Nat → Shape
   | dim n inner ih =>
       cases axis with
       | zero => simp [shapeAfterSumKeepDim, shapeAfterSum, Shape.size]
-      | succ axis => simp [shapeAfterSumKeepDim, shapeAfterSum, Shape.size, ih]
+      | succ axis => simp [shapeAfterSumKeepDim, Shape.size, ih]
 
 @[simp] theorem shape_after_sum_keep_dim_rank (s : Shape) (axis : Nat) :
     Shape.rank (shapeAfterSumKeepDim s axis) = Shape.rank s := by
@@ -143,50 +144,14 @@ def shapeAfterSumKeepDim : Shape → Nat → Shape
       | zero => simp [shapeAfterSumKeepDim, Shape.rank]
       | succ axis => simp [shapeAfterSumKeepDim, Shape.rank, ih]
 
-/-- `simp` lemma: dropping axis 1 from a 2D `(nQ+1)×(nK+1)` shape yields `(nQ+1)`. -/
-@[simp]
-theorem shape_after_sum_dim_1 (nQ nK : Nat) :
-  shapeAfterSum (Shape.dim (nQ + 1) (Shape.dim (nK + 1) Shape.scalar)) 1 =
-    Shape.dim (nQ + 1) Shape.scalar := by
-  simp [shapeAfterSum]
-
-/-- `simp` lemma: dropping axis 1 from a 2D `nQ×nK` shape yields `nQ`. -/
-@[simp]
-theorem shape_after_sum_dim_1_alt (nQ nK : Nat) :
-  shapeAfterSum (Shape.dim nQ (Shape.dim nK Shape.scalar)) 1 =
-    Shape.dim nQ Shape.scalar := by
-  simp [shapeAfterSum]
-
-/-- `simp` lemma: dropping axis 3 from a 4D `b×h×w×c` shape yields `b×h×w`. -/
-@[simp]
-theorem shape_after_sum_dim_3_alt (b h w c : Nat) :
-  shapeAfterSum (Shape.dim b (Shape.dim h (Shape.dim w (Shape.dim c Shape.scalar)))) 3 =
-    Shape.dim b (Shape.dim h (Shape.dim w Shape.scalar)) := by
-  simp [shapeAfterSum]
-
-/-- `simp` lemma: dropping axis 0 from a positive `.dim (n+1) s` yields `s`. -/
-@[simp]
-theorem shape_after_sum_zero {n s} :
-  shapeAfterSum (.dim (n+1) s) 0 = s := by
+/-- Dropping axis zero from `.dim n inner` yields `inner`, including when `n = 0`. -/
+@[simp] theorem shape_after_sum_zero (n : Nat) (inner : Shape) :
+    shapeAfterSum (.dim n inner) 0 = inner := by
   simp [shapeAfterSum]
 
 /-- `simp` lemma: dropping axis `k+1` recurses into the tail shape. -/
-@[simp]
-theorem shape_after_sum_succ {n s k} :
-  shapeAfterSum (.dim (n+1) s) (k+1) = .dim (n+1) (shapeAfterSum s k) := by
-  simp [shapeAfterSum]
-
-/-- `simp` lemma: dropping axis 0 from a 2D `(kH+1)×(kW+1)` yields `(kW+1)`. -/
-@[simp]
-theorem shape_after_sum_twice_zero {kH kW : Nat} :
-  shapeAfterSum (Shape.dim (kH + 1) (Shape.dim (kW + 1) Shape.scalar)) 0
-    = .dim (kW + 1) Shape.scalar := by simp [shapeAfterSum]
-
-/-- `simp` lemma: dropping axis 0 from `.dim n inner` yields `inner` (even when `n=0`). -/
-@[simp]
-theorem shape_after_sum_zero_alt
-  (n : Nat) (inner : Shape) :
-  shapeAfterSum (.dim n inner) 0 = inner := by
+@[simp] theorem shape_after_sum_succ {n s k} :
+    shapeAfterSum (.dim n s) (k + 1) = .dim n (shapeAfterSum s k) := by
   simp [shapeAfterSum]
 
 /-- Canonical broadcast from a keep-dimension reduction shape back to its input shape. -/
@@ -215,12 +180,12 @@ def broadcastAfterSum {α : Type} [Inhabited α] :
 
 -- Reducers parameterized by the scalar aggregation operation.
 
-/-- Reduce a tensor of shape `(n, innerShape)` by applying `f` across the first axis.
+/-- Reduce a tensor by applying `f` across its outer axis.
 
 This is the basic “reduce over axis 0” primitive that we reuse to implement broadcast-adjoints and
 multi-axis reducers.
 -/
-def reduceFirstDim {α : Type} {innerShape : Shape} {n : Nat}
+def Internal.reduceOuterAxis {α : Type} {innerShape : Shape} {n : Nat}
     (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
     (t : Tensor α (.dim n innerShape)) : Tensor α innerShape :=
     match innerShape with
@@ -233,8 +198,16 @@ def reduceFirstDim {α : Type} {innerShape : Shape} {n : Nat}
         match t with
         | .dim slices =>
             .dim (fun j =>
-              let slice_at_j := .dim (fun i => sliceSpec (slices i) j)
-              reduceFirstDim f slice_at_j)
+              let slice_at_j := .dim (fun i => get (slices i) j)
+              Internal.reduceOuterAxis f slice_at_j)
+
+/-- Reducing a vector along its only axis applies the scalar aggregator to that vector. -/
+@[simp] theorem Internal.reduceOuterAxis_vector
+    {α : Type} {n : Nat} (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
+    (tensor : Tensor α [n]) :
+    Internal.reduceOuterAxis f tensor = Tensor.scalar (f tensor) := by
+  cases tensor
+  rfl
 
 /-!
 Reduce a gradient from a broadcast target shape back to the original input shape.
@@ -255,7 +228,7 @@ def reduceFromBroadcastTo {α : Type} [Add α] [Zero α] :
     match t with
     | Tensor.dim xs =>
         let summed : Tensor α s₂ :=
-          reduceFirstDim (α := α) (innerShape := s₂) (n := n)
+          Internal.reduceOuterAxis (α := α) (innerShape := s₂) (n := n)
             (fun {sliceShape} => sumSpec (α := α) (s := sliceShape)) (Tensor.dim xs)
         let reduced : Tensor α s₁ := reduceFromBroadcastTo (s₁ := s₁) (s₂ := s₂) tail summed
         Tensor.dim (fun _ => reduced)
@@ -263,9 +236,44 @@ def reduceFromBroadcastTo {α : Type} [Add α] [Zero α] :
     match t with
     | Tensor.dim xs =>
         let summed : Tensor α s₂ :=
-          reduceFirstDim (α := α) (innerShape := s₂) (n := n)
+          Internal.reduceOuterAxis (α := α) (innerShape := s₂) (n := n)
             (fun {sliceShape} => sumSpec (α := α) (s := sliceShape)) (Tensor.dim xs)
         reduceFromBroadcastTo (s₁ := s₁) (s₂ := s₂) tail summed
+
+namespace Internal
+
+/-- Recursive evaluator underlying `reduceDim`; kept separate so proofs can use its equations. -/
+def reduceDimCore
+    {α : Type}
+    (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α) :
+    (s : Shape) → (axis : Nat) → Tensor α s → Tensor α (shapeAfterSum s axis)
+  | .scalar => fun _ tensor => tensor
+  | .dim _ inner => fun axis tensor =>
+      match axis, tensor with
+      | 0, tensor => reduceOuterAxis f tensor
+      | Nat.succ axis, Tensor.dim values =>
+          Tensor.dim (fun index => reduceDimCore f inner axis (values index))
+
+@[simp] theorem reduceDimCore_scalar
+    {α : Type} (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
+    (axis : Nat) (tensor : Tensor α .scalar) :
+    reduceDimCore f .scalar axis tensor = tensor := by
+  rfl
+
+@[simp] theorem reduceDimCore_dim_zero
+    {α : Type} (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
+    {n : Nat} {inner : Shape} (tensor : Tensor α (.dim n inner)) :
+    reduceDimCore f (.dim n inner) 0 tensor = reduceOuterAxis f tensor := by
+  rfl
+
+@[simp] theorem reduceDimCore_dim_succ
+    {α : Type} (f : ∀ {sliceShape : Shape}, Tensor α sliceShape → α)
+    {n axis : Nat} {inner : Shape} (values : Fin n → Tensor α inner) :
+    reduceDimCore f (.dim n inner) (axis + 1) (Tensor.dim values) =
+      Tensor.dim (fun index => reduceDimCore f inner axis (values index)) := by
+  rfl
+
+end Internal
 
 /-- Generic reduction along a (provably reducible) axis.
 
@@ -279,29 +287,13 @@ def reduceDim
   (axis : Nat)
   (x : Tensor α s)
   (_h : Shape.NonemptyAxis axis s) : Tensor α (shapeAfterSum s axis) :=
-  -- Recurse until the selected axis becomes the outer axis. Returning `shapeAfterSum`
-  -- directly keeps the shape change visible to Lean and avoids proof-carrying casts.
-  let rec aux {inShape : Shape} (axisAdjusted : Nat) (t : Tensor α inShape) :
-      Tensor α (shapeAfterSum inShape axisAdjusted) :=
-    match inShape, axisAdjusted, t with
-    | .scalar, _, t => t
-    | .dim _ _, 0, t => reduceFirstDim f t
-    | .dim _ _, Nat.succ k, .dim values =>
-        Tensor.dim (fun i => aux k (values i))
-  aux axis x
+  Internal.reduceDimCore f s axis x
 
 /-- Sum-reduction along a given axis. -/
 def reduceSum {α : Type} [Add α] [Zero α] {s : Shape} (axis : Nat) (t : Tensor α s) (h :
   Shape.NonemptyAxis axis s) :
     Tensor α (shapeAfterSum s axis) :=
   reduceDim sumSpec axis t h
-
-/-- Sum reduction on the leading axis is the corresponding first-dimension fold. -/
-theorem reduceSum_zero_eq_reduceFirstDim {α : Type} [Add α] [Zero α]
-    {n : Nat} {s : Shape} (h : 0 < n) (tensor : Tensor α (.dim n s)) :
-    reduceSum 0 tensor (Shape.hasNonemptyAxisZeroOfPos h).proof =
-      reduceFirstDim (fun {sliceShape} => sumSpec (s := sliceShape)) tensor := by
-  rfl
 
 /-- Product-reduction along a given axis. -/
 def reduceProd {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
@@ -315,11 +307,9 @@ def reduceMean {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxi
   letI : Shape.AxisInBounds axis s := h.toAxisInBounds
   mapSpec (fun x => x / (Shape.axisSize s axis : α)) summed
 
--- Reduce sum of squares (for variance)
 /-- Sum of squares reduced along an axis (helper for variance). -/
-def reduceSumSquared {n s} (axis : Nat) (t : Tensor α (.dim n s)) (h : Shape.NonemptyAxis axis
-  (.dim n s)) :
-    Tensor α (shapeAfterSum (.dim n s) axis) :=
+def reduceSumSquared {s : Shape} (axis : Nat) (t : Tensor α s) (h : Shape.NonemptyAxis axis s) :
+    Tensor α (shapeAfterSum s axis) :=
   reduceSum axis (mapSpec (fun x => x * x) t) h
 
 /-- Variance-reduction along a given axis (population variance, divides by `n`).
@@ -437,24 +427,6 @@ def reduceMax {s : Shape}
         let max_slices : Fin n → Tensor α (shapeAfterSum inner k) :=
           fun i => reduceMax k (f i) inner_reducible
         Tensor.dim max_slices
-
-/-- Mean-reduce an arbitrary-rank tensor along its innermost axis. -/
-def reduceMeanLast {s : Shape} (x : Tensor α s)
-    (h : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s) :
-    Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceMean (Spec.Shape.rank s - 1) x h.proof
-
-/-- Variance-reduce an arbitrary-rank tensor along its innermost axis. -/
-def reduceVarLast {s : Shape} (x : Tensor α s)
-    (h : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s) :
-    Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceVar (Spec.Shape.rank s - 1) x h.proof
-
-/-- Sum-reduce an arbitrary-rank tensor along its innermost axis. -/
-def reduceSumLast {s : Shape} (x : Tensor α s)
-    [h : Shape.HasNonemptyAxis (Spec.Shape.rank s - 1) s] :
-    Tensor α (shapeAfterSum s (Spec.Shape.rank s - 1)) :=
-  reduceSum (Spec.Shape.rank s - 1) x h.proof
 
 -- Transpose operations live in the linear-algebra extension modules.
 end Tensor

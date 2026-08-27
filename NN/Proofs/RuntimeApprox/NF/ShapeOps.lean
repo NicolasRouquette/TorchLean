@@ -8,7 +8,6 @@ module
 
 public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
-public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Spec.Core.TensorReductionShape
 
 /-!

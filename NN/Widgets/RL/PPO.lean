@@ -88,12 +88,12 @@ instance : ToVizFloat TorchLean.Floats.IEEE754.IEEE32Exec :=
   ⟨TorchLean.Floats.IEEE754.IEEE32Exec.toFloat⟩
 
 /--
-Convert a length-`n` scalar vector tensor to an `Array Float` for plotting.
+Convert a length-`n` scalar tensor to an `Array Float` for plotting.
 
 We pattern-match on the tensor representation to avoid runtime indexing overhead.
 -/
-private def vecToFloatArray {α : Type} [ToVizFloat α] {n : Nat} :
-    Tensor α (.dim n .scalar) → Array Float
+private def tensorToFloatArray {α : Type} [ToVizFloat α] {n : Nat} :
+    Tensor α [n] → Array Float
   | .dim f =>
       Array.ofFn (fun i : Fin n =>
         match f i with
@@ -129,24 +129,28 @@ def ppoRolloutTrainLog {α : Type} [Context α] [ToVizFloat α] [DecidableEq Sha
       simpa [nextValuesArr, Array.size_map] using r.steps_size_eq_horizon
     simpa using this.symm
 
-  let rewards : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray (rewardsArr.map Tensor.scalar) (by simpa using hRewards)
-  let dones : Tensor Bool (.dim horizon .scalar) :=
-    Tensor.ofArray (donesArr.map Tensor.scalar) (by simpa using hDones)
-  let values : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray (valuesArr.map Tensor.scalar) (by simpa using hValues)
-  let nextValues : Tensor α (.dim horizon .scalar) :=
-    Tensor.ofArray (nextValuesArr.map Tensor.scalar) (by simpa using hNextValues)
+  let rewards : Tensor α [horizon] :=
+    Tensor.ofFlatArrayExact (.dim horizon .scalar) rewardsArr (by
+      simpa [Shape.size] using hRewards.symm)
+  let dones : Tensor Bool [horizon] :=
+    Tensor.ofFlatArrayExact (.dim horizon .scalar) donesArr (by
+      simpa [Shape.size] using hDones.symm)
+  let values : Tensor α [horizon] :=
+    Tensor.ofFlatArrayExact (.dim horizon .scalar) valuesArr (by
+      simpa [Shape.size] using hValues.symm)
+  let nextValues : Tensor α [horizon] :=
+    Tensor.ofFlatArrayExact (.dim horizon .scalar) nextValuesArr (by
+      simpa [Shape.size] using hNextValues.symm)
 
   let advRaw :=
-    _root_.Runtime.RL.Core.generalizedAdvantageEstimationVec (α := α) (n := horizon)
+    _root_.Runtime.RL.Core.generalizedAdvantageEstimationTensor (α := α) (n := horizon)
       gamma lam rewards values nextValues dones
   let returns :=
-    _root_.Runtime.RL.Core.returnsFromAdvantagesVec (α := α) (n := horizon) advRaw values
+    _root_.Runtime.RL.Core.returnsFromAdvantagesTensor (α := α) (n := horizon) advRaw values
 
   let rewardsF : Array Float := rewardsArr.map ToVizFloat.toVizFloat
-  let returnsF : Array Float := vecToFloatArray (α := α) (n := horizon) returns
-  let advF : Array Float := vecToFloatArray (α := α) (n := horizon) advRaw
+  let returnsF : Array Float := tensorToFloatArray (α := α) (n := horizon) returns
+  let advF : Array Float := tensorToFloatArray (α := α) (n := horizon) advRaw
 
   let notes : Array String :=
     #[

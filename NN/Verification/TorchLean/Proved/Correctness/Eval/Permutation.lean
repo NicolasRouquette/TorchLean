@@ -11,7 +11,7 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval.ShapeOps
 /-!
 # Permutation IR Evaluation
 
-Local semantics for axis permutation.  The theorem is stated against `Graph.permutePackedTensor`, the shared
+Local semantics for axis permutation.  The theorem is stated against `Graph.permuteSomeTensor`, the shared
 permutation interpreter used by `permute`, non-last-axis softmax, and axis-generic concat.
 -/
 
@@ -30,21 +30,21 @@ namespace IRStep
 /-- Local IR semantics for `permute`, using the shared dynamic-value permutation interpreter. -/
 theorem evalAt_permute_eq
     {α : Type} [Context α] [DecidableEq Shape]
-    {s out : Shape} (perm : List Nat) (x : Tensor α s) (vOut : Spec.PackedTensor α)
-    (hPerm : Graph.permutePackedTensor (α := α) (v := Spec.PackedTensor.mk (α := α) s x) perm = .ok vOut)
+    {s out : Shape} (perm : Array Nat) (x : Tensor α s) (vOut : Spec.SomeTensor α)
+    (hPerm : Graph.permuteSomeTensor (α := α) (v := Spec.SomeTensor.mk (α := α) s x) perm = .ok vOut)
     (hShape : vOut.shape = out) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.permute perm) s out)
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s x)
-        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
+        (input := Spec.SomeTensor.mk (α := α) s x)
+        (vals := #[Spec.SomeTensor.mk (α := α) s x]) (i := 1)
       =
-      Except.ok (Spec.PackedTensor.mk (α := α) out (hShape ▸ vOut.tensor)) := by
+      Except.ok (Spec.SomeTensor.mk (α := α) out (hShape ▸ vOut.tensor)) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Bind.bind, Except.bind, Pure.pure, Except.pure]
-  have hPerm' : Graph.permutePackedTensor (α := α) (v := ⟨s, x⟩) perm = .ok vOut := by
-    simpa [Spec.PackedTensor.mk] using hPerm
+    Graph.unaryParentId, unaryParent?, Bind.bind, Except.bind, Pure.pure, Except.pure]
+  have hPerm' : Graph.permuteSomeTensor (α := α) (v := ⟨s, x⟩) perm = .ok vOut := by
+    simpa [Spec.SomeTensor.mk] using hPerm
   have hShape' : vOut.1 = out := by
-    simpa [Spec.PackedTensor.shape] using hShape
+    simpa [Spec.SomeTensor.shape] using hShape
   rw [hPerm']
   simp [hShape']
 

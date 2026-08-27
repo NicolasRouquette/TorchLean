@@ -73,9 +73,9 @@ structure NumericalStepContract (R : Type) (toSpec : R → ℝ) where
   updateBound : {s : Shape} → StateBound s → ℝ → ℝ →
     StateRuntime s → Tensor R s → Tensor R s → StepData s → StepBound StateBound s
   /-- Proof-free scalar components of a state bound for reports and UI consumers. -/
-  stateBoundReport : {s : Shape} → StateBound s → List (String × ℝ)
+  stateBoundReport : {s : Shape} → StateBound s → Array (String × ℝ)
   /-- Proof-free scalar components of one step's side data. -/
-  stepDataReport : {s : Shape} → StepData s → List (String × ℝ)
+  stepDataReport : {s : Shape} → StepData s → Array (String × ℝ)
   /-- One-step numerical soundness. -/
   updateSound : ∀ {s : Shape}
       (stateS : StateSpec s) (stateR : StateRuntime s) (stateBound : StateBound s)
@@ -110,32 +110,42 @@ abbrev RuntimeStep (contract : NumericalStepContract R toSpec) (s : Shape) :=
 abbrev RunBound (contract : NumericalStepContract R toSpec) (s : Shape) :=
   StepBound contract.StateBound s
 
-/-- Execute a finite gradient stream using the exact-real recurrence. -/
-def runSpec (contract : NumericalStepContract R toSpec) {s : Shape} :
-    SpecStep contract s → List (Tensor ℝ s) → SpecStep contract s
-  | current, [] => current
-  | current, grad :: rest =>
-      runSpec contract (contract.updateSpec current.1 current.2 grad) rest
+/-- Exact, rounded, and error information for one optimizer update. -/
+structure StepInput (contract : NumericalStepContract R toSpec) (s : Shape) where
+  /-- Exact-real gradient. -/
+  gradSpec : Tensor ℝ s
+  /-- Rounded runtime gradient. -/
+  gradRuntime : Tensor R s
+  /-- Infinity-norm error relating the exact and runtime gradients. -/
+  gradError : ℝ
+  /-- Optimizer-specific side data and domain margins. -/
+  data : contract.StepData s
 
-/-- Execute the same finite gradient stream using the rounded runtime recurrence. -/
-def runRuntime (contract : NumericalStepContract R toSpec) {s : Shape} :
-    RuntimeStep contract s → List (Tensor R s) → RuntimeStep contract s
-  | current, [] => current
-  | current, grad :: rest =>
-      runRuntime contract (contract.updateRuntime current.1 current.2 grad) rest
+/-- Execute a finite step stream using the exact-real recurrence. -/
+def runSpec (contract : NumericalStepContract R toSpec) {s : Shape}
+    (initial : SpecStep contract s) (steps : Array (StepInput contract s)) :
+    SpecStep contract s :=
+  steps.foldl
+    (fun current step => contract.updateSpec current.1 current.2 step.gradSpec) initial
 
-/-- Propagate state and parameter errors over a runtime gradient stream. -/
-def runBounds (contract : NumericalStepContract R toSpec) {s : Shape} :
-    RunBound contract s → RuntimeStep contract s → List (Tensor R s) → List ℝ →
-      List (contract.StepData s) →
-      Option (RunBound contract s)
-  | bound, _, [], [], [] => some bound
-  | bound, current, grad :: grads, gradError :: gradErrors, stepData :: steps =>
-      let nextBound := contract.updateBound bound.state bound.params gradError
-        current.1 current.2 grad stepData
-      let nextRuntime := contract.updateRuntime current.1 current.2 grad
-      runBounds contract nextBound nextRuntime grads gradErrors steps
-  | _, _, _, _, _ => none
+/-- Execute the same finite step stream using the rounded runtime recurrence. -/
+def runRuntime (contract : NumericalStepContract R toSpec) {s : Shape}
+    (initial : RuntimeStep contract s) (steps : Array (StepInput contract s)) :
+    RuntimeStep contract s :=
+  steps.foldl
+    (fun current step => contract.updateRuntime current.1 current.2 step.gradRuntime) initial
+
+/-- Propagate state and parameter errors over a bundled optimizer step stream. -/
+def runBounds (contract : NumericalStepContract R toSpec) {s : Shape}
+    (initialBound : RunBound contract s) (initialRuntime : RuntimeStep contract s)
+    (steps : Array (StepInput contract s)) : RunBound contract s :=
+  (steps.foldl
+    (fun (bound, runtime) step =>
+      let nextBound := contract.updateBound bound.state bound.params step.gradError
+        runtime.1 runtime.2 step.gradRuntime step.data
+      let nextRuntime := contract.updateRuntime runtime.1 runtime.2 step.gradRuntime
+      (nextBound, nextRuntime))
+    (initialBound, initialRuntime)).1
 
 /-- Approximation and side-condition evidence for a complete optimizer run.
 
@@ -145,62 +155,62 @@ step where they are needed rather than asserted once for an entire run.
 -/
 inductive StepStreamApprox (contract : NumericalStepContract R toSpec) {s : Shape} :
     SpecStep contract s → RuntimeStep contract s → RunBound contract s →
-    List (Tensor ℝ s) → List (Tensor R s) → List ℝ → List (contract.StepData s) → Prop
-  | nil {spec runtime bound} : StepStreamApprox contract spec runtime bound [] [] [] []
-  | cons {spec runtime bound gradS gradR error stepData gradsS gradsR errors steps} :
-      approxTensor (α := R) (toSpec := toSpec) gradS gradR error →
+    Array (StepInput contract s) → Prop
+  | empty {spec runtime bound} : StepStreamApprox contract spec runtime bound #[]
+  | cons {spec runtime bound step steps} :
+      approxTensor (α := R) (toSpec := toSpec)
+        step.gradSpec step.gradRuntime step.gradError →
       contract.stepDataValid spec.1 runtime.1 bound.state spec.2 runtime.2 bound.params
-        gradS gradR error stepData →
+        step.gradSpec step.gradRuntime step.gradError step.data →
       StepStreamApprox contract
-        (contract.updateSpec spec.1 spec.2 gradS)
-        (contract.updateRuntime runtime.1 runtime.2 gradR)
-        (contract.updateBound bound.state bound.params error runtime.1 runtime.2 gradR stepData)
-        gradsS gradsR errors steps →
+        (contract.updateSpec spec.1 spec.2 step.gradSpec)
+        (contract.updateRuntime runtime.1 runtime.2 step.gradRuntime)
+        (contract.updateBound bound.state bound.params step.gradError
+          runtime.1 runtime.2 step.gradRuntime step.data)
+        steps →
       StepStreamApprox contract spec runtime bound
-        (gradS :: gradsS) (gradR :: gradsR) (error :: errors) (stepData :: steps)
+        (#[step] ++ steps)
 
 /-- Final soundness statement associated with one finite optimizer run. -/
 def RunSound (contract : NumericalStepContract R toSpec) {s : Shape}
     (spec : SpecStep contract s) (runtime : RuntimeStep contract s) (bound : RunBound contract s)
-    (gradsS : List (Tensor ℝ s)) (gradsR : List (Tensor R s))
-    (gradErrors : List ℝ) (steps : List (contract.StepData s)) : Prop :=
-    ∃ finalBound,
-      contract.runBounds bound runtime gradsR gradErrors steps = some finalBound ∧
-        contract.stateApprox
-          (contract.runSpec spec gradsS).1
-          (contract.runRuntime runtime gradsR).1 finalBound.state ∧
-        approxTensor (α := R) (toSpec := toSpec)
-          (contract.runSpec spec gradsS).2
-          (contract.runRuntime runtime gradsR).2 finalBound.params
+    (steps : Array (StepInput contract s)) : Prop :=
+  contract.stateApprox
+      (contract.runSpec spec steps).1
+      (contract.runRuntime runtime steps).1
+      (contract.runBounds bound runtime steps).state ∧
+    approxTensor (α := R) (toSpec := toSpec)
+      (contract.runSpec spec steps).2
+      (contract.runRuntime runtime steps).2
+      (contract.runBounds bound runtime steps).params
 
 /-- A local optimizer contract composes over any finite validated gradient stream. -/
 theorem run_approx (contract : NumericalStepContract R toSpec) {s : Shape}
     {spec : SpecStep contract s} {runtime : RuntimeStep contract s}
     {bound : RunBound contract s}
-    {gradsS : List (Tensor ℝ s)} {gradsR : List (Tensor R s)} {gradErrors : List ℝ}
-    {steps : List (contract.StepData s)}
-    (hsteps : StepStreamApprox contract spec runtime bound gradsS gradsR gradErrors steps) :
+    {steps : Array (StepInput contract s)}
+    (hsteps : StepStreamApprox contract spec runtime bound steps) :
     contract.stateApprox spec.1 runtime.1 bound.state →
     approxTensor (α := R) (toSpec := toSpec) spec.2 runtime.2 bound.params →
-    RunSound contract spec runtime bound gradsS gradsR gradErrors steps := by
+    RunSound contract spec runtime bound steps := by
   cases hsteps with
-  | nil =>
+  | empty =>
       intro hstate hparams
-      exact ⟨bound, rfl, hstate, hparams⟩
-  | @cons spec runtime bound gradS gradR gradError stepData gradsS gradsR gradErrors steps
-      hgrad hvalid tail =>
+      exact ⟨hstate, hparams⟩
+  | @cons spec runtime bound step steps hgrad hvalid tail =>
       intro hstate hparams
       have hstep := contract.updateSound spec.1 runtime.1 bound.state
-        spec.2 runtime.2 bound.params gradS gradR gradError stepData
+        spec.2 runtime.2 bound.params step.gradSpec step.gradRuntime step.gradError step.data
         hstate hparams hgrad hvalid
-      exact run_approx contract
-        (spec := contract.updateSpec spec.1 spec.2 gradS)
-        (runtime := contract.updateRuntime runtime.1 runtime.2 gradR)
-        (bound := contract.updateBound bound.state bound.params gradError
-          runtime.1 runtime.2 gradR stepData)
-        (gradsS := gradsS) (gradsR := gradsR) (gradErrors := gradErrors) (steps := steps)
+      simpa [RunSound, runSpec, runRuntime, runBounds] using run_approx contract
+        (spec := contract.updateSpec spec.1 spec.2 step.gradSpec)
+        (runtime := contract.updateRuntime runtime.1 runtime.2 step.gradRuntime)
+        (bound := contract.updateBound bound.state bound.params step.gradError
+          runtime.1 runtime.2 step.gradRuntime step.data)
+        (steps := steps)
         tail hstep.1 hstep.2
-termination_by steps.length
+termination_by steps.size
+decreasing_by simp
 
 end NumericalStepContract
 

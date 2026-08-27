@@ -147,7 +147,7 @@ Flatten any tensor to a 1D vector of length `Spec.Shape.size s` (no parameters).
 
 PyTorch analogy: `torch.flatten(x)` or `x.reshape(-1)`.
 -/
-def flatten {s : Shape} : Layer s (.dim (Spec.Shape.size s) .scalar) :=
+def flatten {s : Shape} : Layer s [Spec.Shape.size s] :=
   { kind := "Flatten"
     stateShapes := []
     initState := .nil
@@ -174,7 +174,7 @@ def dropout {s : Shape} (p : Float) (seed : Nat := 0) : Layer s s :=
     stateShapes := [pShape]
     initState := .cons p0 .nil
     runtimeInit := some (.cons (.flat (FloatArray.mk #[p])) .nil)
-    requiresGrad := [false]
+    requiresGrad := #[false]
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
         fun pRef x =>

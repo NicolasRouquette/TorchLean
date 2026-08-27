@@ -52,7 +52,7 @@ internally learns `(p + 1)` parameters by augmenting the input with a trailing c
 -/
 structure LogisticRegression (p n : ℕ) (α : Type) where
   /-- `p`-dimensional weight vector `w`. -/
-  weights : Tensor α (.dim p .scalar)
+  weights : Tensor α [p]
   /-- Scalar intercept term `b`. -/
   intercept : α
 
@@ -61,14 +61,14 @@ structure LogisticRegression (p n : ℕ) (α : Type) where
 This lets us represent the affine model `X w + b` as a single matrix-vector product with a
 `(p + 1)`-vector of parameters.
 -/
-def augmentWithOnes {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar))) :
-  Tensor α (.dim n (.dim (p + 1) .scalar)) :=
+def augmentWithOnes {n p : ℕ} (X : Tensor α [n, p]) :
+  Tensor α [n, p + 1] :=
   Tensor.dim (fun i =>
-    let row := getAtSpec X ⟨i.val, i.isLt⟩
+    let row := get X ⟨i.val, i.isLt⟩
     Tensor.dim (fun j =>
       if h : j.val < p then
         -- Original features.
-        getAtSpec row ⟨j.val, h⟩
+        get row ⟨j.val, h⟩
       else
         -- Final "bias feature" (j = p).
         Tensor.scalar 1))
@@ -78,9 +78,9 @@ def augmentWithOnes {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar))) :
 This is the standard expression used for (unregularized) logistic regression under labels
 `y ∈ {0,1}`. We do not divide by `n` here; callers can rescale if they want the mean loss.
 -/
-def computeLogGradient {n p : ℕ} (X : Tensor α (.dim n (.dim (p + 1) .scalar)))
-  (y : Tensor α (.dim n .scalar)) (w : Tensor α (.dim (p + 1) .scalar)) :
-  Tensor α (.dim (p + 1) .scalar) :=
+def computeLogGradient {n p : ℕ} (X : Tensor α [n, p + 1])
+  (y : Tensor α [n]) (w : Tensor α [p + 1]) :
+  Tensor α [p + 1] :=
   let predictions := sigmoidSpec (matVecMulSpec X w)
   let error := subSpec predictions y
   vecMatMulSpec error X
@@ -91,8 +91,8 @@ This is a simple deterministic baseline that is easy to reason about. It does no
 optimized solvers (LBFGS/Newton/IRLS); it is a small reference implementation that can be
 instantiated over different scalar backends.
 -/
-def fitLogistic {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar)))
-  (y : Tensor α (.dim n .scalar)) (learning_rate : α) (iterations : Nat) :
+def fitLogistic {n p : ℕ} (X : Tensor α [n, p])
+  (y : Tensor α [n]) (learning_rate : α) (iterations : Nat) :
   LogisticRegression p n α :=
   -- Augment X with a column of ones for the intercept term
   let X_aug := augmentWithOnes X
@@ -101,8 +101,8 @@ def fitLogistic {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar)))
   let initial_weights := fill (0 : α) (.dim (p + 1) .scalar)
 
   -- Implement gradient descent (structural recursion for predictable runtime)
-  let rec gradient_descent (iter : Nat) (weights : Tensor α (.dim (p + 1) .scalar)) :
-      Tensor α (.dim (p + 1) .scalar) :=
+  let rec gradient_descent (iter : Nat) (weights : Tensor α [p + 1]) :
+      Tensor α [p + 1] :=
     match iter with
     | 0 => weights
     | Nat.succ k =>
@@ -115,14 +115,14 @@ def fitLogistic {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar)))
   let final_weights := gradient_descent iterations initial_weights
 
   -- Extract weights and intercept
-  let weights := Tensor.dim (fun i => getAtSpec final_weights ⟨i.val, Nat.lt_succ_of_lt i.isLt⟩)
-  let intercept := getAtSpec final_weights ⟨p, Nat.lt_succ_self p⟩
+  let weights := Tensor.dim (fun i => get final_weights ⟨i.val, Nat.lt_succ_of_lt i.isLt⟩)
+  let intercept := get final_weights ⟨p, Nat.lt_succ_self p⟩
 
   { weights := weights, intercept := item intercept }
 
 /-- Predict probabilities `σ(Xw + b)` for each row in `X`. -/
 def predictProba {n p : ℕ} (model : LogisticRegression p n α)
-  (X : Tensor α (.dim n (.dim p .scalar))) : Tensor α (.dim n .scalar) :=
+  (X : Tensor α [n, p]) : Tensor α [n] :=
   let linear_pred := matVecMulSpec X model.weights
   let bias_term := fill model.intercept (.dim n .scalar)
   let combined := addSpec linear_pred bias_term
@@ -130,7 +130,7 @@ def predictProba {n p : ℕ} (model : LogisticRegression p n α)
 
 /-- Convert probabilities to hard labels using a threshold (default `0.5`). -/
 def logPredict {n p : ℕ} (model : LogisticRegression p n α)
-  (X : Tensor α (.dim n (.dim p .scalar))) (threshold : α := (1 : α) / (Numbers.two : α)) :
-  Tensor α (.dim n .scalar) :=
+  (X : Tensor α [n, p]) (threshold : α := (1 : α) / (Numbers.two : α)) :
+  Tensor α [n] :=
   let probabilities := predictProba model X
   mapSpec (fun prob => if prob > threshold then (1 : α) else (0 : α)) probabilities

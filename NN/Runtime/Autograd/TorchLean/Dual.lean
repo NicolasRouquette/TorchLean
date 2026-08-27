@@ -6,8 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Proofs.Autograd.Tape.Algebra.Soundness
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
+public import NN.Tensor.Pack
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -193,14 +193,14 @@ namespace DualTensor
 
 /-- Map a tensor of primals to a tensor of duals with zero tangents. -/
 def ofPrimal {α : Type} [Zero α] : ∀ {s : Shape}, Tensor α s → Tensor (Dual α) s :=
-  fun {_s} t => Spec.mapTensor (fun a => Dual.ofPrimal a) t
+  fun {_s} t => Spec.Tensor.map (fun a => Dual.ofPrimal a) t
 
-/-- Lift a shape-indexed tensor list (`TList`) to dual numbers with zero tangents. -/
-def ofPrimalTList {α : Type} [Zero α] :
-    {ss : List Shape} → _root_.Proofs.Autograd.Algebra.TList α ss →
-      _root_.Proofs.Autograd.Algebra.TList (Dual α) ss
+/-- Lift a tensor pack to dual numbers with zero tangents. -/
+def ofPrimalPack {α : Type} [Zero α] :
+    {ss : List Shape} → TorchLean.TensorPack α ss →
+      TorchLean.TensorPack (Dual α) ss
   | [], .nil => .nil
-  | _ :: ss, .cons x xs => .cons (ofPrimal (s := _) x) (ofPrimalTList (ss := ss) xs)
+  | _ :: ss, .cons x xs => .cons (ofPrimal (s := _) x) (ofPrimalPack (ss := ss) xs)
 
 /--
 Combine a primal tensor and a tangent tensor into a dual tensor.
@@ -212,27 +212,27 @@ def withTangents {α : Type} [Context α] :
   | .scalar, .scalar x, .scalar dx => .scalar ⟨x, dx⟩
   | .dim _n s, .dim xs, .dim dxs => .dim (fun i => withTangents (s := s) (xs i) (dxs i))
 
-/-- Tensor-list version of `withTangents`. -/
-def withTangentsTList {α : Type} [Context α] :
+/-- Apply `withTangents` pointwise to a tensor pack. -/
+def withTangentsPack {α : Type} [Context α] :
     {ss : List Shape} →
-      _root_.Proofs.Autograd.Algebra.TList α ss →
-      _root_.Proofs.Autograd.Algebra.TList α ss →
-      _root_.Proofs.Autograd.Algebra.TList (Dual α) ss
+      TorchLean.TensorPack α ss →
+      TorchLean.TensorPack α ss →
+      TorchLean.TensorPack (Dual α) ss
   | [], .nil, .nil => .nil
   | _ :: ss, .cons x xs, .cons dx dxs =>
-      .cons (withTangents (s := _) x dx) (withTangentsTList (ss := ss) xs dxs)
+      .cons (withTangents (s := _) x dx) (withTangentsPack (ss := ss) xs dxs)
 
 /-- Project the tangent part of a dual tensor. -/
 def tangent {α : Type} : ∀ {s : Shape}, Tensor (Dual α) s → Tensor α s
   | .scalar, .scalar x => .scalar x.du
   | .dim _n s, .dim xs => .dim (fun i => tangent (s := s) (xs i))
 
-/-- Tensor-list version of `tangent`. -/
-def tangentTList {α : Type} :
-    {ss : List Shape} → _root_.Proofs.Autograd.Algebra.TList (Dual α) ss →
-      _root_.Proofs.Autograd.Algebra.TList α ss
+/-- Extract every tangent in a tensor pack. -/
+def tangentPack {α : Type} :
+    {ss : List Shape} → TorchLean.TensorPack (Dual α) ss →
+      TorchLean.TensorPack α ss
   | [], .nil => .nil
-  | _ :: ss, .cons x xs => .cons (tangent (s := _) x) (tangentTList (ss := ss) xs)
+  | _ :: ss, .cons x xs => .cons (tangent (s := _) x) (tangentPack (ss := ss) xs)
 
 end DualTensor
 

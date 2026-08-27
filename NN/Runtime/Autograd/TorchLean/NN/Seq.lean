@@ -54,8 +54,8 @@ Collect the gradient flags for all parameters and buffers in a sequential model.
 
 This concatenates each layer's `requiresGrad` in order. Persistent buffers carry `false`.
 -/
-def requiresGrad : {σ τ : Shape} → Seq σ τ → List Bool
-  | _, _, .id _ => []
+def requiresGrad : {σ τ : Shape} → Seq σ τ → Array Bool
+  | _, _, .id _ => #[]
   | _, _, .cons l rest => l.requiresGrad ++ requiresGrad rest
 
 /--
@@ -64,12 +64,12 @@ Initial parameter and persistent-buffer values for a sequential model.
 This concatenates each layer's `initState` into the flat state list expected by `forward` and
 the supervised module constructors.
 -/
-def initState : {σ τ : Shape} → (m : Seq σ τ) → Torch.TList Float (stateShapes m)
+def initState : {σ τ : Shape} → (m : Seq σ τ) → TorchLean.TensorPack Float (stateShapes m)
   | _, _, .id _ => .nil
   | _, _, .cons l rest =>
       let xs := l.initState
       let ys := initState rest
-      _root_.Proofs.Autograd.Algebra.TList.append (α := Float)
+      TorchLean.TensorPack.append (α := Float)
         (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) xs ys
 
 /--
@@ -174,7 +174,7 @@ def forward {σ τ : Shape} (model : Seq σ τ) (mode : Mode := .eval)
       (opts : _root_.Runtime.Autograd.Torch.Options)
       (model : Seq σ τ)
       {α : Type} [Context α] [DecidableEq Shape]
-      [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+      [tensorTransfer : _root_.Runtime.Autograd.Torch.TensorTransfer α]
       (params : _root_.Runtime.Autograd.Torch.ParamList α (stateShapes model))
       (x : Spec.Tensor α σ) (mode : Mode := .eval) : IO (Spec.Tensor α τ) := do
     -- Inference still uses the eager session machinery so it can select native kernels, but its
@@ -212,10 +212,10 @@ def forward {σ τ : Shape} (model : Seq σ τ) (mode : Mode := .eval)
       (opts : _root_.Runtime.Autograd.Torch.Options)
       (model : Seq σ τ)
       {α : Type} [Context α] [DecidableEq Shape]
-      [tensorConv : _root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+      [tensorTransfer : _root_.Runtime.Autograd.Torch.TensorTransfer α]
       (params : _root_.Runtime.Autograd.Torch.ParamList α (stateShapes model))
       (x : Spec.Tensor α σ) : IO (Spec.Tensor α τ) :=
-    forwardNoGrad (α := α) (tensorConv := tensorConv) opts model params x
+    forwardNoGrad (α := α) (tensorTransfer := tensorTransfer) opts model params x
 
   /--
   Lower a sequential model into a reusable `TypedGraph`.
@@ -243,13 +243,13 @@ PyTorch analogy: updating `running_mean` / `running_var` buffers during a forwar
 -/
 def updateBuffers {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     {α : Type} [Context α] [DecidableEq Shape]
-    (ps : Torch.TList α (stateShapes model)) (x : Tensor α σ) :
-    IO (Torch.TList α (stateShapes model)) :=
+    (ps : TorchLean.TensorPack α (stateShapes model)) (x : Tensor α σ) :
+    IO (TorchLean.TensorPack α (stateShapes model)) :=
   match model with
   | .id _ => pure .nil
   | .cons l rest => do
       let (psL, psR) :=
-        _root_.Proofs.Autograd.Algebra.TList.splitAppend
+        TorchLean.TensorPack.split
           (α := α) (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) ps
       let psL' ←
         match l.updateBuffers with
@@ -257,7 +257,7 @@ def updateBuffers {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
         | none => pure psL
       let y ← Layer.forwardTensor l mode psL' x
       let psR' ← updateBuffers mode rest psR y
-      pure <| _root_.Proofs.Autograd.Algebra.TList.append
+      pure <| TorchLean.TensorPack.append
         (α := α) (ss₁ := l.stateShapes) (ss₂ := stateShapes rest) psL' psR'
 
 /-! ## Scalar objectives -/
@@ -273,7 +273,7 @@ the loss from one `(input, target)` pair.
 def createWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     (loss : ∀ {α : Type}, [Context α] → [DecidableEq Shape] → TorchLean.Program α [τ, τ]
       Shape.scalar) :
-    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef Unit (stateShapes model) [σ, τ] :=
   { initState := initState model
     runtimeInit := runtimeInit? model
     requiresGrad := requiresGrad model
@@ -297,13 +297,13 @@ def createWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
 def create {σ τ : Shape} (model : Seq σ τ)
     (loss : ∀ {α : Type}, [Context α] → [DecidableEq Shape] → TorchLean.Program α [τ, τ]
       Shape.scalar) :
-    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef Unit (stateShapes model) [σ, τ] :=
   createWithMode .train model loss
 
 /-- Pair a model with mean-squared error in an explicit layer mode. -/
 def mseWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     (reduction : TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef Unit (stateShapes model) [σ, τ] :=
   createWithMode mode (model := model) (loss := fun {α} _ _ =>
     fun {m} _ _ =>
       fun yhat y => TorchLean.Loss.mse (m := m) (α := α) (s := τ) yhat y (reduction := reduction))
@@ -311,14 +311,14 @@ def mseWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
 /-- Pair a model with mean-squared error in training mode. -/
 def mse {σ τ : Shape} (model : Seq σ τ) (reduction : TorchLean.Loss.Reduction :=
   .mean) :
-    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef Unit (stateShapes model) [σ, τ] :=
   mseWithMode .train model reduction
 
 /-- Pair a model with one-hot cross entropy in an explicit layer mode. -/
 def oneHotCrossEntropyWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
     (axis : Nat) [Shape.AxisInBounds axis τ]
     (reduction : TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef Unit (stateShapes model) [σ, τ] :=
   createWithMode mode (model := model) (loss := fun {α} _ _ =>
     fun {m} _ _ =>
       fun logits targetOneHot =>
@@ -330,7 +330,7 @@ def oneHotCrossEntropyWithMode {σ τ : Shape} (mode : Mode) (model : Seq σ τ)
 def oneHotCrossEntropy {σ τ : Shape} (model : Seq σ τ)
     (axis : Nat) [Shape.AxisInBounds axis τ]
     (reduction : TorchLean.Loss.Reduction := .mean) :
-    TorchLean.Module.ObjectiveDef (stateShapes model) [σ, τ] :=
+    TorchLean.Module.ObjectiveDef Unit (stateShapes model) [σ, τ] :=
   oneHotCrossEntropyWithMode .train model axis reduction
 
 end Objective

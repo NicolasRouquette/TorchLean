@@ -32,30 +32,30 @@ Train `steps` updates with an arbitrary TorchLean optimizer, cycling through `sa
 
 PyTorch comparison: analogous to using a `torch.optim.Optimizer` and calling
 `loss.backward(); opt.step()` in a loop, except here `opt.step` consumes an explicit gradient
-`TList` aligned with `paramShapes`.
+`_root_.TorchLean.TensorPack` aligned with `paramShapes`.
 -/
 def trainCycleOptim
     {α : Type} [Context α] [ToString α]
     {paramShapes inputShapes : List Shape}
-    (tr : _root_.Runtime.Autograd.Torch.ScalarTrainer α paramShapes inputShapes)
+    (tr : _root_.Runtime.Autograd.Torch.ScalarTrainer α Unit paramShapes inputShapes)
     (opt : Optim.Optimizer α paramShapes)
     (st0 : opt.State)
-    (steps : Nat) (samples : List (_root_.Runtime.Autograd.Torch.TList α inputShapes))
+    (steps : Nat) (samples : Array (TorchLean.TensorPack α inputShapes))
     (logEvery : Nat := 1) : IO opt.State := do
-  match samples with
-  | [] =>
+  match samples[0]? with
+  | none =>
       throw <| IO.userError "trainCycleOptim: empty dataset"
-  | hd :: _tl =>
+  | some first =>
       let mut st := st0
       for step in [0:steps] do
-        let xs := samples.getD (step % samples.length) hd
+        let xs := samples.getD (step % samples.size) first
         let (st', lossTensor) ←
           match ← opt.trainerStepWithLoss? tr st xs .nil with
           | some result =>
               pure result
           | none => do
               let (lossTensor, grads) ←
-                _root_.Runtime.Autograd.Torch.ScalarTrainer.lossAndGradStatePacked
+                _root_.Runtime.Autograd.Torch.ScalarTrainer.runLossAndGradState
                   (α := α) (paramShapes := paramShapes) (inputShapes := inputShapes) tr xs
                   .nil
               let _ ← tr.getState

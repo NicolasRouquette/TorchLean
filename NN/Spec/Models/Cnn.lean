@@ -15,40 +15,13 @@ public import NN.Spec.Module.Pooling
 /-!
 # Convolutional Network Specifications
 
-This file wires together a small CNN in two styles:
-
-1. A compositional `Spec.Module.Chain` description:
-
-- `Models.Cnn.spec`: `Conv2d → MaxPool2d → Conv2d → MaxPool2d → Flatten → Linear`
-- `Models.Cnn.withReluSpec`: the same architecture with ReLU after each convolution
-
-2. A fully explicit forward/backward pair (`Models.TwoBlockCnn.Model`) for the classic training setup:
-
-`Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Linear`
-
-PyTorch analogue (single image, no batch):
-
-```python
-nn.Sequential(
-  nn.Conv2d(inC, c1, (kH,kW), stride=stride1, padding=padding1),
-  nn.ReLU(),
-  nn.MaxPool2d((poolKH,poolKW), stride=poolStride1),
-  nn.Conv2d(c1, c2, (kH,kW), stride=stride2, padding=padding2),
-  nn.ReLU(),
-  nn.MaxPool2d((poolKH,poolKW), stride=poolStride2),
-  nn.Flatten(),
-  nn.Linear(c2 * H2 * W2, outDim),
-)
-```
-
-All shapes are tracked at the type level; the feature dimension for the final `LinearSpec` is
-computed as `Spec.Shape.size` of the post-pooling feature map.
-
-Both descriptions are mathematical specifications. Runtime implementations live under `NN.Runtime`.
+This module defines a two-block convolutional network over an arbitrary number of spatial axes.
+Its spatial parameters are vectors, so the same model definition applies to sequence,
+image, volume, and higher-rank data. Both the compositional module description and the explicit
+reverse-mode specification use the generic convolution and pooling operations.
 -/
 
 @[expose] public section
-
 
 namespace Models
 
@@ -59,427 +32,268 @@ open Activation
 
 namespace Cnn
 
-/-- Output size for a convolution along one spatial axis.
+/-- Spatial shape after one convolution followed by one pooling operation. -/
+def blockOutSpatial {d : Nat} (spatial kernel convStride convPadding poolKernel poolStride
+    poolPadding : Spec.Tensor Nat [d]) : Spec.Tensor Nat [d] :=
+  poolOutSpatialPad (convOutSpatial spatial kernel convStride convPadding)
+    poolKernel poolStride poolPadding
 
-The shared shape helper agrees with the usual floor formula when the kernel and stride are valid,
-and returns zero for invalid geometry instead of manufacturing a one-cell output through truncated
-natural-number subtraction.
--/
-abbrev convOut (input kernel stride padding : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim input kernel stride padding
+/-- Spatial shape after two convolution-pooling blocks. -/
+def outputSpatial {d : Nat} (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+    poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]) : Spec.Tensor Nat [d] :=
+  blockOutSpatial
+    (blockOutSpatial spatial kernel convStride₁ convPadding₁ poolKernel poolStride₁ poolPadding₁)
+    kernel convStride₂ convPadding₂ poolKernel poolStride₂ poolPadding₂
 
-/-- Output size for a pooling op along one spatial axis (no padding).
+/-- Feature-map shape after the second pooling operation. -/
+def featureShape {d : Nat} (channels : Nat)
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel poolStride₁
+      poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]) : Shape :=
+  Shape.ofList (channels ::
+    (outputSpatial spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel
+      poolStride₁ poolPadding₁ poolStride₂ poolPadding₂).toList)
 
-Matches the standard formula:
+/-- Number of scalar features presented to the linear head. -/
+def featureSize {d : Nat} (channels : Nat)
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel poolStride₁
+      poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]) : Nat :=
+  Shape.size (featureShape channels spatial kernel convStride₁ convPadding₁ convStride₂
+    convPadding₂ poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)
 
-`out = (in - k) / stride + 1`.
--/
-abbrev poolOut (input kernel stride : Nat) : Nat :=
-  Spec.poolOutDim input kernel stride 0
-
-/-- Output height after the first convolution stage. -/
-abbrev firstConvOutHeight (inH kH stride1 padding1 : Nat) : Nat :=
-  convOut inH kH stride1 padding1
-
-/-- Output width after the first convolution stage. -/
-abbrev firstConvOutWidth (inW kW stride1 padding1 : Nat) : Nat :=
-  convOut inW kW stride1 padding1
-
-/-- Output height after the first pooling stage. -/
-abbrev firstPoolOutHeight (inH kH stride1 padding1 poolKH poolStride1 : Nat) : Nat :=
-  poolOut (firstConvOutHeight inH kH stride1 padding1) poolKH poolStride1
-
-/-- Output width after the first pooling stage. -/
-abbrev firstPoolOutWidth (inW kW stride1 padding1 poolKW poolStride1 : Nat) : Nat :=
-  poolOut (firstConvOutWidth inW kW stride1 padding1) poolKW poolStride1
-
-/-- Output height after the second convolution stage (after pool1). -/
-abbrev secondConvOutHeight (inH kH stride1 padding1 stride2 padding2 poolKH poolStride1 : Nat) : Nat :=
-  convOut (firstPoolOutHeight inH kH stride1 padding1 poolKH poolStride1) kH stride2 padding2
-
-/-- Output width after the second convolution stage (after pool1). -/
-abbrev secondConvOutWidth (inW kW stride1 padding1 stride2 padding2 poolKW poolStride1 : Nat) : Nat :=
-  convOut (firstPoolOutWidth inW kW stride1 padding1 poolKW poolStride1) kW stride2 padding2
-
-/-- Output height after the second pooling stage. -/
-abbrev secondPoolOutHeight (inH kH stride1 padding1 stride2 padding2 poolKH poolStride1 poolStride2 : Nat) : Nat
-  :=
-  poolOut (secondConvOutHeight inH kH stride1 padding1 stride2 padding2 poolKH poolStride1) poolKH poolStride2
-
-/-- Output width after the second pooling stage. -/
-abbrev secondPoolOutWidth (inW kW stride1 padding1 stride2 padding2 poolKW poolStride1 poolStride2 : Nat) : Nat
-  :=
-  poolOut (secondConvOutWidth inW kW stride1 padding1 stride2 padding2 poolKW poolStride1) poolKW poolStride2
-
-/-- Feature-map shape after the second pooling stage: `(c2, H2, W2)`. -/
-abbrev featShape
-  (c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1 poolStride2 : Nat) :
-    Shape :=
-  Shape.dim c2
-    (.dim (secondPoolOutHeight inH kH stride1 padding1 stride2 padding2 poolKH poolStride1 poolStride2)
-      (.dim (secondPoolOutWidth inW kW stride1 padding1 stride2 padding2 poolKW poolStride1 poolStride2)
-        .scalar))
-
-/-- Flattened feature size after the second pooling stage: `c2 * H2 * W2`. -/
-abbrev featSize
-  (c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1 poolStride2 : Nat) :
-    Nat :=
-  Spec.Shape.size (featShape c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-    poolStride2)
-
-/--
-CNN `Spec.Module.Chain` wiring (no activations): `Conv2d -> MaxPool2d -> Conv2d -> MaxPool2d -> Flatten ->
-  Linear`.
-
-Use `withReluSpec` for the ReLU-after-convolution variant.
--/
-def spec
-  {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-  {inC outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1 poolStride2 :
-    Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0} {h4 : outC ≠ 0} {h5 : poolKH ≠ 0} {h6 : poolKW ≠ 0}
-  {hPoolStride1 : poolStride1 ≠ 0} {hPoolStride2 : poolStride2 ≠ 0}
-  (conv1Spec : Conv2dSpec inC outC kH kW stride1 padding1 α h1 h2 h3)
-  (conv2Spec : Conv2dSpec outC outC kH kW stride2 padding2 α h4 h2 h3)
-  (pool1Spec : MaxPool2dSpec poolKH poolKW poolStride1 h5 h6 hPoolStride1)
-  (pool2Spec : MaxPool2dSpec poolKH poolKW poolStride2 h5 h6 hPoolStride2)
-  (linearSpec :
-    LinearSpec α
-      (Cnn.featSize outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-        poolStride2)
-      outC) :
-  Spec.Module.Chain α (.dim inC (.dim inH (.dim inW .scalar))) (.dim outC .scalar) :=
-
-  -- Create module specs
-  let conv1Module := Spec.Module.conv2d conv1Spec
-  let pool1Module := Spec.Module.maxPool2d pool1Spec
-  let conv2Module := Spec.Module.conv2d conv2Spec
-  let pool2Module := Spec.Module.maxPool2d pool2Spec
-  let flattenModule :=
-    Spec.Module.flatten α (Cnn.featShape outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH
-      poolKW poolStride1 poolStride2)
-  let linearModule := Spec.Module.linear linearSpec
-
-  -- Compose the chain: Conv1 → Pool1 → Conv2 → Pool2 → Flatten → Linear
-  Spec.Module.Chain.single conv1Module
-    |>.append pool1Module
-    |>.append conv2Module
-    |>.append pool2Module
+/-- Two convolution-pooling blocks followed by a linear head. -/
+def spec {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+    {d inChannels hiddenChannels outputSize : Nat}
+    {spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel poolStride₁
+      poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]}
+    {hPoolKernel : ∀ i : Fin d, poolKernel.getScalar i ≠ 0}
+    {hPoolStride₁ : ∀ i : Fin d, poolStride₁.getScalar i ≠ 0}
+    {hPoolStride₂ : ∀ i : Fin d, poolStride₂.getScalar i ≠ 0}
+    (conv₁ : ConvSpec d inChannels hiddenChannels kernel convStride₁ convPadding₁ α)
+    (conv₂ : ConvSpec d hiddenChannels hiddenChannels kernel convStride₂ convPadding₂ α)
+    (pool₁ : MaxPoolSpec d poolKernel poolStride₁ poolPadding₁ hPoolKernel hPoolStride₁)
+    (pool₂ : MaxPoolSpec d poolKernel poolStride₂ poolPadding₂ hPoolKernel hPoolStride₂)
+    (head : LinearSpec α
+      (featureSize hiddenChannels spatial kernel convStride₁ convPadding₁ convStride₂
+        convPadding₂ poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)
+      outputSize) :
+    Spec.Module.Chain α (Shape.ofList (inChannels :: spatial.toList))
+      (.dim outputSize .scalar) :=
+  let convSpatial₁ := convOutSpatial spatial kernel convStride₁ convPadding₁
+  let pooledSpatial₁ := poolOutSpatialPad convSpatial₁ poolKernel poolStride₁ poolPadding₁
+  let convSpatial₂ := convOutSpatial pooledSpatial₁ kernel convStride₂ convPadding₂
+  let pooledSpatial₂ := poolOutSpatialPad convSpatial₂ poolKernel poolStride₂ poolPadding₂
+  let convModule₁ : Spec.Module α (Shape.ofList (inChannels :: spatial.toList))
+      (Shape.ofList (hiddenChannels :: convSpatial₁.toList)) := Spec.Module.conv conv₁
+  let poolModule₁ : Spec.Module α (Shape.ofList (hiddenChannels :: convSpatial₁.toList))
+      (Shape.ofList (hiddenChannels :: pooledSpatial₁.toList)) := Spec.Module.maxPool pool₁
+  let convModule₂ : Spec.Module α (Shape.ofList (hiddenChannels :: pooledSpatial₁.toList))
+      (Shape.ofList (hiddenChannels :: convSpatial₂.toList)) := Spec.Module.conv conv₂
+  let poolModule₂ : Spec.Module α (Shape.ofList (hiddenChannels :: convSpatial₂.toList))
+      (Shape.ofList (hiddenChannels :: pooledSpatial₂.toList)) := Spec.Module.maxPool pool₂
+  let flattenModule := Spec.Module.flatten α (Shape.ofList (hiddenChannels :: pooledSpatial₂.toList))
+  let headModule := Spec.Module.linear head
+  Spec.Module.Chain.single convModule₁
+    |>.append poolModule₁
+    |>.append convModule₂
+    |>.append poolModule₂
     |>.append flattenModule
-    |>.append linearModule
+    |>.append headModule
 
-/-- A CNN `Spec.Module.Chain` with ReLU after each convolution.
-
-PyTorch analogy: insert `nn.ReLU()` between the conv and pool blocks.
--/
-def withReluSpec
-  {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-  {inC outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1 poolStride2 :
-    Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0} {h4 : outC ≠ 0} {h5 : poolKH ≠ 0} {h6 : poolKW ≠ 0}
-  {hPoolStride1 : poolStride1 ≠ 0} {hPoolStride2 : poolStride2 ≠ 0}
-  (conv1Spec : Conv2dSpec inC outC kH kW stride1 padding1 α h1 h2 h3)
-  (conv2Spec : Conv2dSpec outC outC kH kW stride2 padding2 α h4 h2 h3)
-  (pool1Spec : MaxPool2dSpec poolKH poolKW poolStride1 h5 h6 hPoolStride1)
-  (pool2Spec : MaxPool2dSpec poolKH poolKW poolStride2 h5 h6 hPoolStride2)
-  (linearSpec :
-    LinearSpec α
-      (Cnn.featSize outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-        poolStride2)
-      outC) :
-  Spec.Module.Chain α (.dim inC (.dim inH (.dim inW .scalar))) (.dim outC .scalar) :=
-
-  -- Create module specs
-  let conv1Module := Spec.Module.conv2d conv1Spec
-  let relu1Module :=
-    Spec.Module.relu (α := α)
-      (.dim outC
-        (.dim (Cnn.firstConvOutHeight inH kH stride1 padding1)
-          (.dim (Cnn.firstConvOutWidth inW kW stride1 padding1) .scalar)))
-  let pool1Module := Spec.Module.maxPool2d pool1Spec
-  let conv2Module := Spec.Module.conv2d conv2Spec
-  let relu2Module :=
-    Spec.Module.relu (α := α)
-      (.dim outC
-        (.dim (Cnn.secondConvOutHeight inH kH stride1 padding1 stride2 padding2 poolKH poolStride1)
-          (.dim (Cnn.secondConvOutWidth inW kW stride1 padding1 stride2 padding2 poolKW poolStride1) .scalar)))
-  let pool2Module := Spec.Module.maxPool2d pool2Spec
-  let flattenModule :=
-    Spec.Module.flatten α (Cnn.featShape outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH
-      poolKW poolStride1 poolStride2)
-  let linearModule := Spec.Module.linear linearSpec
-
-  -- Compose the chain: Conv1 → ReLU1 → Pool1 → Conv2 → ReLU2 → Pool2 → Flatten → Linear
-  Spec.Module.Chain.single conv1Module
-    |>.append relu1Module
-    |>.append pool1Module
-    |>.append conv2Module
-    |>.append relu2Module
-    |>.append pool2Module
+/-- The same network with ReLU after each convolution. -/
+def withReluSpec {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+    {d inChannels hiddenChannels outputSize : Nat}
+    {spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel poolStride₁
+      poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]}
+    {hPoolKernel : ∀ i : Fin d, poolKernel.getScalar i ≠ 0}
+    {hPoolStride₁ : ∀ i : Fin d, poolStride₁.getScalar i ≠ 0}
+    {hPoolStride₂ : ∀ i : Fin d, poolStride₂.getScalar i ≠ 0}
+    (conv₁ : ConvSpec d inChannels hiddenChannels kernel convStride₁ convPadding₁ α)
+    (conv₂ : ConvSpec d hiddenChannels hiddenChannels kernel convStride₂ convPadding₂ α)
+    (pool₁ : MaxPoolSpec d poolKernel poolStride₁ poolPadding₁ hPoolKernel hPoolStride₁)
+    (pool₂ : MaxPoolSpec d poolKernel poolStride₂ poolPadding₂ hPoolKernel hPoolStride₂)
+    (head : LinearSpec α
+      (featureSize hiddenChannels spatial kernel convStride₁ convPadding₁ convStride₂
+        convPadding₂ poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)
+      outputSize) :
+    Spec.Module.Chain α (Shape.ofList (inChannels :: spatial.toList))
+      (.dim outputSize .scalar) :=
+  let convSpatial₁ := convOutSpatial spatial kernel convStride₁ convPadding₁
+  let pooledSpatial₁ := poolOutSpatialPad convSpatial₁ poolKernel poolStride₁ poolPadding₁
+  let convSpatial₂ := convOutSpatial pooledSpatial₁ kernel convStride₂ convPadding₂
+  let pooledSpatial₂ := poolOutSpatialPad convSpatial₂ poolKernel poolStride₂ poolPadding₂
+  let convModule₁ : Spec.Module α (Shape.ofList (inChannels :: spatial.toList))
+      (Shape.ofList (hiddenChannels :: convSpatial₁.toList)) := Spec.Module.conv conv₁
+  let reluModule₁ := Spec.Module.relu (α := α)
+    (Shape.ofList (hiddenChannels :: convSpatial₁.toList))
+  let poolModule₁ : Spec.Module α (Shape.ofList (hiddenChannels :: convSpatial₁.toList))
+      (Shape.ofList (hiddenChannels :: pooledSpatial₁.toList)) := Spec.Module.maxPool pool₁
+  let convModule₂ : Spec.Module α (Shape.ofList (hiddenChannels :: pooledSpatial₁.toList))
+      (Shape.ofList (hiddenChannels :: convSpatial₂.toList)) := Spec.Module.conv conv₂
+  let reluModule₂ := Spec.Module.relu (α := α)
+    (Shape.ofList (hiddenChannels :: convSpatial₂.toList))
+  let poolModule₂ : Spec.Module α (Shape.ofList (hiddenChannels :: convSpatial₂.toList))
+      (Shape.ofList (hiddenChannels :: pooledSpatial₂.toList)) := Spec.Module.maxPool pool₂
+  let flattenModule := Spec.Module.flatten α (Shape.ofList (hiddenChannels :: pooledSpatial₂.toList))
+  let headModule := Spec.Module.linear head
+  Spec.Module.Chain.single convModule₁
+    |>.append reluModule₁
+    |>.append poolModule₁
+    |>.append convModule₂
+    |>.append reluModule₂
+    |>.append poolModule₂
     |>.append flattenModule
-    |>.append linearModule
+    |>.append headModule
 
-/-- Evaluate `spec` on one input tensor. -/
-def forward
-  {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-  {inC outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1 poolStride2 :
-    Nat}
-  {h1 : inC ≠ 0} {h2 : kH ≠ 0} {h3 : kW ≠ 0} {h4 : outC ≠ 0} {h5 : poolKH ≠ 0} {h6 : poolKW ≠ 0}
-  {hPoolStride1 : poolStride1 ≠ 0} {hPoolStride2 : poolStride2 ≠ 0}
-  (conv1Spec : Conv2dSpec inC outC kH kW stride1 padding1 α h1 h2 h3)
-  (conv2Spec : Conv2dSpec outC outC kH kW stride2 padding2 α h4 h2 h3)
-  (pool1Spec : MaxPool2dSpec poolKH poolKW poolStride1 h5 h6 hPoolStride1)
-  (pool2Spec : MaxPool2dSpec poolKH poolKW poolStride2 h5 h6 hPoolStride2)
-  (linearSpec :
-    LinearSpec α
-      (Cnn.featSize outC inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-        poolStride2)
-      outC)
-  (x : Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  Tensor α (.dim outC .scalar) :=
-  let net := spec conv1Spec conv2Spec pool1Spec pool2Spec linearSpec
-  Spec.Module.Chain.forward (α := α) net x
+/-- Evaluate a convolutional chain on one input tensor. -/
+def forward {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+    {d inChannels hiddenChannels outputSize : Nat}
+    {spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel poolStride₁
+      poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]}
+    {hPoolKernel : ∀ i : Fin d, poolKernel.getScalar i ≠ 0}
+    {hPoolStride₁ : ∀ i : Fin d, poolStride₁.getScalar i ≠ 0}
+    {hPoolStride₂ : ∀ i : Fin d, poolStride₂.getScalar i ≠ 0}
+    (conv₁ : ConvSpec d inChannels hiddenChannels kernel convStride₁ convPadding₁ α)
+    (conv₂ : ConvSpec d hiddenChannels hiddenChannels kernel convStride₂ convPadding₂ α)
+    (pool₁ : MaxPoolSpec d poolKernel poolStride₁ poolPadding₁ hPoolKernel hPoolStride₁)
+    (pool₂ : MaxPoolSpec d poolKernel poolStride₂ poolPadding₂ hPoolKernel hPoolStride₂)
+    (head : LinearSpec α
+      (featureSize hiddenChannels spatial kernel convStride₁ convPadding₁ convStride₂
+        convPadding₂ poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)
+      outputSize)
+    (x : Tensor α (Shape.ofList (inChannels :: spatial.toList))) :
+    Tensor α [outputSize] :=
+  (spec conv₁ conv₂ pool₁ pool₂ head).forward x
 
 end Cnn
-
-/-!
-## A fully explicit CNN spec with backward pass
-
-The `Spec.Module.Chain` wiring above describes composition. The model below also gives an explicit
-reverse-mode specification that returns parameter gradients.
-
-The code below defines a small CNN in the classic:
-
-`Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Linear`
-
-form, with a complete backward pass using the per-layer backward specifications:
-- `conv2dBackwardSpec`,
-- `maxPool2dMultiBackwardSpec`,
-- `linearBackwardSpec`,
-- elementwise gating for ReLU.
--/
 
 namespace TwoBlockCnn
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
-/-!
-### Configuration
-
-`Config` records the architectural choices shared by the model, its forward pass, and its backward
-pass.
--/
-
-/-- Hyperparameters for the small 2-layer CNN (`Model`). -/
-structure Config where
-  /-- Number of channels produced by the first convolution. -/
+/-- Hyperparameters for a two-block convolutional network of spatial rank `d`. -/
+structure Config (d : Nat) where
   conv1Channels : Nat := 32
-  /-- Number of channels produced by the second convolution. -/
   conv2Channels : Nat := 64
-  /-- Width of the linear output. -/
   outputSize : Nat := 10
+  kernel : Spec.Tensor Nat [d] := Spec.fill 3 [d]
+  conv1Stride : Spec.Tensor Nat [d] := Spec.fill 1 [d]
+  conv1Padding : Spec.Tensor Nat [d] := Spec.fill 1 [d]
+  conv2Stride : Spec.Tensor Nat [d] := Spec.fill 1 [d]
+  conv2Padding : Spec.Tensor Nat [d] := Spec.fill 1 [d]
+  poolKernel : Spec.Tensor Nat [d] := Spec.fill 2 [d]
+  poolStride1 : Spec.Tensor Nat [d] := Spec.fill 2 [d]
+  poolPadding1 : Spec.Tensor Nat [d] := Spec.fill 0 [d]
+  poolStride2 : Spec.Tensor Nat [d] := Spec.fill 2 [d]
+  poolPadding2 : Spec.Tensor Nat [d] := Spec.fill 0 [d]
 
-  /-- Convolution kernel height. -/
-  kernelHeight : Nat := 3
-  /-- Convolution kernel width. -/
-  kernelWidth : Nat := 3
-  /-- Stride of the first convolution. -/
-  conv1Stride : Nat := 1
-  /-- Padding of the first convolution. -/
-  conv1Padding : Nat := 1
-  /-- Stride of the second convolution. -/
-  conv2Stride : Nat := 1
-  /-- Padding of the second convolution. -/
-  conv2Padding : Nat := 1
-
-  /-- Pooling kernel height. -/
-  poolKernelHeight : Nat := 2
-  /-- Pooling kernel width. -/
-  poolKernelWidth : Nat := 2
-  /-- Stride of the first pooling op. -/
-  poolStride1 : Nat := 2
-  /-- Stride of the second pooling op. -/
-  poolStride2 : Nat := 2
-
-/-- Conditions required by the convolution and pooling specifications. -/
-structure Config.WF (cfg : Config) : Prop where
+/-- Conditions needed by convolutional and pooling implementations. -/
+structure Config.WF {d : Nat} (cfg : Config d) : Prop where
   conv1Channels_ne_zero : cfg.conv1Channels ≠ 0
   conv2Channels_ne_zero : cfg.conv2Channels ≠ 0
   outputSize_ne_zero : cfg.outputSize ≠ 0
-  kernelHeight_ne_zero : cfg.kernelHeight ≠ 0
-  kernelWidth_ne_zero : cfg.kernelWidth ≠ 0
-  poolKernelHeight_ne_zero : cfg.poolKernelHeight ≠ 0
-  poolKernelWidth_ne_zero : cfg.poolKernelWidth ≠ 0
-  poolStride1_ne_zero : cfg.poolStride1 ≠ 0
-  poolStride2_ne_zero : cfg.poolStride2 ≠ 0
+  kernel_ne_zero : ∀ i : Fin d, cfg.kernel.getScalar i ≠ 0
+  conv1Stride_ne_zero : ∀ i : Fin d, cfg.conv1Stride.getScalar i ≠ 0
+  conv2Stride_ne_zero : ∀ i : Fin d, cfg.conv2Stride.getScalar i ≠ 0
+  poolKernel_ne_zero : ∀ i : Fin d, cfg.poolKernel.getScalar i ≠ 0
+  poolStride1_ne_zero : ∀ i : Fin d, cfg.poolStride1.getScalar i ≠ 0
+  poolStride2_ne_zero : ∀ i : Fin d, cfg.poolStride2.getScalar i ≠ 0
 
-/-- A small two-block CNN configuration. -/
-def defaultConfig : Config := {}
+/-- The default configuration at any spatial rank. -/
+def defaultConfig (d : Nat) : Config d := {}
 
-/-- `defaultConfig` is well-formed. -/
-theorem defaultConfig_wf : defaultConfig.WF := by
-  refine
-    { conv1Channels_ne_zero := by decide
-      conv2Channels_ne_zero := by decide
-      outputSize_ne_zero := by decide
-      kernelHeight_ne_zero := by decide
-      kernelWidth_ne_zero := by decide
-      poolKernelHeight_ne_zero := by decide
-      poolKernelWidth_ne_zero := by decide
-      poolStride1_ne_zero := by decide
-      poolStride2_ne_zero := by decide }
+/-- The default configuration is well formed. -/
+theorem defaultConfig_wf (d : Nat) : (defaultConfig d).WF := by
+  constructor
+  · simp [defaultConfig]
+  · simp [defaultConfig]
+  · simp [defaultConfig]
+  · intro i
+    simp [defaultConfig]
+  · intro i
+    simp [defaultConfig]
+  · intro i
+    simp [defaultConfig]
+  · intro i
+    simp [defaultConfig]
+  · intro i
+    simp [defaultConfig]
+  · intro i
+    simp [defaultConfig]
 
-/-- A two-block CNN with an explicit linear head.
+/-- A generic two-block convolutional network with an explicit linear head. -/
+structure Model {d : Nat} (cfg : Config d) (inChannels : Nat) (spatial : Spec.Tensor Nat [d])
+    (α : Type) (hCfg : cfg.WF) where
+  conv1 : ConvSpec d inChannels cfg.conv1Channels cfg.kernel cfg.conv1Stride cfg.conv1Padding α
+  conv2 : ConvSpec d cfg.conv1Channels cfg.conv2Channels cfg.kernel cfg.conv2Stride
+    cfg.conv2Padding α
+  pool1 : MaxPoolSpec d cfg.poolKernel cfg.poolStride1 cfg.poolPadding1
+    hCfg.poolKernel_ne_zero hCfg.poolStride1_ne_zero
+  pool2 : MaxPoolSpec d cfg.poolKernel cfg.poolStride2 cfg.poolPadding2
+    hCfg.poolKernel_ne_zero hCfg.poolStride2_ne_zero
+  head : LinearSpec α
+    (Cnn.featureSize cfg.conv2Channels spatial cfg.kernel cfg.conv1Stride cfg.conv1Padding
+      cfg.conv2Stride cfg.conv2Padding cfg.poolKernel cfg.poolStride1 cfg.poolPadding1
+      cfg.poolStride2 cfg.poolPadding2)
+    cfg.outputSize
 
-Parameters:
+/-- Parameter gradients for `Model`. -/
+structure Grads {d : Nat} (cfg : Config d) (inChannels : Nat) (spatial : Spec.Tensor Nat [d])
+    (α : Type) where
+  conv1Kernel : Tensor α (Shape.ofList (cfg.conv1Channels :: inChannels :: cfg.kernel.toList))
+  conv1Bias : Tensor α [cfg.conv1Channels]
+  conv2Kernel : Tensor α
+    (Shape.ofList (cfg.conv2Channels :: cfg.conv1Channels :: cfg.kernel.toList))
+  conv2Bias : Tensor α [cfg.conv2Channels]
+  headWeight : Tensor α [cfg.outputSize, Cnn.featureSize cfg.conv2Channels spatial cfg.kernel cfg.conv1Stride cfg.conv1Padding
+      cfg.conv2Stride cfg.conv2Padding cfg.poolKernel cfg.poolStride1 cfg.poolPadding1
+      cfg.poolStride2 cfg.poolPadding2]
+  headBias : Tensor α [cfg.outputSize]
 
-- `conv1 : Conv2d(inC -> conv1Channels)`
-- `conv2 : Conv2d(conv1Channels -> conv2Channels)`
-- `pool1`, `pool2 : MaxPool2d` (no padding in this spec)
-- `head : Linear(conv2Channels * H2 * W2 -> outputSize)`
+/-- Forward pass for `Model`. -/
+def Model.forward {d : Nat} {cfg : Config d} {inChannels : Nat} {spatial : Spec.Tensor Nat [d]}
+    {hCfg : cfg.WF} (m : Model cfg inChannels spatial α hCfg)
+    (x : Tensor α (Shape.ofList (inChannels :: spatial.toList))) :
+    Tensor α [cfg.outputSize] :=
+  let y₁ := convSpec m.conv1 x
+  let r₁ := reluSpec y₁
+  let p₁ := maxPoolSpec m.pool1 r₁
+  let y₂ := convSpec m.conv2 p₁
+  let r₂ := reluSpec y₂
+  let p₂ := maxPoolSpec m.pool2 r₂
+  linearSpec m.head (Tensor.flattenSpec p₂)
 
-PyTorch analogue:
-
-`Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Linear`.
-
-This structure is used by `forward` and `backward` below.
--/
-structure Model
-  (cfg : Config) (inC inH inW : Nat)
-  (α : Type)
-  (hInC : inC ≠ 0) (hCfg : cfg.WF) where
-  conv1 :
-    Spec.Conv2dSpec inC cfg.conv1Channels cfg.kernelHeight cfg.kernelWidth cfg.conv1Stride cfg.conv1Padding α hInC hCfg.kernelHeight_ne_zero hCfg.kernelWidth_ne_zero
-  conv2 :
-    Spec.Conv2dSpec cfg.conv1Channels cfg.conv2Channels cfg.kernelHeight cfg.kernelWidth cfg.conv2Stride cfg.conv2Padding α hCfg.conv1Channels_ne_zero hCfg.kernelHeight_ne_zero
-      hCfg.kernelWidth_ne_zero
-  pool1 :
-    Spec.MaxPool2dSpec cfg.poolKernelHeight cfg.poolKernelWidth cfg.poolStride1 hCfg.poolKernelHeight_ne_zero hCfg.poolKernelWidth_ne_zero
-      hCfg.poolStride1_ne_zero
-  pool2 :
-    Spec.MaxPool2dSpec cfg.poolKernelHeight cfg.poolKernelWidth cfg.poolStride2 hCfg.poolKernelHeight_ne_zero hCfg.poolKernelWidth_ne_zero
-      hCfg.poolStride2_ne_zero
-  head :
-    Spec.LinearSpec α
-      (Cnn.featSize cfg.conv2Channels inH inW cfg.kernelHeight cfg.kernelWidth cfg.conv1Stride cfg.conv1Padding cfg.conv2Stride cfg.conv2Padding
-        cfg.poolKernelHeight cfg.poolKernelWidth cfg.poolStride1 cfg.poolStride2)
-      cfg.outputSize
-
-/-- Gradients for `Model` parameters (returned by `Model.backward`). -/
-structure Grads
-  (cfg : Config) (inC inH inW : Nat)
-  (α : Type) where
-  conv1Kernel : Tensor α (.dim cfg.conv1Channels (.dim inC (.dim cfg.kernelHeight (.dim cfg.kernelWidth .scalar))))
-  conv1Bias : Tensor α (.dim cfg.conv1Channels .scalar)
-  conv2Kernel : Tensor α (.dim cfg.conv2Channels (.dim cfg.conv1Channels (.dim cfg.kernelHeight (.dim cfg.kernelWidth .scalar))))
-  conv2Bias : Tensor α (.dim cfg.conv2Channels .scalar)
-  headWeight :
-    Tensor α (.dim cfg.outputSize (.dim (Cnn.featSize cfg.conv2Channels inH inW cfg.kernelHeight cfg.kernelWidth cfg.conv1Stride cfg.conv1Padding
-      cfg.conv2Stride cfg.conv2Padding cfg.poolKernelHeight cfg.poolKernelWidth cfg.poolStride1 cfg.poolStride2) .scalar))
-  headBias : Tensor α (.dim cfg.outputSize .scalar)
-
-/-- Forward pass for `Model`.
-
-This definition evaluates the layer specifications directly rather than through `Spec.Module.Chain`.
--/
-def Model.forward
-  {cfg : Config} {inC inH inW : Nat}
-  {hInC : inC ≠ 0} {hCfg : cfg.WF}
-  (m : Model (α := α) cfg inC inH inW hInC hCfg)
-  (x : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  Tensor α (.dim cfg.outputSize .scalar) :=
-  let y1 := Spec.conv2dSpec (α := α) m.conv1 x
-  let r1 := Activation.reluSpec y1
-  let p1 := Spec.maxPool2dMultiSpec (α := α) (layer := m.pool1) (input := r1)
-  let y2 := Spec.conv2dSpec (α := α) m.conv2 p1
-  let r2 := Activation.reluSpec y2
-  let p2 := Spec.maxPool2dMultiSpec (α := α) (layer := m.pool2) (input := r2)
-  let flat := Tensor.flattenSpec p2
-  Spec.linearSpec (α := α) m.head flat
-
-/-- Backward pass (reverse-mode / VJP) for `Model`.
-
-Returns parameter gradients plus the input gradient.
-
-Each step uses the corresponding layer backward spec:
-
-- `linearBackwardSpec`
-- `maxPool2dMultiBackwardSpec`
-- `conv2dBackwardSpec`
-
-and ReLU uses the standard pointwise gate `dY = dR ⊙ relu'(preact)`.
--/
-def Model.backward
-  {cfg : Config} {inC inH inW : Nat}
-  {hInC : inC ≠ 0} {hCfg : cfg.WF}
-  (m : Model (α := α) cfg inC inH inW hInC hCfg)
-  (x : Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar))))
-  (gradOutput : Tensor α (.dim cfg.outputSize .scalar)) :
-  (Grads cfg inC inH inW α ×
-   Spec.Tensor α (.dim inC (.dim inH (.dim inW .scalar)))) :=
-
-  -- Forward reconstruction.
-  let y1 := Spec.conv2dSpec (α := α) m.conv1 x
-  let r1 := Activation.reluSpec y1
-  let p1 := Spec.maxPool2dMultiSpec (α := α) (layer := m.pool1) (input := r1)
-  let y2 := Spec.conv2dSpec (α := α) m.conv2 p1
-  let r2 := Activation.reluSpec y2
-  let p2 := Spec.maxPool2dMultiSpec (α := α) (layer := m.pool2) (input := r2)
-  let flat := Tensor.flattenSpec p2
-
-  -- Linear head backward.
-  let (dW_head, db_head, d_flat) := Spec.linearBackwardSpec (α := α) m.head flat gradOutput
-
-  -- Unflatten back to the pooled feature map.
-  let featShape :=
-    Cnn.featShape cfg.conv2Channels inH inW cfg.kernelHeight cfg.kernelWidth cfg.conv1Stride cfg.conv1Padding cfg.conv2Stride cfg.conv2Padding
-      cfg.poolKernelHeight cfg.poolKernelWidth cfg.poolStride1 cfg.poolStride2
-
-  let d_p2 : Spec.Tensor α (.dim cfg.conv2Channels (.dim (Cnn.secondPoolOutHeight inH cfg.kernelHeight cfg.conv1Stride cfg.conv1Padding cfg.conv2Stride cfg.conv2Padding cfg.poolKernelHeight cfg.poolStride1 cfg.poolStride2) (.dim (Cnn.secondPoolOutWidth inW cfg.kernelWidth cfg.conv1Stride cfg.conv1Padding cfg.conv2Stride cfg.conv2Padding cfg.poolKernelWidth cfg.poolStride1 cfg.poolStride2) .scalar))) :=
-    Tensor.unflattenSpec featShape d_flat
-
-  -- Pool2 backward.
-  let d_r2 := Spec.maxPool2dMultiBackwardSpec (α := α) (layer := m.pool2) (input := r2)
-    (grad_output := d_p2)
-
-  -- ReLU2 backward.
-  let d_y2 := mulSpec d_r2 (Activation.reluDerivSpec y2)
-
-  -- Conv2 backward.
-  let (conv2Kernel, conv2Bias, d_p1) :=
-    Spec.conv2dBackwardSpec (α := α)
-      (inC := cfg.conv1Channels) (outC := cfg.conv2Channels) (kH := cfg.kernelHeight) (kW := cfg.kernelWidth)
-      (stride := cfg.conv2Stride) (padding := cfg.conv2Padding)
-      (inH := (Cnn.firstPoolOutHeight inH cfg.kernelHeight cfg.conv1Stride cfg.conv1Padding cfg.poolKernelHeight cfg.poolStride1))
-      (inW := (Cnn.firstPoolOutWidth inW cfg.kernelWidth cfg.conv1Stride cfg.conv1Padding cfg.poolKernelWidth cfg.poolStride1))
-      (h1 := hCfg.conv1Channels_ne_zero) (h2 := hCfg.kernelHeight_ne_zero) (h3 := hCfg.kernelWidth_ne_zero)
-      m.conv2 p1 d_y2
-
-  -- Pool1 backward.
-  let d_r1 := Spec.maxPool2dMultiBackwardSpec (α := α) (layer := m.pool1) (input := r1)
-    (grad_output := d_p1)
-
-  -- ReLU1 backward.
-  let d_y1 := mulSpec d_r1 (Activation.reluDerivSpec y1)
-
-  -- Conv1 backward.
-  let (conv1Kernel, conv1Bias, d_x) :=
-    Spec.conv2dBackwardSpec (α := α)
-      (inC := inC) (outC := cfg.conv1Channels) (kH := cfg.kernelHeight) (kW := cfg.kernelWidth)
-      (stride := cfg.conv1Stride) (padding := cfg.conv1Padding)
-      (inH := inH) (inW := inW)
-      (h1 := hInC) (h2 := hCfg.kernelHeight_ne_zero) (h3 := hCfg.kernelWidth_ne_zero)
-      m.conv1 x d_y1
-
-  let grads : Grads cfg inC inH inW α :=
-    { conv1Kernel := conv1Kernel
-      conv1Bias := conv1Bias
-      conv2Kernel := conv2Kernel
-      conv2Bias := conv2Bias
-      headWeight := dW_head
-      headBias := db_head }
-
-  (grads, d_x)
+/-- Reverse-mode parameter and input derivatives for `Model`. -/
+def Model.backward {d : Nat} {cfg : Config d} {inChannels : Nat} {spatial : Spec.Tensor Nat [d]}
+    {hCfg : cfg.WF} (m : Model cfg inChannels spatial α hCfg)
+    (x : Tensor α (Shape.ofList (inChannels :: spatial.toList)))
+    (gradOutput : Tensor α [cfg.outputSize]) :
+    Grads cfg inChannels spatial α × Tensor α (Shape.ofList (inChannels :: spatial.toList)) :=
+  let convSpatial₁ := convOutSpatial spatial cfg.kernel cfg.conv1Stride cfg.conv1Padding
+  let pooledSpatial₁ := poolOutSpatialPad convSpatial₁ cfg.poolKernel cfg.poolStride1 cfg.poolPadding1
+  let convSpatial₂ := convOutSpatial pooledSpatial₁ cfg.kernel cfg.conv2Stride cfg.conv2Padding
+  let pooledSpatial₂ := poolOutSpatialPad convSpatial₂ cfg.poolKernel cfg.poolStride2 cfg.poolPadding2
+  let y₁ := convSpec m.conv1 x
+  let r₁ := reluSpec y₁
+  let p₁ := maxPoolSpec m.pool1 r₁
+  let y₂ := convSpec m.conv2 p₁
+  let r₂ := reluSpec y₂
+  let p₂ := maxPoolSpec m.pool2 r₂
+  let flat := Tensor.flattenSpec p₂
+  let (headWeight, headBias, dFlat) := linearBackwardSpec m.head flat gradOutput
+  let featureShape := Shape.ofList (cfg.conv2Channels :: pooledSpatial₂.toList)
+  let dP₂ : Tensor α featureShape := Tensor.unflattenSpec featureShape dFlat
+  let dR₂ := maxPoolBackwardSpec m.pool2 r₂ dP₂
+  let dY₂ := mulSpec dR₂ (reluDerivSpec y₂)
+  let (conv2Kernel, conv2Bias, dP₁) := convBackwardSpec m.conv2 p₁ dY₂
+  let dR₁ := maxPoolBackwardSpec m.pool1 r₁ dP₁
+  let dY₁ := mulSpec dR₁ (reluDerivSpec y₁)
+  let (conv1Kernel, conv1Bias, dX) := convBackwardSpec m.conv1 x dY₁
+  ({ conv1Kernel := conv1Kernel
+     conv1Bias := conv1Bias
+     conv2Kernel := conv2Kernel
+     conv2Bias := conv2Bias
+     headWeight := headWeight
+     headBias := headBias }, dX)
 
 end TwoBlockCnn
 

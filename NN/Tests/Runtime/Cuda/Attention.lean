@@ -39,46 +39,46 @@ theorem hN : n ≠ 0 := by decide
 
 abbrev projDim : Nat := numHeads * headDim
 
-def wq : Tensor Float (shape![dModel, projDim]) :=
-  tensorOfList! [dModel, projDim] [
+def wq : Tensor Float [dModel, projDim] :=
+  tensorOfArray! [dModel, projDim] #[
     0.01, 0.02, 0.03, 0.04,
     0.05, 0.06, 0.07, 0.08,
     0.09, 0.10, 0.11, 0.12,
     0.13, 0.14, 0.15, 0.16
   ]
 
-def wk : Tensor Float (shape![dModel, projDim]) :=
-  tensorOfList! [dModel, projDim] [
+def wk : Tensor Float [dModel, projDim] :=
+  tensorOfArray! [dModel, projDim] #[
     0.02, 0.01, 0.04, 0.03,
     0.06, 0.05, 0.08, 0.07,
     0.10, 0.09, 0.12, 0.11,
     0.14, 0.13, 0.16, 0.15
   ]
 
-def wv : Tensor Float (shape![dModel, projDim]) :=
-  tensorOfList! [dModel, projDim] [
+def wv : Tensor Float [dModel, projDim] :=
+  tensorOfArray! [dModel, projDim] #[
     0.03, 0.00, 0.01, 0.02,
     0.00, 0.03, 0.02, 0.01,
     0.01, 0.02, 0.03, 0.00,
     0.02, 0.01, 0.00, 0.03
   ]
 
-def wo : Tensor Float (shape![projDim, dModel]) :=
-  tensorOfList! [projDim, dModel] [
+def wo : Tensor Float [projDim, dModel] :=
+  tensorOfArray! [projDim, dModel] #[
     0.05, 0.00, 0.01, 0.02,
     0.00, 0.05, 0.02, 0.01,
     0.01, 0.02, 0.05, 0.00,
     0.02, 0.01, 0.00, 0.05
   ]
 
-def x : Tensor Float (shape![n, dModel]) :=
-  tensorOfList! [n, dModel] [
+def x : Tensor Float [n, dModel] :=
+  tensorOfArray! [n, dModel] #[
     0.10, -0.20, 0.05, 0.30,
     -0.05, 0.25, -0.10, 0.15
   ]
 
-def mask : Tensor Bool (shape![n, n]) :=
-  tensorOfList! [n, n] [
+def mask : Tensor Bool [n, n] :=
+  tensorOfArray! [n, n] #[
     true,  true,
     false, true
   ]
@@ -86,20 +86,20 @@ def mask : Tensor Bool (shape![n, n]) :=
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: multi_head_attention ==="
 
-  let layoutInput : Tensor Float (shape![2, 4]) :=
-    tensorOfList! [2, 4] [0, 1, 2, 3, 4, 5, 6, 7]
+  let layoutInput : Tensor Float [2, 4] :=
+    tensorOfArray! [2, 4] #[0, 1, 2, 3, 4, 5, 6, 7]
   let split := Spec.splitHeadsSpec layoutInput 2 2 (by decide)
-  let expectedSplit : Tensor Float (shape![2, 2, 2]) :=
-    tensorOfList! [2, 2, 2] [0, 1, 4, 5, 2, 3, 6, 7]
+  let expectedSplit : Tensor Float [2, 2, 2] :=
+    tensorOfArray! [2, 2, 2] #[0, 1, 4, 5, 2, 3, 6, 7]
   Utils.assertTensorApprox "split-head row-major permutation" split expectedSplit (tol := 0)
 
-  let specScores : Tensor Float (shape![2, 2]) :=
-    tensorOfList! [2, 2] [1000.0, -1000.0, 3.0, 4.0]
-  let specMask : Tensor Bool (shape![2, 2]) :=
-    tensorOfList! [2, 2] [false, true, false, false]
+  let specScores : Tensor Float [2, 2] :=
+    tensorOfArray! [2, 2] #[1000.0, -1000.0, 3.0, 4.0]
+  let specMask : Tensor Bool [2, 2] :=
+    tensorOfArray! [2, 2] #[false, true, false, false]
   let specOut := Spec.hardMaskedSoftmaxSpec specScores specMask
   Utils.assertTensorApprox "hard-masked softmax spec"
-    specOut (tensorOfList! [2, 2] [0.0, 1.0, 0.0, 0.0])
+    specOut (tensorOfArray! [2, 2] #[0.0, 1.0, 0.0, 0.0])
 
   -- A blocked extreme score must not influence stabilization. The second row checks the explicit
   -- all-blocked convention used by both composed and fused hard-masked attention.
@@ -118,7 +118,7 @@ def run : IO Unit := do
   discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeMask
   discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeOut
 
-  let outShape : Shape := shape![n, dModel]
+  let outShape : Shape := [n, dModel]
 
   -- CPU tape
   let t0 : Tape Float := Tape.empty
@@ -132,13 +132,13 @@ def run : IO Unit := do
       (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
       (h1 := hN) wqId wkId wvId woId xId (mask := some mask))
   let yCpu ← Utils.cpuValue (s := outShape) t6 yId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape)
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (fill (1.0 : Float) outShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t6) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := outShape) gradsCpu xId
-  let dWqCpu ← Utils.cpuGrad (s := shape![dModel, projDim]) gradsCpu wqId
-  let dWkCpu ← Utils.cpuGrad (s := shape![dModel, projDim]) gradsCpu wkId
-  let dWvCpu ← Utils.cpuGrad (s := shape![dModel, projDim]) gradsCpu wvId
-  let dWoCpu ← Utils.cpuGrad (s := shape![projDim, dModel]) gradsCpu woId
+  let dWqCpu ← Utils.cpuGrad (s := [dModel, projDim]) gradsCpu wqId
+  let dWkCpu ← Utils.cpuGrad (s := [dModel, projDim]) gradsCpu wkId
+  let dWvCpu ← Utils.cpuGrad (s := [dModel, projDim]) gradsCpu wvId
+  let dWoCpu ← Utils.cpuGrad (s := [projDim, dModel]) gradsCpu woId
 
   -- CUDA tape
   let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
@@ -162,12 +162,12 @@ def run : IO Unit := do
   let gradsCuda ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t6c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := outShape) gradsCuda xIdc
-  let dWqCuda ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsCuda wqIdc
-  let dWkCuda ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsCuda wkIdc
-  let dWvCuda ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsCuda wvIdc
-  let dWoCuda ← Utils.cudaGrad (s := shape![projDim, dModel]) gradsCuda woIdc
+  let dWqCuda ← Utils.cudaGrad (s := [dModel, projDim]) gradsCuda wqIdc
+  let dWkCuda ← Utils.cudaGrad (s := [dModel, projDim]) gradsCuda wkIdc
+  let dWvCuda ← Utils.cudaGrad (s := [dModel, projDim]) gradsCuda wvIdc
+  let dWoCuda ← Utils.cudaGrad (s := [projDim, dModel]) gradsCuda woIdc
 
-  -- CUDA composed reference path: the same operation through bmm -> mask -> softmax -> bmm.
+  -- CUDA composed reference path: batched matmul, masking, softmax, and batched matmul.
   -- Keeping this in the test makes the fused native FlashAttention kernels regression-safe.
   let t0s : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
   let (t1s, wqIds) := Runtime.Autograd.Cuda.Tape.leaf (t := t0s) (Utils.tensorToAnyBuffer wq)
@@ -191,33 +191,33 @@ def run : IO Unit := do
   let gradsComposed ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t6s) yIds seedComposed)
   let dxCudaComposed ← Utils.cudaGrad (s := outShape) gradsComposed xIds
-  let dWqCudaComposed ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsComposed wqIds
-  let dWkCudaComposed ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsComposed wkIds
-  let dWvCudaComposed ← Utils.cudaGrad (s := shape![dModel, projDim]) gradsComposed wvIds
-  let dWoCudaComposed ← Utils.cudaGrad (s := shape![projDim, dModel]) gradsComposed woIds
+  let dWqCudaComposed ← Utils.cudaGrad (s := [dModel, projDim]) gradsComposed wqIds
+  let dWkCudaComposed ← Utils.cudaGrad (s := [dModel, projDim]) gradsComposed wkIds
+  let dWvCudaComposed ← Utils.cudaGrad (s := [dModel, projDim]) gradsComposed wvIds
+  let dWoCudaComposed ← Utils.cudaGrad (s := [projDim, dModel]) gradsComposed woIds
 
   -- Distinct samples are essential here: duplicated samples cannot expose a permutation that
   -- accidentally exchanges the batch and head axes.
-  let xSecond : Tensor Float (shape![n, dModel]) :=
-    tensorOfList! [n, dModel] [
+  let xSecond : Tensor Float [n, dModel] :=
+    tensorOfArray! [n, dModel] #[
       1.0, 2.0, 3.0, 1.0,
       -2.0, 1.0, 1.0, 3.0
     ]
-  let batchIdentity : Tensor Float (shape![dModel, dModel]) :=
-    tensorOfList! [dModel, dModel] [
+  let batchIdentity : Tensor Float [dModel, dModel] :=
+    tensorOfArray! [dModel, dModel] #[
       1.0, 0.0, 0.0, 0.0,
       0.0, 1.0, 0.0, 0.0,
       0.0, 0.0, 1.0, 0.0,
       0.0, 0.0, 0.0, 1.0
     ]
-  let xFirst : Tensor Float (shape![n, dModel]) :=
-    tensorOfList! [n, dModel] [
+  let xFirst : Tensor Float [n, dModel] :=
+    tensorOfArray! [n, dModel] #[
       4.0, 0.0, 1.0, 0.0,
       0.0, 4.0, 0.0, 1.0
     ]
-  let xBatch : Tensor Float (shape![2, n, dModel]) :=
-    Tensor.dim (fun i => if i.val = 0 then xFirst else xSecond)
-  let batchShape : Shape := shape![2, n, dModel]
+  let xBatch : Tensor Float [2, n, dModel] :=
+    TorchLean.Tensor.stack 0 fun i => if i.val = 0 then xFirst else xSecond
+  let batchShape : Shape := [2, n, dModel]
   let tb0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
   let (tb1, bwq) :=
     Runtime.Autograd.Cuda.Tape.leaf (t := tb0) (Utils.tensorToAnyBuffer batchIdentity)
@@ -241,10 +241,10 @@ def run : IO Unit := do
   let batchGrads ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := tb6) byId batchSeed)
   let dxBatch ← Utils.cudaGrad (s := batchShape) batchGrads bx
-  let dWqBatch ← Utils.cudaGrad (s := shape![dModel, projDim]) batchGrads bwq
-  let dWkBatch ← Utils.cudaGrad (s := shape![dModel, projDim]) batchGrads bwk
-  let dWvBatch ← Utils.cudaGrad (s := shape![dModel, projDim]) batchGrads bwv
-  let dWoBatch ← Utils.cudaGrad (s := shape![projDim, dModel]) batchGrads bwo
+  let dWqBatch ← Utils.cudaGrad (s := [dModel, projDim]) batchGrads bwq
+  let dWkBatch ← Utils.cudaGrad (s := [dModel, projDim]) batchGrads bwk
+  let dWvBatch ← Utils.cudaGrad (s := [dModel, projDim]) batchGrads bwv
+  let dWoBatch ← Utils.cudaGrad (s := [projDim, dModel]) batchGrads bwo
 
   -- The direct native kernel is an independent implementation of the same batched operation.
   -- Comparing distinct samples catches layout mistakes in the composed BMM path and its VJP.
@@ -271,10 +271,10 @@ def run : IO Unit := do
   let nativeBatchGrads ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := tn6) nyId nativeBatchSeed)
   let dxBatchNative ← Utils.cudaGrad (s := batchShape) nativeBatchGrads nx
-  let dWqBatchNative ← Utils.cudaGrad (s := shape![dModel, projDim]) nativeBatchGrads nwq
-  let dWkBatchNative ← Utils.cudaGrad (s := shape![dModel, projDim]) nativeBatchGrads nwk
-  let dWvBatchNative ← Utils.cudaGrad (s := shape![dModel, projDim]) nativeBatchGrads nwv
-  let dWoBatchNative ← Utils.cudaGrad (s := shape![projDim, dModel]) nativeBatchGrads nwo
+  let dWqBatchNative ← Utils.cudaGrad (s := [dModel, projDim]) nativeBatchGrads nwq
+  let dWkBatchNative ← Utils.cudaGrad (s := [dModel, projDim]) nativeBatchGrads nwk
+  let dWvBatchNative ← Utils.cudaGrad (s := [dModel, projDim]) nativeBatchGrads nwv
+  let dWoBatchNative ← Utils.cudaGrad (s := [projDim, dModel]) nativeBatchGrads nwo
   Utils.assertTensorApprox "batched mha forward" yBatch yBatchNative (tol := 1e-4)
   Utils.assertTensorApprox "batched mha dx" dxBatch dxBatchNative (tol := 1e-4)
   Utils.assertTensorApprox "batched mha dWq" dWqBatch dWqBatchNative (tol := 1e-4)
@@ -287,21 +287,21 @@ def run : IO Unit := do
     (tol := 2e-2)
   Utils.assertTensorApprox (s := outShape) "flash vs composed mha dx" dxCuda dxCudaComposed
     (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![dModel, projDim]) "flash vs composed mha dWq"
+  Utils.assertTensorApprox (s := [dModel, projDim]) "flash vs composed mha dWq"
     dWqCuda dWqCudaComposed (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![dModel, projDim]) "flash vs composed mha dWk"
+  Utils.assertTensorApprox (s := [dModel, projDim]) "flash vs composed mha dWk"
     dWkCuda dWkCudaComposed (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![dModel, projDim]) "flash vs composed mha dWv"
+  Utils.assertTensorApprox (s := [dModel, projDim]) "flash vs composed mha dWv"
     dWvCuda dWvCudaComposed (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![projDim, dModel]) "flash vs composed mha dWo"
+  Utils.assertTensorApprox (s := [projDim, dModel]) "flash vs composed mha dWo"
     dWoCuda dWoCudaComposed (tol := 2e-2)
 
   Utils.assertTensorApprox (s := outShape) "mha forward" yCuda yCpu (tol := 2e-2)
   Utils.assertTensorApprox (s := outShape) "mha dx" dxCuda dxCpu (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![dModel, projDim]) "mha dWq" dWqCuda dWqCpu (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![dModel, projDim]) "mha dWk" dWkCuda dWkCpu (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![dModel, projDim]) "mha dWv" dWvCuda dWvCpu (tol := 2e-2)
-  Utils.assertTensorApprox (s := shape![projDim, dModel]) "mha dWo" dWoCuda dWoCpu (tol := 2e-2)
+  Utils.assertTensorApprox (s := [dModel, projDim]) "mha dWq" dWqCuda dWqCpu (tol := 2e-2)
+  Utils.assertTensorApprox (s := [dModel, projDim]) "mha dWk" dWkCuda dWkCpu (tol := 2e-2)
+  Utils.assertTensorApprox (s := [dModel, projDim]) "mha dWv" dWvCuda dWvCpu (tol := 2e-2)
+  Utils.assertTensorApprox (s := [projDim, dModel]) "mha dWo" dWoCuda dWoCpu (tol := 2e-2)
 
 end Attention
 end Cuda

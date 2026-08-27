@@ -66,12 +66,11 @@ PyTorch analogue:
 - `torch.nn.TransformerEncoderLayer`
   (`https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html`)
 -/
-def transformerEncoderBlock (leading : Spec.Shape := .scalar) {n dModel : Nat}
+def transformerEncoderBlock (leading : List Nat := []) {n dModel : Nat}
     [NeZero n] [NeZero dModel]
     (cfg : TransformerEncoderBlock)
-    (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
-      ((leading.concat (.dim n .scalar)).appendDim dModel) :=
+    (mask : Option (Tensor Bool [n, n]) := none) :
+    Sequential (leading ++ [n, dModel]) (leading ++ [n, dModel]) := by
   let seedAttn := cfg.seedBase
   let seedNorm1Gamma := cfg.seedBase + 1
   let seedNorm1Beta := cfg.seedBase + 2
@@ -84,15 +83,15 @@ def transformerEncoderBlock (leading : Spec.Shape := .scalar) {n dModel : Nat}
   let seedDrop1 := cfg.seedBase + 9
   let seedDrop2 := cfg.seedBase + 10
 
-  let tokenLeading := leading.concat (.dim n .scalar)
-  let modelShape := tokenLeading.appendDim dModel
-  let attn : Sequential modelShape modelShape :=
-    multiHeadAttentionWith leading (n := n) (dModel := dModel)
-      { numHeads := cfg.numHeads, headDim := cfg.headDim, seedW := seedAttn,
-        outputBias := cfg.attentionOutputBias, weightInit? := cfg.weightInit?,
-        outputWeightInit? := cfg.residualOutputInit? }
-      (hN := NeZero.ne (n := n))
-      (mask := mask)
+  let tokenLeading := leading ++ [n]
+  let modelShape : Spec.Shape := tokenLeading ++ [dModel]
+  let attn : Sequential modelShape modelShape := by
+    simpa [modelShape, tokenLeading, List.append_assoc] using
+      (multiHeadAttention leading (n := n) (dModel := dModel)
+        { numHeads := cfg.numHeads, headDim := cfg.headDim, seedW := seedAttn,
+          outputBias := cfg.attentionOutputBias, weightInit? := cfg.weightInit?,
+          outputWeightInit? := cfg.residualOutputInit? }
+        (mask := mask))
   let attnInner :=
     match cfg.dropout? with
     | none => attn
@@ -106,7 +105,7 @@ def transformerEncoderBlock (leading : Spec.Shape := .scalar) {n dModel : Nat}
     seq!
       linearWith dModel cfg.ffnHidden { weightInit? := cfg.weightInit? }
         seedFfnW1 seedFfnB1 (leading := tokenLeading),
-      activation (s := tokenLeading.appendDim cfg.ffnHidden) cfg.activation,
+      activation (s := Spec.Shape.ofList (tokenLeading ++ [cfg.ffnHidden])) cfg.activation,
       linearWith cfg.ffnHidden dModel
         { weightInit? := cfg.residualOutputInit?.orElse (fun _ => cfg.weightInit?) }
         seedFfnW2 seedFfnB2 (leading := tokenLeading)
@@ -119,16 +118,18 @@ def transformerEncoderBlock (leading : Spec.Shape := .scalar) {n dModel : Nat}
     layerNorm tokenLeading (width := dModel)
       { seedGamma := seedNorm2Gamma, seedBeta := seedNorm2Beta }
 
-  if cfg.normFirst then
-    seq!
-      residual (seq! norm1, attnInner),
-      residual (seq! norm2, ffnInner)
-  else
-    seq!
-      residual attnInner,
-      norm1,
-      residual ffnInner,
-      norm2
+  let result : Sequential modelShape modelShape :=
+    if cfg.normFirst then
+      seq!
+        residual (seq! norm1, attnInner),
+        residual (seq! norm2, ffnInner)
+    else
+      seq!
+        residual attnInner,
+        norm1,
+        residual ffnInner,
+        norm2
+  simpa [modelShape, tokenLeading, List.append_assoc] using result
 
 /--
 Config record for `transformerEncoderStack`.
@@ -146,16 +147,15 @@ structure TransformerEncoderStack where
   seedStride : Nat := 100
 
 /-- Build the remaining encoder blocks, assigning each block its configured seed interval. -/
-def encoderStackLayers (leading : Spec.Shape := .scalar) {n dModel : Nat}
+def encoderStackLayers (leading : List Nat := []) {n dModel : Nat}
     [NeZero n] [NeZero dModel]
     (template : TransformerEncoderBlock) (seedBase seedStride : Nat)
-    (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
+    (mask : Option (Tensor Bool [n, n]) := none) :
     (layerIdx : Nat) → (remaining : Nat) →
-      Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
-        ((leading.concat (.dim n .scalar)).appendDim dModel)
+      Sequential (leading ++ [n, dModel]) (leading ++ [n, dModel])
   | _layerIdx, 0 =>
       _root_.Runtime.Autograd.TorchLean.NN.Seq.id
-        ((leading.concat (.dim n .scalar)).appendDim dModel)
+        (Spec.Shape.ofList (leading ++ [n, dModel]))
   | layerIdx, remaining + 1 =>
       let seed := seedBase + layerIdx * seedStride
       let blockCfg : TransformerEncoderBlock := { template with seedBase := seed }
@@ -173,12 +173,11 @@ Stack `cfg.layers` copies of `blocks.transformerEncoderBlock`.
 TorchLean analogue of composing `torch.nn.TransformerEncoderLayer` into a
 `torch.nn.TransformerEncoder`, using `Seq` composition for the typed model.
 -/
-def transformerEncoderStack (leading : Spec.Shape := .scalar) {n dModel : Nat}
+def transformerEncoderStack (leading : List Nat := []) {n dModel : Nat}
     [NeZero n] [NeZero dModel]
     (cfg : TransformerEncoderStack)
-    (mask : Option (Spec.Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
-      ((leading.concat (.dim n .scalar)).appendDim dModel) :=
+    (mask : Option (Tensor Bool [n, n]) := none) :
+    Sequential (leading ++ [n, dModel]) (leading ++ [n, dModel]) :=
   encoderStackLayers leading (n := n) (dModel := dModel)
     cfg.block cfg.seedBase cfg.seedStride (mask := mask) 0 cfg.layers
 
@@ -188,22 +187,17 @@ Transformer encoder followed by a flatten+linear classification head.
 PyTorch analogue (approximately): `nn.TransformerEncoder(...)` followed by pooling or flattening
 and `nn.Linear`.
 -/
-def transformerEncoderClassifier (leading : Spec.Shape := .scalar) {n dModel : Nat}
+def transformerEncoderClassifier (leading : List Nat := []) {n dModel : Nat}
     [NeZero n] [NeZero dModel]
     (classes : Nat) (cfg : TransformerEncoderStack) :
-    Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
-      (leading.appendDim classes) :=
+    Sequential (leading ++ [n, dModel]) (leading ++ [classes]) :=
   let enc := transformerEncoderStack leading (n := n) (dModel := dModel) cfg
   let seedHeadW := cfg.seedBase + cfg.layers * cfg.seedStride
   let seedHeadB := seedHeadW + 1
-  let flat : Sequential ((leading.concat (.dim n .scalar)).appendDim dModel)
-      (leading.appendDim (Spec.Shape.size (.dim n (.dim dModel .scalar)))) :=
-    by
-      simpa [Spec.Shape.appendDim] using
-        flattenLeading leading (s := .dim n (.dim dModel .scalar))
-  let head : Sequential (leading.appendDim (Spec.Shape.size (.dim n (.dim dModel .scalar))))
-      (leading.appendDim classes) :=
-    linear (Spec.Shape.size (.dim n (.dim dModel .scalar))) classes
+  let flat : Sequential (leading ++ [n, dModel]) (leading ++ [n * dModel]) :=
+    by simpa using flattenAfter leading (shape := [n, dModel])
+  let head : Sequential (leading ++ [n * dModel]) (leading ++ [classes]) :=
+    linear (n * dModel) classes
       (seedW := seedHeadW) (seedB := seedHeadB)
       (leading := leading)
   seq! enc, flat, head

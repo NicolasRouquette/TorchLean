@@ -36,7 +36,7 @@ open TorchLean.Floats.IEEE754.IEEE32Exec
 open TorchLean.Floats.Quantization
 
 def width : Nat := 4
-abbrev vectorShape : Spec.Shape := .dim width .scalar
+abbrev vectorShape : Spec.Shape := [width]
 
 /-- Executable binary32 tensors used by the example. -/
 def runtimeOnes : Spec.Tensor IEEE32Exec vectorShape :=
@@ -67,7 +67,7 @@ noncomputable def specSum : Spec.Tensor FP32 vectorShape :=
 
 /-- Every proof-oriented tensor entry exposes the effective nearest-even representation. -/
 theorem specSum_entry_computed (i : Fin width) :
-    FP32.toReal (Spec.Tensor.vecGet specSum i) =
+    FP32.toReal (Spec.Tensor.item (Spec.get specSum i)) =
       neuralToReal (β := binaryRadix) {
         mantissa := neuralNearestEvenMantissa
           (neuralScaledMantissa binaryRadix fexp32 (specOne.val + specTwo.val))
@@ -80,7 +80,7 @@ Every executable tensor entry reaches the same effective representation once fin
 The finiteness premise is discharged by computation for the concrete $1+2$ example.
 -/
 theorem runtimeSum_entry_computed (i : Fin width) :
-    toReal (Spec.Tensor.vecGet runtimeSum i) =
+    toReal (Spec.Tensor.item (Spec.get runtimeSum i)) =
       neuralToReal (β := binaryRadix) {
         mantissa := neuralNearestEvenMantissa
           (neuralScaledMantissa binaryRadix fexp32
@@ -235,7 +235,7 @@ theorem signedQuarterQuantizer_error (x : ℝ)
 
 /-- Four valid codes, represented with the same shape-indexed tensor used by TorchLean models. -/
 def quarterCodes : Spec.Tensor ℤ vectorShape :=
-  Spec.Tensor.vector (fun i => i.val)
+  Spec.Tensor.ofFn (fun i => i.val)
 
 /-- Pointwise tensor Q/DQ is exact on an in-range code tensor. -/
 theorem quarterCodes_roundtrip :
@@ -245,7 +245,7 @@ theorem quarterCodes_roundtrip :
   intro i
   change (-128 : ℤ) ≤ (i.val : ℤ) ∧ (i.val : ℤ) ≤ 127
   have hi : i.val < 4 := i.isLt
-  constructor <;> omega
+  grind
 
 /-- Round-to-odd on a sufficiently fine binary grid prevents double rounding on the quarter grid. -/
 theorem quarterGrid_doubleRounding_safe (extra : ℕ) (x : ℝ) :

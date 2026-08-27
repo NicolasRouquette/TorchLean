@@ -30,13 +30,13 @@ namespace GraphSpec
 namespace Models
 namespace TorchLean
 
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 /-- 2-layer MLP autoencoder model. -/
 def autoencoder
     (inDim hidDim : Nat)
     (seedW1 seedB1 seedW2 seedB2 : Nat := 0) :
-    _root_.Runtime.Autograd.TorchLean.NN.Seq (.dim inDim .scalar) (.dim inDim .scalar) :=
+    _root_.Runtime.Autograd.TorchLean.NN.Seq [inDim] [inDim] :=
   tlseq[
     _root_.Runtime.Autograd.TorchLean.NN.linear inDim hidDim
       (seedW := seedW1) (seedB := seedB1),

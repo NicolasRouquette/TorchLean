@@ -35,37 +35,26 @@ The common path is therefore:
 4. run a bound engine,
 5. inspect or check the output bounds.
 
-The examples under `NN/Examples/Verification/TorchLean/` keep the model, input box, bound pass, and
-reported margin in one place, so the verification path can be read directly from the source.
-
-The local example is compact enough that the whole verification object can be read directly: the
-graph, the input box, the output property, and the bound pass all appear in one place. That matters
-more than the size of the network. Once the objects are named clearly, the same pattern can be used
-for generated graphs, imported weights, or external verifier leaves.
+The reusable workflows under `NN/Verification/TorchLean/` keep the model, input box, output
+property, and bound pass together. The same path works for generated graphs, imported weights, and
+external verifier leaves.
 
 The seed box is built explicitly. For the small MLP example, `inputCenter` is the center point,
 `eps` is the radius, and `inputBox` is the flattened input box inserted at the lowered input node:
 
 ```lean
-let inputCenter : Tensor α xShape :=
-  NN.Tensor.ofListOfLength (α := α) [2] [cast 0.5, cast 0.8] (by rfl)
+let inputCenter : Tensor α [2] :=
+  tensorF! cast [2] #[0.5, 0.8]
 let eps : α := Runtime.ofFloat 0.1
-let rad : Tensor α xShape := Spec.fill eps xShape
-
-let inputBox : FlatBox α :=
-  { dim := inDim
-    lo := Tensor.subSpec inputCenter rad
-    hi := Tensor.addSpec inputCenter rad }
-
-let ps : ParamStore α :=
-  { lowered.ps with inputBoxes := lowered.ps.inputBoxes.insert lowered.inputId inputBox }
+let inputBox : FlatBox α := Verification.lInfBall (α := α) inputCenter eps
+let ps : ParamStore α := lowered.seedInputBox inputBox
 ```
 
 The verifier checks every input in the box
 $[\mathtt{inputCenter}-\mathtt{eps},\mathtt{inputCenter}+\mathtt{eps}]$.
 
 ```lean
-let ibp := runIBP (α := α) lowered.graph ps
+let ibp := lowered.runIBP ps
 let some outB := ibp[lowered.outputId]! |
   throw <| IO.userError "IBP produced no output box"
 ```
@@ -157,13 +146,11 @@ For ReLU, the affine relaxation depends on the pre-activation interval:
 - if the interval is entirely nonpositive, ReLU is exactly zero;
 - if the interval crosses zero, CROWN uses a sound linear envelope.
 
-The example builds a context for the input node and runs CROWN after IBP:
+The public verification API reads the distinguished input from the lowered graph and runs CROWN
+after IBP:
 
 ```lean
-let ctx : AffineCtx :=
-  { inputId := lowered.inputId, inputDim := softmaxInDim }
-
-let crown := runCROWN (α := α) lowered.graph ps ctx ibp
+let crown ← Verification.runCROWN (α := α) lowered ps ibp
 ```
 
 For a margin objective, the backward pass asks for a bound on one scalar expression, such as
@@ -172,14 +159,13 @@ this lets the verifier push a
 single objective backward through the graph:
 
 ```lean
-let objV : Tensor α (.dim softmaxOutDim .scalar) :=
-  NN.Tensor.ofListOfLength
-    (α := α) [3] [cast 1.0, cast (-1.0), cast 0.0] (by rfl)
+let objV : Tensor α [softmaxOutDim] :=
+  tensorF! cast [3] #[1.0, -1.0, 0.0]
 
-let obj : FlatVec α := { n := softmaxOutDim, v := objV }
+let obj : FlatTensor α := { n := softmaxOutDim, v := objV }
 
 match runCROWNBackwardObjective
-    (α := α) lowered.graph ps ctx ibp lowered.outputId obj with
+    (α := α) lowered.graph ps (← lowered.affineCtx?) ibp lowered.outputId obj with
 | none => IO.println "[CROWN-backward] no affine bounds"
 | some objAff => IO.println s!"[CROWN-backward] objective dim = {objAff.outDim}"
 ```
@@ -196,7 +182,7 @@ lake exe verify -- torchlean-crown-ops --scalar float32
 lake exe verify -- torchlean-robustness --scalar float32
 lake exe verify -- torchlean-mlp-workflow
 lake exe verify -- digits-train-certify --epochs=50 --eps=0.02 --max=100
-lake exe verify -- margin-cert
+lake exe verify -- margin-report
 lake exe verify -- vnncomp-mnistfc
 lake exe verify -- camera-box3d-cert
 ```
@@ -210,8 +196,9 @@ runs IBP/CROWN on the resulting graph-shaped artifact.
 
 The remaining commands show artifact boundaries. `digits-train-certify` trains a small
 sklearn-digits classifier with Python, exports weights and test examples, then immediately
-loads and certifies those artifacts in Lean. `margin-cert` checks an exported margin JSON
-artifact by recomputing the margin predicate. `vnncomp-mnistfc` exercises a compact
+loads and certifies those artifacts in Lean. `margin-report` checks the internal arithmetic of an
+exported logit-bound report; it does not establish the provenance of those bounds.
+`vnncomp-mnistfc` exercises a compact
 VNN-COMP-style fully connected MNIST network/property pair. `camera-box3d-cert` checks a camera
 projection certificate for a 3D box artifact by recomputing the projected corners and the claimed
 2D envelope.

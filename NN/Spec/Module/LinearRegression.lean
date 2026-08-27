@@ -34,7 +34,7 @@ PyTorch analogy: `nn.Linear(inDim, 1)`.
 -/
 def linearRegression {inDim : Nat}
   (model : LinearRegressionSpec α inDim) :
-  Spec.Module α (.dim inDim .scalar) .scalar :=
+  Spec.Module α ([inDim]) .scalar :=
 {
   forward := fun x => linearRegressionForwardSpec model x,
   kind := "LinearRegression",

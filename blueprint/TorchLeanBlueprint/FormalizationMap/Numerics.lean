@@ -167,19 +167,20 @@ The proof obtains the indexed gradient bound from
 field of {uses "numerical_optimizer_contract"}[the supplied optimizer contract].
 :::
 
-:::definition "checked_numerical_certificate" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.CheckedCertificate")
-A checked numerical certificate retains the submitted artifact together with the canonical source
-ranges, node-range trace, accepted kernel plan, and proofs that the recomputed trace and audit
-match the artifact.
+:::definition "checked_numerical_certificate" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.RegistryCheckedCertificate")
+A registry-checked numerical certificate retains the submitted artifact together with the
+canonical source ranges, node-range trace, accepted kernel plan, and proofs that the recomputed
+trace and audit match the artifact. Real-valued enclosure is a separate theorem.
 :::
 
-:::definition "proved_real_enclosure_trace" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.CheckedRealExecution")
-For one {uses "checked_numerical_certificate"}[checked certificate], `CheckedRealExecution` stores a
+:::definition "proved_real_enclosure_trace" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.ProvedRealEnclosure")
+For one {uses "checked_numerical_certificate"}[registry-checked certificate],
+`ProvedRealEnclosure` stores a
 real payload and input, the complete {uses "ir_denotation"}[IR execution trace], and a proof that
 each real node value lies in its checked interval.
 :::
 
-:::theorem "checked_numerical_execution" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.CheckedExecution.errorTrace")
+:::theorem "checked_numerical_execution" (parent := "runtime_error_bounds") (lean := "Proofs.RuntimeApprox.NumericalCertificate.RangeCheckedExecution.errorTrace")
 A checked IEEE replay plus a separately supplied
 {uses "proved_real_enclosure_trace"}[real-execution enclosure] for the same
 {uses "checked_numerical_certificate"}[certificate] yields a graph-wide pointwise error trace whose

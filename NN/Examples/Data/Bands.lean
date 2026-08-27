@@ -43,30 +43,30 @@ def Axis.name : Axis → String
   | .column => "vertical"
 
 /--
-Render a channel-first rank-three tensor from an in-bounds scalar function.
+Render a channel-first image tensor from an in-bounds scalar function.
 
 This shape is part of this particular dataset, not a restriction on TorchLean tensors or models.
 -/
 def render (channels height width : Nat)
     (value : Fin channels → Fin height → Fin width → Float) :
-    _root_.Spec.Tensor Float (.dim channels (.dim height (.dim width .scalar))) :=
-  _root_.Spec.Tensor.dim (fun channel =>
-    _root_.Spec.Tensor.dim (fun row =>
-      _root_.Spec.Tensor.dim (fun column =>
-        _root_.Spec.Tensor.scalar (value channel row column))))
+    Tensor Float [channels, height, width] :=
+  Tensor.stack 0 fun channel =>
+    Tensor.stack 0 fun row =>
+      Tensor.stack 0 fun column =>
+        Tensor.full [] (value channel row column)
 
 /-- Render a binary-valued channel-first tensor from a finite predicate. -/
 def renderBinary (channels height width : Nat)
     (selected : Fin channels → Fin height → Fin width → Bool)
     (onValue : Float := 1.0) (offValue : Float := 0.0) :
-    _root_.Spec.Tensor Float (.dim channels (.dim height (.dim width .scalar))) :=
+    Tensor Float [channels, height, width] :=
   render channels height width fun channel row column =>
     if selected channel row column then onValue else offValue
 
 /-- Render a single-channel horizontal or vertical band. -/
 def renderBand (height width : Nat) (axis : Axis) (offset : Nat) (thickness : Nat := 2)
     (onValue : Float := 1.0) (offValue : Float := 0.0) :
-    _root_.Spec.Tensor Float (.dim 1 (.dim height (.dim width .scalar))) :=
+    Tensor Float [1, height, width] :=
   renderBinary 1 height width
     (match axis with
     | .row => fun _ row _ => offset ≤ row.1 ∧ row.1 < offset + thickness
@@ -93,52 +93,48 @@ def horizontal (name : String := "horizontal") : Class :=
   { axis := .row, label := 1, name }
 
 /-- Generate `(tensor, label)` samples for every class/offset pair. -/
-def samples (height width : Nat) (classes : List Class) (offsets : List Nat)
+def samples (height width : Nat) (classes : Array Class) (offsets : Array Nat)
     (thickness : Nat := 2) :
-    List (_root_.Spec.Tensor Float (.dim 1 (.dim height (.dim width .scalar))) × Fin 2) :=
-  classes.foldr
-    (fun cls acc =>
-      offsets.map (fun offset => (renderBand height width cls.axis offset thickness, cls.label)) ++
-        acc)
-    []
+    Array (Tensor Float [1, height, width] × Fin 2) :=
+  classes.flatMap fun cls =>
+    offsets.map fun offset =>
+      (renderBand height width cls.axis offset thickness, cls.label)
 
 /-- Generate named samples for reports and prediction probes. -/
-def namedSamples (height width : Nat) (specs : List (Class × Nat)) (thickness : Nat := 2) :
-    List (String × _root_.Spec.Tensor Float (.dim 1 (.dim height (.dim width .scalar))) × Nat) :=
+def namedSamples (height width : Nat) (specs : Array (Class × Nat)) (thickness : Nat := 2) :
+    Array (String × Tensor Float [1, height, width] × Nat) :=
   specs.map fun (cls, offset) =>
     (s!"{cls.name}-{offset}", renderBand height width cls.axis offset thickness, cls.label.val)
 
 /-- Canonical label set for the band dataset: vertical ↦ `0`, horizontal ↦ `1`. -/
-def classes : List Class :=
-  [ vertical
-  , horizontal
-  ]
+def classes : Array Class :=
+  #[vertical, horizontal]
 
 /-! ### Typed Tensors (Tensor-First) -/
 
 /-- Canonical image shape for the band dataset (single-channel 4×4). -/
-abbrev shape : _root_.Spec.Shape := .dim 1 (.dim 4 (.dim 4 .scalar))
+abbrev shape : List Nat := [1, 4, 4]
 
-/-- Training set samples: a small list of `(x, label)` pairs. -/
-def trainFloat : List (_root_.Spec.Tensor Float shape × Fin 2) :=
-  samples 4 4 classes [0, 1, 2]
+/-- Training set samples as a runtime-sized array of fixed-shape tensors. -/
+def trainFloat : Array (Tensor Float shape × Fin 2) :=
+  samples 4 4 classes #[0, 1, 2]
 
 /-- Probe set for reporting: `(name, x, expectedLabel)` triples. -/
-def probesFloat : List (String × _root_.Spec.Tensor Float shape × Nat) :=
+def probesFloat : Array (String × Tensor Float shape × Nat) :=
   namedSamples 4 4
-    [ (vertical, 1)
+    #[ (vertical, 1)
     , (vertical, 2)
     , (horizontal, 1)
     , (horizontal, 2)
     ]
 
 /-- Small vertical-versus-horizontal dataset with one-hot class targets. -/
-def dataset : Trainer.DataSource shape (.dim 2 .scalar) :=
+def dataset : Trainer.Dataset shape [2] :=
   TorchLean.Data.floatSamples <| trainFloat.map fun (input, label) =>
     Sample.mk input (Tensor.oneHot (α := Float) 2 label)
 
 /-- Concrete `Float` probe inputs for prediction examples. -/
-def probeSamples : List (String × Tensor Float shape × Nat) :=
+def probeSamples : Array (String × Tensor Float shape × Nat) :=
   probesFloat
 
 end Bands

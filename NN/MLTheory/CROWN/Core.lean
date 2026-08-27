@@ -8,7 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.BoundOps
 public import NN.MLTheory.CROWN.Flatbox
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Spec.Core.Tensor.Linalg
 public import NN.Spec.Core.TensorOps
 
@@ -149,12 +149,12 @@ end Box
 namespace FlatBox
 
 /-- Cast the lower endpoint to a checked vector dimension. -/
-def loAsDim (B : FlatBox α) {m : Nat} (h : B.dim = m) : Tensor α (.dim m .scalar) :=
-  Tensor.castVecDim (α := α) (n := B.dim) (m := m) h B.lo
+def loAsDim (B : FlatBox α) {m : Nat} (h : B.dim = m) : Tensor α [m] :=
+  Tensor.castShape B.lo (congrArg (fun extent => Shape.dim extent .scalar) h)
 
 /-- Cast the upper endpoint to a checked vector dimension. -/
-def hiAsDim (B : FlatBox α) {m : Nat} (h : B.dim = m) : Tensor α (.dim m .scalar) :=
-  Tensor.castVecDim (α := α) (n := B.dim) (m := m) h B.hi
+def hiAsDim (B : FlatBox α) {m : Nat} (h : B.dim = m) : Tensor α [m] :=
+  Tensor.castShape B.hi (congrArg (fun extent => Shape.dim extent .scalar) h)
 
 /--
 View a flattened interval box as a shape-indexed vector box after checking the dimension.
@@ -162,7 +162,7 @@ View a flattened interval box as a shape-indexed vector box after checking the d
 Most CROWN affine evaluators expect a `Box α (.dim m .scalar)`, while graph propagation stores
 runtime-shaped `FlatBox` values. This helper keeps the dependent casts in one place.
 -/
-def toVecBox (B : FlatBox α) {m : Nat} (h : B.dim = m) : Box α (.dim m .scalar) :=
+def getScalarBox (B : FlatBox α) {m : Nat} (h : B.dim = m) : Box α (.dim m .scalar) :=
   { lo := B.loAsDim h
     hi := B.hiAsDim h }
 
@@ -179,9 +179,9 @@ This is the representation used by CROWN/DeepPoly-style affine bound propagation
 -/
 structure AffineVec (α : Type) (inDim outDim : Nat) where
   /-- Coefficient matrix; each row is an output affine coefficient vector. -/
-  A : Tensor α (.dim outDim (.dim inDim .scalar))
+  A : Tensor α [outDim, inDim]
   /-- Constant offset vector. -/
-  c : Tensor α (.dim outDim .scalar)
+  c : Tensor α [outDim]
 
 namespace AffineVec
 
@@ -243,7 +243,7 @@ helper keeps that cast at the CROWN boundary instead of repeating it in verifier
 -/
 def evalOnFlatBox (aff : AffineVec α inDim outDim) (B : FlatBox α) (h : B.dim = inDim) :
     Box α (.dim outDim .scalar) :=
-  aff.evalOnBox (B.toVecBox h)
+  aff.evalOnBox (B.getScalarBox h)
 
 -- Compose two affine bounds: aff2 ∘ aff1 where aff1 maps R^{n}→R^{h}, aff2 maps R^{h}→R^{m}
 /-- Compose two affine forms: `(aff2 ∘ aff1)(x) = aff2(aff1(x))`. -/
@@ -255,7 +255,7 @@ def compose {n h m : Nat}
 
 -- Affine for linear layer: y = W x + b
 /-- Build an affine form from a linear layer `y = W*x + b`. -/
-def ofLinear (W : Tensor α (.dim outDim (.dim inDim .scalar))) (b : Tensor α (.dim outDim .scalar))
+def ofLinear (W : Tensor α [outDim, inDim]) (b : Tensor α [outDim])
   :
   AffineVec α inDim outDim :=
   { A := W, c := b }
@@ -270,7 +270,7 @@ open BoundOps
 
 /-- Positive part of a weight matrix, `W⁺ = max(W, 0)`, used by sign-split bound rules. -/
 def matPos {m n : Nat}
-    (W : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
+    (W : Tensor α [m, n]) : Tensor α [m, n] :=
   match W with
   | .dim rows =>
       Tensor.dim (fun i =>
@@ -282,7 +282,7 @@ def matPos {m n : Nat}
 
 /-- Negative part of a weight matrix, `W⁻ = min(W, 0)`, used by sign-split bound rules. -/
 def matNeg {m n : Nat}
-    (W : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim m (.dim n .scalar)) :=
+    (W : Tensor α [m, n]) : Tensor α [m, n] :=
   match W with
   | .dim rows =>
       Tensor.dim (fun i =>
@@ -301,7 +301,7 @@ Given interval inputs `xB` and `bB`, this returns an interval box for `W*x + b` 
 - summing with directed rounding (`addDown`/`addUp`).
 -/
 def linear {m n : Nat}
-  (W : Tensor α (.dim m (.dim n .scalar)))
+  (W : Tensor α [m, n])
   (xB : Box α (.dim n .scalar))
   (bB : Box α (.dim m .scalar)) : Box α (.dim m .scalar) :=
   match W, xB.lo, xB.hi, bB.lo, bB.hi with

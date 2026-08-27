@@ -49,6 +49,10 @@ def batch : Nat := 1
 def seqLen : Nat := 1
 /-- Transformer feature width. -/
 def dModel : Nat := 2
+
+/-- Toy byte bucketing: encode byte id `b` as `b % 2`; collisions are intentional. -/
+def byteBucket (id : Nat) : Fin dModel :=
+  ⟨id % dModel, Nat.mod_lt _ (by decide)⟩
 /-- Number of attention heads. -/
 def numHeads : Nat := 1
 /-- Per-head width; $\mathtt{numHeads}\cdot\mathtt{headDim}$ matches `dModel`. -/
@@ -66,7 +70,7 @@ def cfg : nn.models.TransformerEncoderConfig :=
 
 /-- Input shape: a batch of sequence rows with `dModel` features per token. -/
 abbrev σ :=
-  cfg.shape (.dim batch .scalar)
+  cfg.shape [batch]
 
 /-- Output shape matches the input because this command trains a reconstruction objective. -/
 abbrev τ :=
@@ -74,27 +78,27 @@ abbrev τ :=
 
 /-- One reusable transformer encoder block from the public model API. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.transformerEncoder cfg (.dim batch .scalar) (by decide) (by decide)
+  nn.models.transformerEncoder cfg [batch] (by decide) (by decide)
 
 /-- Build one reconstruction sample from the loaded corpus prefix. -/
 def sample (corpus : String) : Sample.Supervised Float σ τ :=
   let s := Data.CausalLM.byteBatch (α := Float) batch seqLen dModel
-    (corpus.take (seqLen + 1)).toString
+    byteBucket (corpus.take (seqLen + 1)).toString
   Sample.mk (Spec.Tensor.materialize (Sample.x s)) (Spec.Tensor.materialize (Sample.y s))
 
 /-- Train the Transformer encoder with the public `Trainer` surface. -/
 def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
-    (flags : CLI.Training.RunOptions) : IO Unit := do
+    (flags : CLI.Training.OptimizerOptions) : IO Unit := do
   let corpus ← RealData.TextCorpusFlags.read exeName corpusFlags
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := 1e-4 } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := flags.lr } })
         .regression
-  let trainData := Data.floatSamples [sample corpus]
+  let trainData := Data.floatSamples #[sample corpus]
   let trained ← trainer.train
     trainData
-    (CLI.Training.RunOptions.toTrainerOptions flags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags
       (title := "Transformer text training")
       (notes := #[s!"corpus={corpusFlags.path}"]))
   trained.printSummary
@@ -105,6 +109,7 @@ def main (args : List String) : IO UInt32 := do
     { exeName := exeName
       defaultLogJson := defaultLogJson
       defaultSteps := 1
+      defaultLr := 1e-4
       description := "Transformer encoder"
       dataOptions := RealData.TextCorpusFlags.help
       parseData := RealData.TextCorpusFlags.parse

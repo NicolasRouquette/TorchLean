@@ -251,7 +251,7 @@ where the dimension selected by `axis` contains classes and `r` ranges over the 
 dimensions. This is PyTorch's `reduction="mean"` convention for one-hot or soft distribution
 targets.
 
-Unlike `crossEntropySpec`, this takes *logits* and uses `Activation.logSoftmaxLastSpec` for
+Unlike `crossEntropySpec`, this takes *logits* and uses `Activation.logSoftmaxSpec` for
 numerical stability.
 
 This spec assumes each `target` slice along `axis` is a probability distribution (sums to `1`), as

@@ -16,7 +16,6 @@ public import NN.Spec.Models
 public import NN.Spec.Module
 public import NN.Spec.Quantization
 public import NN.Spec.RL
-public import NN.Tensor
 
 
 /-!
@@ -30,14 +29,14 @@ If you're writing specs or proofs, this is usually the right place to start. If 
 interface or `NN.Runtime` for the complete executable subsystem.
 
 Structure:
-- `NN.Tensor.API` for the core tensor/shape layer and ergonomic constructors,
+- `NN.Spec.Core` for the core tensor/shape mathematics,
 - `NN.Spec.Layers.*` for layer-level denotational semantics,
 - `NN.Spec.Module.*` for PyTorch-style module wrappers over those specs,
 - `NN.Spec.Models.*` for reusable model constructors,
 - `NN.Spec.Autograd.*` / `NN.Spec.Dynamics.*` for auxiliary math-first interfaces.
 
-This module imports the focused `NN.Spec.*` subsystems directly and re-exports `NN.Tensor` beside
-them.
+The user-facing tensor constructors and notation live in `NN.Tensor` and are intentionally not
+re-exported here.
 -/
 
 @[expose] public section

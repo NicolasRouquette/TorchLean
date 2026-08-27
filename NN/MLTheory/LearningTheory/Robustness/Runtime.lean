@@ -8,7 +8,7 @@ module
 
 public import NN.MLTheory.LearningTheory.Robustness.Spec
 public import NN.Spec.Core.Tensor
-public import NN.Spec.Core.TensorBridge
+public import NN.Spec.Core.Tensor.Constructors
 public import NN.Spec.Core.TensorOps
 
 /-!
@@ -36,8 +36,9 @@ It includes:
 - small **sampling-based helpers** that compute *empirical* quantities (e.g. “max observed ratio”
   over a chosen sample set).
 
-The sampling helpers return concrete values computed from finite samples. They do not produce
-certificate checks or `Prop`-level guarantees.
+The sampling helpers return `Except` results computed from finite samples. An error records absent
+or non-finite evidence; a successful value is still empirical and does not provide a certificate
+or `Prop`-level guarantee.
 -/
 
 /--
@@ -52,21 +53,15 @@ Runtime `L2` norm, defined by specializing the polymorphic spec to `Float`.
 def tensorL2NormFloat {s : Shape} (t : Tensor Float s) : Float :=
   NN.MLTheory.Robustness.Spec.tensorL2Norm (α := Float) (s := s) t
 
-/-- Internal helper: `L2` norm specialization reused by runtime wrappers in this module. -/
-def l2Norm : ∀ {s : Shape}, Tensor Float s → Float :=
-  fun {s} t => tensorL2NormFloat (s := s) t
-
-/-- Internal helper: `L∞` norm specialization reused by runtime wrappers in this module. -/
-def linfNorm : ∀ {s : Shape}, Tensor Float s → Float :=
-  fun {s} t => tensorLinfNormFloat (s := s) t
-
 /-- `L2` distance (specialization of `Robustness.Spec.tensor_distance`). -/
 def tensorL2DistanceFloat {s : Shape} (t1 t2 : Tensor Float s) : Float :=
-  NN.MLTheory.Robustness.Spec.tensorDistance (α := Float) (norm := l2Norm) (s := s) t1 t2
+  NN.MLTheory.Robustness.Spec.tensorDistance
+    (α := Float) (norm := tensorL2NormFloat) (s := s) t1 t2
 
 /-- `L∞` distance (specialization of `Robustness.Spec.tensor_distance`). -/
 def tensorLinfDistanceFloat {s : Shape} (t1 t2 : Tensor Float s) : Float :=
-  NN.MLTheory.Robustness.Spec.tensorDistance (α := Float) (norm := linfNorm) (s := s) t1 t2
+  NN.MLTheory.Robustness.Spec.tensorDistance
+    (α := Float) (norm := tensorLinfNormFloat) (s := s) t1 t2
 
 /--
 Decide whether `t` lies in the closed `L2`-ball of radius `ε` around `center`.
@@ -87,7 +82,7 @@ def inLinfBallFloat {s : Shape} (center : Tensor Float s) (ε : Float) (t : Tens
 namespace Empirical
 
 /--
-Maximum observed $L^2$ Lipschitz ratio over a *given* finite list of input pairs.
+Maximum observed $L^2$ Lipschitz ratio over a given finite array of input pairs.
 
 This computes:
 
@@ -96,30 +91,39 @@ $$
 \frac{\lVert f(x)-f(y)\rVert_2}{\lVert x-y\rVert_2}
 $$
 
-with the convention that a pair with $\lVert x-y\rVert_2=0$ contributes $0$.
-
 Factually: this is a maximum over the provided pairs only; it is not a certified global bound.
 
-Edge cases / conventions:
-
-- If `pairs = []`, the result is `0` (the fold's initial value).
-- If a particular pair satisfies $x=y$ (so the input distance is $0$), that pair contributes $0$.
+Empty input, non-finite distances or ratios, and collections containing no positive input distance
+are reported as errors. Zero-distance pairs are ignored when another pair is informative.
 -/
 def maxL2LipschitzRatio {s₁ s₂ : Shape}
     (f : Tensor Float s₁ → Tensor Float s₂)
-    (pairs : List (Tensor Float s₁ × Tensor Float s₁)) : Float :=
-  pairs.foldl (fun maxRatio (p : Tensor Float s₁ × Tensor Float s₁) =>
+    (pairs : Array (Tensor Float s₁ × Tensor Float s₁)) : Except String Float := do
+  if pairs.isEmpty then
+    throw "empirical Lipschitz ratio requires at least one input pair"
+  let mut foundInformative := false
+  let mut maxRatio := 0.0
+  for p in pairs do
     let (x, y) := p
     let inputDist := tensorL2DistanceFloat x y
     let outputDist := tensorL2DistanceFloat (f x) (f y)
-    let ratio := if inputDist > 0.0 then outputDist / inputDist else 0.0
-    max maxRatio ratio) 0.0
+    unless inputDist.isFinite && outputDist.isFinite do
+      throw "empirical Lipschitz ratio encountered a non-finite distance"
+    if inputDist < 0.0 || outputDist < 0.0 then
+      throw "empirical Lipschitz ratio encountered a negative distance"
+    if inputDist > 0.0 then
+      let ratio := outputDist / inputDist
+      unless ratio.isFinite do
+        throw "empirical Lipschitz ratio overflowed to a non-finite value"
+      foundInformative := true
+      maxRatio := max maxRatio ratio
+  unless foundInformative do
+    throw "empirical Lipschitz ratio requires a pair with positive input distance"
+  pure maxRatio
 
 end Empirical
 
 namespace Sampling
-
-open TensorBridge
 
 /-!
 ## Sampling design (why these helpers look “complicated”)
@@ -130,10 +134,9 @@ with when you want to build *concrete perturbations* of a fixed length at runtim
 
 For sampling, we therefore go through a standard interop path:
 
-1. convert the *type-level* shape `s : Shape` into a *runtime* shape list `shapeList s : List Nat`,
-2. compute the number of scalar entries `numel s` as the product of those dimensions, then
-3. construct a flat list `xs : List Float` of length `numel s`,
-4. `unflatten` it back into a tensor of the appropriate shape.
+1. compute the scalar count `numel s` from the tensor shape,
+2. construct a flat array `xs : Array Float` of that length, then
+3. use the checked flat-data constructor to obtain a tensor of shape `s`.
 
 Correctness (what is and is not guaranteed):
 
@@ -146,39 +149,11 @@ Correctness (what is and is not guaranteed):
   tool to produce inputs for downstream checks/counterexamples.
 -/
 
-/-- Runtime view of a type-level `Shape` (same convention as `Shape.toList`). -/
-def shapeList (s : Shape) : List Nat :=
-  Shape.toList s
-
 /--
 Number of scalar elements (“numel”) in a tensor of shape `s`.
-
-This is the runtime analogue of `Spec.Shape.size`. We compute it via `TensorArray.shapeProd` on the
-list view of the shape.
 -/
 def numel (s : Shape) : Nat :=
-  TensorArray.shapeProd (shapeList s)
-
-/--
-Cast a tensor with type-level shape `s` into the definitional-equal “list-shaped” view used by
-`TensorBridge.flatten/unflatten`.
-
-This cast is purely a type-level transport; it does not change the tensor values.
--/
-def castToListShape {s : Shape} :
-    Tensor Float s → Tensor Float (Shape.ofList (shapeList s)) :=
-  fun t =>
-    cast
-      (congrArg (fun sh => Tensor Float sh) (by simp [shapeList])) t
-
-/--
-Inverse cast: transport a “list-shaped” tensor back to the original type-level shape `s`.
--/
-def castFromListShape {s : Shape} :
-    Tensor Float (Shape.ofList (shapeList s)) → Tensor Float s :=
-  fun t =>
-    cast
-      (congrArg (fun sh => Tensor Float sh) (by simp [shapeList])) t
+  s.size
 
 /--
 Deterministically generate a length-`n` direction vector from a `seed`.
@@ -186,43 +161,41 @@ Deterministically generate a length-`n` direction vector from a `seed`.
 This is **not** cryptographic and not intended to model a probabilistic distribution; it is a
 deterministic way to generate reproducible, varied directions without introducing `IO`.
 -/
-def perturbDirection (n : Nat) (seed : Nat) : List Float :=
+def perturbDirection (n : Nat) (seed : Nat) : Array Float :=
   -- Deterministic “pseudo-random-ish” direction: entry `i` depends on `seed` and `i`.
   -- We avoid `IO` randomness here; callers can treat `seed` as a reproducibility knob.
-  (List.finRange n).map (fun i =>
+  Array.ofFn fun i : Fin n =>
     let a : Float := Float.ofNat (seed + 1) * Float.ofNat (i.1 + 1)
-    Float.sin a + 0.5 * Float.cos (a + 1.0))
+    Float.sin a + 0.5 * Float.cos (a + 1.0)
 
-/-- Euclidean norm of a flat list (helper for normalization). -/
-def l2NormList (xs : List Float) : Float :=
+/-- Euclidean norm of a flat runtime array. -/
+def l2NormArray (xs : Array Float) : Float :=
   Float.sqrt (xs.foldl (fun acc x => acc + x * x) 0.0)
 
 /--
-Normalize a flat list to unit `L2` norm (when possible).
+Normalize a flat array to unit `L2` norm (when possible).
 
 If the list has zero norm, we return it unchanged.
 -/
-def normalizeList (xs : List Float) : List Float :=
-  let n := l2NormList xs
+def normalizeArray (xs : Array Float) : Array Float :=
+  let n := l2NormArray xs
   if n > 0.0 then xs.map (fun x => x / n) else xs
 
 /--
-Unflatten a flat list of length `numel s` into a `Spec.Tensor Float s`.
+Unflatten a flat array of length `numel s` into a `Spec.Tensor Float s`.
 
 The length proof is part of the interface to avoid “silent truncation/padding”.
 -/
-def unflattenToTensor {s : Shape} (xs : List Float)
-    (h : xs.length = TensorArray.shapeProd (shapeList s)) : Tensor Float s :=
-  let tList : Tensor Float (Shape.ofList (shapeList s)) :=
-    TensorBridge.unflatten (shapeList s) xs (by simpa [shapeList] using h)
-  castFromListShape (s := s) tList
+def unflattenToTensor {s : Shape} (xs : Array Float)
+    (h : xs.size = s.size) : Tensor Float s :=
+  Tensor.ofFlatArrayExact s xs h
 
 /--
 Build a perturbation tensor of (approximately) the given `radius`, deterministically from `seed`.
 
 Construction:
 
-1. Make a flat “direction” list `base` of length `numel s`.
+1. Make a flat direction array `base` of length `numel s`.
 2. Normalize it to unit norm (when nonzero).
 3. Scale by `radius`.
 4. Unflatten back into the tensor shape.
@@ -231,23 +204,21 @@ This ensures the perturbation has the right shape by construction.
 -/
 def perturbationTensor {s : Shape} (radius : Float) (seed : Nat) : Tensor Float s :=
   let n := numel s
-  let base : List Float := perturbDirection n seed
-  let dir : List Float := normalizeList base
+  let base : Array Float := perturbDirection n seed
+  let dir : Array Float := normalizeArray base
   -- Scale direction and unflatten back into the tensor shape.
-  let xs : List Float := dir.map (fun x => radius * x)
-  have hlen : xs.length = TensorArray.shapeProd (shapeList s) := by
-    have hbase : base.length = n := by
-      dsimp [base, perturbDirection]
-      simp
-    have hdir : dir.length = n := by
+  let xs : Array Float := dir.map (fun x => radius * x)
+  have hlen : xs.size = s.size := by
+    have hbase : base.size = n := by simp [base, perturbDirection]
+    have hdir : dir.size = n := by
       dsimp [dir]
-      by_cases h : l2NormList base > 0.0
-      · simp [normalizeList, h, hbase]
-      · simp [normalizeList, h, hbase]
+      by_cases h : l2NormArray base > 0.0
+      · simp [normalizeArray, h, hbase]
+      · simp [normalizeArray, h, hbase]
     calc
-      xs.length = dir.length := by simp [xs]
+      xs.size = dir.size := by simp [xs]
       _ = n := hdir
-      _ = TensorArray.shapeProd (shapeList s) := by simp [numel, n]
+      _ = s.size := by simp [numel, n]
   unflattenToTensor (s := s) xs hlen
 
 /--
@@ -266,8 +237,8 @@ extremely clear (“every returned element lies in the ball”), independent of 
 direction generator.
 -/
 def sampleL2Ball {s : Shape} (center : Tensor Float s) (ε : Float) (numSamples : Nat) :
-    List (Tensor Float s) :=
-  (List.range numSamples).foldl (fun acc k =>
+    Array (Tensor Float s) :=
+  (Array.range numSamples).foldl (fun acc k =>
     -- Choose a deterministic radius in `(0, ε)`; we avoid `0` so that, for typical shapes, we
     -- don't only resample the center.
     --
@@ -277,22 +248,20 @@ def sampleL2Ball {s : Shape} (center : Tensor Float s) (ε : Float) (numSamples 
     let radius := ε * (Float.ofNat (k + 1) / Float.ofNat (numSamples + 1))
     let δ := perturbationTensor (s := s) radius k
     let x := Spec.Tensor.addSpec center δ
-    if inL2BallFloat center ε x then x :: acc else acc) []
-  |>.reverse
+    if inL2BallFloat center ε x then acc.push x else acc) #[]
 
 /--
-Turn a nonempty list `[x₀,x₁,…,x_{m-1}]` into adjacent pairs
+Turn a nonempty array `#[x₀,x₁,…,x_{m-1}]` into adjacent pairs
 `[(x₀,x₁),(x₁,x₂),…,(x_{m-1},x₀)]`.
 
-This is a small combinator that is useful when you want to turn a sample list into a set of
+This is a small combinator that is useful when you want to turn a sample array into a set of
 “nearby pairs” for empirical ratio computations.
 -/
-def adjacentPairs {α : Type} : List α → List (α × α)
-  | [] => []
-  | [_x] => []
-  | x0 :: xs =>
-      let ys := xs ++ [x0]
-      List.zip (x0 :: xs) ys
+def adjacentPairs {α : Type} [Inhabited α] (xs : Array α) : Array (α × α) :=
+  if xs.size < 2 then #[]
+  else
+    (Array.range xs.size).map fun i =>
+      (xs[i]!, xs[(i + 1) % xs.size]!)
 
 end Sampling
 
@@ -311,7 +280,7 @@ only (not a certified global Lipschitz bound).
 -/
 def empiricalMaxL2GainFromSamples {s₁ s₂ : Shape}
     (f : Tensor Float s₁ → Tensor Float s₂)
-    (x₀ : Tensor Float s₁) (ε : Float) (numSamples : Nat) : Float :=
+    (x₀ : Tensor Float s₁) (ε : Float) (numSamples : Nat) : Except String Float :=
   let samples := Sampling.sampleL2Ball (center := x₀) ε numSamples
   -- We compare each sample to the center point `x₀`, because that is the common pattern in
   -- robustness debugging (“how much can the output move within an ε-neighborhood of x₀?”).

@@ -37,11 +37,11 @@ instance : Repr AcceptedGraphKernelPlan where
 namespace AcceptedGraphKernelPlan
 
 /-- Source IR node ids covered by the accepted grouped plan. -/
-def nodeIds (p : AcceptedGraphKernelPlan) : List Nat :=
+def nodeIds (p : AcceptedGraphKernelPlan) : Array Nat :=
   p.groupedPlan.nodeIds
 
 /-- Selected capsule names in accepted group order. -/
-def capsuleNames (p : AcceptedGraphKernelPlan) : List String :=
+def capsuleNames (p : AcceptedGraphKernelPlan) : Array String :=
   p.groupedPlan.capsuleNames
 
 /-- Audit for the accepted grouped plan. -/
@@ -49,7 +49,7 @@ def audit (p : AcceptedGraphKernelPlan) : KernelPlanAudit :=
   p.groupedPlan.audit
 
 /-- Recheck reports for the accepted grouped plan. -/
-def obligationReports (p : AcceptedGraphKernelPlan) : List ObligationReport :=
+def obligationReports (p : AcceptedGraphKernelPlan) : Array ObligationReport :=
   p.audit.obligationReports
 
 end AcceptedGraphKernelPlan
@@ -57,7 +57,7 @@ end AcceptedGraphKernelPlan
 /-- Result of planning, grouping, and gating a graph. -/
 inductive GraphKernelPlanResult where
   | accepted (plan : AcceptedGraphKernelPlan)
-  | rejected (groupedPlan : GroupedKernelPlan) (failures : List GateFailure)
+  | rejected (groupedPlan : GroupedKernelPlan) (failures : Array GateFailure)
   deriving Repr
 
 namespace GraphKernelPlanResult
@@ -68,8 +68,8 @@ def isAccepted : GraphKernelPlanResult → Bool
   | .rejected .. => false
 
 /-- Gate failures when the pipeline rejected the plan. -/
-def failures : GraphKernelPlanResult → List GateFailure
-  | .accepted _ => []
+def failures : GraphKernelPlanResult → Array GateFailure
+  | .accepted _ => #[]
   | .rejected _ failures => failures
 
 end GraphKernelPlanResult

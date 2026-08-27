@@ -8,7 +8,7 @@ module
 
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Main
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Concat
-public import NN.Verification.TorchLean.Proved.Correctness.Eval.MiscOps
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.SourcesAndLosses
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Reductions
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Softmax
 public import NN.Verification.TorchLean.Proved.Correctness.Eval.Transpose
@@ -25,14 +25,13 @@ Current bridge coverage includes:
 - common elementwise arithmetic and activations emitted by PyTorch/ONNX import paths;
 - shape-changing operations such as reshape, flatten, broadcast, scalar sum, leading-axis concat,
   axis permutation, supported transpose forms, and axis reductions;
-- rank-2 and rank-3 `matmul`;
-- last-axis softmax and the evaluator's permutation path for non-last-axis softmax;
-- payload-backed `linear` and no-dilation `conv2d`;
+- matrix and batched-matrix `matmul` through one typed operation;
+- softmax along any valid tensor axis;
+- payload-backed `linear` and arbitrary-rank no-dilation convolution;
 - payload-backed constants;
-- CHW max/average pooling, including padded variants;
-- `layernorm axis` through the reshape-to-2D spec LayerNorm path;
+- `layernorm axis` through a rank-independent matrix evaluation view;
 - graph-structural nodes such as `input` and `detach`, plus scalar MSE loss;
-- eval-mode NCHW BatchNorm with payload-backed running statistics.
+- eval-mode BatchNorm over an arbitrary channel axis with payload-backed running statistics.
 - exact `ParamStore` to IR `Payload` forwarding facts for every payload-backed op.
 - lowering pass insertion facts for the payload-backed nodes in the proved forward fragment.
 -/

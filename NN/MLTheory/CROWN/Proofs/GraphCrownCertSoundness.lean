@@ -73,13 +73,12 @@ the chosen input point.
 -/
 
 def affineEvalAt {α : Type} [Context α] {inDim outDim : Nat}
-    (aff : AffineVec α inDim outDim) (x : Tensor α (.dim inDim .scalar)) : Tensor α (.dim outDim
-      .scalar) :=
+    (aff : AffineVec α inDim outDim) (x : Tensor α [inDim]) : Tensor α [outDim] :=
   Tensor.addSpec (Spec.matVecMulSpec (α := α) aff.A x) aff.c
 
 /-- Evaluate affine lower/upper bounds at a concrete input point, yielding a `FlatBox`. -/
 def boundsEvalAt {α : Type} [Context α]
-    (b : FlatAffineBounds α) (x : Tensor α (.dim b.inDim .scalar)) : FlatBox α :=
+    (b : FlatAffineBounds α) (x : Tensor α [b.inDim]) : FlatBox α :=
   { dim := b.outDim
     lo := affineEvalAt (α := α) (inDim := b.inDim) (outDim := b.outDim) b.loAff x
     hi := affineEvalAt (α := α) (inDim := b.inDim) (outDim := b.outDim) b.hiAff x }
@@ -91,7 +90,7 @@ We reuse `Semantics.encloses` from `NN.MLTheory.CROWN.Graph` for componentwise e
 -/
 
 def EnclosesVec {α : Type} [Context α]
-    (B : FlatBox α) (v : FlatVec α) : Prop :=
+    (B : FlatBox α) (v : FlatTensor α) : Prop :=
   ∃ h : B.dim = v.n,
     Theorems.Semantics.encloses (α := α) B (castDimScalar (α := α) (n := v.n) (n' := B.dim) h.symm
       v.v)
@@ -105,10 +104,10 @@ In a well-formed CROWN certificate, every bound satisfies `b.inDim = ctx.inputDi
 branch is the one that matters.
 -/
 def EnclosesAtInput {α : Type} [Context α]
-    (ctx : AffineCtx) (x : Tensor α (.dim ctx.inputDim .scalar))
-    (b : FlatAffineBounds α) (v : FlatVec α) : Prop :=
+    (ctx : AffineCtx) (x : Tensor α [ctx.inputDim])
+    (b : FlatAffineBounds α) (v : FlatTensor α) : Prop :=
   ∃ h : b.inDim = ctx.inputDim,
-    let x' : Tensor α (.dim b.inDim .scalar) :=
+    let x' : Tensor α [b.inDim] :=
       castDimScalar (α := α) (n := ctx.inputDim) (n' := b.inDim) h.symm x
     EnclosesVec (α := α) (boundsEvalAt (α := α) b x') v
 
@@ -153,6 +152,14 @@ def CrownCertLocalOK {α : Type} [Context α]
   cert.size = g.nodes.size ∧
   ∀ id : Nat, id < g.nodes.size → cert[id]! = step cert id
 
+/-- Every graph node has both a certificate entry and a semantic value. -/
+def CrownCertCovers {α : Type} [Context α]
+    (g : Graph) (cert : Array (Option (FlatAffineBounds α)))
+    (vals : Array (Option (FlatTensor α))) : Prop :=
+  cert.size = g.nodes.size ∧ vals.size = g.nodes.size ∧
+    ∀ id : Nat, id < g.nodes.size →
+      ∃ b v, cert[id]! = some b ∧ vals[id]! = some v
+
 /-!
 ## Transfer-rule soundness assumptions
 
@@ -164,7 +171,7 @@ For transcendental ops, this assumption is where you connect to an oracle model 
 
 def CrownTransferSound
     (g : Graph) (_ps : ParamStore ℝ) (_inputs : Std.HashMap Nat Val)
-    (vals : Array (Option Val)) (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (vals : Array (Option Val)) (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
     (step : Array (Option (FlatAffineBounds ℝ)) → Nat → Option (FlatAffineBounds ℝ))
     (cert : Array (Option (FlatAffineBounds ℝ))) : Prop :=
   ∀ id : Nat, id < g.nodes.size →
@@ -195,7 +202,7 @@ theorem crown_checker_encloses_semantics_match
     (cert : Array (Option (FlatAffineBounds ℝ)))
     (inputs : Std.HashMap Nat Val)
     (vals : Array (Option Val))
-    (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
     (htopo : TopoSorted g)
     (_hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
     (hcert : CrownCertLocalOK (g := g) (step := step) cert)
@@ -248,7 +255,7 @@ theorem crown_checker_encloses_semantics
     (cert : Array (Option (FlatAffineBounds ℝ)))
     (inputs : Std.HashMap Nat Val)
     (vals : Array (Option Val))
-    (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
     (htopo : TopoSorted g)
     (hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
     (hcert : CrownCertLocalOK (g := g) (step := step) cert)
@@ -267,6 +274,34 @@ theorem crown_checker_encloses_semantics
       (ctx := ctx) (x := x) htopo hsem hcert hsound id hid
   simpa [hcertId, hvalId] using hmatch
 
+/--
+Complete certificate coverage turns local replay and transfer soundness into an enclosure theorem
+for every graph node. Unlike the partial match theorem above, this result cannot succeed through a
+missing certificate entry or missing semantic value.
+-/
+theorem crown_checker_encloses_all_nodes
+    (g : Graph) (ps : ParamStore ℝ)
+    (step : Array (Option (FlatAffineBounds ℝ)) → Nat → Option (FlatAffineBounds ℝ))
+    (cert : Array (Option (FlatAffineBounds ℝ)))
+    (inputs : Std.HashMap Nat Val)
+    (vals : Array (Option Val))
+    (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
+    (htopo : TopoSorted g)
+    (hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
+    (hcert : CrownCertLocalOK (g := g) (step := step) cert)
+    (hcoverage : CrownCertCovers g cert vals)
+    (hsound :
+        CrownTransferSound (g := g) (_ps := ps) (_inputs := inputs) (vals := vals)
+          (ctx := ctx) (x := x) (step := step) (cert := cert)) :
+    ∀ id : Nat, id < g.nodes.size →
+      ∃ b v, cert[id]! = some b ∧ vals[id]! = some v ∧
+        EnclosesAtInput (α := ℝ) ctx x b v := by
+  intro id hid
+  obtain ⟨b, v, hb, hv⟩ := hcoverage.2.2 id hid
+  refine ⟨b, v, hb, hv, ?_⟩
+  exact crown_checker_encloses_semantics g ps step cert inputs vals ctx x htopo hsem hcert
+    hsound id hid b v hb hv
+
 /-!
 ## IEEE32Exec specialization
 
@@ -275,7 +310,7 @@ proves that `vals` is its trace, and proves that evaluating node `id` does not r
 The floating-point refinement theorem itself lives outside this checker lemma.
 -/
 
-abbrev IEEE32Val := FlatVec TorchLean.Floats.IEEE754.IEEE32Exec
+abbrev IEEE32Val := FlatTensor TorchLean.Floats.IEEE754.IEEE32Exec
 
 abbrev IEEE32EvalNode? :=
   Array Node →
@@ -316,7 +351,7 @@ theorem crown_checker_encloses_semantics_ieee32exec_match
     (inputs : Std.HashMap Nat IEEE32Val)
     (vals : Array (Option IEEE32Val))
     (ctx : AffineCtx)
-    (x : Tensor TorchLean.Floats.IEEE754.IEEE32Exec (.dim ctx.inputDim .scalar))
+    (x : Tensor TorchLean.Floats.IEEE754.IEEE32Exec [ctx.inputDim])
     [Preorder TorchLean.Floats.IEEE754.IEEE32Exec]
     (htopo : TopoSorted g)
     (_hsem : IEEE32SemLocalOK (evalNode? := evalNode?) (g := g) (ps := _ps) (inputs := inputs)
@@ -384,7 +419,7 @@ theorem crown_checker_encloses_semantics_ieee32exec
     (inputs : Std.HashMap Nat IEEE32Val)
     (vals : Array (Option IEEE32Val))
     (ctx : AffineCtx)
-    (x : Tensor TorchLean.Floats.IEEE754.IEEE32Exec (.dim ctx.inputDim .scalar))
+    (x : Tensor TorchLean.Floats.IEEE754.IEEE32Exec [ctx.inputDim])
     [Preorder TorchLean.Floats.IEEE754.IEEE32Exec]
     (htopo : TopoSorted g)
     (hsem : IEEE32SemLocalOK (evalNode? := evalNode?) (g := g) (ps := ps) (inputs := inputs)

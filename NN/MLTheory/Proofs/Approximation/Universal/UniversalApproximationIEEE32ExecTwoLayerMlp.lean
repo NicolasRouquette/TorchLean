@@ -65,39 +65,39 @@ $\varepsilon_{\mathrm{approx}}+\varepsilon_Q+\varepsilon_R$.
 
 theorem relu_twoLayerMlp_ieee32exec_threeTerm
     {n hidDim : Nat}
-    (D : Set (Tensor IEEE32Exec (.dim n .scalar)))
-    (f : TensorVec n → ℝ)
+    (D : Set (Tensor IEEE32Exec [n]))
+    (f : Tensor ℝ [n] → ℝ)
     (l1R : LinearSpec ℝ n hidDim) (l2R : LinearSpec ℝ hidDim 1)
     (l1I : LinearSpec IEEE32Exec n hidDim) (l2I : LinearSpec IEEE32Exec hidDim 1)
     (εApprox εQ εR : ℝ)
     (hApprox :
       ∀ xI ∈ D,
-        let xR : TensorVec n := tensorToReal xI
-        |f xR - mlpEvalNd (n := n) (hidDim := hidDim) l1R l2R xR| ≤ εApprox)
+        let xR : Tensor ℝ [n] := tensorToReal xI
+        |f xR - mlpEval (n := n) (hidDim := hidDim) l1R l2R xR| ≤ εApprox)
     (hQ :
       ∀ xI ∈ D,
-        let xR : TensorVec n := tensorToReal xI
-        |mlpEvalNd (n := n) (hidDim := hidDim) l1R l2R xR
-          - mlpEvalNd (n := n) (hidDim := hidDim) (linearSpecToReal l1I) (linearSpecToReal l2I)
+        let xR : Tensor ℝ [n] := tensorToReal xI
+        |mlpEval (n := n) (hidDim := hidDim) l1R l2R xR
+          - mlpEval (n := n) (hidDim := hidDim) (linearSpecToReal l1I) (linearSpecToReal l2I)
             xR| ≤ εQ)
     (hR :
       ∀ xI ∈ D,
-        let xR : TensorVec n := tensorToReal xI
-        |IEEE32Exec.toReal (mlpEvalNdIeee32exec (n := n) (hidDim := hidDim) l1I l2I xI)
-          - mlpEvalNd (n := n) (hidDim := hidDim) (linearSpecToReal l1I) (linearSpecToReal l2I)
+        let xR : Tensor ℝ [n] := tensorToReal xI
+        |IEEE32Exec.toReal (mlpEvalIEEE32Exec (n := n) (hidDim := hidDim) l1I l2I xI)
+          - mlpEval (n := n) (hidDim := hidDim) (linearSpecToReal l1I) (linearSpecToReal l2I)
             xR| ≤ εR) :
     ∀ xI ∈ D,
-      let xR : TensorVec n := tensorToReal xI
-      |f xR - IEEE32Exec.toReal (mlpEvalNdIeee32exec (n := n) (hidDim := hidDim) l1I l2I xI)|
+      let xR : Tensor ℝ [n] := tensorToReal xI
+      |f xR - IEEE32Exec.toReal (mlpEvalIEEE32Exec (n := n) (hidDim := hidDim) l1I l2I xI)|
         ≤ εApprox + εQ + εR := by
   intro xI hxI
   classical
   -- Name the three intermediate values so the final bound reads as a textbook triangle argument.
-  set xR : TensorVec n := tensorToReal xI
-  set yU : ℝ := mlpEvalNd (n := n) (hidDim := hidDim) l1R l2R xR
-  set yQ : ℝ := mlpEvalNd (n := n) (hidDim := hidDim) (linearSpecToReal l1I) (linearSpecToReal
+  set xR : Tensor ℝ [n] := tensorToReal xI
+  set yU : ℝ := mlpEval (n := n) (hidDim := hidDim) l1R l2R xR
+  set yQ : ℝ := mlpEval (n := n) (hidDim := hidDim) (linearSpecToReal l1I) (linearSpecToReal
     l2I) xR
-  set yI : ℝ := IEEE32Exec.toReal (mlpEvalNdIeee32exec (n := n) (hidDim := hidDim) l1I l2I xI)
+  set yI : ℝ := IEEE32Exec.toReal (mlpEvalIEEE32Exec (n := n) (hidDim := hidDim) l1I l2I xI)
   -- Pull in the approximation, quantization, and IEEE execution hypotheses at this point.
   have h1 : |f xR - yU| ≤ εApprox := by
     simpa [xR, yU] using (hApprox xI hxI)

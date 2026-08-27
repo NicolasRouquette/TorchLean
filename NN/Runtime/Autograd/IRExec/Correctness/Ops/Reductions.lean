@@ -56,30 +56,26 @@ theorem buildFrom_denoteAllFrom_broadcastTo
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
+  cases hp : unaryParent? n.parents with
+  | none =>
       simp [hp] at hBuild; try cases hBuild
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          simp [hp] at hBuild; try cases hBuild
-      | nil =>
+  | some pId =>
           cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId s₁ with
           | error msg =>
               simp [hp, hIdx] at hBuild; try cases hBuild
@@ -103,7 +99,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
                           (i := i + 1) st1 = .ok st' := by
                       simpa [st1, nodeData] using hBuild
                     have hGet :
-                        vals0[pId]? = some (Spec.PackedTensor.mk (α := α) s₁ (getIdx (α := α) (xs := ctx) ip)) := by
+                        vals0[pId]? = some (Spec.SomeTensor.mk (α := α) s₁ (getIdx (α := α) (xs := ctx) ip)) := by
                       simpa [vals0, ctx] using
                         (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                           (gd := gd) (x := x) (pid := pId) (s := s₁) (idx := ip) hIdx)
@@ -111,7 +107,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
                         NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                             (input := input) (vals := vals0) (i := i) =
                           .ok
-                            (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+                            (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
                       cases hOut
                       simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
                         NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, hCan,
@@ -119,7 +115,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
                         throw_eq_error]
                     have hStep :
                         denoteAllState (α := α) inShape st1 x =
-                          vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
+                          vals0.push (Spec.SomeTensor.mk (α := α) n.outShape
                             (nodeData.eval ctx)) := by
                       simpa [vals0, st1, nodeData, ctx] using
                         (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)
@@ -151,30 +147,26 @@ theorem buildFrom_denoteAllFrom_reduceSum
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
+  cases hp : unaryParent? n.parents with
+  | none =>
       simp [hp] at hBuild; try cases hBuild
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          simp [hp] at hBuild; try cases hBuild
-      | nil =>
+  | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
               simp [hp, hP] at hBuild; try cases hBuild
@@ -211,14 +203,14 @@ theorem buildFrom_denoteAllFrom_reduceSum
                               (i := i + 1) st1 = .ok st' := by
                           simpa [st1, nodeData] using hBuild
                         have hGet :
-                            vals0[pId]? = some (Spec.PackedTensor.mk (α := α) s (getIdx (α := α) (xs := ctx) ip)) := by
+                            vals0[pId]? = some (Spec.SomeTensor.mk (α := α) s (getIdx (α := α) (xs := ctx) ip)) := by
                           simpa [vals0, ctx] using
                             (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                               (gd := gd) (x := x) (pid := pId) (s := s) (idx := ip) hIdx)
                         have hEval :
                             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                                 (input := input) (vals := vals0) (i := i) =
-                              .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+                              .ok (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
                           simpa [nodeData, mkForwardNode] using
                             (evalAt_reduceSum_ok (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) (n := n)
@@ -228,7 +220,7 @@ theorem buildFrom_denoteAllFrom_reduceSum
                               (hOut := hOut))
                         have hStep :
                             denoteAllState (α := α) inShape st1 x =
-                              vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
+                              vals0.push (Spec.SomeTensor.mk (α := α) n.outShape
                                 (nodeData.eval ctx)) := by
                           simpa [vals0, st1, nodeData, ctx] using
                             (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)
@@ -264,30 +256,26 @@ theorem buildFrom_denoteAllFrom_reduceMean
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
+  cases hp : unaryParent? n.parents with
+  | none =>
       simp [hp] at hBuild; try cases hBuild
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          simp [hp] at hBuild; try cases hBuild
-      | nil =>
+  | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
               simp [hp, hP] at hBuild; try cases hBuild
@@ -324,14 +312,14 @@ theorem buildFrom_denoteAllFrom_reduceMean
                               (i := i + 1) st1 = .ok st' := by
                           simpa [st1, nodeData] using hBuild
                         have hGet :
-                            vals0[pId]? = some (Spec.PackedTensor.mk (α := α) s (getIdx (α := α) (xs := ctx) ip)) := by
+                            vals0[pId]? = some (Spec.SomeTensor.mk (α := α) s (getIdx (α := α) (xs := ctx) ip)) := by
                           simpa [vals0, ctx] using
                             (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                               (gd := gd) (x := x) (pid := pId) (s := s) (idx := ip) hIdx)
                         have hEval :
                             NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                                 (input := input) (vals := vals0) (i := i) =
-                              .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+                              .ok (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
                           simpa [nodeData, mkForwardNode] using
                             (evalAt_reduceMean_ok (α := α) (g := g) (payload := payload)
                               (input := input) (vals := vals0) (i := i) (n := n)
@@ -341,7 +329,7 @@ theorem buildFrom_denoteAllFrom_reduceMean
                               (hOut := hOut))
                         have hStep :
                             denoteAllState (α := α) inShape st1 x =
-                              vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
+                              vals0.push (Spec.SomeTensor.mk (α := α) n.outShape
                                 (nodeData.eval ctx)) := by
                           simpa [vals0, st1, nodeData, ctx] using
                             (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)
@@ -375,30 +363,26 @@ theorem buildFrom_denoteAllFrom_sum
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
 
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
+  cases hp : unaryParent? n.parents with
+  | none =>
       simp [hp] at hBuild; try cases hBuild
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          simp [hp] at hBuild; try cases hBuild
-      | nil =>
+  | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
               simp [hp, hP] at hBuild; try cases hBuild
@@ -423,14 +407,14 @@ theorem buildFrom_denoteAllFrom_sum
                           (i := i + 1) st1 = .ok st' := by
                       simpa [st1, nodeData] using hBuild
                     have hGet :
-                        vals0[pId]? = some (Spec.PackedTensor.mk (α := α) s (getIdx (α := α) (xs := ctx) ip)) := by
+                        vals0[pId]? = some (Spec.SomeTensor.mk (α := α) s (getIdx (α := α) (xs := ctx) ip)) := by
                       simpa [vals0, ctx] using
                         (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
                           (gd := gd) (x := x) (pid := pId) (s := s) (idx := ip) hIdx)
                     have hEval :
                         NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
                             (input := input) (vals := vals0) (i := i) =
-                          .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+                          .ok (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
                       simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
                         NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet,
                         hOut, nodeData, mkForwardNode]
@@ -439,7 +423,7 @@ theorem buildFrom_denoteAllFrom_sum
                       rfl
                     have hStep :
                         denoteAllState (α := α) inShape st1 x =
-                          vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
+                          vals0.push (Spec.SomeTensor.mk (α := α) n.outShape
                             (nodeData.eval ctx)) := by
                       simpa [vals0, st1, nodeData, ctx] using
                         (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss) (τ := n.outShape)

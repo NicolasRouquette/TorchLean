@@ -17,7 +17,7 @@ public import Mathlib.Analysis.InnerProductSpace.PiL2
 Shared Euclidean-space vectorization utilities for analytic autograd proofs.
 
 This module centralizes the `Vec` alias (`EuclideanSpace ℝ (Fin n)`) and the basic
-`Tensor ℝ (.dim n .scalar)` ↔ `Vec n` conversions used across multiple proof files.
+`Tensor ℝ [n]` ↔ `Vec n` conversions used across multiple proof files.
 
 ## PyTorch correspondence / citations
 This plays the same role as treating a length-`n` tensor as an element of $\mathbb R^n$ when using
@@ -42,38 +42,43 @@ noncomputable section
 abbrev Vec (n : Nat) := EuclideanSpace ℝ (Fin n)
 
 /--
-Convert a 1D scalar tensor (`Tensor ℝ (.dim n .scalar)`) into a Euclidean vector `Vec n`.
+Convert a rank-one tensor (`Tensor ℝ [n]`) into a Euclidean vector `Vec n`.
 
 This is the “analysis-friendly” view of a length-`n` tensor as an element of $\mathbb R^n$.
 -/
-def toVecE {n : Nat} (t : Tensor ℝ (.dim n .scalar)) : Vec n :=
-  (EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)).symm (Spec.toVec t)
+def getScalarE {n : Nat} (t : Tensor ℝ [n]) : Vec n :=
+  (EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)).symm (Spec.Tensor.getScalar t)
+
+/-- Coordinate evaluation of the Euclidean view of a rank-one tensor. -/
+@[simp] lemma getScalarE_ofLp {n : Nat} (t : Tensor ℝ [n]) (i : Fin n) :
+    (getScalarE t).ofLp i = Spec.Tensor.getScalar t i := by
+  simp [getScalarE, EuclideanSpace.equiv]
 
 /--
-Convert a Euclidean vector `Vec n` back into a 1D scalar tensor (`Tensor ℝ (.dim n .scalar)`).
+Convert a Euclidean vector `Vec n` back into a rank-one tensor (`Tensor ℝ [n]`).
 
-This is the inverse direction of `toVecE`.
+This is the inverse direction of `getScalarE`.
 -/
-def ofVecE {n : Nat} (v : Vec n) : Tensor ℝ (.dim n .scalar) :=
-  Spec.ofVec ((EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)) v)
+def ofFnE {n : Nat} (v : Vec n) : Tensor ℝ [n] :=
+  Spec.Tensor.ofFn ((EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)) v)
 
-/-- `toVecE` is a left inverse of `ofVecE`. -/
-@[simp] lemma toVecE_ofVecE {n : Nat} (v : Vec n) : toVecE (ofVecE v) = v := by
+/-- `getScalarE` is a left inverse of `ofFnE`. -/
+@[simp] lemma getScalarE_ofFnE {n : Nat} (v : Vec n) : getScalarE (ofFnE v) = v := by
   classical
   let e := EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)
-  have h :=
-      congrArg e.symm (Spec.toVec_ofVec (n := n) (v := e v)) |>
-        (·.trans (e.symm_apply_apply v))
-  simp [toVecE, ofVecE]
+  change e.symm (fun i => (Spec.Tensor.ofFn (e v)).getScalar i) = v
+  rw [show (fun i => (Spec.Tensor.ofFn (e v)).getScalar i) = e v by
+    funext i
+    simp]
+  exact e.symm_apply_apply v
 
-/-- `ofVecE` is a left inverse of `toVecE`. -/
-@[simp] lemma ofVecE_toVecE {n : Nat} (t : Tensor ℝ (.dim n .scalar)) : ofVecE (toVecE t) = t := by
+/-- `ofFnE` is a left inverse of `getScalarE`. -/
+@[simp] lemma ofFnE_getScalarE {n : Nat} (t : Tensor ℝ [n]) : ofFnE (getScalarE t) = t := by
   classical
   let e := EuclideanSpace.equiv (𝕜 := ℝ) (ι := Fin n)
-  have h :=
-      congrArg Spec.ofVec (e.apply_symm_apply (Spec.toVec t)) |>
-        (·.trans (Spec.ofVec_toVec (t := t)))
-  simpa [toVecE, ofVecE, e] using h
+  change Spec.Tensor.ofFn (e (e.symm (fun i => t.getScalar i))) = t
+  rw [e.apply_symm_apply]
+  exact Spec.Tensor.ofFn_getScalar t
 
 /--
 Coordinate formula for the Euclidean inner product on `Vec n`.

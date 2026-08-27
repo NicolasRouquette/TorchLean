@@ -46,24 +46,24 @@ open TorchLean
 def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "quickstart_simple_cnn"
 
 def mkModel {batch : Nat} :
-    nn.Builder (nn.Sequential (.dim batch (.dim 1 (.dim 4 (.dim 4 .scalar)))) (.dim batch (.dim 2 .scalar))) :=
+    nn.Builder (nn.Sequential [batch, 1, 4, 4] [batch, 2]) :=
   let cfg : nn.models.CnnConfig 2 :=
     { inChannels := 1
-      spatial := #v[4, 4]
+      spatial := tensor! [4, 4]
       outDim := 2
       conv :=
         { outChannels := 3
-          kernel := #v[2, 2]
+          kernel := tensor! [2, 2]
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide }
       pool :=
-        { kernel := #v[1, 1]
+        { kernel := tensor! [1, 1]
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide } }
   by
     simpa [cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
       Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
-      nn.models.cnn cfg (.dim batch .scalar) (hInChannels := by simp [cfg])
+      nn.models.cnn cfg [batch] (hInChannels := by simp [cfg])
 
 /-- Command-line help for the simple CNN quickstart. -/
 def usage : String :=
@@ -103,10 +103,10 @@ def main (args : List String) : IO Unit := do
       (shuffle := true) (seed := seed) (dropLast := true)
   let trained ← trainer.train trainData parsed.trainOptions
   trained.printSummary
-  match Data.Bands.probeSamples with
-  | [] => pure ()
-  | (name, x, expected) :: _ =>
-      let xBatch := Spec.Tensor.dim (fun _ : Fin batch => x)
+  match Data.Bands.probeSamples[0]? with
+  | none => pure ()
+  | some (name, x, expected) =>
+      let xBatch := Tensor.repeatAxis 0 batch x
       trained.printPrediction s!"{name} expected={expected}" xBatch
 
 end NN.Examples.Quickstart.SimpleCNNTrain

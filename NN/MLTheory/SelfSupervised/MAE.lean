@@ -45,13 +45,13 @@ def ExactReconstruction {n : Nat} {Patch : Type} (x y : PatchBatch n Patch) : Pr
   ∀ i, y i = x i
 
 /--
-MAE-style masked reconstruction loss over an explicit masked-index list.
+MAE-style masked reconstruction loss over an explicit masked-index array.
 
-The list is the serialized representation of the masked set. The theorems below prove that the
+The array is the serialized representation of the masked set. The theorems below prove that the
 objective behaves like a set sum for basic reorderings/decompositions.
 -/
 def maeLoss {n : Nat} {Patch Pred : Type}
-    (maskedIdxs : List (Fin n))
+    (maskedIdxs : Array (Fin n))
     (target : PatchBatch n Patch)
     (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) : Nat :=
@@ -60,22 +60,22 @@ def maeLoss {n : Nat} {Patch Pred : Type}
 @[simp] theorem maeLoss_nil {n : Nat} {Patch Pred : Type}
     (target : PatchBatch n Patch) (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) :
-    maeLoss ([] : List (Fin n)) target pred patchLoss = 0 := by
+    maeLoss (#[] : Array (Fin n)) target pred patchLoss = 0 := by
   simp [maeLoss]
 
 theorem maeLoss_append {n : Nat} {Patch Pred : Type}
-    (xs ys : List (Fin n)) (target : PatchBatch n Patch) (pred : Fin n → Pred)
+    (xs ys : Array (Fin n)) (target : PatchBatch n Patch) (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) :
     maeLoss (xs ++ ys) target pred patchLoss =
       maeLoss xs target pred patchLoss + maeLoss ys target pred patchLoss := by
   simp [maeLoss, maskedLoss_append]
 
 /--
-The MAE loss is invariant under reversing the order of the masked-index list.  This is the small
+The MAE loss is invariant under reversing the order of the masked-index array. This is the small
 formal version of “masked reconstruction is a set objective, not an ordering objective.”
 -/
 theorem maeLoss_reverse {n : Nat} {Patch Pred : Type}
-    (idxs : List (Fin n)) (target : PatchBatch n Patch) (pred : Fin n → Pred)
+    (idxs : Array (Fin n)) (target : PatchBatch n Patch) (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat) :
     maeLoss idxs.reverse target pred patchLoss =
       maeLoss idxs target pred patchLoss := by
@@ -83,7 +83,7 @@ theorem maeLoss_reverse {n : Nat} {Patch Pred : Type}
 
 /-- If every selected patch has zero reconstruction loss, the masked MAE loss is zero. -/
 theorem maeLoss_eq_zero_of_patch_losses_zero {n : Nat} {Patch Pred : Type}
-    (idxs : List (Fin n)) (target : PatchBatch n Patch) (pred : Fin n → Pred)
+    (idxs : Array (Fin n)) (target : PatchBatch n Patch) (pred : Fin n → Pred)
     (patchLoss : Patch → Pred → Nat)
     (h : ∀ i ∈ idxs, patchLoss (target i) (pred i) = 0) :
     maeLoss idxs target pred patchLoss = 0 := by

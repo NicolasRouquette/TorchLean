@@ -39,7 +39,8 @@ The first quickstart uses TorchLean's independent raw-bit binary32 reference. Th
 Lean's native `Float32` arithmetic. The CUDA command selects the native GPU runtime and reports an
 error when CUDA is unavailable.
 
-Application code looks like this:
+Application code writes concrete tensor types as `Tensor α [dims...]`, with the scalar type first.
+For example, `Tensor Float [4, 2]` is a four-by-two tensor of `Float` values:
 
 ```lean
 import NN.API
@@ -54,16 +55,15 @@ def model :=
   ]
 
 -- Four input rows, each containing two features.
-def xs : Tensor Float (shape![4, 2]) :=
-  tensorOfList! [4, 2] [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]
+def xs : Tensor Float [4, 2] :=
+  tensor! [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
 
 -- One regression target for each input row.
-def ys : Tensor Float (shape![4, 1]) :=
-  tensorOfList! [4, 1] [0.2, 1.0, 1.0, 1.8]
+def ys : Tensor Float [4, 1] :=
+  tensor! [[0.2], [1.0], [1.0], [1.8]]
 
--- The dataset type records the feature and target shapes expected by the trainer.
-def data : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
-  Data.tensorDataset xs ys
+-- The leading `4` counts samples; each sample has shapes `[2]` and `[1]`.
+def data : Trainer.Dataset [2] [1] := Data.tensorDataset xs ys
 
 def trainOnce : IO Unit := do
   -- Select the loss and train through a typed graph interpreted by IEEE32Exec.
@@ -75,7 +75,7 @@ def trainOnce : IO Unit := do
         device := .cpu
         scalar := .ieee32Exec }
   -- Inspect the initialized model before any parameter updates.
-  let initialPrediction ← trainer.predict (tensorOfList! [2] [0.5, -0.25])
+  let initialPrediction ← trainer.predict (tensor! [0.5, -0.25])
   IO.println s!"initial={Tensor.pretty initialPrediction}"
   -- Each step averages 16 sample gradients at one parameter point, then updates once.
   -- Training returns a new trainer containing the updated parameters and run history.
@@ -114,8 +114,9 @@ lake build
 ```
 
 Use `import NN.API` for model, data, and training code. It provides `TorchLean.nn`,
-`TorchLean.Data`, `TorchLean.Trainer`, and `TorchLean.optim`, together with the mathematical model
-definitions in `Spec`. Direct verifier lowering has the focused import `NN.API.Verification`. Use
+`TorchLean.Data`, `TorchLean.Trainer`, and `TorchLean.optim` without exposing the full proof and
+backend trees. Direct verifier lowering has the focused import `NN.API.Verification`. Use
+`NN.API.Verification.Trainer` specifically for `Trainer.trainVerified`. Use
 `import NN` when the same file also needs proofs or backend infrastructure; focused imports such
 as `NN.GraphSpec`, `NN.Runtime`, or `NN.Proofs` are available for subsystem work.
 

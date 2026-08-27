@@ -46,27 +46,27 @@ shapes expected by TorchLean.
 -/
 structure CnnStateDict (inC outC kH kW flatSize : Nat) where
   /-- First convolution kernel, PyTorch shape `(outC, inC, kH, kW)`. -/
-  convW1 : Tensor Float (.dim outC (.dim inC (.dim kH (.dim kW .scalar))))
+  convW1 : Tensor Float [outC, inC, kH, kW]
   /-- First convolution bias. -/
-  convB1 : Tensor Float (.dim outC .scalar)
+  convB1 : Tensor Float [outC]
   /-- Second convolution kernel, PyTorch shape `(outC, outC, kH, kW)`. -/
-  convW2 : Tensor Float (.dim outC (.dim outC (.dim kH (.dim kW .scalar))))
+  convW2 : Tensor Float [outC, outC, kH, kW]
   /-- Second convolution bias. -/
-  convB2 : Tensor Float (.dim outC .scalar)
+  convB2 : Tensor Float [outC]
   /-- Classifier weight, PyTorch shape `(outC, flatSize)`. -/
-  linearW : Tensor Float (.dim outC (.dim flatSize .scalar))
+  linearW : Tensor Float [outC, flatSize]
   /-- Classifier bias. -/
-  linearB : Tensor Float (.dim outC .scalar)
+  linearB : Tensor Float [outC]
 
 /-- Load a CNN state dict from JSON (PyTorch `state_dict`-style keys). -/
 def loadCnnStateDict (inC outC kH kW flatSize : Nat) (j : Json) : Option (CnnStateDict inC outC kH
   kW flatSize) :=
-  let convW1Shape : Shape := .dim outC (.dim inC (.dim kH (.dim kW .scalar)))
-  let convB1Shape : Shape := .dim outC .scalar
-  let convW2Shape : Shape := .dim outC (.dim outC (.dim kH (.dim kW .scalar)))
-  let convB2Shape : Shape := .dim outC .scalar
-  let linearWShape : Shape := .dim outC (.dim flatSize .scalar)
-  let linearBShape : Shape := .dim outC .scalar
+  let convW1Shape : Shape := [outC, inC, kH, kW]
+  let convB1Shape : Shape := [outC]
+  let convW2Shape : Shape := [outC, outC, kH, kW]
+  let convB2Shape : Shape := [outC]
+  let linearWShape : Shape := [outC, flatSize]
+  let linearBShape : Shape := [outC]
   do
     -- Accepts both `{...}` and `{ "params": {...} }`.
     let o ← loadWeights? j

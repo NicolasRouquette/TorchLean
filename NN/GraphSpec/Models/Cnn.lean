@@ -6,216 +6,135 @@ Authors: TorchLean Team
 
 module
 
-public import NN.GraphSpec.Primitives.Vision
+public import NN.GraphSpec.Primitives.Spatial
 
 /-!
-# GraphSpec model: CNN (2 convs)
+# GraphSpec Convolutional Classifier
 
-This is a GraphSpec version of the classic small CNN:
-
-`Conv2d → ReLU → MaxPool2d → Conv2d → ReLU → MaxPool2d → Flatten → Linear`
-
-Notes:
-- This is still a **chain** model (no skip connections), so it fits the sequential GraphSpec core
-  (`NN.GraphSpec.Core`) and can be built using `>>>`.
-- Parameter shapes are derived in the type:
-  `(K1,b1,K2,b2,W,b)` where `K` are Conv kernels and `W` is the linear head matrix.
-
-## Shape bookkeeping (why all the Nat arithmetic?)
-
-The point of GraphSpec is that the *shape interface is part of the type*. Convolution and pooling
-therefore bake their output shapes into the type, using the standard formulas:
-
-- Conv2d:
-  `outH = Spec.Shape.slidingWindowOutDim inH kH stride padding` (and similarly for `outW`)
-- MaxPool2d:
-  `outH = Spec.poolOutDim inH kH stride 0` (and similarly for `outW`)
-
-This file defines small helper abbreviations (`outH/outW/poolH/poolW`) so that the overall
-classifier head shape (the input dimension to the final `Linear`) is computed once and reused.
-
-## Why not put this under `GraphSpec.DAG`?
-
-You *can* express a chain model as a DAG term, but the sequential DSL is the simpler interface for
-pure pipelines. The DAG language is reserved for models that need sharing or
-multi-input nodes (e.g. residual adds).
+A graph-authored classifier with two convolution-pooling blocks and a linear head. Every spatial
+quantity is a `Spec.Tensor Nat [d]`, so the definition applies unchanged to signals, images,
+volumes, and higher-dimensional grids.
 -/
 
 @[expose] public section
-
 
 namespace NN
 namespace GraphSpec
 namespace Models
 
 open _root_.Spec
-open NN.Tensor
 
-/-! ### Conv/pool output size helpers -/
+/-- Spatial extent after the two convolution-pooling blocks. -/
+def twoConvOutputSpatial {d : Nat}
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]) :
+    Spec.Tensor Nat [d] :=
+  let convSpatial₁ := Spec.convOutSpatial spatial kernel convStride₁ convPadding₁
+  let pooledSpatial₁ :=
+    Spec.poolOutSpatialPad convSpatial₁ poolKernel poolStride₁ poolPadding₁
+  let convSpatial₂ := Spec.convOutSpatial pooledSpatial₁ kernel convStride₂ convPadding₂
+  Spec.poolOutSpatialPad convSpatial₂ poolKernel poolStride₂ poolPadding₂
 
-/-- Convolution output height formula (standard DL convention). -/
-abbrev outH (inH kH stride padding : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim inH kH stride padding
+/-- Shape of the final convolutional feature map. -/
+def twoConvFeatureShape {d channels : Nat}
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]) : Shape :=
+  Shape.ofList (channels ::
+    (twoConvOutputSpatial spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂).toList)
 
-/-- Convolution output width formula (standard DL convention). -/
-abbrev outW (inW kW stride padding : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim inW kW stride padding
-
-/-- MaxPool output height formula. -/
-abbrev poolH (inH kH stride : Nat) : Nat :=
-  Spec.poolOutDim inH kH stride 0
-
-/-- MaxPool output width formula. -/
-abbrev poolW (inW kW stride : Nat) : Nat :=
-  Spec.poolOutDim inW kW stride 0
-
-/--
-Final feature-map height after:
-
-`conv1 → pool1 → conv2 → pool2`.
- -/
-abbrev featH
-    (inH kH stride1 padding1 poolKH poolStride1 stride2 padding2 poolStride2 : Nat) : Nat :=
-  poolH (outH (poolH (outH inH kH stride1 padding1) poolKH poolStride1) kH stride2 padding2) poolKH
-    poolStride2
+/-- Number of scalar features consumed by the linear head. -/
+def twoConvFeatureSize {d channels : Nat}
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d]) : Nat :=
+  Shape.size <| twoConvFeatureShape (channels := channels) spatial kernel
+    convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel
+    poolStride₁ poolPadding₁ poolStride₂ poolPadding₂
 
 /--
-Final feature-map width after:
+Two convolution-pooling blocks followed by a linear classifier.
 
-`conv1 → pool1 → conv2 → pool2`.
- -/
-abbrev featW
-    (inW kW stride1 padding1 poolKW poolStride1 stride2 padding2 poolStride2 : Nat) : Nat :=
-  poolW (outW (poolW (outW inW kW stride1 padding1) poolKW poolStride1) kW stride2 padding2) poolKW
-    poolStride2
-
-/--
-Total flattened feature size for the classifier head.
-
-If the second conv produces `c2` channels and the final spatial size is `featH × featW`,
-then the flattened vector length is `(CHW c2 featH featW).size`.
- -/
-abbrev featSize
-    (c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1 poolStride2 : Nat)
-      : Nat :=
-  Spec.Shape.size
-    (.dim c2
-      (.dim (featH inH kH stride1 padding1 poolKH poolStride1 stride2 padding2 poolStride2)
-        (.dim (featW inW kW stride1 padding1 poolKW poolStride1 stride2 padding2 poolStride2)
-          .scalar)))
-
-/--
-2-conv CNN GraphSpec model.
-
-Conventions:
-- both conv layers share `(kH,kW)` but can differ in stride/padding.
-- pooling uses kernel `(poolKH,poolKW)` and can differ in stride per pooling site.
-
-Parameter layout (type-level):
-
-- `(K1,b1)` for conv1,
-- `(K2,b2)` for conv2,
-- `(W,b)` for the final linear head.
-
-Input/output:
-
-- input `x : CHW inC inH inW` (no batch dimension),
-- output logits `: Vec outDim`.
+The parameter list records both convolution kernels and biases followed by the linear head. The
+input has shape `(inChannels, spatial...)`; no batch axis is built into the architecture.
 -/
-def twoConvCnn
-    (inC c1 c2 outDim inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-      poolStride2 : Nat)
-    {h_inC : inC ≠ 0} {h_c1 : c1 ≠ 0} {_h_c2 : c2 ≠ 0}
-    {h_kH : kH ≠ 0} {h_kW : kW ≠ 0}
-    {h_stride1 : stride1 ≠ 0} {h_stride2 : stride2 ≠ 0}
-    {h_poolKH : poolKH ≠ 0} {h_poolKW : poolKW ≠ 0}
-    {h_poolStride1 : poolStride1 ≠ 0} {h_poolStride2 : poolStride2 ≠ 0} :
+def twoConvCnn {d inChannels firstChannels secondChannels outputSize : Nat}
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d])
+    {hInChannels : inChannels ≠ 0}
+    {hFirstChannels : firstChannels ≠ 0}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    {hConvStride₁ : ∀ i : Fin d, convStride₁.getScalar i ≠ 0}
+    {hConvStride₂ : ∀ i : Fin d, convStride₂.getScalar i ≠ 0}
+    {hPoolKernel : ∀ i : Fin d, poolKernel.getScalar i ≠ 0}
+    {hPoolStride₁ : ∀ i : Fin d, poolStride₁.getScalar i ≠ 0}
+    {hPoolStride₂ : ∀ i : Fin d, poolStride₂.getScalar i ≠ 0} :
     Chain
-      [ .dim c1 (.dim inC (.dim kH (.dim kW .scalar))), .dim c1 .scalar
-      , .dim c2 (.dim c1 (.dim kH (.dim kW .scalar))), .dim c2 .scalar
-      , .dim outDim (.dim (featSize c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW
-        poolStride1 poolStride2) .scalar)
-      , .dim outDim .scalar ]
-      (.dim inC (.dim inH (.dim inW .scalar))) (.dim outDim .scalar) :=
-  Chain.conv2d (inC := inC) (outC := c1) (kH := kH) (kW := kW) (stride := stride1) (padding :=
-    padding1)
-    (inH := inH) (inW := inW) (h_inC := h_inC) (h_kH := h_kH) (h_kW := h_kW)
-    (hStride := h_stride1)
-  >>>
-  Chain.relu
-    (.dim c1 (.dim (outH inH kH stride1 padding1) (.dim (outW inW kW stride1 padding1) .scalar)))
-  >>>
-  Chain.maxPool2d
-    (kH := poolKH) (kW := poolKW)
-    (inH := outH inH kH stride1 padding1)
-    (inW := outW inW kW stride1 padding1)
-    (inC := c1) (stride := poolStride1)
-    (h_kH := h_poolKH) (h_kW := h_poolKW) (hStride := h_poolStride1)
-  >>>
-  Chain.conv2d
-    (inC := c1) (outC := c2) (kH := kH) (kW := kW) (stride := stride2) (padding := padding2)
-    (inH := poolH (outH inH kH stride1 padding1) poolKH poolStride1)
-    (inW := poolW (outW inW kW stride1 padding1) poolKW poolStride1)
-    (h_inC := h_c1) (h_kH := h_kH) (h_kW := h_kW) (hStride := h_stride2)
-  >>>
-  Chain.relu
-    (.dim c2 (.dim (outH (poolH (outH inH kH stride1 padding1) poolKH poolStride1) kH stride2 padding2) (.dim (outW (poolW (outW inW kW stride1 padding1) poolKW poolStride1) kW stride2 padding2) .scalar)))
-  >>>
-  Chain.maxPool2d
-    (kH := poolKH) (kW := poolKW)
-    (inH := outH (poolH (outH inH kH stride1 padding1) poolKH poolStride1) kH stride2 padding2)
-    (inW := outW (poolW (outW inW kW stride1 padding1) poolKW poolStride1) kW stride2 padding2)
-    (inC := c2) (stride := poolStride2)
-    (h_kH := h_poolKH) (h_kW := h_poolKW) (hStride := h_poolStride2)
-  >>>
-  Chain.flatten
-    (.dim c2 (.dim (featH inH kH stride1 padding1 poolKH poolStride1 stride2 padding2 poolStride2) (.dim (featW inW kW stride1 padding1 poolKW poolStride1 stride2 padding2 poolStride2) .scalar)))
-  >>>
-  -- Linear head: interpret the flattened feature vector as `Vec (featSize ...)`.
-  Chain.linear
-    (inDim := featSize c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-      poolStride2)
-    (outDim := outDim)
+      [ Shape.ofList (firstChannels :: inChannels :: kernel.toList)
+      , [firstChannels]
+      , Shape.ofList (secondChannels :: firstChannels :: kernel.toList)
+      , [secondChannels]
+      , [outputSize,
+          (twoConvFeatureSize (channels := secondChannels) spatial kernel
+            convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel
+            poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)]
+      , [outputSize] ]
+      (Shape.ofList (inChannels :: spatial.toList)) [outputSize] :=
+  let convSpatial₁ := Spec.convOutSpatial spatial kernel convStride₁ convPadding₁
+  let pooledSpatial₁ :=
+    Spec.poolOutSpatialPad convSpatial₁ poolKernel poolStride₁ poolPadding₁
+  let convSpatial₂ := Spec.convOutSpatial pooledSpatial₁ kernel convStride₂ convPadding₂
+  let pooledSpatial₂ :=
+    Spec.poolOutSpatialPad convSpatial₂ poolKernel poolStride₂ poolPadding₂
+  let featureShape := Shape.ofList (secondChannels :: pooledSpatial₂.toList)
+  Chain.conv inChannels firstChannels kernel convStride₁ convPadding₁ spatial
+      (hInC := hInChannels) (hKernel := hKernel) (hStride := hConvStride₁) >>>
+    Chain.relu (Shape.ofList (firstChannels :: convSpatial₁.toList)) >>>
+    Chain.maxPool firstChannels poolKernel poolStride₁ poolPadding₁ convSpatial₁
+      (hKernel := hPoolKernel) (hStride := hPoolStride₁) >>>
+    Chain.conv firstChannels secondChannels kernel convStride₂ convPadding₂ pooledSpatial₁
+      (hInC := hFirstChannels) (hKernel := hKernel) (hStride := hConvStride₂) >>>
+    Chain.relu (Shape.ofList (secondChannels :: convSpatial₂.toList)) >>>
+    Chain.maxPool secondChannels poolKernel poolStride₂ poolPadding₂ convSpatial₂
+      (hKernel := hPoolKernel) (hStride := hPoolStride₂) >>>
+    Chain.flatten featureShape >>>
+    Chain.linear
+      (inDim := twoConvFeatureSize (channels := secondChannels) spatial kernel
+        convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel
+        poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)
+      (outDim := outputSize)
 
-/--
-The same 2-conv CNN, but exposed as a DAG `Model` via the structural lowering
-`LowerToDAG.Chain.toDAGModelZeroInit`.
-
-This lets “DAG-only” downstream tooling consume this architecture even though it is authored as a
-sequential `Chain` pipeline.
-
-Initialization: all-zero parameters (see `LowerToDAG.Chain.toDAGModelZeroInit`).
- -/
-def twoConvCnnDAGModelZeroInit
-    (inC c1 c2 outDim inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW poolStride1
-      poolStride2 : Nat)
-    {h_inC : inC ≠ 0} {h_c1 : c1 ≠ 0} {h_c2 : c2 ≠ 0}
-    {h_kH : kH ≠ 0} {h_kW : kW ≠ 0}
-    {h_stride1 : stride1 ≠ 0} {h_stride2 : stride2 ≠ 0}
-    {h_poolKH : poolKH ≠ 0} {h_poolKW : poolKW ≠ 0}
-    {h_poolStride1 : poolStride1 ≠ 0} {h_poolStride2 : poolStride2 ≠ 0} :
+/-- Lower `twoConvCnn` structurally to the DAG representation with zero-initialized parameters. -/
+def twoConvCnnDAGModelZeroInit {d inChannels firstChannels secondChannels outputSize : Nat}
+    (spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂ : Spec.Tensor Nat [d])
+    {hInChannels : inChannels ≠ 0}
+    {hFirstChannels : firstChannels ≠ 0}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    {hConvStride₁ : ∀ i : Fin d, convStride₁.getScalar i ≠ 0}
+    {hConvStride₂ : ∀ i : Fin d, convStride₂.getScalar i ≠ 0}
+    {hPoolKernel : ∀ i : Fin d, poolKernel.getScalar i ≠ 0}
+    {hPoolStride₁ : ∀ i : Fin d, poolStride₁.getScalar i ≠ 0}
+    {hPoolStride₂ : ∀ i : Fin d, poolStride₂.getScalar i ≠ 0} :
     DAG.Model
-      [ .dim c1 (.dim inC (.dim kH (.dim kW .scalar))), .dim c1 .scalar
-      , .dim c2 (.dim c1 (.dim kH (.dim kW .scalar))), .dim c2 .scalar
-      , .dim outDim (.dim (featSize c2 inH inW kH kW stride1 padding1 stride2 padding2 poolKH poolKW
-        poolStride1 poolStride2) .scalar)
-      , .dim outDim .scalar ]
-      [.dim inC (.dim inH (.dim inW .scalar))]
-      (.dim outDim .scalar) :=
+      [ Shape.ofList (firstChannels :: inChannels :: kernel.toList)
+      , [firstChannels]
+      , Shape.ofList (secondChannels :: firstChannels :: kernel.toList)
+      , [secondChannels]
+      , [outputSize,
+          (twoConvFeatureSize (channels := secondChannels) spatial kernel
+            convStride₁ convPadding₁ convStride₂ convPadding₂ poolKernel
+            poolStride₁ poolPadding₁ poolStride₂ poolPadding₂)]
+      , [outputSize] ]
+      [Shape.ofList (inChannels :: spatial.toList)] [outputSize] :=
   LowerToDAG.Chain.toDAGModelZeroInit <|
-    twoConvCnn
-      (inC := inC) (c1 := c1) (c2 := c2) (outDim := outDim)
-      (inH := inH) (inW := inW)
-      (kH := kH) (kW := kW)
-      (stride1 := stride1) (padding1 := padding1)
-      (stride2 := stride2) (padding2 := padding2)
-      (poolKH := poolKH) (poolKW := poolKW) (poolStride1 := poolStride1) (poolStride2 :=
-        poolStride2)
-      (h_inC := h_inC) (h_c1 := h_c1) (_h_c2 := h_c2)
-      (h_kH := h_kH) (h_kW := h_kW)
-      (h_stride1 := h_stride1) (h_stride2 := h_stride2)
-      (h_poolKH := h_poolKH) (h_poolKW := h_poolKW)
-      (h_poolStride1 := h_poolStride1) (h_poolStride2 := h_poolStride2)
+    twoConvCnn (inChannels := inChannels) (firstChannels := firstChannels)
+      (secondChannels := secondChannels) (outputSize := outputSize)
+      spatial kernel convStride₁ convPadding₁ convStride₂ convPadding₂
+      poolKernel poolStride₁ poolPadding₁ poolStride₂ poolPadding₂
+      (hInChannels := hInChannels) (hFirstChannels := hFirstChannels)
+      (hKernel := hKernel) (hConvStride₁ := hConvStride₁) (hConvStride₂ := hConvStride₂)
+      (hPoolKernel := hPoolKernel) (hPoolStride₁ := hPoolStride₁)
+      (hPoolStride₂ := hPoolStride₂)
 
 end Models
 end GraphSpec

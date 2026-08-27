@@ -39,7 +39,6 @@ namespace Spec
 
 open Tensor
 open Activation
-open Recurrent
 
 variable {α : Type} [Context α]
 
@@ -51,33 +50,33 @@ blocks.
 -/
 structure LSTMSpec (α : Type) (inputSize hiddenSize : Nat) where
   /-- Forget-gate weights for `f_t = sigmoid(W_f [x_t; h_{t-1}] + b_f)`. -/
-  forgetWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  forgetWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Forget-gate bias. -/
-  forgetBias : HiddenVector α hiddenSize
+  forgetBias : Tensor α [hiddenSize]
   /-- Input-gate weights for `i_t = sigmoid(W_i [x_t; h_{t-1}] + b_i)`. -/
-  inputWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  inputWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Input-gate bias. -/
-  inputBias : HiddenVector α hiddenSize
+  inputBias : Tensor α [hiddenSize]
   /-- Candidate/cell-proposal weights for `g_t = tanh(W_g [x_t; h_{t-1}] + b_g)`. -/
-  candidateWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  candidateWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Candidate/cell-proposal bias. -/
-  candidateBias : HiddenVector α hiddenSize
+  candidateBias : Tensor α [hiddenSize]
   /-- Output-gate weights for `o_t = sigmoid(W_o [x_t; h_{t-1}] + b_o)`. -/
-  outputWeight : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  outputWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Output-gate bias. -/
-  outputBias : HiddenVector α hiddenSize
+  outputBias : Tensor α [hiddenSize]
 
 /-- LSTM recurrent state: hidden vector `h_t` and cell vector `c_t`. -/
 structure LSTMState (α : Type) (hiddenSize : Nat) where
   /-- Exposed hidden state `h_t`. -/
-  hidden : HiddenVector α hiddenSize  -- h_t
+  hidden : Tensor α [hiddenSize]  -- h_t
   /-- Internal memory/cell state `c_t`. -/
-  cell   : HiddenVector α hiddenSize  -- c_t
+  cell   : Tensor α [hiddenSize]  -- c_t
 
 /-- One LSTM cell step: update `(h_{t-1}, c_{t-1})` given `x_t` and parameters. -/
 def lstmCellSpec {inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)
-  (input : InputVector α inputSize)
+  (input : Tensor α [inputSize])
   (prev_state : LSTMState α hiddenSize) :
   LSTMState α hiddenSize :=
   -- We follow the standard LSTM equations (same layout as in the PyTorch docs):
@@ -90,7 +89,7 @@ def lstmCellSpec {inputSize hiddenSize : Nat}
   --   h_t = o_t ⊙ tanh(c_t)                        (exposed hidden state)
   --
   -- The `cell` component is what lets information persist over long ranges.
-  let concat := concatLeadingAxisSpec input prev_state.hidden
+  let concat := concatAxisSpec .scalar input prev_state.hidden
 
   -- Forget gate: f_t = σ(W_f @ [x_t; h_{t-1}] + b_f)
   let forget_gate := sigmoidSpec (addSpec (matVecMulSpec lstm.forgetWeight concat)
@@ -119,21 +118,20 @@ def lstmCellSpec {inputSize hiddenSize : Nat}
 /-- Run an LSTM cell over a length-`seqLen` input sequence, returning outputs and final state. -/
 def lstmSequenceSpec {seqLen inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)
-  (inputs : SequenceTensor α seqLen (.dim inputSize .scalar))
+  (inputs : Tensor α [seqLen, inputSize])
   (initial_state : LSTMState α hiddenSize) :
-  (SequenceTensor α seqLen (.dim hiddenSize .scalar) × LSTMState α hiddenSize) :=
+  (Tensor α [seqLen, hiddenSize] × LSTMState α hiddenSize) :=
   let (finalState, outputs) := Sequence.mapAccum seqLen initial_state fun i previous =>
-    let state := lstmCellSpec lstm (getAtSpec inputs i) previous
+    let state := lstmCellSpec lstm (get inputs i) previous
     (state, state.hidden)
-  (Tensor.dim outputs.get, finalState)
+  (Tensor.dim outputs.getScalar, finalState)
 
 /-- Batched wrapper around `lstmSequenceSpec` (runs one sequence per batch element). -/
 def lstmBatchedSpec {batchSize seqLen inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)
-  (inputs : BatchedTensor α batchSize (.dim seqLen (.dim inputSize .scalar)))
-  (initial_hiddens : BatchedTensor α batchSize (.dim hiddenSize .scalar)) :
-  (BatchedTensor α batchSize (.dim seqLen (.dim hiddenSize .scalar)) ×
-   BatchedTensor α batchSize (.dim hiddenSize .scalar)) :=
+  (inputs : Tensor α [batchSize, seqLen, inputSize])
+  (initial_hiddens : Tensor α [batchSize, hiddenSize]) :
+  (Tensor α [batchSize, seqLen, hiddenSize] × Tensor α [batchSize, hiddenSize]) :=
   match inputs, initial_hiddens with
   | .dim batch_inputs, .dim batch_hidden =>
     -- In PyTorch you typically pass both `h_0` and `c_0`. Here we take only `h_0` and set `c_0 =
@@ -143,12 +141,12 @@ def lstmBatchedSpec {batchSize seqLen inputSize hiddenSize : Nat}
     -- compute per-batch results
     let outputs := Tensor.dim (fun b =>
       let initial_state : LSTMState α hiddenSize :=
-        { hidden := batch_hidden b, cell := getAtSpec batch_cell b }
+        { hidden := batch_hidden b, cell := get batch_cell b }
       (lstmSequenceSpec lstm (batch_inputs b) initial_state).1)
 
     let final_hiddens := Tensor.dim (fun b =>
       let initial_state : LSTMState α hiddenSize :=
-        { hidden := batch_hidden b, cell := getAtSpec batch_cell b }
+        { hidden := batch_hidden b, cell := get batch_cell b }
       (lstmSequenceSpec lstm (batch_inputs b) initial_state).2.hidden)
 
     (outputs, final_hiddens)
@@ -164,14 +162,14 @@ This is the spec analogue of the "saved tensors" that a runtime will keep for ba
 -/
 def lstmCellSpecWithIntermediates {inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)
-  (input : InputVector α inputSize)
+  (input : Tensor α [inputSize])
   (prev_state : LSTMState α hiddenSize) :
   (LSTMState α hiddenSize ×                -- new state (h_t, c_t)
-   HiddenVector α hiddenSize ×             -- forget gate f_t
-   HiddenVector α hiddenSize ×             -- input gate i_t
-   HiddenVector α hiddenSize ×             -- candidate g_t
-   HiddenVector α hiddenSize) :=           -- output gate o_t
-  let concat := concatLeadingAxisSpec input prev_state.hidden
+   Tensor α [hiddenSize] ×             -- forget gate f_t
+   Tensor α [hiddenSize] ×             -- input gate i_t
+   Tensor α [hiddenSize] ×             -- candidate g_t
+   Tensor α [hiddenSize]) :=           -- output gate o_t
+  let concat := concatAxisSpec .scalar input prev_state.hidden
   let f := sigmoidSpec (addSpec (matVecMulSpec lstm.forgetWeight concat) lstm.forgetBias)
   let i := sigmoidSpec (addSpec (matVecMulSpec lstm.inputWeight concat) lstm.inputBias)
   let g := tanhSpec (addSpec (matVecMulSpec lstm.candidateWeight concat) lstm.candidateBias)
@@ -200,22 +198,22 @@ This is the quantity computed by PyTorch autograd for an `nn.LSTMCell` unrolled 
 -/
 def lstmCellBackwardSpec {inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)
-  (input : InputVector α inputSize)
+  (input : Tensor α [inputSize])
   (prev_state : LSTMState α hiddenSize)
   (state : LSTMState α hiddenSize)
-  (forget_gate : HiddenVector α hiddenSize)
-  (input_gate : HiddenVector α hiddenSize)
-  (candidate : HiddenVector α hiddenSize)
-  (output_gate : HiddenVector α hiddenSize)
-  (grad_hidden : HiddenVector α hiddenSize)
-  (grad_cell : HiddenVector α hiddenSize) :
-  ( InputVector α inputSize × LSTMState α hiddenSize ×
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ) :=
+  (forget_gate : Tensor α [hiddenSize])
+  (input_gate : Tensor α [hiddenSize])
+  (candidate : Tensor α [hiddenSize])
+  (output_gate : Tensor α [hiddenSize])
+  (grad_hidden : Tensor α [hiddenSize])
+  (grad_cell : Tensor α [hiddenSize]) :
+  ( Tensor α [inputSize] × LSTMState α hiddenSize ×
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ) :=
 
-  let concat := concatLeadingAxisSpec input prev_state.hidden
+  let concat := concatAxisSpec .scalar input prev_state.hidden
 
   let tanh_c := tanhSpec state.cell
   let tanh_c_deriv := subSpec (fill 1 (.dim hiddenSize .scalar)) (mulSpec tanh_c tanh_c)
@@ -271,20 +269,20 @@ PyTorch training structure, with the save-vs-recompute choice made explicit.
 -/
 def lstmSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
   (lstm : LSTMSpec α inputSize hiddenSize)
-  (inputs : SequenceTensor α seqLen (.dim inputSize .scalar))
+  (inputs : Tensor α [seqLen, inputSize])
   (initial_state : LSTMState α hiddenSize)
-  (grad_hiddens : SequenceTensor α seqLen (.dim hiddenSize .scalar)) :
-  ( WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×  -- dWf, dbf
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×  -- dWi, dbi
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×  -- dWc, dbc
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize ×  -- dWo, dbo
-    SequenceTensor α seqLen (.dim inputSize .scalar) ×                                -- dInputs
+  (grad_hiddens : Tensor α [seqLen, hiddenSize]) :
+  ( Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×  -- dWf, dbf
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×  -- dWi, dbi
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×  -- dWc, dbc
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize] ×  -- dWo, dbo
+    Tensor α [seqLen, inputSize] ×                                                    -- dInputs
     LSTMState α hiddenSize ) :=
     -- dInitialState
 
   let (_, saved) := Sequence.mapAccum seqLen initial_state fun index state =>
     let (next, forget, input, candidate, output) :=
-      lstmCellSpecWithIntermediates lstm (getAtSpec inputs index) state
+      lstmCellSpecWithIntermediates lstm (get inputs index) state
     (next, (next, forget, input, candidate, output))
 
   let zeroHidden := fill 0 (.dim hiddenSize .scalar)
@@ -295,18 +293,18 @@ def lstmSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
   let (result, dInputs) := Sequence.mapAccumRight seqLen initial fun index state =>
     let (dNext, forgetWeights, forgetBias, inputWeights, inputBias, candidateWeights,
         candidateBias, outputWeights, outputBias) := state
-    let (current, forget, inputGate, candidate, output) := saved.get index
+    let (current, forget, inputGate, candidate, output) := saved.getScalar index
     let previous :=
       if h : index.val > 0 then
         have hp : index.val - 1 < seqLen := by grind
-        let (previous, _, _, _, _) := saved.get ⟨index.val - 1, hp⟩
+        let (previous, _, _, _, _) := saved.getScalar ⟨index.val - 1, hp⟩
         previous
       else
         initial_state
-    let totalHidden := addSpec (getAtSpec grad_hiddens index) dNext.hidden
+    let totalHidden := addSpec (get grad_hiddens index) dNext.hidden
     let (dInput, dPrevious, dForgetWeights, dForgetBias, dInputWeights, dInputBias,
         dCandidateWeights, dCandidateBias, dOutputWeights, dOutputBias) :=
-      lstmCellBackwardSpec lstm (getAtSpec inputs index) previous current forget inputGate candidate
+      lstmCellBackwardSpec lstm (get inputs index) previous current forget inputGate candidate
         output totalHidden dNext.cell
     ((dPrevious, addSpec forgetWeights dForgetWeights, addSpec forgetBias dForgetBias,
       addSpec inputWeights dInputWeights, addSpec inputBias dInputBias,
@@ -315,6 +313,6 @@ def lstmSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
   let (dInitialState, dForgetWeights, dForgetBias, dInputWeights, dInputBias, dCandidateWeights,
       dCandidateBias, dOutputWeights, dOutputBias) := result
   (dForgetWeights, dForgetBias, dInputWeights, dInputBias, dCandidateWeights, dCandidateBias,
-    dOutputWeights, dOutputBias, Tensor.dim dInputs.get, dInitialState)
+    dOutputWeights, dOutputBias, Tensor.dim dInputs.getScalar, dInitialState)
 
 end Spec

@@ -125,20 +125,20 @@ as the spec does.
 theorem batchNorm_inference_eq_mul_add
     {channels : Nat} {sSpatial : Shape}
     (x : Tensor ℝ (.dim channels sSpatial))
-    (runningMean : Tensor ℝ (.dim channels .scalar))
-    (runningVar : Tensor ℝ (.dim channels .scalar))
-    (gamma : Tensor ℝ (.dim channels .scalar))
-    (beta : Tensor ℝ (.dim channels .scalar))
+    (runningMean : Tensor ℝ [channels])
+    (runningVar : Tensor ℝ [channels])
+    (gamma : Tensor ℝ [channels])
+    (beta : Tensor ℝ [channels])
     (epsilon : ℝ := Numbers.normalizationEpsilon) :
     Spec.batchNormInference (α := ℝ) (channels := channels) (sSpatial := sSpatial)
         x runningMean runningVar gamma beta epsilon
       =
     let s : Shape := .dim channels sSpatial
     let runningVar := Tensor.maxSpec runningVar (Tensor.fill 0 (.dim channels .scalar))
-    let mean_b := Spec.broadcastChannelFirst sSpatial runningMean
-    let var_b := Spec.broadcastChannelFirst sSpatial runningVar
-    let gamma_b := Spec.broadcastChannelFirst sSpatial gamma
-    let beta_b := Spec.broadcastChannelFirst sSpatial beta
+    let mean_b := Spec.broadcastChannel sSpatial runningMean
+    let var_b := Spec.broadcastChannel sSpatial runningVar
+    let gamma_b := Spec.broadcastChannel sSpatial gamma
+    let beta_b := Spec.broadcastChannel sSpatial beta
     let std := Tensor.sqrtSpec (Tensor.addSpec var_b (Tensor.fill epsilon s))
     Tensor.addSpec (Tensor.mulSpec x (Tensor.divSpec gamma_b std))
       (Tensor.subSpec beta_b (Tensor.mulSpec mean_b (Tensor.divSpec gamma_b std))) := by

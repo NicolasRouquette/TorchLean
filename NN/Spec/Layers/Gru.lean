@@ -71,19 +71,19 @@ Shapes:
 structure GRUSpec (α : Type) (inputSize hiddenSize : Nat) where
   /-- Reset-gate weights for
   $r_t=\operatorname{sigmoid}(W_r[x_t;h_{t-1}]+b_r)$. -/
-  resetWeight : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
+  resetWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Reset-gate bias. -/
-  resetBias : Tensor α (.dim hiddenSize .scalar)
+  resetBias : Tensor α [hiddenSize]
   /-- Update-gate weights for
   $z_t=\operatorname{sigmoid}(W_z[x_t;h_{t-1}]+b_z)$. -/
-  updateWeight : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
+  updateWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Update-gate bias. -/
-  updateBias : Tensor α (.dim hiddenSize .scalar)
+  updateBias : Tensor α [hiddenSize]
   /-- Candidate-state weights for
   $n_t=\tanh(W_n[x_t;r_t\odot h_{t-1}]+b_n)$. -/
-  candidateWeight : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar))
+  candidateWeight : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Candidate-state bias. -/
-  candidateBias : Tensor α (.dim hiddenSize .scalar)
+  candidateBias : Tensor α [hiddenSize]
 
 /--
 Forward pass for a single GRU cell.
@@ -95,9 +95,9 @@ This is not PyTorch's reset-after candidate parameterization; see the module not
 -/
 def gruCellSpec {inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (input : Tensor α (.dim inputSize .scalar))
-  (prev_hidden : Tensor α (.dim hiddenSize .scalar)) :
-  Tensor α (.dim hiddenSize .scalar) :=
+  (input : Tensor α [inputSize])
+  (prev_hidden : Tensor α [hiddenSize]) :
+  Tensor α [hiddenSize] :=
   -- We follow the textbook GRU layout:
   --
   --   r_t = sigmoid(W_r [x_t; h_{t-1}] + b_r)
@@ -106,7 +106,7 @@ def gruCellSpec {inputSize hiddenSize : Nat}
   --   h_t = (1 - z_t) ⊙ n_t + z_t ⊙ h_{t-1}
   --
   -- PyTorch instead resets the hidden affine contribution after its matrix multiplication.
-  let concat := concatLeadingAxisSpec input prev_hidden
+  let concat := concatAxisSpec .scalar input prev_hidden
 
   -- Reset gate.
   let reset_gate := sigmoidSpec (addSpec (matVecMulSpec gru.resetWeight concat)
@@ -120,7 +120,7 @@ def gruCellSpec {inputSize hiddenSize : Nat}
   let reset_hidden := mulSpec reset_gate prev_hidden
 
   -- Candidate uses `[x_t; r_t ⊙ h_{t-1}]`.
-  let reset_concat := concatLeadingAxisSpec input reset_hidden
+  let reset_concat := concatAxisSpec .scalar input reset_hidden
 
   -- Candidate (sometimes called `n_t` or `h~_t` in the literature).
   let new_candidate := tanhSpec (addSpec (matVecMulSpec gru.candidateWeight reset_concat)
@@ -147,13 +147,13 @@ the Cho-style equations of `gruCellSpec`.
 -/
 def gruSequenceSpec {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_hidden : Tensor α (.dim hiddenSize .scalar)) :
-  Tensor α (.dim seqLen (.dim hiddenSize .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (initial_hidden : Tensor α [hiddenSize]) :
+  Tensor α [seqLen, hiddenSize] :=
   let (_, outputs) := Sequence.mapAccum seqLen initial_hidden fun i previous =>
-    let hidden := gruCellSpec gru (getAtSpec inputs i) previous
+    let hidden := gruCellSpec gru (get inputs i) previous
     (hidden, hidden)
-  Tensor.dim outputs.get
+  Tensor.dim outputs.getScalar
 
 -- GRU cell forward pass that returns all intermediate values for BPTT
 /--
@@ -171,16 +171,16 @@ autograd) to compute gradients efficiently in the backward pass.
 -/
 def gruCellSpecWithIntermediates {inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (input : Tensor α (.dim inputSize .scalar))
-  (prev_hidden : Tensor α (.dim hiddenSize .scalar)) :
-  (Tensor α (.dim hiddenSize .scalar) ×  -- new_hidden
-   Tensor α (.dim hiddenSize .scalar) ×  -- reset_gate
-   Tensor α (.dim hiddenSize .scalar) ×  -- update_gate
-   Tensor α (.dim hiddenSize .scalar) ×  -- new_candidate
-   Tensor α (.dim hiddenSize .scalar)) := -- reset_hidden
+  (input : Tensor α [inputSize])
+  (prev_hidden : Tensor α [hiddenSize]) :
+  (Tensor α [hiddenSize] ×  -- new_hidden
+   Tensor α [hiddenSize] ×  -- reset_gate
+   Tensor α [hiddenSize] ×  -- update_gate
+   Tensor α [hiddenSize] ×  -- new_candidate
+   Tensor α [hiddenSize]) := -- reset_hidden
   -- Same computation as `gru_cell_spec`, but we also return the gate activations and the candidate.
   -- Those values are what a "tape" would store for a standard BPTT implementation.
-  let concat := concatLeadingAxisSpec input prev_hidden
+  let concat := concatAxisSpec .scalar input prev_hidden
 
   -- Reset gate: r_t = σ(W_r @ [x_t; h_{t-1}] + b_r)
   let reset_gate := sigmoidSpec (addSpec (matVecMulSpec gru.resetWeight concat)
@@ -194,7 +194,7 @@ def gruCellSpecWithIntermediates {inputSize hiddenSize : Nat}
   let reset_hidden := mulSpec reset_gate prev_hidden
 
   -- Concatenate input with reset hidden state
-  let reset_concat := concatLeadingAxisSpec input reset_hidden
+  let reset_concat := concatAxisSpec .scalar input reset_hidden
 
   -- New hidden state candidate: ĥ_t = tanh(W_h @ [x_t; r_t ⊙ h_{t-1}] + b_h)
   let new_candidate := tanhSpec (addSpec (matVecMulSpec gru.candidateWeight reset_concat)
@@ -220,32 +220,32 @@ The returned tensors are all time-major (`seqLen` first) to match the rest of th
 -/
 def gruExtractIntermediateValues {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (initial_hidden : Tensor α (.dim hiddenSize .scalar)) :
-  (Tensor α (.dim seqLen (.dim hiddenSize .scalar)) ×  -- hidden_states
-   Tensor α (.dim seqLen (.dim hiddenSize .scalar)) ×  -- reset_gates
-   Tensor α (.dim seqLen (.dim hiddenSize .scalar)) ×  -- update_gates
-   Tensor α (.dim seqLen (.dim hiddenSize .scalar)) ×  -- new_candidates
-   Tensor α (.dim seqLen (.dim hiddenSize .scalar))) := -- reset_hiddens
+  (inputs : Tensor α [seqLen, inputSize])
+  (initial_hidden : Tensor α [hiddenSize]) :
+  (Tensor α [seqLen, hiddenSize] ×  -- hidden_states
+   Tensor α [seqLen, hiddenSize] ×  -- reset_gates
+   Tensor α [seqLen, hiddenSize] ×  -- update_gates
+   Tensor α [seqLen, hiddenSize] ×  -- new_candidates
+   Tensor α [seqLen, hiddenSize]) := -- reset_hiddens
   let (_, saved) := Sequence.mapAccum seqLen initial_hidden fun i previous =>
     let (hidden, reset, update, candidate, resetHidden) :=
-      gruCellSpecWithIntermediates gru (getAtSpec inputs i) previous
+      gruCellSpecWithIntermediates gru (get inputs i) previous
     (hidden, (hidden, reset, update, candidate, resetHidden))
 
   let hidden_states := Tensor.dim fun i =>
-    let (hidden, _, _, _, _) := saved.get i
+    let (hidden, _, _, _, _) := saved.getScalar i
     hidden
   let reset_gates := Tensor.dim fun i =>
-    let (_, reset, _, _, _) := saved.get i
+    let (_, reset, _, _, _) := saved.getScalar i
     reset
   let update_gates := Tensor.dim fun i =>
-    let (_, _, update, _, _) := saved.get i
+    let (_, _, update, _, _) := saved.getScalar i
     update
   let new_candidates := Tensor.dim fun i =>
-    let (_, _, _, candidate, _) := saved.get i
+    let (_, _, _, candidate, _) := saved.getScalar i
     candidate
   let reset_hiddens := Tensor.dim fun i =>
-    let (_, _, _, _, resetHidden) := saved.get i
+    let (_, _, _, _, resetHidden) := saved.getScalar i
     resetHidden
 
   (hidden_states, reset_gates, update_gates, new_candidates, reset_hiddens)
@@ -259,9 +259,9 @@ Cho-style cell over a batch; it is not a `torch.nn.GRU` checkpoint format.
 -/
 def gruBatchedSpec {batchSize seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (inputs : Tensor α (.dim batchSize (.dim seqLen (.dim inputSize .scalar))))
-  (initial_hidden : Tensor α (.dim batchSize (.dim hiddenSize .scalar))) :
-  Tensor α (.dim batchSize (.dim seqLen (.dim hiddenSize .scalar))) :=
+  (inputs : Tensor α [batchSize, seqLen, inputSize])
+  (initial_hidden : Tensor α [batchSize, hiddenSize]) :
+  Tensor α [batchSize, seqLen, hiddenSize] :=
   -- This is a simple "map over the batch dimension".
   -- It matches the semantics of a batched GRU, but it is not an optimized runtime kernel.
   match inputs, initial_hidden with
@@ -280,19 +280,19 @@ building block, but the more explicit BPTT helpers below show the time-unrolled
 accumulation form.
 -/
 def gruResetWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_reset : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-  Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_reset : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   rnnWeightsDerivSpec inputs hiddens grad_reset
 
 -- Gradient w.r.t. update gate weights
 /-- Reference gradient for update-gate weights (via `rnnWeightsDerivSpec`). -/
 def gruUpdateWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_update : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-  Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_update : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   rnnWeightsDerivSpec inputs hiddens grad_update
 
 -- Gradient w.r.t. new gate weights
@@ -303,10 +303,10 @@ The second sequence argument satisfies
 $\mathtt{reset\_hiddens}_t=r_t\odot h_{t-1}$.
 -/
 def gruNewWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (reset_hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) -- r_t ⊙ h_{t-1}
-  (grad_new : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-  Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (reset_hiddens : Tensor α [seqLen, hiddenSize]) -- r_t ⊙ h_{t-1}
+  (grad_new : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   rnnWeightsDerivSpec inputs reset_hiddens grad_new
 
 -- Gradient w.r.t. biases (sum over sequence length)
@@ -317,9 +317,9 @@ This is the spec-level analogue of the common "sum across batch/time" reduction 
 gradients. The `seqLen ≠ 0` hypothesis is exactly what makes axis `0` a valid reduction axis.
 -/
 def gruBiasDerivSpec {seqLen hiddenSize : Nat}
-  (grad_outputs : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
+  (grad_outputs : Tensor α [seqLen, hiddenSize])
   (h : seqLen ≠ 0) :
-  Tensor α (.dim hiddenSize .scalar) :=
+  Tensor α [hiddenSize] :=
   reduceSum 0 grad_outputs (Shape.hasNonemptyAxisZeroOfNe h).proof
 
 -- Gradient w.r.t. reset gate weights with proper BPTT
@@ -333,28 +333,27 @@ $$
 where $\otimes$ is an outer product.
 -/
 def gruResetWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (_reset_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_reset_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-  Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (_reset_gates : Tensor α [seqLen, hiddenSize])
+  (grad_reset_gates : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   -- Accumulate gradients over time steps
-  let rec accumulate_grads (t : Nat) (acc : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize)
-    .scalar))) :
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  let rec accumulate_grads (t : Nat) (acc : Tensor α [hiddenSize, inputSize + hiddenSize]) :
+    Tensor α [hiddenSize, inputSize + hiddenSize] :=
     if h : t < seqLen then
-      let input_t := getAtSpec inputs ⟨t, h⟩
+      let input_t := get inputs ⟨t, h⟩
       let hidden_prev :=
         if ht : t > 0 then
           have ht0 : t ≠ 0 := Nat.ne_of_gt ht
           have htPred : t - 1 < t := by
             simpa [Nat.pred_eq_sub_one] using Nat.pred_lt ht0
           have htPrev : t - 1 < seqLen := lt_trans htPred h
-          getAtSpec hiddens ⟨t - 1, htPrev⟩
+          get hiddens ⟨t - 1, htPrev⟩
         else
           fill 0 (.dim hiddenSize .scalar)
-      let concat_t := concatLeadingAxisSpec input_t hidden_prev
-      let grad_reset_t := getAtSpec grad_reset_gates ⟨t, h⟩
+      let concat_t := concatAxisSpec .scalar input_t hidden_prev
+      let grad_reset_t := get grad_reset_gates ⟨t, h⟩
       let grad_w_t := outerProductSpec grad_reset_t concat_t
       accumulate_grads (t + 1) (addSpec acc grad_w_t)
     else acc
@@ -370,27 +369,26 @@ $$
 $$
 -/
 def gruUpdateWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_update_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-  Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_update_gates : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   -- Accumulate gradients over time steps
-  let rec accumulate_grads (t : Nat) (acc : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize)
-    .scalar))) :
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  let rec accumulate_grads (t : Nat) (acc : Tensor α [hiddenSize, inputSize + hiddenSize]) :
+    Tensor α [hiddenSize, inputSize + hiddenSize] :=
     if h : t < seqLen then
-      let input_t := getAtSpec inputs ⟨t, h⟩
+      let input_t := get inputs ⟨t, h⟩
       let hidden_prev :=
         if ht : t > 0 then
           have ht0 : t ≠ 0 := Nat.ne_of_gt ht
           have htPred : t - 1 < t := by
             simpa [Nat.pred_eq_sub_one] using Nat.pred_lt ht0
           have htPrev : t - 1 < seqLen := lt_trans htPred h
-          getAtSpec hiddens ⟨t - 1, htPrev⟩
+          get hiddens ⟨t - 1, htPrev⟩
         else
           fill 0 (.dim hiddenSize .scalar)
-      let concat_t := concatLeadingAxisSpec input_t hidden_prev
-      let grad_update_t := getAtSpec grad_update_gates ⟨t, h⟩
+      let concat_t := concatAxisSpec .scalar input_t hidden_prev
+      let grad_update_t := get grad_update_gates ⟨t, h⟩
       let grad_w_t := outerProductSpec grad_update_t concat_t
       accumulate_grads (t + 1) (addSpec acc grad_w_t)
     else acc
@@ -406,19 +404,18 @@ $$
 $$
 -/
 def gruNewWeightsDerivBpttSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (reset_hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) -- r_t ⊙ h_{t-1}
-  (grad_new_candidates : Tensor α (.dim seqLen (.dim hiddenSize .scalar))) :
-  Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (reset_hiddens : Tensor α [seqLen, hiddenSize]) -- r_t ⊙ h_{t-1}
+  (grad_new_candidates : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   -- Accumulate gradients over time steps
-  let rec accumulate_grads (t : Nat) (acc : Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize)
-    .scalar))) :
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) :=
+  let rec accumulate_grads (t : Nat) (acc : Tensor α [hiddenSize, inputSize + hiddenSize]) :
+    Tensor α [hiddenSize, inputSize + hiddenSize] :=
     if h : t < seqLen then
-      let input_t := getAtSpec inputs ⟨t, h⟩
-      let reset_hidden_t := getAtSpec reset_hiddens ⟨t, h⟩
-      let concat_t := concatLeadingAxisSpec input_t reset_hidden_t
-      let grad_new_t := getAtSpec grad_new_candidates ⟨t, h⟩
+      let input_t := get inputs ⟨t, h⟩
+      let reset_hidden_t := get reset_hiddens ⟨t, h⟩
+      let concat_t := concatAxisSpec .scalar input_t reset_hidden_t
+      let grad_new_t := get grad_new_candidates ⟨t, h⟩
       let grad_w_t := outerProductSpec grad_new_t concat_t
       accumulate_grads (t + 1) (addSpec acc grad_w_t)
     else acc
@@ -446,22 +443,22 @@ it is a precise spec for what gradients *should* be.
 -/
 def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (input : Tensor α (.dim inputSize .scalar))
-  (prev_hidden : Tensor α (.dim hiddenSize .scalar))
-  (grad_output : Tensor α (.dim hiddenSize .scalar))
-  (reset_gate : Tensor α (.dim hiddenSize .scalar))
-  (update_gate : Tensor α (.dim hiddenSize .scalar))
-  (new_candidate : Tensor α (.dim hiddenSize .scalar)) :
-  ( Tensor α (.dim inputSize .scalar) ×                     -- dInput
-    Tensor α (.dim hiddenSize .scalar) ×                    -- dPrevHidden
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) ×  -- dResetW
-    Tensor α (.dim hiddenSize .scalar) ×                    -- dResetB
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) ×  -- dUpdateW
-    Tensor α (.dim hiddenSize .scalar) ×                    -- dUpdateB
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) ×  -- dNewW
-    Tensor α (.dim hiddenSize .scalar)                      -- dNewB
+  (input : Tensor α [inputSize])
+  (prev_hidden : Tensor α [hiddenSize])
+  (grad_output : Tensor α [hiddenSize])
+  (reset_gate : Tensor α [hiddenSize])
+  (update_gate : Tensor α [hiddenSize])
+  (new_candidate : Tensor α [hiddenSize]) :
+  ( Tensor α [inputSize] ×                     -- dInput
+    Tensor α [hiddenSize] ×                    -- dPrevHidden
+    Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dResetW
+    Tensor α [hiddenSize] ×                    -- dResetB
+    Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dUpdateW
+    Tensor α [hiddenSize] ×                    -- dUpdateB
+    Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dNewW
+    Tensor α [hiddenSize]                      -- dNewB
   ) :=
-  let concat := concatLeadingAxisSpec input prev_hidden
+  let concat := concatAxisSpec .scalar input prev_hidden
 
   -- Start from the output equation:
   --   h = (1 - z) ⊙ n + z ⊙ h_prev
@@ -481,7 +478,7 @@ def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
 
   -- h_reset = r ⊙ h_prev, reset_concat = [x; h_reset]
   let reset_hidden := mulSpec reset_gate prev_hidden
-  let reset_concat := concatLeadingAxisSpec input reset_hidden
+  let reset_concat := concatAxisSpec .scalar input reset_hidden
 
   -- New gate grads.
   let dNewW := outerProductSpec dPre_h reset_concat
@@ -531,21 +528,21 @@ accumulates gradients for the Cho-style forward equation.
 -/
 def gruSequenceBackwardFullSpec {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_outputs : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (reset_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (update_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (new_candidates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (initial_hidden : Tensor α (.dim hiddenSize .scalar) := fill 0 (.dim hiddenSize .scalar)) :
-  ( Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) ×  -- dResetW
-    Tensor α (.dim hiddenSize .scalar) ×                                  -- dResetB
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) ×  -- dUpdateW
-    Tensor α (.dim hiddenSize .scalar) ×                                  -- dUpdateB
-    Tensor α (.dim hiddenSize (.dim (inputSize + hiddenSize) .scalar)) ×  -- dNewW
-    Tensor α (.dim hiddenSize .scalar) ×                                  -- dNewB
-    Tensor α (.dim seqLen (.dim inputSize .scalar)) ×                     -- dInputs
-    Tensor α (.dim hiddenSize .scalar)                                    -- dInitialHidden
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_outputs : Tensor α [seqLen, hiddenSize])
+  (reset_gates : Tensor α [seqLen, hiddenSize])
+  (update_gates : Tensor α [seqLen, hiddenSize])
+  (new_candidates : Tensor α [seqLen, hiddenSize])
+  (initial_hidden : Tensor α [hiddenSize] := fill 0 [hiddenSize]) :
+  ( Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dResetW
+    Tensor α [hiddenSize] ×                                  -- dResetB
+    Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dUpdateW
+    Tensor α [hiddenSize] ×                                  -- dUpdateB
+    Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dNewW
+    Tensor α [hiddenSize] ×                                  -- dNewB
+    Tensor α [seqLen, inputSize] ×                     -- dInputs
+    Tensor α [hiddenSize]                                    -- dInitialHidden
   ) :=
 
   let zeroHidden := fill 0 (.dim hiddenSize .scalar)
@@ -555,25 +552,25 @@ def gruSequenceBackwardFullSpec {seqLen inputSize hiddenSize : Nat}
   let (result, dInputs) := Sequence.mapAccumRight seqLen initial fun index state =>
     let (dHiddenNext, resetWeights, resetBias, updateWeights, updateBias, newWeights, newBias) :=
       state
-    let input := getAtSpec inputs index
+    let input := get inputs index
     let previous :=
       if h : index.val > 0 then
         have hp : index.val - 1 < seqLen := by grind
-        getAtSpec hiddens ⟨index.val - 1, hp⟩
+        get hiddens ⟨index.val - 1, hp⟩
       else
         initial_hidden
-    let totalGradient := addSpec (getAtSpec grad_outputs index) dHiddenNext
+    let totalGradient := addSpec (get grad_outputs index) dHiddenNext
     let (dInput, dHidden, dResetWeights, dResetBias, dUpdateWeights, dUpdateBias,
         dNewWeights, dNewBias) :=
-      gruCellBackwardFullSpec gru input previous totalGradient (getAtSpec reset_gates index)
-        (getAtSpec update_gates index) (getAtSpec new_candidates index)
+      gruCellBackwardFullSpec gru input previous totalGradient (get reset_gates index)
+        (get update_gates index) (get new_candidates index)
     ((dHidden, addSpec resetWeights dResetWeights, addSpec resetBias dResetBias,
       addSpec updateWeights dUpdateWeights, addSpec updateBias dUpdateBias,
       addSpec newWeights dNewWeights, addSpec newBias dNewBias), dInput)
   let (dInitialHidden, dResetWeights, dResetBias, dUpdateWeights, dUpdateBias, dNewWeights,
       dNewBias) := result
   (dResetWeights, dResetBias, dUpdateWeights, dUpdateBias, dNewWeights, dNewBias,
-    Tensor.dim dInputs.get, dInitialHidden)
+    Tensor.dim dInputs.getScalar, dInitialHidden)
 
 /--
 Return the input-sequence and initial-hidden gradients from `gruSequenceBackwardFullSpec`.
@@ -583,14 +580,14 @@ used by callers that only propagate gradients to the preceding recurrent computa
 -/
 def gruSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
-  (inputs : Tensor α (.dim seqLen (.dim inputSize .scalar)))
-  (hiddens : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (grad_outputs : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (reset_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (update_gates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (new_candidates : Tensor α (.dim seqLen (.dim hiddenSize .scalar)))
-  (initial_hidden : Tensor α (.dim hiddenSize .scalar) := fill 0 (.dim hiddenSize .scalar)) :
-  (Tensor α (.dim seqLen (.dim inputSize .scalar)) × Tensor α (.dim hiddenSize .scalar)) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_outputs : Tensor α [seqLen, hiddenSize])
+  (reset_gates : Tensor α [seqLen, hiddenSize])
+  (update_gates : Tensor α [seqLen, hiddenSize])
+  (new_candidates : Tensor α [seqLen, hiddenSize])
+  (initial_hidden : Tensor α [hiddenSize] := fill 0 [hiddenSize]) :
+  (Tensor α [seqLen, inputSize] × Tensor α [hiddenSize]) :=
   let (_, _, _, _, _, _, dInputs, dInitialHidden) :=
     gruSequenceBackwardFullSpec gru inputs hiddens grad_outputs reset_gates update_gates
       new_candidates initial_hidden

@@ -28,7 +28,7 @@ structure RunOptions where
   /-- Number of in-memory samples consumed by one optimizer update. -/
   batchSize : Nat := 1
   /-- Destination for the JSON training log. -/
-  log : Training.LogDestination
+  log : _root_.Runtime.Training.LogDestination
   /-- Resolved log path, retained for command summaries. -/
   logPath : System.FilePath
   /-- Number of completed steps between CUDA allocator samples; `0` selects the default policy. -/
@@ -59,14 +59,6 @@ def parse
     ({ steps, batchSize, log, logPath := log.pathD defaultLogPath,
        cudaMemWatch := cudaMemWatch?.getD 0 }, args)
 
-/-- Write a before-and-after loss log using the command's selected destination and step count. -/
-def writeLossComparison
-    (opts : RunOptions)
-    (title : String)
-    (beforeLoss afterLoss : Float)
-    (notes : Array String := #[]) : IO Unit :=
-  Training.writeLossComparisonTo opts.log title opts.steps beforeLoss afterLoss notes
-
 end RunOptions
 
 /-- Training command options that also select a learning rate. -/
@@ -89,14 +81,6 @@ def parse
   let (run, args) ← RunOptions.parse exeName args defaultLogPath defaultSteps allowZeroSteps
   let (lr, args) ← CLI.takePositiveFloatFlag args exeName "lr" defaultLr
   pure ({ toRunOptions := run, lr }, args)
-
-/-- Write a before-and-after loss log for an optimizer command. -/
-def writeLossComparison
-    (opts : OptimizerOptions)
-    (title : String)
-    (beforeLoss afterLoss : Float)
-    (notes : Array String := #[]) : IO Unit :=
-  opts.toRunOptions.writeLossComparison title beforeLoss afterLoss notes
 
 end OptimizerOptions
 

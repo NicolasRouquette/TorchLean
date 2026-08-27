@@ -10,19 +10,10 @@ public import NN.Spec.Layers.Pooling
 public import NN.Spec.Module.Core
 
 /-!
-# Pooling module wrappers
+# Pooling Modules
 
-These wrappers expose pooling specs as `Spec.Module`s.
-
-Conventions:
-
-- Channel-first images use shape `(C, H, W)` at the spec level (`.dim C (.dim H (.dim W .scalar))`).
-- `Spec.Module.maxPool2d` applies the spatial max-pool independently per channel.
-- `Spec.Module.avgPool2d` is provided for a single-channel 2D tensor; multi-channel usage typically
-  maps it per channel in the same way as max-pool.
-
-If you want a PyTorch mapping: `nn.MaxPool2d` / `nn.AvgPool2d` on a single `(C,H,W)` image (no
-  batch).
+The wrappers in this file preserve a leading channel dimension and pool over an arbitrary vector
+of spatial dimensions. Padding, stride, and window extents are independent on every axis.
 -/
 
 @[expose] public section
@@ -33,31 +24,28 @@ open Tensor
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
--- MaxPool2d module specification wrapper
-/-- MaxPool2d wrapper (channel-first, pool applied per channel). -/
-def maxPool2d {kH kW stride inH inW inC : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  {hStride : stride ≠ 0}
-  (m : MaxPool2dSpec kH kW stride h1 h2 hStride) :
-  Spec.Module α
-    (.dim inC (.dim inH (.dim inW .scalar)))
-    (.dim inC
-      (.dim (poolOutDim inH kH stride 0)
-        (.dim (poolOutDim inW kW stride 0) .scalar))) :=
-{ forward := fun x =>
-    -- Apply pooling to each channel independently.
-    Tensor.dim (fun c => maxPool2dSpec m (getAtSpec x c)),
-  kind := "MaxPool2d",
-  pythonExpr := s!"nn.MaxPool2d(kernel_size=({kH}, {kW}), stride={stride})" }
+/-- Wrap arbitrary-rank channels-first max pooling as a `Spec.Module`. -/
+def maxPool {d C : Nat} {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    {hStride : ∀ i : Fin d, stride.getScalar i ≠ 0}
+    (m : MaxPoolSpec d kernel stride padding hKernel hStride) :
+    Spec.Module α
+      (Shape.ofList (C :: inSpatial.toList))
+      (Shape.ofList (C :: (poolOutSpatialPad inSpatial kernel stride padding).toList)) :=
+  { forward := maxPoolSpec m
+    kind := "MaxPool"
+    pythonExpr := "nn.MaxPool(...)" }
 
--- AvgPool2d module specification wrapper
-/-- AvgPool2d wrapper (2D tensor). -/
-def avgPool2d {kH kW stride inH inW : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  {hStride : stride ≠ 0}
-  (m : AvgPool2dSpec kH kW stride h1 h2 hStride) :
-  Spec.Module α
-    (.dim inH (.dim inW .scalar))
-    (.dim (poolOutDim inH kH stride 0)
-      (.dim (poolOutDim inW kW stride 0) .scalar)) :=
-{ forward := fun x => avgPool2dSpec (layer := m) x, kind := "AvgPool2d", pythonExpr := s!"nn.AvgPool2d(kernel_size=({kH}, {kW}), stride={stride})" }
+/-- Wrap arbitrary-rank channels-first average pooling as a `Spec.Module`. -/
+def avgPool {d C : Nat} {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    {hStride : ∀ i : Fin d, stride.getScalar i ≠ 0}
+    (m : AvgPoolSpec d kernel stride padding hKernel hStride) :
+    Spec.Module α
+      (Shape.ofList (C :: inSpatial.toList))
+      (Shape.ofList (C :: (poolOutSpatialPad inSpatial kernel stride padding).toList)) :=
+  { forward := avgPoolSpec m
+    kind := "AvgPool"
+    pythonExpr := "nn.AvgPool(...)" }
 
 end Spec.Module

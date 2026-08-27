@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Tensor
+public import NN.Tensor
 public import NN.Runtime.Autograd.Torch.Initialization
 
 /-!
@@ -44,30 +44,25 @@ See the PyTorch init docs:
 `https://pytorch.org/docs/stable/nn.init.html`
 -/
 
-/-- Initialization scheme (zeros/ones/uniform/normal, etc.). -/
-abbrev Scheme := _root_.Runtime.Autograd.Torch.Init.Scheme
+export _root_.Runtime.Autograd.Torch.Init (Scheme)
 
 /--
 Initialize a `Float` tensor using the given scheme.
 
 Most user code should prefer `tensor`, which casts the generated values into its chosen scalar
-semantics.
+semantics. The dimension list is normally inferred from the expected tensor type.
 -/
-def tensorFloat (sch : Scheme) (seed : Nat := 0) {s : Spec.Shape} : Spec.Tensor Float s :=
-  _root_.Runtime.Autograd.Torch.Init.tensor (sch := sch) (seed := seed) (s := s)
+def tensorFloat {shape : List Nat} (sch : Scheme) (seed : Nat := 0) : Tensor Float shape :=
+  _root_.Runtime.Autograd.Torch.Init.tensor
+    (sch := sch) (seed := seed) (s := Shape.ofList shape)
 
 /--
 Initialize a tensor under an arbitrary scalar semantics `α`, by first generating `Float`s and
 then casting elementwise via `cast : Float → α`.
 -/
-def tensor {α : Type} [Context α] (cast : Float → α) (sch : Scheme) (seed : Nat := 0) :
-    {s : Spec.Shape} → Spec.Tensor α s
-  | .scalar =>
-      TorchLean.Tensor.map cast
-        (tensorFloat (sch := sch) (seed := seed) (s := Spec.Shape.scalar))
-  | .dim n s =>
-      TorchLean.Tensor.map cast
-        (tensorFloat (sch := sch) (seed := seed) (s := Spec.Shape.dim n s))
+def tensor {α : Type} [Context α] {shape : List Nat}
+    (cast : Float → α) (sch : Scheme) (seed : Nat := 0) : Tensor α shape :=
+  TorchLean.Tensor.map cast (tensorFloat (sch := sch) (seed := seed))
 
 /--
 Xavier/Glorot initializer for a linear weight matrix of shape `(outDim, inDim)`.
@@ -75,7 +70,7 @@ Xavier/Glorot initializer for a linear weight matrix of shape `(outDim, inDim)`.
 PyTorch analogue: `torch.nn.init.xavier_uniform_` (for example).
 -/
 def xavierW {α : Type} [Context α] (cast : Float → α) (outDim inDim : Nat) (seed : Nat := 0) :
-    Spec.Tensor α (.dim outDim (.dim inDim .scalar)) :=
+    Tensor α [outDim, inDim] :=
   TorchLean.Tensor.map cast (_root_.Runtime.Autograd.Torch.Init.xavierW outDim inDim seed)
 
 /--
@@ -84,7 +79,7 @@ Kaiming/He initializer for a linear weight matrix of shape `(outDim, inDim)`.
 PyTorch analogue: `torch.nn.init.kaiming_uniform_` (for example).
 -/
 def kaimingW {α : Type} [Context α] (cast : Float → α) (outDim inDim : Nat) (seed : Nat := 0) :
-    Spec.Tensor α (.dim outDim (.dim inDim .scalar)) :=
+    Tensor α [outDim, inDim] :=
   TorchLean.Tensor.map cast (_root_.Runtime.Autograd.Torch.Init.kaimingW outDim inDim seed)
 
 end Init

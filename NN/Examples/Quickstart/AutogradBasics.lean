@@ -6,7 +6,9 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API
+public import NN.API.Autograd
+public import NN.API.Seeded
+public import NN.API.Scalar
 
 /-!
 # Quickstart: Autograd Basics
@@ -29,10 +31,10 @@ namespace NN.Examples.Quickstart.AutogradBasics
 
 open TorchLean
 
-abbrev XShape := Shape.scalar.appendDim 2
-abbrev YShape := Shape.scalar.appendDim 3
-abbrev WShape : Shape := .dim 3 (.dim 2 .scalar)
-abbrev BShape : Shape := .dim 3 .scalar
+abbrev XShape : List Nat := [2]
+abbrev YShape : List Nat := [3]
+abbrev WShape : List Nat := [3, 2]
+abbrev BShape : List Nat := [3]
 
 /-!
 The tour stays on the public Float autodiff surface. It avoids:
@@ -46,11 +48,11 @@ Instead, it uses `TorchLean.autograd.*` directly on a tiny fixed payload.
 
 def model : nn.Sequential XShape YShape :=
   -- One Linear layer: y = x ↦ W*x + b.
-  nn.deterministic.linear 2 3 0 1
+  nn.Internal.linear 2 3 0 1
 
 def mseLoss : autograd.model.OutputLoss YShape YShape :=
   -- Reusable scalar loss on model outputs: MSE(pred, target).
-  autograd.model.OutputLoss.mse (τ := YShape)
+  autograd.model.OutputLoss.mse
 
 def detachedMSELoss : autograd.model.OutputLoss YShape YShape :=
   -- Same forward value as `mseLoss`, but all gradients are zero (stop-gradient / detach).
@@ -59,7 +61,7 @@ def detachedMSELoss : autograd.model.OutputLoss YShape YShape :=
 def squareFn : autograd.func.TensorFunction XShape XShape :=
   fun x => nn.functional.square x
 
-def sumsqFn : autograd.func.TensorFunction XShape Shape.scalar :=
+def sumsqFn : autograd.func.TensorFunction XShape ([] : List Nat) :=
   fun x => do
     let y ← nn.functional.square x
     -- `mean` is a convenient scalar reduction, like `torch.mean`.
@@ -83,16 +85,12 @@ structure DemoPayload (α : Type) where
 
 /-- Fixed Float tensors used by the walkthrough. -/
 def demoPayloadF : DemoPayload Float :=
-  { W := tensorOfList! [3, 2] [
-      0.2, -0.1,
-      0.0,  0.3,
-     -0.4,  0.1
-    ]
-    b := tensorOfList! [3] [0.01, -0.02, 0.03]
-    x := tensorOfList! [2] [0.5, -1.2]
-    y := tensorOfList! [3] [0.7, 0.1, -0.5]
-    vW := Tensor.fill 0.1 WShape
-    vb := Tensor.fill (-0.2) BShape }
+  { W := tensor! [[0.2, -0.1], [0.0, 0.3], [-0.4, 0.1]]
+    b := tensor! [0.01, -0.02, 0.03]
+    x := tensor! [0.5, -1.2]
+    y := tensor! [0.7, 0.1, -0.5]
+    vW := Tensor.full [3, 2] 0.1
+    vb := Tensor.full [3] (-0.2) }
 
 /-- Parameter pack for the single Linear layer in `model`. -/
 def modelParams {α : Type} (payload : DemoPayload α) :
@@ -123,9 +121,9 @@ def runDemo : IO Unit := do
   -- `vjpState` computes a vector-Jacobian product (reverse-mode) for a tensor-output model.
   -- You provide an explicit output cotangent `seedOut` and get cotangents for the parameters.
   --
-  -- Here the model output is `Vec 3`, and we choose `seedOut = ones`.
+  -- Here the model output has shape `[3]`, and we choose `seedOut = ones`.
   -- Intuition: we backprop `sum(y)` w.r.t. parameters.
-  let seedOut : Tensor Float YShape := Tensor.fill 1.0 YShape
+  let seedOut : Tensor Float YShape := Tensor.full [3] 1.0
   let vjpState ←
     autograd.model.vjpState (α := Float) model params payload.x seedOut
 
@@ -214,7 +212,7 @@ def runDemo : IO Unit := do
   -- ------------------------------------------------------------
   --
   -- These entrypoints cover the common case of a single tensor input.
-  let seedSq : Tensor Float XShape := Tensor.fill 1.0 XShape
+  let seedSq : Tensor Float XShape := Tensor.full [2] 1.0
   let vjpSq ← autograd.func.vjp (α := Float) squareFn payload.x seedSq
   IO.println s!"vjp(square, seed=ones) = {Tensor.pretty vjpSq}"
 

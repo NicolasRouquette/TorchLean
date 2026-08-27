@@ -22,85 +22,53 @@ namespace DAG
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 namespace PrimOp
 
-/-- Sum the leading axis of a nonempty tensor. -/
-def reduceLeadingSum (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
-    [_root_.Spec.Shape.WellFormed inner] : PrimOp [.dim outer inner] inner :=
-  letI : NeZero outer := ⟨Nat.ne_of_gt hOuter⟩
-  letI : _root_.Spec.Shape.HasNonemptyAxis 0 (.dim outer inner) :=
-    _root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter
-  { name := s!"reduceLeadingSum({outer})"
+/-- Sum a statically nonempty tensor axis. -/
+def reduceSum (s : Shape) (axis : Nat) [_root_.Spec.Shape.HasNonemptyAxis axis s]
+    [_root_.Spec.Shape.WellFormed s] : PrimOp [s] (_root_.Spec.Tensor.shapeAfterSum s axis) :=
+  { name := s!"reduceSum(axis={axis})"
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil =>
-          _root_.Spec.Tensor.reduceSum (α := α) 0 input
-            (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof
+          _root_.Spec.Tensor.reduceSum (α := α) axis input
+            (inferInstance : _root_.Spec.Shape.HasNonemptyAxis axis s).proof
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.reduceSum (m := m) (α := α) 0 input }
+        Runtime.Autograd.TorchLean.reduceSum (m := m) (α := α) axis input }
 
-/-- Pure evaluation of a leading-axis sum. -/
-@[simp] theorem reduceLeadingSum_specFwd {outer : Nat} {inner : Shape}
-    (hOuter : 0 < outer) [_root_.Spec.Shape.WellFormed inner]
-    {α : Type} [Context α] (input : _root_.Spec.Tensor α (.dim outer inner)) :
-    (reduceLeadingSum outer inner hOuter).specFwd (.cons input .nil) =
-      _root_.Spec.Tensor.reduceSum (α := α) 0 input
-        (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof := by
+/-- Pure evaluation of an axis sum. -/
+@[simp] theorem reduceSum_specFwd {s : Shape} {axis : Nat}
+    [_root_.Spec.Shape.HasNonemptyAxis axis s] [_root_.Spec.Shape.WellFormed s]
+    {α : Type} [Context α] (input : _root_.Spec.Tensor α s) :
+    (reduceSum s axis).specFwd (.cons input .nil) =
+      _root_.Spec.Tensor.reduceSum (α := α) axis input
+        (inferInstance : _root_.Spec.Shape.HasNonemptyAxis axis s).proof := by
   rfl
 
-/-- Average the leading axis of a nonempty tensor. -/
-def reduceLeadingMean (outer : Nat) (inner : Shape) (hOuter : 0 < outer)
-    [_root_.Spec.Shape.WellFormed inner] : PrimOp [.dim outer inner] inner :=
-  letI : NeZero outer := ⟨Nat.ne_of_gt hOuter⟩
-  letI : _root_.Spec.Shape.HasNonemptyAxis 0 (.dim outer inner) :=
-    _root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter
-  { name := s!"reduceLeadingMean({outer})"
+/-- Average a statically nonempty tensor axis. -/
+def reduceMean (s : Shape) (axis : Nat) [_root_.Spec.Shape.HasNonemptyAxis axis s]
+    [_root_.Spec.Shape.WellFormed s] : PrimOp [s] (_root_.Spec.Tensor.shapeAfterSum s axis) :=
+  { name := s!"reduceMean(axis={axis})"
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil =>
-          _root_.Spec.Tensor.reduceMean (α := α) 0 input
-            (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof
+          _root_.Spec.Tensor.reduceMean (α := α) axis input
+            (inferInstance : _root_.Spec.Shape.HasNonemptyAxis axis s).proof
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.reduceMean (m := m) (α := α) 0 input }
+        Runtime.Autograd.TorchLean.reduceMean (m := m) (α := α) axis input }
 
-/-- Pure evaluation of leading-axis mean reduction. -/
-@[simp] theorem reduceLeadingMean_specFwd {outer : Nat} {inner : Shape}
-    (hOuter : 0 < outer) [_root_.Spec.Shape.WellFormed inner]
-    {α : Type} [Context α] (input : _root_.Spec.Tensor α (.dim outer inner)) :
-    (reduceLeadingMean outer inner hOuter).specFwd (.cons input .nil) =
-      _root_.Spec.Tensor.reduceMean (α := α) 0 input
-        (_root_.Spec.Shape.hasNonemptyAxisZeroOfPos hOuter).proof := by
+/-- Pure evaluation of an axis mean. -/
+@[simp] theorem reduceMean_specFwd {s : Shape} {axis : Nat}
+    [_root_.Spec.Shape.HasNonemptyAxis axis s] [_root_.Spec.Shape.WellFormed s]
+    {α : Type} [Context α] (input : _root_.Spec.Tensor α s) :
+    (reduceMean s axis).specFwd (.cons input .nil) =
+      _root_.Spec.Tensor.reduceMean (α := α) axis input
+        (inferInstance : _root_.Spec.Shape.HasNonemptyAxis axis s).proof := by
   rfl
-
-/-- Transpose a two-dimensional tensor. -/
-def transpose2d (rows columns : Nat) :
-    PrimOp [.dim rows (.dim columns .scalar)] (.dim columns (.dim rows .scalar)) :=
-  { name := s!"transpose2d({rows},{columns})"
-    specFwd := fun {α} _ xs =>
-      match xs with
-      | .cons input .nil => _root_.Spec.Tensor.matrixTransposeSpec (α := α) input
-    program := fun {α} _ _ =>
-      fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.transpose2d (m := m) (α := α)
-          (mDim := rows) (nDim := columns) input }
-
-/-- Swap the last two axes of a rank-three tensor. -/
-def transpose3dLastTwo (batch rows columns : Nat) :
-    PrimOp
-      [.dim batch (.dim rows (.dim columns .scalar))]
-      (.dim batch (.dim columns (.dim rows .scalar))) :=
-  { name := s!"transpose3dLastTwo({batch},{rows},{columns})"
-    specFwd := fun {α} _ xs =>
-      match xs with
-      | .cons input .nil => _root_.Spec.Tensor.transpose3DLastTwoSpec (α := α) input
-    program := fun {α} _ _ =>
-      fun {m} _ _ => fun input =>
-        Runtime.Autograd.Torch.transpose3dLastTwo (m := m) (α := α)
-          (a := batch) (b := rows) (c := columns) input }
 
 /-- Swap adjacent tensor axes at a statically chosen depth. -/
 def swapAdjacentAtDepth (s : Shape) (depth : Nat) :
@@ -120,46 +88,16 @@ def swapAdjacentAtDepth (s : Shape) (depth : Nat) :
       _root_.Spec.Tensor.swapAdjacentAxes input depth := by
   rfl
 
-/-- Select one row of a statically shaped matrix. -/
-def gatherRow (rows columns : Nat) (row : Fin rows) :
-    PrimOp [.dim rows (.dim columns .scalar)] (.dim columns .scalar) :=
-  { name := s!"gatherRow({row.val})"
+/-- Select one bounded coordinate along an arbitrary tensor axis. -/
+def select (shape : Shape) (axis : Nat) [Shape.AxisInBounds axis shape]
+    (index : Fin (shape.axisSize axis)) : PrimOp [shape] (shape.eraseAxis axis) :=
+  { name := s!"select(axis={axis},index={index.val})"
     specFwd := fun {_α} _ xs =>
       match xs with
-      | .cons input .nil => _root_.Spec.sliceSpec input row
+      | .cons input .nil => _root_.Spec.Tensor.selectSpec axis input index
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.gatherRow (m := m) (α := α) input row }
-
-/-- Select one slice along the leading axis of an arbitrary tensor.
-
-The executable path views each slice as one flattened row, uses the runtime's differentiable row
-gather, and restores the inner shape. This is useful for packed parameter banks such as embeddings
-and mixture-of-experts weights.
--/
-def gatherLeading (rows : Nat) (inner : Shape) (row : Fin rows) :
-    PrimOp [.dim rows inner] inner :=
-  { name := s!"gatherLeading({row.val})"
-    specFwd := fun {_α} _ xs =>
-      match xs with
-      | .cons input .nil => _root_.Spec.sliceSpec input row
-    program := fun {α} _ _ =>
-      fun {m} _ _ => fun input =>
-        (do
-          let matrix ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
-            (s₂ := .dim rows (.dim inner.size .scalar)) input
-            (by simp [_root_.Spec.Shape.size])
-          let flat ← Runtime.Autograd.TorchLean.gatherRow (m := m) (α := α) matrix row
-          Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
-            (s₂ := inner) flat (by simp [_root_.Spec.Shape.size]) :
-          m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) inner)) }
-
-/-- Pure semantics of leading-axis gather, stated through the standard tensor indexing API. -/
-@[simp] theorem gatherLeading_specFwd {rows : Nat} {inner : Shape} {row : Fin rows}
-    {α : Type} [Context α] (input : _root_.Spec.Tensor α (.dim rows inner)) :
-    (gatherLeading rows inner row).specFwd (.cons input .nil) = _root_.Spec.get input row := by
-  cases input
-  rfl
+        Runtime.Autograd.TorchLean.select (m := m) (α := α) axis input index }
 
 /-- Expand singleton or missing dimensions according to a checked broadcasting derivation. -/
 def broadcast {source target : Shape} (proof : source.CanBroadcastTo target) :
@@ -172,54 +110,214 @@ def broadcast {source target : Shape} (proof : source.CanBroadcastTo target) :
       fun {m} _ _ => fun input =>
         Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α) proof input }
 
-/-- Concatenate tensors along their leading axis. -/
-def concatLeadingAxis (left right : Nat) (inner : Shape) :
-    PrimOp [.dim left inner, .dim right inner] (.dim (left + right) inner) :=
-  { name := s!"concatLeadingAxis({left},{right})"
+/-- Moving a replacement extent from the front to `axis` realizes `replaceAxis`. -/
+theorem applyAdjacentSwaps_range_eq_replaceAxis
+    (shape : Shape) (axis extent : Nat) (hAxis : axis < shape.rank) :
+    (Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps (List.range axis) =
+      shape.replaceAxis axis extent := by
+  have range_succ_eq_zero_cons_map_succ (n : Nat) :
+      List.range (n + 1) = 0 :: (List.range n).map Nat.succ := by
+    induction n with
+    | zero => rfl
+    | succ n ih =>
+        calc
+          List.range (n.succ + 1) = List.range (n + 1) ++ [n + 1] := by
+            rw [show n.succ + 1 = (n + 1) + 1 by grind, List.range_succ]
+          _ = (0 :: (List.range n).map Nat.succ) ++ [n + 1] := by rw [ih]
+          _ = 0 :: (List.range (n + 1)).map Nat.succ := by
+            rw [List.range_succ, List.map_append]
+            rfl
+  have applyAdjacentSwaps_dim_map_succ
+      (outer : Nat) (s : Shape) (depths : List Nat) :
+      (Shape.dim outer s).applyAdjacentSwaps (depths.map Nat.succ) =
+        Shape.dim outer (s.applyAdjacentSwaps depths) := by
+    induction depths generalizing s with
+    | nil => rfl
+    | cons depth depths ih =>
+        simp only [List.map_cons, Shape.applyAdjacentSwaps,
+          Shape.swapAdjacentAtDepth, ih]
+  induction shape generalizing axis with
+  | scalar => simp [Shape.rank] at hAxis
+  | dim outer rest ih =>
+      cases axis with
+      | zero => rfl
+      | succ axis =>
+          have hInner : axis < rest.rank := by
+            simp only [Shape.rank] at hAxis
+            grind
+          rw [range_succ_eq_zero_cons_map_succ]
+          simp only [Shape.eraseAxis, Shape.applyAdjacentSwaps,
+            Shape.swapAdjacentAtDepth, applyAdjacentSwaps_dim_map_succ]
+          rw [ih axis hInner]
+          rfl
+
+/-- Replacing an in-bounds axis by its existing extent leaves the shape unchanged. -/
+@[simp] theorem replaceAxis_axisSize (shape : Shape) (axis : Nat)
+    [hAxis : Shape.AxisInBounds axis shape] :
+    shape.replaceAxis axis (shape.axisSize axis) = shape := by
+  induction shape generalizing axis with
+  | scalar => exact (Nat.not_lt_zero axis hAxis.proof).elim
+  | dim outer rest ih =>
+      cases axis with
+      | zero => rfl
+      | succ axis =>
+          have innerAxis : Shape.AxisInBounds axis rest :=
+            ⟨by
+              have := hAxis.proof
+              simp only [Shape.rank] at this
+              grind⟩
+          simp only [Shape.replaceAxis,
+            @Shape.axisSize_succ outer rest axis innerAxis hAxis]
+          rw [@ih axis innerAxis]
+
+/-- Concatenate tensors along an arbitrary statically valid axis. -/
+def concatAxisSpec {α : Type} (shape : Shape) (axis left right : Nat)
+    [Shape.AxisInBounds axis shape]
+    (a : _root_.Spec.Tensor α (shape.replaceAxis axis left))
+    (b : _root_.Spec.Tensor α (shape.replaceAxis axis right)) :
+    _root_.Spec.Tensor α (shape.replaceAxis axis (left + right)) :=
+  let swaps := List.range axis
+  have axisReplacement (extent : Nat) :
+      (Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps swaps =
+        shape.replaceAxis axis extent :=
+    applyAdjacentSwaps_range_eq_replaceAxis shape axis extent
+      (inferInstance : Shape.AxisInBounds axis shape).proof
+  let moveToFront (extent : Nat)
+      (input : _root_.Spec.Tensor α (shape.replaceAxis axis extent)) :
+      _root_.Spec.Tensor α (.dim extent (shape.eraseAxis axis)) :=
+    let input' : _root_.Spec.Tensor α
+        ((Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps swaps) :=
+      (axisReplacement extent).symm ▸ input
+    let moved := _root_.Spec.Tensor.permuteByAdjacentSwaps input' swaps.reverse
+    Shape.applyAdjacentSwaps_reverse (.dim extent (shape.eraseAxis axis)) swaps ▸ moved
+  let outputFront := _root_.Spec.Tensor.concatAxisSpec .scalar
+    (moveToFront left a) (moveToFront right b)
+  axisReplacement (left + right) ▸
+    _root_.Spec.Tensor.permuteByAdjacentSwaps outputFront swaps
+
+/-- Concatenate along `axis`; `shape` supplies every unchanged axis extent. -/
+def concatAxis (shape : Shape) (axis left right : Nat)
+    [Shape.AxisInBounds axis shape] :
+    PrimOp [shape.replaceAxis axis left, shape.replaceAxis axis right]
+      (shape.replaceAxis axis (left + right)) :=
+  { name := s!"concat(axis={axis},left={left},right={right})"
     specFwd := fun {α} _ xs =>
       match xs with
-      | .cons a (.cons b .nil) =>
-          _root_.Spec.Tensor.concatLeadingAxisSpec (α := α) a b
+      | .cons a (.cons b .nil) => concatAxisSpec (α := α) shape axis left right a b
     program := fun {α} _ _ =>
       fun {m} _ _ => fun a b =>
-        Runtime.Autograd.TorchLean.concatLeadingAxis (m := m) (α := α)
-          (nDim := left) (mDim := right) (s := inner) a b }
+        let run : m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+            (shape.replaceAxis axis (left + right))) := do
+          let swaps := List.range axis
+          have axisReplacement (extent : Nat) :
+              (Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps swaps =
+                shape.replaceAxis axis extent :=
+            applyAdjacentSwaps_range_eq_replaceAxis shape axis extent
+              (inferInstance : Shape.AxisInBounds axis shape).proof
+          let moveToFront :
+              (extent : Nat) →
+                Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (shape.replaceAxis axis extent) →
+                m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (.dim extent (shape.eraseAxis axis))) :=
+            fun extent input => do
+              let input' : Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  ((Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps swaps) :=
+                (axisReplacement extent).symm ▸ input
+              let moved ← Runtime.Autograd.TorchLean.F.Einsum.permuteBySwapsTyped
+                (m := m) (α := α) input' swaps.reverse
+              pure (Shape.applyAdjacentSwaps_reverse
+                (.dim extent (shape.eraseAxis axis)) swaps ▸ moved)
+          let moveFromFront :
+              (extent : Nat) →
+                Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (.dim extent (shape.eraseAxis axis)) →
+                m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (shape.replaceAxis axis extent)) :=
+            fun extent input => do
+              let moved ← Runtime.Autograd.TorchLean.F.Einsum.permuteBySwapsTyped
+                (m := m) (α := α) input swaps
+              pure (axisReplacement extent ▸ moved)
+          let aFront ← moveToFront left a
+          let bFront ← moveToFront right b
+          let outputFront ← Runtime.Autograd.TorchLean.concatLeadingAxis
+            (m := m) (α := α) (nDim := left) (mDim := right)
+            (s := shape.eraseAxis axis) aFront bFront
+          moveFromFront (left + right) outputFront
+        run }
 
-/-- Pure semantics of concatenation along the leading tensor axis. -/
-@[simp] theorem concatLeadingAxis_specFwd {left right : Nat} {inner : Shape}
-    {α : Type} [Context α]
-    (a : _root_.Spec.Tensor α (.dim left inner))
-    (b : _root_.Spec.Tensor α (.dim right inner)) :
-    (concatLeadingAxis left right inner).specFwd (.cons a (.cons b .nil)) =
-      _root_.Spec.Tensor.concatLeadingAxisSpec a b := by
+/-- The pure meaning of arbitrary-axis concatenation. -/
+@[simp] theorem concatAxis_specFwd {shape : Shape} {axis left right : Nat}
+    [Shape.AxisInBounds axis shape] {α : Type} [Context α]
+    (a : _root_.Spec.Tensor α (shape.replaceAxis axis left))
+    (b : _root_.Spec.Tensor α (shape.replaceAxis axis right)) :
+    (concatAxis shape axis left right).specFwd (.cons a (.cons b .nil)) =
+      concatAxisSpec shape axis left right a b := by
   rfl
 
-/-- Select a contiguous range along the leading axis.
-
-The range proof makes the output shape total at graph-construction time. The operation is useful
-for rolling sequence windows and cache prefixes, and lowers to the existing differentiable
-TorchLean slice rather than introducing a backend-specific indexing node.
--/
-def sliceLeadingAxisRange (total start length : Nat) (inner : Shape)
-    (hRange : start + length ≤ total) :
-    PrimOp [.dim total inner] (.dim length inner) :=
-  { name := s!"sliceLeadingAxisRange({start},{length})"
+/-- Select a checked contiguous range along an arbitrary statically valid axis. -/
+def sliceAxisRange (shape : Shape) (axis start length : Nat)
+    [Shape.AxisInBounds axis shape]
+    (hRange : start + length ≤ shape.axisSize axis) :
+    PrimOp [shape] (shape.replaceAxis axis length) :=
+  { name := s!"slice(axis={axis},start={start},length={length})"
     specFwd := fun {α} _ xs =>
       match xs with
       | .cons input .nil =>
-          _root_.Spec.Tensor.sliceLeadingAxisRangeSpec
-            (α := α) (n := total) (s := inner) start length hRange input
+          _root_.Spec.Tensor.sliceAxisRangeSpec (α := α)
+            axis input start length hRange
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
-        Runtime.Autograd.TorchLean.sliceLeadingAxisRange (m := m) (α := α)
-          (nDim := total) (s := inner) start length hRange input }
+        let run : m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+            (shape.replaceAxis axis length)) := do
+          let swaps := List.range axis
+          have axisReplacement (extent : Nat) :
+              (Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps swaps =
+                shape.replaceAxis axis extent :=
+            applyAdjacentSwaps_range_eq_replaceAxis shape axis extent
+              (inferInstance : Shape.AxisInBounds axis shape).proof
+          let moveToFront :
+              (extent : Nat) →
+                Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (shape.replaceAxis axis extent) →
+                m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (.dim extent (shape.eraseAxis axis))) :=
+            fun extent input => do
+              let input' : Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  ((Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps swaps) :=
+                (axisReplacement extent).symm ▸ input
+              let moved ← Runtime.Autograd.TorchLean.F.Einsum.permuteBySwapsTyped
+                (m := m) (α := α) input' swaps.reverse
+              pure (Shape.applyAdjacentSwaps_reverse
+                (.dim extent (shape.eraseAxis axis)) swaps ▸ moved)
+          let moveFromFront :
+              (extent : Nat) →
+                Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (.dim extent (shape.eraseAxis axis)) →
+                m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+                  (shape.replaceAxis axis extent)) :=
+            fun extent input => do
+              let moved ← Runtime.Autograd.TorchLean.F.Einsum.permuteBySwapsTyped
+                (m := m) (α := α) input swaps
+              pure (axisReplacement extent ▸ moved)
+          let total := shape.axisSize axis
+          let input' : Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+              (shape.replaceAxis axis total) :=
+            (replaceAxis_axisSize shape axis).symm ▸ input
+          let inputFront ← moveToFront total input'
+          let outputFront ← Runtime.Autograd.TorchLean.sliceLeadingAxisRange
+            (m := m) (α := α) (nDim := total) (s := shape.eraseAxis axis)
+            start length hRange inputFront
+          moveFromFront length outputFront
+        run }
 
-/-- Pure semantics of a checked contiguous slice of the leading tensor axis. -/
-@[simp] theorem sliceLeadingAxisRange_specFwd {total start length : Nat} {inner : Shape}
-    (hRange : start + length ≤ total) {α : Type} [Context α]
-    (input : _root_.Spec.Tensor α (.dim total inner)) :
-    (sliceLeadingAxisRange total start length inner hRange).specFwd (.cons input .nil) =
-      _root_.Spec.Tensor.sliceLeadingAxisRangeSpec start length hRange input := by
+/-- The pure meaning of a checked arbitrary-axis contiguous slice. -/
+@[simp] theorem sliceAxisRange_specFwd {shape : Shape} {axis start length : Nat}
+    [Shape.AxisInBounds axis shape]
+    (hRange : start + length ≤ shape.axisSize axis)
+    {α : Type} [Context α] (input : _root_.Spec.Tensor α shape) :
+    (sliceAxisRange shape axis start length hRange).specFwd (.cons input .nil) =
+      _root_.Spec.Tensor.sliceAxisRangeSpec axis input start length hRange := by
   rfl
 
 

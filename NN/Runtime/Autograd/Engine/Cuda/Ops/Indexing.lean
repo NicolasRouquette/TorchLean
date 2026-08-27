@@ -24,36 +24,36 @@ open Tensor
 namespace Tape
 
 /-!
-## Vector slice
+## Rank-one tensor slice
 -/
 
 /-- Slice `len` entries from a one-dimensional CUDA buffer starting at `start`. -/
-def sliceVectorBuffer {n start len : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+def sliceBuffer {n start len : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
   if start + len ≤ n then
     let n32 ← AnyBuffer.natToU32Checked n
     let start32 ← AnyBuffer.natToU32Checked start
     let len32 ← AnyBuffer.natToU32Checked len
     let outShape : Shape := .dim len .scalar
     let x ← requireValue (t := t) xId (.dim n .scalar)
-    let y := Buffer.sliceVectorBuffer x n32 start32 len32
+    let y := Buffer.sliceBuffer x n32 start32 len32
     let node : Node :=
       { name := some s!"slice_vector_buffer[{start}:{start+len}]"
         value := { s := outShape, buf := y }
         requiresGrad := true
-        parents := [xId]
+        parents := #[xId]
         backward := fun dLdyAny => do
           let dLdy ← requireGrad dLdyAny outShape
           let pre := Buffer.zeros start32
           let postLen : Nat := n - start - len
           let post32 ← AnyBuffer.natToU32Checked postLen
           let post := Buffer.zeros post32
-          let tmp := Buffer.concatVectorBuffers pre dLdy.buf start32 len32
+          let tmp := Buffer.concatBuffers pre dLdy.buf start32 len32
           let startLen32 ← AnyBuffer.natToU32Checked (start + len)
           let dx := Buffer.releaseThen pre <|
             Buffer.releaseThen post <|
               Buffer.releaseThen tmp <|
-                Buffer.concatVectorBuffers tmp post startLen32 post32
-          pure [(xId, { s := .dim n .scalar, buf := dx })] }
+                Buffer.concatBuffers tmp post startLen32 post32
+          pure #[(xId, { s := .dim n .scalar, buf := dx })] }
     pure (t.addNode node)
   else
     throw "autograd: slice_vector_buffer: start+len out of bounds"
@@ -71,10 +71,10 @@ def concatLeadingAxis {n m : Nat} {s : Shape} (t : Tape) (aId bId : Nat) : Resul
   let mLen32 ← AnyBuffer.natToU32Checked mLen
   let nmLen32 ← AnyBuffer.natToU32Checked (nLen + mLen)
   binary (t := t) "concat_leading_axis" aId bId (.dim n s) (.dim m s) (.dim (n + m) s)
-    (forward := fun a b => Buffer.concatVectorBuffers a b nLen32 mLen32)
+    (forward := fun a b => Buffer.concatBuffers a b nLen32 mLen32)
     (backward := fun _a _b dLdy =>
-      let dA := Buffer.sliceVectorBuffer dLdy nmLen32 0 nLen32
-      let dB := Buffer.sliceVectorBuffer dLdy nmLen32 nLen32 mLen32
+      let dA := Buffer.sliceBuffer dLdy nmLen32 0 nLen32
+      let dB := Buffer.sliceBuffer dLdy nmLen32 nLen32 mLen32
       (dA, dB))
 
 /-- Slice along dim 0: `x[start:start+len]` (CPU tape name). -/
@@ -91,200 +91,176 @@ def sliceLeadingAxisRange {n : Nat} {s : Shape} (t : Tape) (xId : Nat) (start le
   let right32 ← AnyBuffer.natToU32Checked rightTot
   let midLen32 ← AnyBuffer.natToU32Checked (startOff + lenTot)
   unary (t := t) "slice_leading_axis_range" xId (.dim n s) (.dim len s)
-    (forward := fun x => Buffer.sliceVectorBuffer x nTot32 start32 len32)
+    (forward := fun x => Buffer.sliceBuffer x nTot32 start32 len32)
     (backward := fun _x dLdy =>
       let left := Buffer.zeros start32
       let right := Buffer.zeros right32
-      let tmp := Buffer.concatVectorBuffers left dLdy start32 len32
+      let tmp := Buffer.concatBuffers left dLdy start32 len32
       Buffer.releaseThen left <|
         Buffer.releaseThen right <|
           Buffer.releaseThen tmp <|
-            Buffer.concatVectorBuffers tmp right midLen32 right32)
+            Buffer.concatBuffers tmp right midLen32 right32)
 
 /-!
-## Gather / scatter (host Nat indices)
-
-Indices are non-differentiable and remain on the host. Kernels totalize representable out-of-bounds
-indices as documented in `NN.Runtime.Autograd.Engine.Cuda.Kernels`; the tape wrappers reject
-natural numbers outside the `UInt32` ABI before entering native code.
+## Arbitrary-axis bounded indexing
 -/
 
-/-- Gather a scalar from a 1D vector using a compile-time index. -/
-def gatherScalar {n : Nat} (t : Tape) (xId : Nat) (i : Fin n) : Result (Tape × Nat) := do
-  let n32 ← AnyBuffer.natToU32Checked n
-  let one32 : UInt32 := 1
-  let indices : Array Nat := #[i.val]
-  let x ← requireValue (t := t) xId (.dim n .scalar)
-  let y := Buffer.gatherVec x n32 indices one32
-  let node : Node :=
-    { name := some s!"gather_scalar[{i.val}]"
-      value := { s := Shape.scalar, buf := y }
-      requiresGrad := true
-      parents := [xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny Shape.scalar
-        let zeros := Buffer.zeros n32
-        let dx := Buffer.releaseThen zeros <|
-          Buffer.scatterAdd zeros dLdy.buf n32 indices one32
-        pure [(xId, { s := .dim n .scalar, buf := dx })] }
-  pure (t.addNode node)
+namespace Indexing
 
-/-- Gather a row from a 2D matrix using a compile-time index. -/
-def gatherRow {rows cols : Nat} (t : Tape) (xId : Nat) (i : Fin rows) : Result (Tape × Nat) := do
-  let rows32 ← AnyBuffer.natToU32Checked rows
-  let cols32 ← AnyBuffer.natToU32Checked cols
-  let one32 : UInt32 := 1
-  let i32 ← AnyBuffer.natToU32Checked i.val
-  let indices : Array Nat := #[i.val]
-  let x ← requireValue (t := t) xId (.dim rows (.dim cols .scalar))
-  let y := Buffer.gatherRows x rows32 cols32 indices one32
-  let node : Node :=
-    { name := some s!"gather_row[{i.val}]"
-      value := { s := .dim cols .scalar, buf := y }
-      requiresGrad := true
-      parents := [xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny (.dim cols .scalar)
-        let zerosLen ← AnyBuffer.natToU32Checked (rows * cols)
-        let zeros := Buffer.zeros zerosLen
-        let dx := Buffer.releaseThen zeros <|
-          Buffer.scatterAddRow zeros dLdy.buf rows32 cols32 i32
-        pure [(xId, { s := .dim rows (.dim cols .scalar), buf := dx })] }
-  pure (t.addNode node)
+/-- An adjacent-swap depth paired with its checked CUDA representation. -/
+abbrev SwapStep := Nat × UInt32
 
-/-- Gather a scalar from a 1D vector using a runtime `Nat` index (totalized by the kernel). -/
-def gatherScalarNatOrZero {n : Nat} (t : Tape) (xId : Nat) (i : Nat) : Result (Tape × Nat) := do
-  let n32 ← AnyBuffer.natToU32Checked n
-  if (UInt32.ofNat i).toNat != i then
-    throw "autograd: cuda: gather_scalar_nat_or_zero: index does not fit in UInt32"
-  let one32 : UInt32 := 1
-  let indices : Array Nat := #[i]
-  let x ← requireValue (t := t) xId (.dim n .scalar)
-  let y := Buffer.gatherVec x n32 indices one32
-  let node : Node :=
-    { name := some s!"gather_scalar_nat_or_zero[{i}]"
-      value := { s := Shape.scalar, buf := y }
-      requiresGrad := true
-      parents := [xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny Shape.scalar
-        let zeros := Buffer.zeros n32
-        let dx := Buffer.releaseThen zeros <|
-          Buffer.scatterAdd zeros dLdy.buf n32 indices one32
-        pure [(xId, { s := .dim n .scalar, buf := dx })] }
-  pure (t.addNode node)
+/-- Adjacent swaps that move `axis` to the outermost position. -/
+def moveAxisToFrontDepths (axis : Nat) : List Nat :=
+  (List.range axis).reverse
 
-/-- Convert a length-`k` natural-number tensor into the index array expected by CUDA gather/scatter kernels. -/
-def natTensorToIndexArray {k : Nat} (idx : Tensor Nat (.dim k .scalar)) : Array Nat :=
-  match idx with
+/-- Check each adjacent-swap depth before it crosses the CUDA ABI. -/
+def checkedSwapSteps (depths : List Nat) : Result (List SwapStep) :=
+  depths.mapM fun depth => do
+    let depth32 ← AnyBuffer.natToU32Checked depth
+    pure (depth, depth32)
+
+/-- Apply swaps to an owned buffer, releasing each consumed intermediate. -/
+def permuteOwned (x : Buffer) (s : Shape) : List SwapStep → Buffer
+  | [] => x
+  | (depth, depth32) :: steps =>
+      let y := Buffer.swapAdjacentAtDepth x s.toArray depth32
+      permuteOwned (Buffer.releaseThen x y) (s.swapAdjacentAtDepth depth) steps
+
+/-- Apply swaps to a borrowed buffer, owning only the buffers created by the swaps. -/
+def permuteBorrowed (x : Buffer) (s : Shape) : List SwapStep → Buffer
+  | [] => x
+  | (depth, depth32) :: steps =>
+      let y := Buffer.swapAdjacentAtDepth x s.toArray depth32
+      permuteOwned y (s.swapAdjacentAtDepth depth) steps
+
+/-- Release a permuted buffer exactly when `permuteBorrowed` allocated it. -/
+def releasePermutedThen (steps : List SwapStep) (permuted keep : Buffer) : Buffer :=
+  match steps with
+  | [] => keep
+  | _ :: _ => Buffer.releaseThen permuted keep
+
+/-- Convert bounded tensor indices to the host array expected by CUDA row kernels. -/
+def finTensorToIndexArray {n count : Nat}
+    (indices : Tensor (Fin n) [count]) : Array Nat :=
+  match indices with
   | .dim f =>
-      Array.ofFn (fun i : Fin k =>
+      Array.ofFn fun i : Fin count =>
         match f i with
-        | .scalar n => n)
+        | .scalar index => index.val
 
-/-- Gather `k` scalars from a length-`n` vector. -/
-def gatherVecNatOrZero {n k : Nat} (t : Tape) (xId : Nat) (idx : Tensor Nat (.dim k .scalar)) :
+end Indexing
+
+/-- Select one bounded coordinate from any tensor axis. -/
+def select {s : Shape} (t : Tape) (xId : Nat) (axis : Nat)
+    [Shape.AxisInBounds axis s] (index : Fin (Shape.axisSize s axis)) :
     Result (Tape × Nat) := do
-  let n32 ← AnyBuffer.natToU32Checked n
-  let k32 ← AnyBuffer.natToU32Checked k
-  let indices := natTensorToIndexArray (k := k) idx
-  for i in indices do
-    if (UInt32.ofNat i).toNat != i then
-      throw "autograd: cuda: gather_vec_nat_or_zero: index does not fit in UInt32"
-  let x ← requireValue (t := t) xId (.dim n .scalar)
-  let y := Buffer.gatherVec x n32 indices k32
-  let node : Node :=
-    { name := some "gather_vec_nat_or_zero"
-      value := { s := .dim k .scalar, buf := y }
-      requiresGrad := true
-      parents := [xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny (.dim k .scalar)
-        -- Scatter-add the gathered gradient back into the length-`n` input.
-        let zeros := Buffer.zeros n32
-        let dx := Buffer.releaseThen zeros <|
-          Buffer.scatterAdd zeros dLdy.buf n32 indices k32
-        pure [(xId, { s := .dim n .scalar, buf := dx })] }
-  pure (t.addNode node)
-
-/-- Gather `k` rows from a `(rows, cols)` matrix (row-major). -/
-def gatherRowsNatOrZero {rows cols k : Nat} (t : Tape) (xId : Nat)
-    (idx : Tensor Nat (.dim k .scalar)) :
-    Result (Tape × Nat) := do
-  let rows32 ← AnyBuffer.natToU32Checked rows
-  let cols32 ← AnyBuffer.natToU32Checked cols
-  let k32 ← AnyBuffer.natToU32Checked k
-  let indices := natTensorToIndexArray (k := k) idx
-  for i in indices do
-    if (UInt32.ofNat i).toNat != i then
-      throw "autograd: cuda: gather_rows_nat_or_zero: index does not fit in UInt32"
-  let x ← requireValue (t := t) xId (.dim rows (.dim cols .scalar))
-  let y := Buffer.gatherRows x rows32 cols32 indices k32
-  let node : Node :=
-    { name := some "gather_rows_nat_or_zero"
-      value := { s := .dim k (.dim cols .scalar), buf := y }
-      requiresGrad := true
-      parents := [xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny (.dim k (.dim cols .scalar))
-        -- Scatter-add the gathered row gradients back into the `(rows, cols)` input.
-        let zerosLen ← AnyBuffer.natToU32Checked (rows * cols)
-        let zeros := Buffer.zeros zerosLen
-        let dx := Buffer.releaseThen zeros <|
-          Buffer.scatterAddRows zeros dLdy.buf rows32 cols32 indices k32
-        pure [(xId, { s := .dim rows (.dim cols .scalar), buf := dx })] }
-  pure (t.addNode node)
-
-/-- Scatter-add into a vector: `out = x` with `out[i] += v`. -/
-def scatterAddVec {n : Nat} (t : Tape) (xId vId : Nat) (i : Fin n) : Result (Tape × Nat) := do
-  let n32 ← AnyBuffer.natToU32Checked n
+  let outShape := s.eraseAxis axis
+  let x ← requireValue (t := t) xId s
+  let rows32 ← AnyBuffer.natToU32Checked (Shape.axisSize s axis)
+  let cols32 ← AnyBuffer.numelU32 outShape
+  let inputSize32 ← AnyBuffer.numelU32 s
+  let steps ← Indexing.checkedSwapSteps (Indexing.moveAxisToFrontDepths axis)
+  let reverseSteps := steps.reverse
   let one32 : UInt32 := 1
-  let x ← requireValue (t := t) xId (.dim n .scalar)
-  let v ← requireValue (t := t) vId Shape.scalar
-  let indices : Array Nat := #[i.val]
-  let y := Buffer.scatterAdd x v n32 indices one32
+  let indices : Array Nat := #[index.val]
+  let moved := Indexing.permuteBorrowed x s steps
+  let gathered := Buffer.gatherRows moved rows32 cols32 indices one32
+  let y := Indexing.releasePermutedThen steps moved gathered
   let node : Node :=
-    { name := some s!"scatter_add_vec[{i.val}]"
-      value := { s := .dim n .scalar, buf := y }
+    { name := some s!"select(axis={axis}, index={index.val})"
+      value := { s := outShape, buf := y }
       requiresGrad := true
-      parents := [xId, vId]
+      parents := #[xId]
       backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny (.dim n .scalar)
-        let dv1 := Buffer.gatherVec dLdy.buf n32 indices one32
-        let dx := Buffer.copy dLdy.buf
-        -- `gatherVec` returns length-1; reinterpret as scalar (same numel).
-        pure [
-          (xId, { s := .dim n .scalar, buf := dx }),
-          (vId, { s := Shape.scalar, buf := dv1 })
-        ] }
+        let dLdy ← requireGrad dLdyAny outShape
+        let zeros := Buffer.zeros inputSize32
+        let scattered := Buffer.scatterAddRows zeros dLdy.buf rows32 cols32 indices one32
+        let frontDx := Buffer.releaseThen zeros scattered
+        let dx :=
+          Indexing.permuteOwned frontDx (.dim (Shape.axisSize s axis) outShape) reverseSteps
+        pure #[(xId, { s := s, buf := dx })] }
   pure (t.addNode node)
 
-/-- Scatter-add into a matrix row: `out = x` with `out[i,:] += v`. -/
-def scatterAddRow {rows cols : Nat} (t : Tape) (xId vId : Nat) (i : Fin rows) :
-    Result (Tape × Nat) := do
-  let rows32 ← AnyBuffer.natToU32Checked rows
-  let cols32 ← AnyBuffer.natToU32Checked cols
-  let one32 : UInt32 := 1
-  let i32 ← AnyBuffer.natToU32Checked i.val
-  let x ← requireValue (t := t) xId (.dim rows (.dim cols .scalar))
-  let v ← requireValue (t := t) vId (.dim cols .scalar)
-  let y := Buffer.scatterAddRow x v rows32 cols32 i32
+/-- Select several bounded coordinates from any tensor axis. -/
+def indexSelect {s : Shape} (t : Tape) (xId : Nat) (axis count : Nat)
+    [Shape.AxisInBounds axis s]
+    (indices : Tensor (Fin (Shape.axisSize s axis)) [count]) : Result (Tape × Nat) := do
+  let outShape := s.replaceAxis axis count
+  let tailShape := s.eraseAxis axis
+  let frontInputShape := .dim (Shape.axisSize s axis) tailShape
+  let frontOutputShape := .dim count tailShape
+  let x ← requireValue (t := t) xId s
+  let rows32 ← AnyBuffer.natToU32Checked (Shape.axisSize s axis)
+  let cols32 ← AnyBuffer.numelU32 tailShape
+  let count32 ← AnyBuffer.natToU32Checked count
+  let inputSize32 ← AnyBuffer.numelU32 s
+  let _ ← AnyBuffer.numelU32 outShape
+  let steps ← Indexing.checkedSwapSteps (Indexing.moveAxisToFrontDepths axis)
+  let reverseSteps := steps.reverse
+  let indexArray := Indexing.finTensorToIndexArray indices
+  let moved := Indexing.permuteBorrowed x s steps
+  let gathered := Buffer.gatherRows moved rows32 cols32 indexArray count32
+  let frontY := Indexing.releasePermutedThen steps moved gathered
+  let y := Indexing.permuteOwned frontY frontOutputShape reverseSteps
   let node : Node :=
-    { name := some s!"scatter_add_row[{i.val}]"
-      value := { s := .dim rows (.dim cols .scalar), buf := y }
+    { name := some s!"index_select(axis={axis})"
+      value := { s := outShape, buf := y }
       requiresGrad := true
-      parents := [xId, vId]
+      parents := #[xId]
       backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny (.dim rows (.dim cols .scalar))
-        let indices : Array Nat := #[i.val]
-        let dv1 := Buffer.gatherRows dLdy.buf rows32 cols32 indices one32
-        let dx := Buffer.copy dLdy.buf
-        -- `gatherRows` returns (1,cols) laid out as length `cols`; reinterpret as vector.
-        pure [
-          (xId, { s := .dim rows (.dim cols .scalar), buf := dx }),
-          (vId, { s := .dim cols .scalar, buf := dv1 })
-        ] }
+        let dLdy ← requireGrad dLdyAny outShape
+        let movedGrad := Indexing.permuteBorrowed dLdy.buf outShape steps
+        let zeros := Buffer.zeros inputSize32
+        let scattered :=
+          Buffer.scatterAddRows zeros movedGrad rows32 cols32 indexArray count32
+        let frontDx := Buffer.releaseThen zeros scattered
+        let frontDx := Indexing.releasePermutedThen steps movedGrad frontDx
+        let dx := Indexing.permuteOwned frontDx frontInputShape reverseSteps
+        pure #[(xId, { s := s, buf := dx })] }
   pure (t.addNode node)
+
+/-- Add indexed source slices into any tensor axis. -/
+def scatterAdd {s : Shape} (t : Tape) (baseId sourceId : Nat) (axis count : Nat)
+    [Shape.AxisInBounds axis s]
+    (indices : Tensor (Fin (Shape.axisSize s axis)) [count]) : Result (Tape × Nat) := do
+  let sourceShape := s.replaceAxis axis count
+  let tailShape := s.eraseAxis axis
+  let frontInputShape := .dim (Shape.axisSize s axis) tailShape
+  let frontSourceShape := .dim count tailShape
+  let base ← requireValue (t := t) baseId s
+  let source ← requireValue (t := t) sourceId sourceShape
+  let rows32 ← AnyBuffer.natToU32Checked (Shape.axisSize s axis)
+  let cols32 ← AnyBuffer.numelU32 tailShape
+  let count32 ← AnyBuffer.natToU32Checked count
+  let _ ← AnyBuffer.numelU32 s
+  let steps ← Indexing.checkedSwapSteps (Indexing.moveAxisToFrontDepths axis)
+  let reverseSteps := steps.reverse
+  let indexArray := Indexing.finTensorToIndexArray indices
+  let movedBase := Indexing.permuteBorrowed base s steps
+  let movedSource := Indexing.permuteBorrowed source sourceShape steps
+  let scattered :=
+    Buffer.scatterAddRows movedBase movedSource rows32 cols32 indexArray count32
+  let frontY := Indexing.releasePermutedThen steps movedSource scattered
+  let frontY := Indexing.releasePermutedThen steps movedBase frontY
+  let y := Indexing.permuteOwned frontY frontInputShape reverseSteps
+  let node : Node :=
+    { name := some s!"scatter_add(axis={axis})"
+      value := { s := s, buf := y }
+      requiresGrad := true
+      parents := #[baseId, sourceId]
+      backward := fun dLdyAny => do
+        let dLdy ← requireGrad dLdyAny s
+        let dBase := Buffer.copy dLdy.buf
+        let movedGrad := Indexing.permuteBorrowed dLdy.buf s steps
+        let gathered := Buffer.gatherRows movedGrad rows32 cols32 indexArray count32
+        let frontDSource := Indexing.releasePermutedThen steps movedGrad gathered
+        let dSource := Indexing.permuteOwned frontDSource frontSourceShape reverseSteps
+        pure #[
+          (baseId, { s := s, buf := dBase }),
+          (sourceId, { s := sourceShape, buf := dSource })] }
+  pure (t.addNode node)
+
 end Tape
 
 end Cuda

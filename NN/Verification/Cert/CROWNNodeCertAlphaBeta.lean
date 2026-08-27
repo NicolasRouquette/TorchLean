@@ -8,7 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Cert.AlphaBetaCROWN
 public import NN.MLTheory.CROWN.Graph
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
 public import NN.Verification.Cert.IBPNodeCert
 public import Lean.Data.Json
 
@@ -112,7 +112,7 @@ structure AlphaBetaCROWNNodeCertificate where
   /-- Optional per-node affine lower/upper bounds. -/
   crown : Array (Option (FlatAffineBounds IEEE32Exec))
   /-- Optional per-node α values for ReLU lower relaxations. -/
-  alpha : Array (Option (FlatVec IEEE32Exec))
+  alpha : Array (Option (FlatTensor IEEE32Exec))
   /-- Optional per-node β phase annotations for ReLU nodes. -/
   beta : Array (Option (Array Int))
 
@@ -142,7 +142,7 @@ def readAlphaBetaCROWNNodeCertificate (g : Graph) (path : String) : IO AlphaBeta
 /-- Check the local α/β-CROWN enclosure condition for one node against a certificate entry. -/
 def checkAlphaBetaCROWNNode (g : Graph) (ps : ParamStore IEEE32Exec)
     (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
-    (certAlpha : Array (Option (FlatVec IEEE32Exec)))
+    (certAlpha : Array (Option (FlatTensor IEEE32Exec)))
     (certBeta : Array (Option (Array Int)))
     (authoritativeCrown : Array (Option (FlatAffineBounds IEEE32Exec)))
     (certCrown : Array (Option (FlatAffineBounds IEEE32Exec)))

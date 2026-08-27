@@ -51,7 +51,7 @@ def usage : String :=
     , "Common examples:"
     , "  quickstart_tensors | quickstart_autograd | quickstart_mlp | quickstart_minibatch_mlp | quickstart_cnn"
     , "  mlp | cnn | resnet | transformer | gpt2 | text_gpt2 | mamba | fno1d_burgers"
-    , "  autoencoder | vae | gan | diffusion | ppo_cartpole | dqn_replay"
+    , "  autoencoder | latent_stats | tanh_autoencoder | gan | diffusion | ppo_cartpole | dqn_replay"
     , "  pytorch_roundtrip | pytorch_export_check"
     , "  data_csv | data_npy | data_cifar10"
     , "  float32_semantics | numerical_certificate | graphspec | ir_axis_ops | one_semantic_universe"
@@ -173,8 +173,8 @@ def runCmd (cmd : String) (args : List String) : IO UInt32 := do
   | "fno1d_burgers" => NN.Examples.Models.Operators.Fno1dBurgers.main args
   | "autoencoder" => NN.Examples.Models.Generative.Autoencoder.main args
   | "mae" => NN.Examples.Models.Generative.Mae.main args
-  | "vae" => NN.Examples.Models.Generative.Vae.main args
-  | "vqvae" => NN.Examples.Models.Generative.VqVae.main args
+  | "latent_stats" => NN.Examples.Models.Generative.LatentStatistics.main args
+  | "tanh_autoencoder" => NN.Examples.Models.Generative.TanhBottleneckAutoencoder.main args
   | "gan" => NN.Examples.Models.Generative.Gan.main args
   | "rnn" => NN.Examples.Models.Sequence.Rnn.main args
   | "lstm" => NN.Examples.Models.Sequence.Lstm.main args

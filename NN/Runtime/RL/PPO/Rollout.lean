@@ -121,7 +121,7 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
     [NeZero horizon] [NeZero nActions]
     (gamma lam : α)
     (r : Rollout α obsShape nActions horizon) :
-    IO (_root_.Runtime.Autograd.Torch.TList α
+    IO (TorchLean.TensorPack α
       [StateBatchShape horizon obsShape,
        LogitsBatchShape horizon nActions,
        ScalarBatchShape horizon,
@@ -138,8 +138,8 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
   let states : Tensor α (StateBatchShape horizon obsShape) :=
     Tensor.ofArray statesArr hStates
 
-  let actionsOneHotArr : Array (Tensor α (.dim nActions .scalar)) :=
-    steps.map (fun st => NN.Tensor.oneHot (α := α) nActions st.action)
+  let actionsOneHotArr : Array (Tensor α [nActions]) :=
+    steps.map (fun st => TorchLean.Tensor.oneHot (α := α) nActions st.action)
   let hActHot : horizon = actionsOneHotArr.size := by
     have : actionsOneHotArr.size = horizon := by
       simpa [actionsOneHotArr, Array.size_map] using r.steps_size_eq_horizon
@@ -177,21 +177,23 @@ def toActorCriticSample {obsShape : Shape} {nActions horizon : Nat}
       simpa [nextValuesArr, Array.size_map] using r.steps_size_eq_horizon
     simpa using this.symm
 
-  let rewards : Tensor α (.dim horizon .scalar) :=
+  let rewards : Tensor α [horizon] :=
     Tensor.ofArray (rewardsArr.map Tensor.scalar) (by simpa using hRewards)
-  let dones : Tensor Bool (.dim horizon .scalar) :=
+  let dones : Tensor Bool [horizon] :=
     Tensor.ofArray (donesArr.map Tensor.scalar) (by simpa using hDones)
-  let values : Tensor α (.dim horizon .scalar) :=
+  let values : Tensor α [horizon] :=
     Tensor.ofArray (valuesArr.map Tensor.scalar) (by simpa using hValues)
-  let nextValues : Tensor α (.dim horizon .scalar) :=
+  let nextValues : Tensor α [horizon] :=
     Tensor.ofArray (nextValuesArr.map Tensor.scalar) (by simpa using hNextValues)
 
   let advRaw :=
-    Core.generalizedAdvantageEstimationVec (α := α) (n := horizon) gamma lam rewards values nextValues dones
-  let returns := Core.returnsFromAdvantagesVec (α := α) (n := horizon) advRaw values
+    Core.generalizedAdvantageEstimationTensor (α := α) (n := horizon)
+      gamma lam rewards values nextValues dones
+  let returns := Core.returnsFromAdvantagesTensor (α := α) (n := horizon) advRaw values
   let advantages := Spec.normalizeZscoreSpec (α := α) (n := horizon) advRaw
 
-  let valueTarget : Tensor α (ValueBatchShape horizon) := Tensor.vecToCol returns
+  let valueTarget : Tensor α (ValueBatchShape horizon) :=
+    Tensor.reshapeSpec returns (by simp [Shape.size])
   let advantagesT : Tensor α (ScalarBatchShape horizon) := advantages
 
   pure <|

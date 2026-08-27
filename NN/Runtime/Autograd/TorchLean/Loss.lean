@@ -112,8 +112,8 @@ def nllOneHot {α : Type} [Context α] [DecidableEq Shape]
 /--
 Cross-entropy (one-hot targets), computed as `-sum(y * log(softmax(logits)))`.
 
-Note: this is one-hot only. If your label is a single integer class index, use
-`crossEntropyIndex`, whose `Fin n` target records the class bound in its type.
+Note: this is one-hot only. For integer class labels, use `crossEntropy`, whose
+`Fin classes` target tensor records the class bound in its element type.
 -/
 def oneHotCrossEntropy {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
@@ -124,159 +124,163 @@ def oneHotCrossEntropy {α : Type} [Context α] [DecidableEq Shape]
   let logp ← F.logSoftmax (m := m) (α := α) (s := s) axis logits
   nllOneHot (m := m) (α := α) (s := s) axis logp targetOneHot (reduction := reduction)
 
-/-- Negative log-likelihood for a single class index (vector logits/log-probs). -/
-def nllIndex {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n : Nat}
-    (logProbs : RefTy (m := m) (α := α) (.dim n .scalar))
-    (target : Fin n) :
-    m (RefTy (m := m) (α := α) Shape.scalar) := do
-  let picked ← gatherScalar (m := m) (α := α) (n := n) logProbs target
-  scale (m := m) (α := α) (s := Shape.scalar) picked (-1)
-
 /--
-Cross-entropy for a single class index, computed as `-log(softmax(logits)[target])`.
+Unreduced indexed negative log-likelihood along an arbitrary class axis.
 
-This avoids one-hot targets, but the target index is a Lean `Fin n` (not a tensor value).
+The shape contract is:
+
+* `logProbs` has shape `prefix ++ [classes] ++ suffix`;
+* `classAxis = rank prefix` identifies the `classes` dimension;
+* `target` has shape `prefix ++ suffix` and element type `Fin classes`;
+* the result has the same shape as `target`, with the class axis removed.
+
+Each output coordinate is `-logProbs[..., target[...], ...]`. In particular, suffix coordinates
+remain aligned with their corresponding labels. Invalid class labels are unrepresentable.
 -/
-def crossEntropyIndex {α : Type} [Context α] [DecidableEq Shape]
+def nllUnreduced {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n : Nat}
-    (logits : RefTy (m := m) (α := α) (.dim n .scalar))
-    (target : Fin n) :
-    m (RefTy (m := m) (α := α) Shape.scalar) := do
-  let logp ← F.logSoftmax (m := m) (α := α) (s := .dim n .scalar) 0 logits
-  nllIndex (m := m) (α := α) (n := n) logp target
-
-/--
-Convert per-row class labels into flat indices for a row-major `(rows × classes)` matrix.
-
-An invalid class is mapped to the first index past the flattened matrix. The subsequent
-`gatherVecNatOrZero` therefore returns zero for that row; it can never select a class from a
-different row. Callers that attach the usual cross-entropy meaning must ensure every label is
-strictly smaller than `classes`.
--/
-def rowTargetFlatIndicesOrInvalid (rows classes : Nat) (target : Tensor Nat (.dim rows .scalar)) :
-    Tensor Nat (.dim rows .scalar) :=
-  match target with
-  | Tensor.dim f =>
-      Tensor.dim (fun r =>
-        match f r with
-        | Tensor.scalar cls =>
-            Tensor.scalar <| if cls < classes then r.val * classes + cls else rows * classes)
-
-/--
-Unreduced negative log-likelihood for integer row labels.
-
-`logProbs` has shape `(rows × classes)` and `target[r]` is the class id for row `r`. The result
-contains one loss per row. Keeping this operation unreduced is useful for masked language modeling,
-sample weighting, and any caller that needs to choose its own normalization.
-
-The mathematical domain requires `target[r] < classes` for every row. Runtime objectives should
-enforce that condition with `ObjectiveDef.validateNatInputs`; the low-level gather is totalized only
-so malformed inputs cannot read a different row.
--/
-def nllRowsNatUnreduced {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {rows classes : Nat}
-    (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
-      (.dim rows .scalar)) :
-    m (RefTy (m := m) (α := α) (.dim rows .scalar)) := do
+    {leading trailing : Shape} {classes : Nat}
+    (classAxis : Nat) (_hClassAxis : classAxis = leading.rank)
+    (logProbs : RefTy (m := m) (α := α) (leading.concat (trailing.prependDim classes)))
+    (target : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin classes)
+      (leading.concat trailing)) :
+    m (RefTy (m := m) (α := α) (leading.concat trailing)) := do
+  let toIndices := fun (target : Tensor (Fin classes) (leading.concat trailing)) =>
+    (Tensor.ofFn fun i =>
+      let targetClass := target.toArray[i.val]'(by
+        have hSize : target.toArray.size = Shape.size (leading.concat trailing) := by
+          rw [← Array.length_toList, Tensor.toArray_toList, Tensor.toList_length]
+        exact hSize.symm ▸ i.isLt)
+      let inner := Shape.size trailing
+      let outer := i.val / inner
+      let flatIndex := outer * (classes * inner) + targetClass.val * inner + i.val % inner
+      ⟨flatIndex, by
+        have hInner : 0 < inner := by
+          by_contra h
+          have hZero : Shape.size trailing = 0 := by
+            simpa [inner] using Nat.eq_zero_of_not_pos h
+          simpa [Shape.size_concat, hZero] using i.isLt
+        have hOuter : outer < Shape.size leading := by
+          apply Nat.div_lt_of_lt_mul
+          simpa [Shape.size_concat, Nat.mul_comm] using i.isLt
+        have hRemainder : i.val % inner < inner := Nat.mod_lt _ hInner
+        have hClassInner : targetClass.val * inner + i.val % inner < classes * inner := by
+          calc
+            targetClass.val * inner + i.val % inner < targetClass.val * inner + inner :=
+              Nat.add_lt_add_left hRemainder _
+            _ = (targetClass.val + 1) * inner := by simp [Nat.add_mul]
+            _ ≤ classes * inner :=
+              Nat.mul_le_mul_right inner (Nat.succ_le_iff.mpr targetClass.isLt)
+        calc
+          flatIndex < outer * (classes * inner) + classes * inner := by
+            simpa [flatIndex, Nat.add_assoc] using
+              Nat.add_lt_add_left hClassInner (outer * (classes * inner))
+          _ = (outer + 1) * (classes * inner) := by simp [Nat.add_mul]
+          _ ≤ Shape.size leading * (classes * inner) :=
+            Nat.mul_le_mul_right _ (Nat.succ_le_iff.mpr hOuter)
+          _ = Shape.size (leading.concat (trailing.prependDim classes)) := by
+            simp [inner, Shape.size_concat, Shape.size]⟩ :
+      Tensor (Fin (Shape.size (leading.concat (trailing.prependDim classes))))
+        [Shape.size (leading.concat trailing)])
   let flat ← reshape (m := m) (α := α)
-    (s₁ := .dim rows (.dim classes .scalar))
-    (s₂ := .dim (rows * classes) .scalar)
-    logProbs (by
-      simp [Spec.Shape.size])
-  let flatTarget := _root_.Runtime.Autograd.Torch.mapNatTensor (m := m) (α := α)
-    (rowTargetFlatIndicesOrInvalid rows classes) target
-  let picked ← gatherVecNatOrZero (m := m) (α := α)
-    (n := rows * classes) (k := rows) flat flatTarget
-  scale (m := m) (α := α) (s := .dim rows .scalar) picked (-1)
+    (s₁ := leading.concat (trailing.prependDim classes))
+    (s₂ := [Shape.size (leading.concat (trailing.prependDim classes))]) logProbs
+      (by simp [Shape.size])
+  let flatTarget := _root_.Runtime.Autograd.Torch.mapData (m := m) (α := α)
+    toIndices target
+  let picked ← indexSelect (m := m) (α := α)
+    (s := [Shape.size (leading.concat (trailing.prependDim classes))]) 0
+    (Shape.size (leading.concat trailing)) flat flatTarget
+  let losses ← scale (m := m) (α := α)
+    (s := [Shape.size (leading.concat trailing)]) picked (-1)
+  reshape (m := m) (α := α) (s₁ := [Shape.size (leading.concat trailing)])
+    (s₂ := leading.concat trailing) losses (by simp [Shape.size])
 
 /--
-Negative log-likelihood for a matrix of log-probabilities and integer row labels.
+Indexed negative log-likelihood along an arbitrary class axis.
 
-This is the integer-label counterpart of `nllOneHot`; it avoids materializing a one-hot target
-matrix and then applies the requested mean or sum reduction over rows.
+The logits, labels, and class-axis contract are those of `nllUnreduced`. The requested reduction is
+applied over every coordinate of the class-erased output shape.
 -/
-def nllRowsNat {α : Type} [Context α] [DecidableEq Shape]
+def nll {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {rows classes : Nat}
-    (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
-      (.dim rows .scalar))
+    {leading trailing : Shape} {classes : Nat}
+    (classAxis : Nat) (hClassAxis : classAxis = leading.rank)
+    (logProbs : RefTy (m := m) (α := α) (leading.concat (trailing.prependDim classes)))
+    (target : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin classes)
+      (leading.concat trailing))
     (reduction : Reduction := .mean) :
     m (RefTy (m := m) (α := α) Shape.scalar) := do
-  let losses ← nllRowsNatUnreduced (m := m) (α := α)
-    (rows := rows) (classes := classes) logProbs target
-  reduce (m := m) (α := α) (s := .dim rows .scalar) losses reduction
+  let losses ← nllUnreduced (m := m) (α := α) classAxis hClassAxis logProbs target
+  reduce (m := m) (α := α) (s := leading.concat trailing) losses reduction
 
 /--
-Weighted negative log-likelihood for integer row labels.
+Weighted indexed negative log-likelihood along an arbitrary class axis.
 
-The result is
-
-`∑ r, weights[r] * (-logProbs[r, target[r]])`.
-
-No implicit normalization is performed. Use weights that sum to one for a weighted mean, zeros to
-exclude rows, or arbitrary nonnegative weights for a weighted sum. Making the normalization
-explicit avoids a hidden division-by-zero convention when every row is masked.
+The logits, labels, weights, and output coordinates obey the `nllUnreduced` shape contract. This
+returns `sum (weights * losses)` without implicit normalization; normalized weights therefore give
+a weighted mean, while zero weights mask coordinates without a division-by-zero convention.
 -/
-def nllRowsNatWeighted {α : Type} [Context α] [DecidableEq Shape]
+def nllWeighted {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {rows classes : Nat}
-    (logProbs : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
-      (.dim rows .scalar))
-    (weights : RefTy (m := m) (α := α) (.dim rows .scalar)) :
+    {leading trailing : Shape} {classes : Nat}
+    (classAxis : Nat) (hClassAxis : classAxis = leading.rank)
+    (logProbs : RefTy (m := m) (α := α) (leading.concat (trailing.prependDim classes)))
+    (target : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin classes)
+      (leading.concat trailing))
+    (weights : RefTy (m := m) (α := α) (leading.concat trailing)) :
     m (RefTy (m := m) (α := α) Shape.scalar) := do
-  let losses ← nllRowsNatUnreduced (m := m) (α := α)
-    (rows := rows) (classes := classes) logProbs target
-  let weighted ← mul (m := m) (α := α) (s := .dim rows .scalar) losses weights
-  sum (m := m) (α := α) (s := .dim rows .scalar) weighted
+  let losses ← nllUnreduced (m := m) (α := α) classAxis hClassAxis logProbs target
+  let weighted ← mul (m := m) (α := α) (s := leading.concat trailing) losses weights
+  sum (m := m) (α := α) (s := leading.concat trailing) weighted
 
 /--
-Cross-entropy for row-wise logits with integer labels.
+Indexed cross-entropy along an arbitrary class axis.
 
-This matches the common language-model/classification layout after flattening all prefix dimensions
-into `rows`: logits are `(rows × classes)`, labels are a length-`rows` vector of class ids.
-Every label must be strictly smaller than `classes`; model objectives validate this before execution.
+This applies log-softmax along `classAxis` and then uses `nll`. Shapes follow the
+`prefix ++ [classes] ++ suffix` contract documented on `nllUnreduced`.
 -/
-def crossEntropyRowsNat {α : Type} [Context α] [DecidableEq Shape]
+def crossEntropy {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {rows classes : Nat}
-    (logits : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
-      (.dim rows .scalar))
+    {leading trailing : Shape} {classes : Nat}
+    (classAxis : Nat) (hClassAxis : classAxis = leading.rank)
+    (logits : RefTy (m := m) (α := α) (leading.concat (trailing.prependDim classes)))
+    (target : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin classes)
+      (leading.concat trailing))
     (reduction : Reduction := .mean) :
-    m (RefTy (m := m) (α := α) Shape.scalar) := do
+    m (RefTy (m := m) (α := α) Shape.scalar) :=
+  letI : Shape.AxisInBounds classAxis (leading.concat (trailing.prependDim classes)) :=
+    Shape.AxisInBounds.mk <| by
+      rw [hClassAxis]
+      simp [Tensor.Internal.rank_concat, Shape.rank]
+  do
   let logp ← F.logSoftmax (m := m) (α := α)
-    (s := .dim rows (.dim classes .scalar)) 1 logits
-  nllRowsNat (m := m) (α := α) (rows := rows) (classes := classes)
-    logp target (reduction := reduction)
+    (s := leading.concat (trailing.prependDim classes)) classAxis logits
+  nll (m := m) (α := α) classAxis hClassAxis logp target (reduction := reduction)
 
 /--
-Weighted row-wise cross entropy with integer labels.
+Weighted indexed cross-entropy along an arbitrary class axis.
 
-This computes log-softmax, selects the target class in each row, multiplies by the caller-provided
-row weights, and sums. It is the runtime primitive used by loss masks and packed variable-length
-sequences; it is not specific to language models. The operation is a linear weighted sum for any
-scalar weights. Callers that interpret it as a weighted cross-entropy mean must provide
-nonnegative weights with sum one.
+This applies log-softmax along `classAxis`, multiplies each class-erased loss by the corresponding
+weight, and sums without implicit normalization. Shapes follow the contract on `nllUnreduced`.
 -/
-def crossEntropyRowsNatWeighted {α : Type} [Context α] [DecidableEq Shape]
+def crossEntropyWeighted {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {rows classes : Nat}
-    (logits : RefTy (m := m) (α := α) (.dim rows (.dim classes .scalar)))
-    (target : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α)
-      (.dim rows .scalar))
-    (weights : RefTy (m := m) (α := α) (.dim rows .scalar)) :
-    m (RefTy (m := m) (α := α) Shape.scalar) := do
+    {leading trailing : Shape} {classes : Nat}
+    (classAxis : Nat) (hClassAxis : classAxis = leading.rank)
+    (logits : RefTy (m := m) (α := α) (leading.concat (trailing.prependDim classes)))
+    (target : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin classes)
+      (leading.concat trailing))
+    (weights : RefTy (m := m) (α := α) (leading.concat trailing)) :
+    m (RefTy (m := m) (α := α) Shape.scalar) :=
+  letI : Shape.AxisInBounds classAxis (leading.concat (trailing.prependDim classes)) :=
+    Shape.AxisInBounds.mk <| by
+      rw [hClassAxis]
+      simp [Tensor.Internal.rank_concat, Shape.rank]
+  do
   let logp ← F.logSoftmax (m := m) (α := α)
-    (s := .dim rows (.dim classes .scalar)) 1 logits
-  nllRowsNatWeighted (m := m) (α := α) (rows := rows) (classes := classes)
-    logp target weights
+    (s := leading.concat (trailing.prependDim classes)) classAxis logits
+  nllWeighted (m := m) (α := α) classAxis hClassAxis logp target weights
 
 /--
 Binary cross-entropy with logits (elementwise), using the stable identity:

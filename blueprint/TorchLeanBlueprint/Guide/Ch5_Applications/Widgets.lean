@@ -7,7 +7,6 @@ import NN.Floats.IEEEExec.Exec32
 import NN.MLTheory.CROWN.Graph
 import NN.Runtime.Autograd.Engine.Core
 import NN.Runtime.Training.Log
-import NN.Runtime.Context
 
 open Verso.Genre Manual
 open Verso.Genre.Manual.InlineLean
@@ -77,7 +76,7 @@ Here is the short lookup table; the sections below turn each row into a working 
   * node bounds, affine state, and interval widths
 *
   * gradients
-  * `#tape_grads_view`, `#tape_trace_view`, `#runtime_ctx_view`
+  * `#tape_grads_view`, `#tape_trace_view`
   * tape structure, reverse steps, and accumulated gradients
 *
   * a completed run
@@ -123,44 +122,41 @@ def decimalTenth : Float :=
 def oneThirdFloat : Float :=
   Float.ofBits 0x3fd5555555555555
 
-def floatVector : Tensor Float (shape![4]) :=
-  Tensor.dim (fun
-    | ⟨0, _⟩ => Tensor.scalar (Float.ofNat 1)
-    | ⟨1, _⟩ => Tensor.scalar (Float.ofNat 2)
-    | ⟨2, _⟩ => Tensor.scalar decimalTenth
-    | ⟨_, _⟩ => Tensor.scalar oneThirdFloat)
+def floatTensor : Tensor Float [4] :=
+  tensor! [Float.ofNat 1, Float.ofNat 2, decimalTenth, oneThirdFloat]
 
-def ieeeVector : Tensor IEEE32Exec (shape![4]) :=
-  Tensor.dim (fun
-    | ⟨0, _⟩ => Tensor.scalar IEEE32Exec.posOne
-    | ⟨1, _⟩ =>
-        Tensor.scalar (IEEE32Exec.ofFloat (Float.ofNat 2))
-    | ⟨2, _⟩ => Tensor.scalar (IEEE32Exec.ofFloat decimalTenth)
-    | ⟨_, _⟩ => Tensor.scalar (IEEE32Exec.ofFloat oneThirdFloat))
+def ieeeTensor : Tensor IEEE32Exec [4] :=
+  tensor! [
+    IEEE32Exec.posOne,
+    IEEE32Exec.ofFloat (Float.ofNat 2),
+    IEEE32Exec.ofFloat decimalTenth,
+    IEEE32Exec.ofFloat oneThirdFloat
+  ]
 
-def indexVector : Tensor Nat (shape![5]) :=
-  Tensor.dim (fun i => Tensor.scalar i.1)
+def indexTensor : Tensor Nat [5] :=
+  Tensor.generate [5] fun
+    | [i] => i
+    | _ => 0
 
 def rankThreeGrid :
-    Tensor Nat (shape![2, 3, 4]) :=
-  Tensor.dim (fun i =>
-    Tensor.dim (fun j =>
-      Tensor.dim (fun k =>
-        Tensor.scalar (i.1 * 100 + j.1 * 10 + k.1))))
+    Tensor Nat [2, 3, 4] :=
+  Tensor.generate [2, 3, 4] fun
+    | [i, j, k] => i * 100 + j * 10 + k
+    | _ => 0
 
-def sampleMatrix : Tensor Int (shape![2, 4]) :=
-  Tensor.dim (fun i =>
-    Tensor.dim (fun j =>
-      Tensor.scalar (Int.ofNat (i.1 * 10 + j.1))))
+def sampleMatrix : Tensor Int [2, 4] :=
+  Tensor.generate [2, 4] fun
+    | [i, j] => Int.ofNat (i * 10 + j)
+    | _ => 0
 
-#tensor_view indexVector
+#tensor_view indexTensor
 #tensor_view rankThreeGrid
-#tensor_view floatVector
-#tensor_view ieeeVector
+#tensor_view floatTensor
+#tensor_view ieeeTensor
 #tensor_view sampleMatrix
 
 -- Numeric summaries for the small tensors above:
-#tensor_stats_view floatVector
+#tensor_stats_view floatTensor
 ```
 
 # IR Graph Viewer
@@ -171,24 +167,25 @@ The IR widget family answers the three debugging questions that show up in pract
 2. *Invariants*: do declared node shapes match what the ops infer from parent shapes?
 3. *Semantics*: when the graph is evaluated, which node fails first and what are the intermediate values?
 
+The trace command calls the internal IR evaluator directly, so its input uses `Spec.SomeTensor` to
+carry a runtime shape. Model code continues to accept and return `Tensor α shape`.
+
 ```
 open NN.IR
 open Spec
 
-def pairTensor (x y : Float) : Tensor Float (shape![2]) :=
-  Tensor.dim (fun
-    | ⟨0, _⟩ => Tensor.scalar x
-    | ⟨_, _⟩ => Tensor.scalar y)
+def pairTensor (x y : Float) : Tensor Float [2] :=
+  tensor! [x, y]
 
 def sampleGraph : Graph :=
   { nodes := #[
       { id := 0, parents := [], kind := .input
-        outShape := (shape![2]) },
+        outShape := [2] },
       { id := 1, parents := []
-        kind := .const (shape![2])
-        outShape := (shape![2]) },
+        kind := .const [2]
+        outShape := [2] },
       { id := 2, parents := [0, 1], kind := .add
-        outShape := (shape![2]) }
+        outShape := [2] }
     ] }
 
 def sampleGraphSub : Graph :=
@@ -196,12 +193,12 @@ def sampleGraphSub : Graph :=
   -- (Useful for rewrite/diff examples.)
   { nodes := #[
       { id := 0, parents := [], kind := .input
-        outShape := (shape![2]) },
+        outShape := [2] },
       { id := 1, parents := []
-        kind := .const (shape![2])
-        outShape := (shape![2]) },
+        kind := .const [2]
+        outShape := [2] },
       { id := 2, parents := [0, 1], kind := .sub
-        outShape := (shape![2]) }
+        outShape := [2] }
     ] }
 
 #ir_view sampleGraph
@@ -216,8 +213,8 @@ def sampleGraphSub : Graph :=
 
 -- 3) Evaluation trace: run the IR semantics step by step.
 -- For `.const` nodes, a small external payload is supplied.
-def sampleInput : Spec.PackedTensor Float :=
-  { shape := (shape![2]), tensor := pairTensor 0.60 (-0.20) }
+def sampleInput : Spec.SomeTensor Float :=
+  { shape := [2], tensor := pairTensor 0.60 (-0.20) }
 
 def samplePayload : NN.IR.Payload Float :=
   { const? := fun id =>
@@ -276,12 +273,12 @@ open Spec
 def sampleGraphCROWN : NN.IR.Graph :=
   { nodes := #[
       { id := 0, parents := [], kind := .input
-        outShape := (shape![2]) },
+        outShape := [2] },
       { id := 1, parents := []
-        kind := .const (shape![2])
-        outShape := (shape![2]) },
+        kind := .const [2]
+        outShape := [2] },
       { id := 2, parents := [0, 1], kind := .add
-        outShape := (shape![2]) }
+        outShape := [2] }
     ] }
 
 def samplePropState :
@@ -301,13 +298,13 @@ def samplePropState :
   { inputId := 0
     inputDim := 2
     states := #[
-      { shape := (shape![2])
+      { shape := [2]
         ibp? := some bIn
         aff? := none }
-    , { shape := (shape![2])
+    , { shape := [2]
         ibp? := some bConst
         aff? := none }
-    , { shape := (shape![2])
+    , { shape := [2]
         ibp? := some bOut
         aff? := none }
     ] }
@@ -337,18 +334,18 @@ open Spec
 def sampleTape : Tape Float :=
   let (t0, aId) :=
     Tape.leaf (α := Float) (t := Tape.empty)
-      (value := Tensor.scalar 2.0) (name := some "a")
+      (value := Tensor.full [] 2.0) (name := some "a")
   let (t1, bId) :=
     Tape.leaf (α := Float) (t := t0)
-      (value := Tensor.scalar 3.0) (name := some "b")
+      (value := Tensor.full [] 3.0) (name := some "b")
   let (t2, abId) :=
     match Tape.mul (α := Float) (t := t1)
-        (s := Shape.scalar) aId bId with
+        (s := .scalar) aId bId with
     | .ok r => r
     | .error _ => (t1, 0)
   let (t3, outId) :=
     match Tape.add (α := Float) (t := t2)
-        (s := Shape.scalar) abId bId with
+        (s := .scalar) abId bId with
     | .ok r => r
     | .error _ => (t2, 0)
   let _ := outId
@@ -414,38 +411,6 @@ This widget family pairs particularly well with:
 - the NPY loader training example,
 - the CNN and ViT model commands,
 - and the callback/reporting helpers exposed through `Trainer` reports.
-
-# Runtime Context Viewer
-
-When debugging a failed training step, one of the first questions is often not "what is the graph?"
-but "which values and gradients are registered now?"
-
-The runtime-context widget answers that question directly.
-
-```
-def packedScalar (x : Float) : Spec.PackedTensor Float :=
-  { shape := .scalar, tensor := Tensor.scalar x }
-
-def sampleCtx : Runtime.RuntimeContext Float :=
-  { variables := [
-      ("w", packedScalar 3.0)
-    , ("x", packedScalar 2.0)
-    , ("wx", packedScalar 6.0)
-    ]
-    gradients := [
-      ("w", packedScalar 2.0)
-    , ("x", packedScalar 3.0)
-    ]
-    nextId := 3 }
-
-#runtime_ctx_view sampleCtx
-```
-
-This view is good for comparing:
-
-- the training API,
-- the eager autograd tape,
-- and the actual runtime registry that stores values and accumulated gradients.
 
 # GPT And Text-Model Logs
 
@@ -541,10 +506,6 @@ Training and application commands can write artifacts that outlive the Lean proc
 [GPT widget source](https://github.com/lean-dojo/TorchLean/blob/main/NN/Widgets/Models/Sequence/Gpt2.lean),
 and [RL rollout view](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/RL/GymnasiumRolloutView.lean)
 show the corresponding producers.
-
-`#runtime_ctx_view` is different: it renders the live runtime registry and accumulated gradients.
-Use it when a training step failed before writing a log and the question is which variables reached
-the runtime context.
 
 File-backed views parse and render the artifact at the named path. A successful visualization does
 not authenticate its producer or strengthen the artifact's checker claim. When validity matters,

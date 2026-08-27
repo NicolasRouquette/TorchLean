@@ -134,7 +134,7 @@ theorem box_contains_inflateUniform_of_approx {s : Shape}
                             (approxTensor_scalar_iff (α := R) (toSpec := toSpec)
                               (x := y) (xR := yR) (eps := eps)).1 happrox
                           have hinterval := interval_contains_inflate_of_abs_error (hy := hy) habs
-                          simpa [inflateBoxUniform, Box.contains, tensorToSpec, Spec.mapTensor,
+                          simpa [inflateBoxUniform, Box.contains, tensorToSpec, Spec.Tensor.map,
                             Spec.fill,
                             Tensor.subSpec, Tensor.addSpec, Tensor.map2Spec] using hinterval
   | dim n s ih =>
@@ -160,14 +160,14 @@ theorem box_contains_inflateUniform_of_approx {s : Shape}
                           have hrec :=
                             ih (B := { lo := loF i, hi := hiF i }) (yS := ySf i) (yR := yRf i)
                               (hy := hy_i) (happrox := happrox_i)
-                          simpa [inflateBoxUniform, Box.contains, tensorToSpec, Spec.mapTensor,
+                          simpa [inflateBoxUniform, Box.contains, tensorToSpec, Spec.Tensor.map,
                             Spec.fill,
                             Tensor.subSpec, Tensor.addSpec, Tensor.map2Spec] using hrec
 
 /-- Forward-error budget used to inflate the real IBP box for a two-layer ReLU network. -/
 def ibpReluTwoLayerErrorBudget {inDim hidDim outDim : Nat}
     (netR : NN.MLTheory.CROWN.TwoLayerMLP R inDim hidDim outDim)
-    (xR : Tensor R (.dim inDim .scalar)) (eW1 eb1 eW2 eb2 ex : ℝ) : ℝ :=
+    (xR : Tensor R [inDim]) (eW1 eb1 eW2 eb2 ex : ℝ) : ℝ :=
   let l1R : Spec.LinearSpec R inDim hidDim :=
     { weights := netR.hiddenWeight, bias := netR.hiddenBias }
   let l2R : Spec.LinearSpec R hidDim outDim :=
@@ -187,8 +187,8 @@ theorem ibpBound_contains_reluTwoLayerMlp_float32 {inDim hidDim outDim : Nat}
     (netS : NN.MLTheory.CROWN.TwoLayerMLP ℝ inDim hidDim outDim)
     (netR : NN.MLTheory.CROWN.TwoLayerMLP R inDim hidDim outDim)
     (xB : NN.MLTheory.CROWN.Box ℝ (.dim inDim .scalar))
-    (xS : Tensor ℝ (.dim inDim .scalar))
-    (xR : Tensor R (.dim inDim .scalar))
+    (xS : Tensor ℝ [inDim])
+    (xR : Tensor R [inDim])
     {eW1 eb1 eW2 eb2 ex : ℝ}
     (hW1 : approxTensor (α := R) (toSpec := toSpec) netS.hiddenWeight netR.hiddenWeight eW1)
     (hb1 : approxTensor (α := R) (toSpec := toSpec) netS.hiddenBias netR.hiddenBias eb1)

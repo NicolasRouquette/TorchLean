@@ -19,78 +19,8 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 /-!
 # Linear Algebra Helpers
 
-Matrix transpose, 3D transposes, matmul/bmm backward specs, and shape matching.
+Rank-polymorphic axis permutations, broadcasted matmul, and shape matching.
 -/
-
-/-- Transpose a matrix `(m×n)` into `(n×m)`.
-
-PyTorch analogy: `A.transpose(0, 1)` or `A.T` for 2D tensors. -/
-def matrixTransposeSpec
-  {α : Type} {m n : Nat}
-  (t : Tensor α (.dim m (.dim n .scalar))) :
-  Tensor α (.dim n (.dim m .scalar)) :=
-  match t with
-  | Tensor.dim rows =>
-    Tensor.dim (fun j : Fin n =>
-      Tensor.dim (fun i : Fin m =>
-        match rows i with
-        | Tensor.dim cols =>
-          match cols j with
-          | Tensor.scalar value => Tensor.scalar value))
-
--- Advanced Transpose Operations
-/-- Permute a 3D tensor from `(a,b,c)` to `(b,c,a)`. -/
-def transpose3DFirstToLastSpec {α : Type} {a b c : Nat}
-  (t : Tensor α (.dim a (.dim b (.dim c .scalar)))) :
-  Tensor α (.dim b (.dim c (.dim a .scalar))) :=
-  match t with
-  | .dim f =>
-    .dim fun j =>
-      .dim fun k =>
-        .dim fun i =>
-          match f i with
-          | .dim g =>
-            match g j with
-            | .dim h => .scalar (match h k with | .scalar x => x)
-
-/-- Permute a 3D tensor from `(a,b,c)` to `(c,a,b)`. -/
-def transpose3DLastToFirstSpec {α : Type} {a b c : Nat}
-  (t : Tensor α (.dim a (.dim b (.dim c .scalar)))) :
-  Tensor α (.dim c (.dim a (.dim b .scalar))) :=
-  match t with
-  | .dim f =>
-    .dim fun k =>
-      .dim fun i =>
-        .dim fun j =>
-          match f i with
-          | .dim g =>
-            match g j with
-            | .dim h => .scalar (match h k with | .scalar x => x)
-
-/-- Swap the last two axes of a 3D tensor: `(a,b,c)` to `(a,c,b)`. -/
-def transpose3DLastTwoSpec {α : Type} {a b c : Nat}
-  (t : Tensor α (.dim a (.dim b (.dim c .scalar)))) :
-  Tensor α (.dim a (.dim c (.dim b .scalar))) :=
-  match t with
-  | .dim f =>
-    .dim fun i =>
-      match f i with
-      | .dim g =>
-        .dim fun k =>
-          .dim fun j =>
-            match g j with
-            | .dim h => .scalar (match h k with | .scalar x => x)
-
-/-- Swap the first two dimensions of a tensor `(m,n,...)` to `(n,m,...)`. -/
-def swapFirstTwoSpec {α : Type} {m n : Nat} {s : Shape}
-  (t : Tensor α (.dim m (.dim n s))) :
-  Tensor α (.dim n (.dim m s)) :=
-  match t with
-  | .dim f =>
-    .dim fun j =>
-      .dim fun i =>
-        match f i with
-        | .dim g => g j
 
 /-- Swap adjacent tensor axes at `depth` and `depth + 1`. -/
 def swapAdjacentAxes {β : Type} {shape : Shape} (tensor : Tensor β shape) (d : Nat) :
@@ -105,11 +35,11 @@ def swapAdjacentAxes {β : Type} {shape : Shape} (tensor : Tensor β shape) (d :
       | d + 1, .dim m rest, .dim g =>
         -- Preserve this axis and recurse into the remaining shape.
         .dim fun i => swapAdjacentAxes (g i) d
-      | _, .scalar, .scalar x =>
+      | d, .scalar, .scalar x =>
         -- A scalar has no axes to swap.
-        by simp [Shape.swapAdjacentAtDepth]; exact .scalar x
+        by cases d <;> exact .scalar x
       | 0, .dim _ .scalar, .dim g =>
-        -- A rank-one tensor has no adjacent pair at this level.
+        -- A vector has no adjacent pair at this level.
         .dim g
 
 /-- Apply adjacent-axis swaps while retaining the resulting shape in the return type. -/
@@ -120,62 +50,165 @@ def permuteByAdjacentSwaps {β : Type} {s : Shape} (tensor : Tensor β s) :
       permuteByAdjacentSwaps (swapAdjacentAxes tensor depth) depths
 
 /-- Swapping at depth zero exchanges the two leading axes. -/
-@[simp] theorem swapAdjacentAxes_zero {β : Type} {m n : Nat} {s : Shape}
+theorem swapAdjacentAxes_zero {β : Type} {m n : Nat} {s : Shape}
     (tensor : Tensor β (.dim m (.dim n s))) :
     swapAdjacentAxes tensor 0 =
       .dim (fun j => .dim (fun i => _root_.Spec.get (_root_.Spec.get tensor i) j)) := by
-  cases tensor
+  cases tensor with
+  | dim values =>
+      apply congrArg Tensor.dim
+      funext j
+      apply congrArg Tensor.dim
+      funext i
+      cases hvalue : values i
+      simp [hvalue, _root_.Spec.get]
+
+namespace Internal
+
+theorem rank_concat (left right : Shape) :
+    (left.concat right).rank = left.rank + right.rank := by
+  induction left with
+  | scalar => simp [Shape.rank]
+  | dim _ tail ih => simp [Shape.rank, ih, Nat.add_assoc]
+
+theorem sameRankConcatRight (left right suffix : Shape) (same : Shape.SameRank left right) :
+    Shape.SameRank (left.concat suffix) (right.concat suffix) :=
+  ⟨by simp only [rank_concat, same.rank_eq]⟩
+
+/-- Extend prefix-broadcast evidence across a fixed non-broadcasted tensor suffix. -/
+def extendBroadcastSuffix {source target : Shape} (suffix : Shape)
+    (broadcast : Shape.CanBroadcastTo source target) :
+    Shape.CanBroadcastTo (source.concat suffix) (target.concat suffix) :=
+  match broadcast with
+  | .scalar => .refl suffix
+  | @Shape.CanBroadcastTo.dim_eq _ source target same tail =>
+      letI : Shape.SameRank (source.concat suffix) (target.concat suffix) :=
+        sameRankConcatRight source target suffix same
+      .dim_eq (extendBroadcastSuffix suffix tail)
+  | @Shape.CanBroadcastTo.dim_1_to_n _ source target same tail =>
+      letI : Shape.SameRank (source.concat suffix) (target.concat suffix) :=
+        sameRankConcatRight source target suffix same
+      .dim_1_to_n (extendBroadcastSuffix suffix tail)
+  | .expand_dims tail => .expand_dims (extendBroadcastSuffix suffix tail)
+
+@[simp] theorem broadcastTo_refl {α : Type} [Inhabited α] {shape : Shape}
+    (tensor : Tensor α shape) :
+    broadcastTo (Shape.CanBroadcastTo.refl shape) tensor = tensor := by
+  induction shape with
+  | scalar => rfl
+  | dim count rest ih =>
+      cases tensor with
+      | dim values =>
+          simp only [Shape.CanBroadcastTo.refl, broadcastTo]
+          congr
+          funext index
+          exact ih (values index)
+
+@[simp] theorem broadcastTo_extendBroadcastSuffix_refl
+    {α : Type} [Inhabited α] (batch suffix : Shape)
+    (tensor : Tensor α (batch.concat suffix)) :
+    broadcastTo (extendBroadcastSuffix suffix (Shape.CanBroadcastTo.refl batch)) tensor =
+      tensor := by
+  induction batch with
+  | scalar => exact broadcastTo_refl tensor
+  | dim count rest ih =>
+      cases tensor with
+      | dim values =>
+          simp only [Shape.CanBroadcastTo.refl, extendBroadcastSuffix, broadcastTo]
+          congr
+          funext index
+          exact ih (values index)
+
+@[simp] theorem broadcastTo_extendBroadcastSuffix_scalarTo_dim
+    {α : Type} [Inhabited α] (count : Nat) (suffix : Shape)
+    (tensor : Tensor α suffix) :
+    broadcastTo
+        (extendBroadcastSuffix suffix (Shape.CanBroadcastTo.scalarTo [count])) tensor =
+      .dim (fun _ => tensor) := by
+  change (Tensor.dim fun _ => broadcastTo (Shape.CanBroadcastTo.refl suffix) tensor) = _
+  congr
+  funext index
+  exact broadcastTo_refl tensor
+
+theorem flattenBatchMatrix_size (batch : Shape) (m n : Nat) :
+    (batch.concat [m, n]).size = Shape.size [batch.size, m, n] := by
+  simp [Shape.size_concat, Shape.size]
+
+def flattenBatchMatrix {α : Type} [Inhabited α] {batch : Shape} {m n : Nat}
+    (tensor : Tensor α (batch.concat [m, n])) : Tensor α [batch.size, m, n] :=
+  reshapeSpec tensor (flattenBatchMatrix_size batch m n)
+
+def restoreBatchMatrix {α : Type} [Inhabited α] {batch : Shape} {m n : Nat}
+    (tensor : Tensor α [batch.size, m, n]) : Tensor α (batch.concat [m, n]) :=
+  reshapeSpec tensor (flattenBatchMatrix_size batch m n).symm
+
+def bmmLikeSpec {α : Type} [Add α] [Mul α] [Zero α]
+    {batch m n p : Nat} (A : Tensor α [batch, m, n]) (B : Tensor α [batch, n, p]) :
+    Tensor α [batch, m, p] :=
+  match A, B with
+  | .dim fA, .dim fB => .dim fun i => matMulSpec (fA i) (fB i)
+
+def matmulCommonBatchSpec {α : Type} [Inhabited α] [Add α] [Mul α] [Zero α]
+    {batch : Shape} {m n p : Nat}
+    (A : Tensor α (batch.concat [m, n])) (B : Tensor α (batch.concat [n, p])) :
+    Tensor α (batch.concat [m, p]) :=
+  match batch, A, B with
+  | .scalar, A, B => matMulSpec A B
+  | .dim _ rest, .dim left, .dim right =>
+      .dim fun index => matmulCommonBatchSpec (left index) (right index)
+
+@[simp] theorem matmulCommonBatchSpec_scalar {α : Type}
+    [Inhabited α] [Add α] [Mul α] [Zero α] {m n p : Nat}
+    (left : Tensor α [m, n]) (right : Tensor α [n, p]) :
+    matmulCommonBatchSpec (batch := .scalar) left right = matMulSpec left right := by
   rfl
 
-/-- Swap adjacent dimensions at a given depth inside a leading batch dimension. -/
-def swapAdjacentAxesWithinLeading {α : Type} {n : Nat} {s : Shape}
-  (t : Tensor α (.dim n s)) (depth : Nat) :
-  Tensor α (.dim n (s.swapAdjacentAtDepth depth)) :=
-  match t with
-  | .dim f =>
-    .dim fun i => swapAdjacentAxes (f i) depth
+@[simp] theorem matmulCommonBatchSpec_dim {α : Type}
+    [Inhabited α] [Add α] [Mul α] [Zero α]
+    {count m n p : Nat} {rest : Shape}
+    (left : Fin count → Tensor α (rest.concat [m, n]))
+    (right : Fin count → Tensor α (rest.concat [n, p])) :
+    matmulCommonBatchSpec (batch := .dim count rest) (.dim left) (.dim right) =
+      .dim (fun index => matmulCommonBatchSpec (left index) (right index)) := by
+  rfl
 
--- Backward pass for matrix multiplication
-/-- Backward pass for matrix multiplication: returns `(dA, dB)` given `dC`.
+end Internal
 
-PyTorch analogy: if $C=AB$, then:
+/-- Matrix-rank matmul with explicit broadcasting of both batch prefixes.
 
-- $dA=dC\,B^\mathsf{T}$
-- $dB=A^\mathsf{T}dC$ -/
-def matMulBackwardSpec
-  {m n p : Nat}
-  (A : Tensor α (.dim m (.dim n .scalar)))
-  (B : Tensor α (.dim n (.dim p .scalar)))
-  (dC : Tensor α (.dim m (.dim p .scalar))) :
-  (Tensor α (.dim m (.dim n .scalar))) × (Tensor α (.dim n (.dim p .scalar))) :=
-  let dA := matMulSpec dC (matrixTransposeSpec B) -- dA = dC * Bᵀ
-  let dB := matMulSpec (matrixTransposeSpec A) dC -- dB = Aᵀ * dC
-  (dA, dB)
+`A` has shape `batchA ++ [m, n]`, `B` has shape `batchB ++ [n, p]`, and both batch
+prefixes broadcast to `batch`. The result has shape `batch ++ [m, p]`. -/
+def matmulSpec {α : Type} [Inhabited α] [Add α] [Mul α] [Zero α]
+    {batchA batchB batch : Shape} {m n p : Nat}
+    (broadcastA : Shape.CanBroadcastTo batchA batch)
+    (broadcastB : Shape.CanBroadcastTo batchB batch)
+    (A : Tensor α (batchA.concat [m, n])) (B : Tensor α (batchB.concat [n, p])) :
+    Tensor α (batch.concat [m, p]) :=
+  let commonA := broadcastTo (Internal.extendBroadcastSuffix [m, n] broadcastA) A
+  let commonB := broadcastTo (Internal.extendBroadcastSuffix [n, p] broadcastB) B
+  Internal.matmulCommonBatchSpec commonA commonB
 
-/-- Batched matrix multiplication: `[batch,m,n] × [batch,n,p] → [batch,m,p]`. -/
-def bmmSpec {α : Type} [Add α] [Mul α] [Zero α]
-  {batch m n p : Nat}
-  (A : Tensor α (.dim batch (.dim m (.dim n .scalar))))
-  (B : Tensor α (.dim batch (.dim n (.dim p .scalar)))) :
-  Tensor α (.dim batch (.dim m (.dim p .scalar))) :=
-  match A, B with
-  | .dim fA, .dim fB =>
-      .dim fun i => matMulSpec (match fA i with | t => t) (match fB i with | t => t)
-
-/-- Backward pass for batched matrix multiplication. -/
-def bmmBackwardSpec {α : Type} [Add α] [Mul α] [Zero α]
-  {batch m n p : Nat}
-  (A : Tensor α (.dim batch (.dim m (.dim n .scalar))))
-  (B : Tensor α (.dim batch (.dim n (.dim p .scalar))))
-  (dC : Tensor α (.dim batch (.dim m (.dim p .scalar)))) :
-  (Tensor α (.dim batch (.dim m (.dim n .scalar)))) × (Tensor α (.dim batch (.dim n (.dim p
-    .scalar)))) :=
+/-- Reverse-mode derivatives for matrix-rank matmul with broadcasted batch prefixes. -/
+def matmulBackwardSpec {α : Type} [Inhabited α] [Add α] [Mul α] [Zero α]
+    {batchA batchB batch : Shape} {m n p : Nat}
+    (broadcastA : Shape.CanBroadcastTo batchA batch)
+    (broadcastB : Shape.CanBroadcastTo batchB batch)
+    (A : Tensor α (batchA.concat [m, n])) (B : Tensor α (batchB.concat [n, p]))
+    (dC : Tensor α (batch.concat [m, p])) :
+    Tensor α (batchA.concat [m, n]) × Tensor α (batchB.concat [n, p]) :=
+  let commonA := broadcastTo (Internal.extendBroadcastSuffix [m, n] broadcastA) A
+  let commonB := broadcastTo (Internal.extendBroadcastSuffix [n, p] broadcastB) B
+  let commonBT : Tensor α (batch.concat [p, n]) := by
+    simpa using swapAdjacentAxes commonB batch.rank
+  let commonAT : Tensor α (batch.concat [n, m]) := by
+    simpa using swapAdjacentAxes commonA batch.rank
+  let dCommonA := Internal.matmulCommonBatchSpec dC commonBT
+  let dCommonB := Internal.matmulCommonBatchSpec commonAT dC
   let dA :=
-    bmmSpec (α := α) (batch := batch) (m := m) (n := p) (p := n) dC
-      (transpose3DLastTwoSpec (α := α) (a := batch) (b := n) (c := p) B)
+    reduceFromBroadcastTo (Internal.extendBroadcastSuffix [m, n] broadcastA) dCommonA
   let dB :=
-    bmmSpec (α := α) (batch := batch) (m := n) (n := m) (p := p)
-      (transpose3DLastTwoSpec (α := α) (a := batch) (b := m) (c := n) A) dC
+    reduceFromBroadcastTo (Internal.extendBroadcastSuffix [n, p] broadcastB) dCommonB
   (dA, dB)
+
 end Tensor
 end Spec

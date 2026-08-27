@@ -28,65 +28,52 @@ structure ResNetConfig (d : Nat) where
   /-- Number of channels in each input sample. -/
   inChannels : Nat
   /-- Extent of each spatial axis. -/
-  spatial : Vector Nat d
+  spatial : Tensor Nat [d]
   /-- Spatial axes are nonempty, as required by global average pooling. -/
-  spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0
+  spatialNonzero : ∀ i : Fin d, spatial.getScalar i ≠ 0
   /-- Channel width used by the residual trunk. -/
   hiddenChannels : Nat
+  /-- Geometry used by the stem and residual convolutions. -/
+  block : ConvGeometry d
+  /-- The configured convolutions preserve the residual trunk's spatial extent. -/
+  blockPreservesSpatial :
+    Spec.convOutSpatial spatial block.kernel block.stride block.padding = spatial
   /-- Number of classifier logits per sample. -/
   numClasses : Nat
 
 namespace ResNetConfig
 
 /-- Input shape with arbitrary leading dimensions. -/
-def inputShape {d : Nat} (cfg : ResNetConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
+def inputShape {d : Nat} (cfg : ResNetConfig d) (leading : List Nat := []) : List Nat :=
+  leading ++ cfg.inChannels :: cfg.spatial.toList
 
 /-- Activation shape shared by the residual branches. -/
-def hiddenShape {d : Nat} (cfg : ResNetConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (Spec.Shape.ofList (cfg.hiddenChannels :: cfg.spatial.toList))
+def hiddenShape {d : Nat} (cfg : ResNetConfig d) (leading : List Nat := []) : List Nat :=
+  leading ++ cfg.hiddenChannels :: cfg.spatial.toList
 
 /-- Classifier output shape with the same leading dimensions as the input. -/
-abbrev outputShape {d : Nat} (cfg : ResNetConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.numClasses
+abbrev outputShape {d : Nat} (cfg : ResNetConfig d) (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.numClasses]
 
 end ResNetConfig
 
-namespace Internal
-
-/-- Shape-preserving convolution used by the residual trunk. -/
-def sameSpatialConv {d : Nat} (leading : Spec.Shape) (spatial : Vector Nat d)
-    (spatialNonzero : ∀ i : Fin d, spatial.get i ≠ 0)
-    (inChannels outChannels : Nat) [NeZero inChannels] :
-    Builder (Sequential
-      (leading.concat (Spec.Shape.ofList (inChannels :: spatial.toList)))
-      (leading.concat (Spec.Shape.ofList (outChannels :: spatial.toList)))) :=
-  let layer := conv (leading := leading)
-      (inChannels := inChannels) spatial
-      { outChannels := outChannels
-        kernel := Vector.replicate d 1
-        stride := Vector.replicate d 1
-        padding := Vector.replicate d 0
-        kernelNonzero := by intro i; simp [Vector.get]
-        strideNonzero := by intro i; simp [Vector.get] }
-  by
-      simpa [Spec.Shape.concat, Spec.convOutSpatial_unit spatial spatialNonzero] using layer
-
-end Internal
-
 /-- Build a convolutional stem, two residual blocks, global pooling, and a linear classifier. -/
-def resnet {d : Nat} (cfg : ResNetConfig d) (leading : Spec.Shape := .scalar)
+def resnet {d : Nat} (cfg : ResNetConfig d) (leading : List Nat := [])
     (hInChannels : cfg.inChannels ≠ 0 := by decide)
     (hHiddenChannels : cfg.hiddenChannels ≠ 0 := by decide) :
     Builder (Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   letI : NeZero cfg.inChannels := ⟨hInChannels⟩
   letI : NeZero cfg.hiddenChannels := ⟨hHiddenChannels⟩
-  let stem :=
-    Internal.sameSpatialConv leading cfg.spatial cfg.spatialNonzero
-      cfg.inChannels cfg.hiddenChannels
-  let hiddenConv :=
-    Internal.sameSpatialConv leading cfg.spatial cfg.spatialNonzero
-      cfg.hiddenChannels cfg.hiddenChannels
+  let stemRaw := conv leading (inChannels := cfg.inChannels) cfg.spatial
+    (cfg.block.toConv cfg.hiddenChannels)
+  let stem : Builder (Sequential (cfg.inputShape leading) (cfg.hiddenShape leading)) := by
+    simpa [ResNetConfig.inputShape, ResNetConfig.hiddenShape, ConvGeometry.toConv,
+      ConvGeometry.outSpatial, cfg.blockPreservesSpatial] using stemRaw
+  let hiddenConvRaw := conv leading (inChannels := cfg.hiddenChannels) cfg.spatial
+    (cfg.block.toConv cfg.hiddenChannels)
+  let hiddenConv : Builder (Sequential (cfg.hiddenShape leading) (cfg.hiddenShape leading)) := by
+    simpa [ResNetConfig.hiddenShape, ConvGeometry.toConv,
+      ConvGeometry.outSpatial, cfg.blockPreservesSpatial] using hiddenConvRaw
   let residualBranch := do
     let branch ← nn.Sequential![hiddenConv, relu, hiddenConv]
     return blocks.residual branch

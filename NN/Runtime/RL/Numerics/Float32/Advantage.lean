@@ -160,7 +160,7 @@ theorem tdResidual_eq_ok
 Checked fixed-horizon Generalized Advantage Estimation ($\operatorname{GAE}(\lambda)$), specialized
 to `IEEE32Exec`.
 
-This is the checked/finite counterpart to `Runtime.RL.Core.generalizedAdvantageEstimationVec`.
+This is the checked/finite counterpart to `Runtime.RL.Core.generalizedAdvantageEstimationTensor`.
 
 Reference:
 - Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation"
@@ -168,9 +168,9 @@ Reference:
 -/
 def generalizedAdvantageEstimationChecked {n : Nat}
     (gamma lam : Float32Exec)
-    (rewards values nextValues : Tensor Float32Exec (.dim n .scalar))
-    (dones : Tensor Bool (.dim n .scalar)) :
-    Except String (Tensor Float32Exec (.dim n .scalar)) := do
+    (rewards values nextValues : Tensor Float32Exec [n])
+    (dones : Tensor Bool [n]) :
+    Except String (Tensor Float32Exec [n]) := do
   let rArr : Array Float32Exec :=
     Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
   let vArr : Array Float32Exec :=
@@ -213,9 +213,9 @@ finite. If the computed standard deviation is zero, `normalize_zscore_spec` retu
 vector, which is still validated for finiteness here.
 -/
 def normalizeZScoreChecked {n : Nat}
-    (x : Tensor Float32Exec (.dim n .scalar)) :
-    Except String (Tensor Float32Exec (.dim n .scalar)) := do
-  let y : Tensor Float32Exec (.dim n .scalar) :=
+    (x : Tensor Float32Exec [n]) :
+    Except String (Tensor Float32Exec [n]) := do
+  let y : Tensor Float32Exec [n] :=
     Spec.normalizeZscoreSpec (α := Float32Exec) (n := n) x
   if Boundary.tensorAll (α := Float32Exec) (s := .dim n .scalar)
       (fun z => TorchLean.Floats.IEEE754.IEEE32Exec.isFinite z) y then

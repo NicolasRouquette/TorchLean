@@ -186,7 +186,7 @@ At the tensor boundary:
 
 ```
 theorem qrSpec_reconstruction
-    (A : Spec.Tensor ℝ (.dim m (.dim n .scalar)))
+    (A : Spec.Tensor ℝ [m, n])
     (hrank : ∀ j, 0 < Spec.get2 (Spec.qrRSpec A) j j)
     (i : Fin m) (j : Fin n) :
   Spec.get2 A i j =
@@ -195,7 +195,7 @@ theorem qrSpec_reconstruction
       Spec.get2 (Spec.qrRSpec A) k j
 
 theorem qrSpec_orthonormal
-    (A : Spec.Tensor ℝ (.dim m (.dim n .scalar)))
+    (A : Spec.Tensor ℝ [m, n])
     (hrank : ∀ j, 0 < Spec.get2 (Spec.qrRSpec A) j j)
     (a b : Fin n) :
   (∑ i,

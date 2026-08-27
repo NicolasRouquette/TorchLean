@@ -6,12 +6,18 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Data.Dataset
+public import NN.API.Scalar
+public import NN.API.Macros
+public import NN.Tensor
+public import NN.API.Sample
+public import NN.Data.SampleStream
 
 /-!
-# Tensor Datasets
+# Tensor-Backed Sample Streams
 
-Conversion between leading-axis tensors, tensor packs, and runtime datasets.
+These constructors expose the samples along the leading axis of one or more aligned tensors. They
+return lazy `SampleStream`s: selecting a sample performs the corresponding tensor slice, while
+constructing the stream does not materialize every slice.
 -/
 
 @[expose] public section
@@ -20,81 +26,60 @@ namespace TorchLean
 namespace Data
 namespace TensorDataset
 
-/-!
-## TensorDataset (leading-axis batching)
+/-- Convert `(input, target)` float tensors into supervised samples for scalar type `α`. -/
+def ofSupervisedFloatPairs
+    {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
+    {inputShape targetShape : List Nat}
+    (xs : Array (Tensor Float inputShape × Tensor Float targetShape)) :
+    SampleStream (_root_.TorchLean.TensorPack α [inputShape, targetShape]) :=
+  (SampleStream.ofArray xs).map fun (xF, yF) =>
+    let x : Tensor α inputShape :=
+      Spec.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) xF
+    let y : Tensor α targetShape :=
+      Spec.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) yF
+    _root_.TorchLean.TensorPack! x, y
 
-PyTorch's `TensorDataset` concept is: given one or more tensors that share the same `size(0)`,
-build a dataset of samples by slicing each tensor along its leading batch axis.
+/-- Convert `(input, label)` pairs into samples with one-hot classification targets. -/
+def ofLabeledFloatPairs
+    {α : Type} [_root_.Context α] [_root_.TorchLean.Runtime.FromFloat α]
+    {inputShape : List Nat}
+    (classes : Nat) (xs : Array (Tensor Float inputShape × Fin classes)) :
+    SampleStream (_root_.TorchLean.TensorPack α [inputShape, [classes]]) :=
+  (SampleStream.ofArray xs).map fun (xF, label) =>
+    let x : Tensor α inputShape :=
+      Spec.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) xF
+    let yF : Tensor Float [classes] :=
+      TorchLean.Tensor.oneHot (α := Float) classes label
+    let y : Tensor α [classes] :=
+      Spec.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) yF
+    _root_.TorchLean.TensorPack! x, y
 
-In TorchLean we do the same thing, but with shapes tracked in the type:
-
-- a batched tensor has shape `.dim n σ`,
-- slicing at `i : Fin n` yields a sample of shape `σ`,
-- and a batch of multiple tensors is represented as a `TensorPack`.
--/
-
-/--
-Slice a batched `TensorPack` along its leading batch axis.
-
-If a sample is represented as a shape-indexed tuple `TensorPack β ss`, then a minibatch of size `n`
-is `TensorPack β (ss.map (fun s => .dim n s))`. This function picks a batch index `i : Fin n` and returns
-the corresponding single sample.
--/
+/-- Slice every tensor in a pack at the same leading-axis index. -/
 def unbatch {β : Type} {n : Nat} :
-    {ss : List Spec.Shape} →
-      _root_.TorchLean.TensorPack β (ss.map (fun s => Spec.Shape.dim n s)) →
+    {shapes : List Shape} →
+      _root_.TorchLean.TensorPack β (shapes.map (fun shape => shape.prependDim n)) →
       Fin n →
-      _root_.TorchLean.TensorPack β ss
-  | [], .nil, _i => .nil
-  | _s :: ss, .cons x xs, i =>
-      .cons (Spec.getAtSpec x i) (unbatch (β := β) (ss := ss) xs i)
+      _root_.TorchLean.TensorPack β shapes
+  | [], .nil, _ => .nil
+  | _ :: shapes, .cons x xs, i =>
+      .cons (Spec.get x i) (unbatch (β := β) (shapes := shapes) xs i)
 
-/--
-Build a dataset by slicing a *batched* `TensorPack` along the leading batch axis. This gives the
-typed counterpart of a tensor dataset built from several aligned arrays.
--/
-def ofBatched {β : Type} {n : Nat} {ss : List Spec.Shape}
-    (xs : _root_.TorchLean.TensorPack β (ss.map (fun s => Spec.Shape.dim n s))) :
-    Dataset (_root_.TorchLean.TensorPack β ss) :=
-  _root_.Runtime.Autograd.Train.Dataset.ofList <|
-    (List.finRange n).map fun i => unbatch (β := β) (n := n) (ss := ss) xs i
+/-- Lazily expose the leading-axis slices of an aligned tensor pack. -/
+def ofBatched {β : Type} {n : Nat} {shapes : List Shape}
+    (xs : _root_.TorchLean.TensorPack β
+      (shapes.map (fun shape => shape.prependDim n))) :
+    SampleStream (_root_.TorchLean.TensorPack β shapes) :=
+  SampleStream.ofFn n fun i => unbatch (β := β) (shapes := shapes) xs i
 
-/--
-Float-to-`α` variant of `ofBatched`, for data loaded from disk.
--/
+/-- Lazily slice a float tensor pack and convert each requested sample to `α`. -/
 def ofBatchedFloat {α : Type} [_root_.TorchLean.Runtime.FromFloat α]
-    {n : Nat} {ss : List Spec.Shape}
-    (xs : _root_.TorchLean.TensorPack Float (ss.map (fun s => Spec.Shape.dim n s))) :
-    Dataset (_root_.TorchLean.TensorPack α ss) :=
-  let converted := _root_.TorchLean.TensorPack.map
-    (fun x => Spec.mapTensor (_root_.TorchLean.Runtime.ofFloat (α := α)) x) xs
-  let samples : List (_root_.TorchLean.TensorPack α ss) :=
-    (List.finRange n).map (fun i =>
-      unbatch (β := α) (n := n) (ss := ss) converted i)
-  _root_.Runtime.Autograd.Train.Dataset.ofList samples
-
-/--
-Supervised dataset from two batched tensors `X : (n, σ)` and `Y : (n, τ)` by slicing the leading batch axis.
-
-This is the common regression/supervised-learning case: the TorchLean analogue of
-`TensorDataset(X, Y)` in PyTorch.
--/
-def supervised {α : Type}
-    {n : Nat} {σ τ : Spec.Shape}
-    (X : Spec.Tensor α (.dim n σ))
-    (Y : Spec.Tensor α (.dim n τ)) :
-    Dataset (_root_.TorchLean.TensorPack α [σ, τ]) :=
-  ofBatched (β := α) (n := n) (ss := [σ, τ])
-    (TensorPack! X, Y)
-
-/-- Float-to-`α` variant of `supervised`, for data loaded from disk. -/
-def supervisedFloat {α : Type} [_root_.TorchLean.Runtime.FromFloat α]
-    {n : Nat} {σ τ : Spec.Shape}
-    (X : Spec.Tensor Float (.dim n σ))
-    (Y : Spec.Tensor Float (.dim n τ)) :
-    Dataset (_root_.TorchLean.TensorPack α [σ, τ]) :=
-  ofBatchedFloat (α := α) (n := n) (ss := [σ, τ])
-    (TensorPack! X, Y)
+    {n : Nat} {shapes : List Shape}
+    (xs : _root_.TorchLean.TensorPack Float
+      (shapes.map (fun shape => shape.prependDim n))) :
+    SampleStream (_root_.TorchLean.TensorPack α shapes) :=
+  (ofBatched (β := Float) (n := n) (shapes := shapes) xs).map fun sample =>
+    _root_.TorchLean.TensorPack.map
+      (fun x => Spec.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) x) sample
 
 end TensorDataset
 end Data

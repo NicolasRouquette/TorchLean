@@ -6,16 +6,17 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Tensor.API
+public import NN.Tensor.Constructors
+public import NN.Tensor.Operations
+public import NN.Tensor.Printing
+public import NN.Tensor.Syntax
 
 /-!
 # Tensors
 
-Curated umbrella import for TorchLean's core tensor/shape API.
+Canonical public import for the `TorchLean.Tensor` surface. Declarations are grouped by concern in
+`NN.Tensor.Constructors`, `NN.Tensor.Operations`, `NN.Tensor.Printing`, and `NN.Tensor.Syntax`.
 
-Use this import for tensor literals, shape syntax, dynamic tensors, and small executable tensor
-helpers. `NN.Tensor.API` remains the implementation leaf; downstream users should use either `NN`
-for the complete library, `NN.API` for application code, or `NN.Tensor` for this layer alone.
+Runtime tapes that need heterogeneous tensor packs import `NN.Tensor.ShapeErasure` explicitly.
+That boundary is intentionally absent from this application-facing umbrella.
 -/
-
-@[expose] public section

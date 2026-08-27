@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.Optimization.Muon
+public import NN.Tensor
 
 /-!
 # Muon Certificate Examples
@@ -20,25 +21,27 @@ algorithm use the canonical `Optim.Muon` namespace.
 
 namespace NN.Examples.Optimization.MuonCertificates
 
+open TorchLean
+
 /--
 Using the QR checked backend, a positive-pivot proof gives a certified step; from that step we can
 recover both the exact Gram certificate for the direction and the parameter-update equation.
 -/
 theorem qr_update_step_direction_has_exact_gram {m n : Nat}
-    (lr momentum : ℝ) (buf params grads : Optim.Muon.MatrixTensor ℝ m n)
+    (lr momentum : ℝ) (buf params grads : Tensor ℝ [m, n])
     (hpivots :
       Optim.Muon.HasPositiveQRPivots
         (Optim.Muon.update
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer := Optim.Muon.qrOrthogonalizer (m := m) (n := n) } :
-            Optim.Muon.State ℝ (.dim m (.dim n .scalar)))
+            Optim.Muon.State ℝ [m, n])
           params grads).1.buf) :
-    ∃ direction : Optim.Muon.MatrixTensor ℝ m n,
+    ∃ direction : Tensor ℝ [m, n],
       Optim.Muon.HasExactColumnGram direction ∧
       (Optim.Muon.update
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer := Optim.Muon.qrOrthogonalizer (m := m) (n := n) } :
-            Optim.Muon.State ℝ (.dim m (.dim n .scalar)))
+            Optim.Muon.State ℝ [m, n])
           params grads).2 =
         _root_.Spec.Tensor.subSpec params (_root_.Spec.Tensor.scaleSpec direction lr) := by
   obtain ⟨direction, hstep⟩ :=
@@ -54,7 +57,7 @@ step; from that step we can recover the residual-bound certificate and the param
 theorem newtonSchulz_update_step_direction_has_approx_gram
     {α : Type} [Context α] {m n : Nat} {eps : α}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs α) (steps : Nat)
-    (lr momentum : α) (buf params grads : Optim.Muon.MatrixTensor α m n)
+    (lr momentum : α) (buf params grads : Tensor α [m, n])
     (hresidual :
       Optim.Muon.ResidualApproxSuccess eps
         (Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps)
@@ -62,15 +65,15 @@ theorem newtonSchulz_update_step_direction_has_approx_gram
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer :=
               Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps } :
-            Optim.Muon.State α (.dim m (.dim n .scalar)))
+            Optim.Muon.State α [m, n])
           params grads).1.buf) :
-    ∃ direction : Optim.Muon.MatrixTensor α m n,
+    ∃ direction : Tensor α [m, n],
       Optim.Muon.HasApproxColumnGram eps direction ∧
       (Optim.Muon.update
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer :=
               Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps } :
-            Optim.Muon.State α (.dim m (.dim n .scalar)))
+            Optim.Muon.State α [m, n])
           params grads).2 =
         _root_.Spec.Tensor.subSpec params (_root_.Spec.Tensor.scaleSpec direction lr) := by
   obtain ⟨direction, hstep⟩ :=
@@ -90,7 +93,7 @@ path to an exact certified step.
 theorem newtonSchulz_fixed_update_step_direction_has_exact_gram
     {α : Type} [Context α] {m n : Nat}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs α) (steps : Nat)
-    (lr momentum : α) (buf params grads : Optim.Muon.MatrixTensor α m n)
+    (lr momentum : α) (buf params grads : Tensor α [m, n])
     (hsuccess :
       (Optim.Muon.newtonSchulzFixedPointCheckedExactOrthogonalizer
         (α := α) (m := m) (n := n) coeffs steps).Success
@@ -98,15 +101,15 @@ theorem newtonSchulz_fixed_update_step_direction_has_exact_gram
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer :=
               Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps } :
-            Optim.Muon.State α (.dim m (.dim n .scalar)))
+            Optim.Muon.State α [m, n])
           params grads).1.buf) :
-    ∃ direction : Optim.Muon.MatrixTensor α m n,
+    ∃ direction : Tensor α [m, n],
       Optim.Muon.HasExactColumnGram direction ∧
       (Optim.Muon.update
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer :=
               Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps } :
-            Optim.Muon.State α (.dim m (.dim n .scalar)))
+            Optim.Muon.State α [m, n])
           params grads).2 =
         _root_.Spec.Tensor.subSpec params (_root_.Spec.Tensor.scaleSpec direction lr) := by
   obtain ⟨direction, hstep⟩ :=
@@ -124,7 +127,7 @@ This is the algebra behind the fixed-point shortcut below.
 -/
 theorem newtonSchulz_step_scales_exact_gram_matrix {m n : Nat}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs ℝ)
-    (Q : Optim.Muon.MatrixTensor ℝ m n)
+    (Q : Tensor ℝ [m, n])
     (hgram : Optim.Muon.HasExactColumnGram Q) :
     Optim.Muon.newtonSchulzStep coeffs Q =
       _root_.Spec.Tensor.scaleSpec Q (coeffs.a + coeffs.b + coeffs.c) :=
@@ -136,7 +139,7 @@ including the sign-flip case.
 -/
 theorem newtonSchulz_step_preserves_exact_gram_when_sum_squares_one {m n : Nat}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs ℝ)
-    (Q : Optim.Muon.MatrixTensor ℝ m n)
+    (Q : Tensor ℝ [m, n])
     (hgram : Optim.Muon.HasExactColumnGram Q)
     (hsquare : (coeffs.a + coeffs.b + coeffs.c) *
         (coeffs.a + coeffs.b + coeffs.c) = 1) :
@@ -150,7 +153,7 @@ entrywise residual bound used by the approximate Muon certificate.
 -/
 theorem newtonSchulz_step_has_approx_gram_from_coeff_square_error {m n : Nat}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs ℝ)
-    (Q : Optim.Muon.MatrixTensor ℝ m n) (eps : ℝ)
+    (Q : Tensor ℝ [m, n]) (eps : ℝ)
     (hgram : Optim.Muon.HasExactColumnGram Q)
     (herr :
       MathFunctions.abs
@@ -166,23 +169,23 @@ fresh buffer is automatically a fixed point, so the Newton-Schulz Muon update is
 -/
 theorem newtonSchulz_coeff_sum_update_step_direction_has_exact_gram {m n : Nat}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs ℝ) (steps : Nat)
-    (lr momentum : ℝ) (buf params grads : Optim.Muon.MatrixTensor ℝ m n)
+    (lr momentum : ℝ) (buf params grads : Tensor ℝ [m, n])
     (hgram :
       Optim.Muon.HasExactColumnGram
         (Optim.Muon.update
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer :=
               Optim.Muon.newtonSchulzOrthogonalizer (α := ℝ) (m := m) (n := n) coeffs steps } :
-            Optim.Muon.State ℝ (.dim m (.dim n .scalar)))
+            Optim.Muon.State ℝ [m, n])
           params grads).1.buf)
     (hsum : coeffs.a + coeffs.b + coeffs.c = 1) :
-    ∃ direction : Optim.Muon.MatrixTensor ℝ m n,
+    ∃ direction : Tensor ℝ [m, n],
       Optim.Muon.HasExactColumnGram direction ∧
       (Optim.Muon.update
           ({ lr := lr, momentum := momentum, buf := buf,
              orthogonalizer :=
               Optim.Muon.newtonSchulzOrthogonalizer (α := ℝ) (m := m) (n := n) coeffs steps } :
-            Optim.Muon.State ℝ (.dim m (.dim n .scalar)))
+            Optim.Muon.State ℝ [m, n])
           params grads).2 =
         _root_.Spec.Tensor.subSpec params (_root_.Spec.Tensor.scaleSpec direction lr) := by
   obtain ⟨direction, hstep⟩ :=
@@ -197,14 +200,14 @@ The initialized QR theorem has the same proof shape as the stateful update theor
 the state produced by `Optim.Muon.init`.
 -/
 theorem qr_initialized_step_direction_has_exact_gram {m n : Nat}
-    (lr momentum : ℝ) (params grads : Optim.Muon.MatrixTensor ℝ m n)
+    (lr momentum : ℝ) (params grads : Tensor ℝ [m, n])
     (hpivots :
       Optim.Muon.HasPositiveQRPivots
         (Optim.Muon.update
           (Optim.Muon.init lr momentum
             (Optim.Muon.qrOrthogonalizer (m := m) (n := n)) params)
           params grads).1.buf) :
-    ∃ direction : Optim.Muon.MatrixTensor ℝ m n,
+    ∃ direction : Tensor ℝ [m, n],
       Optim.Muon.HasExactColumnGram direction ∧
       (Optim.Muon.update
           (Optim.Muon.init lr momentum
@@ -222,7 +225,7 @@ The same QR certificate also exposes the whole next-state equation, not only the
 certificate.
 -/
 theorem qr_initialized_step_state_eq {m n : Nat}
-    (lr momentum : ℝ) (params grads : Optim.Muon.MatrixTensor ℝ m n)
+    (lr momentum : ℝ) (params grads : Tensor ℝ [m, n])
     (hpivots :
       Optim.Muon.HasPositiveQRPivots
         (Optim.Muon.update
@@ -253,7 +256,7 @@ Muon state, run one update, then consume the certified step.
 theorem newtonSchulz_initialized_step_direction_has_approx_gram
     {α : Type} [Context α] {m n : Nat} {eps : α}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs α) (steps : Nat)
-    (lr momentum : α) (params grads : Optim.Muon.MatrixTensor α m n)
+    (lr momentum : α) (params grads : Tensor α [m, n])
     (hresidual :
       Optim.Muon.ResidualApproxSuccess eps
         (Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps)
@@ -262,7 +265,7 @@ theorem newtonSchulz_initialized_step_direction_has_approx_gram
             (Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps)
             params)
           params grads).1.buf) :
-    ∃ direction : Optim.Muon.MatrixTensor α m n,
+    ∃ direction : Tensor α [m, n],
       Optim.Muon.HasApproxColumnGram eps direction ∧
       (Optim.Muon.update
           (Optim.Muon.init lr momentum
@@ -275,7 +278,7 @@ theorem newtonSchulz_initialized_step_direction_has_approx_gram
       (backend := Optim.Muon.newtonSchulzResidualCheckedOrthogonalizer
         (α := α) (m := m) (n := n) coeffs steps eps)
       (lr := lr) (momentum := momentum)
-      (buf := _root_.Spec.fill 0 (.dim m (.dim n .scalar)))
+      (buf := _root_.Spec.fill 0 [m, n])
       (params := params) (grads := grads) hresidual
   exact ⟨direction,
     hstep.hasApproxColumnGram,
@@ -288,7 +291,7 @@ equation.
 theorem newtonSchulz_initialized_step_state_eq
     {α : Type} [Context α] {m n : Nat} {eps : α}
     (coeffs : Optim.Muon.NewtonSchulzCoeffs α) (steps : Nat)
-    (lr momentum : α) (params grads : Optim.Muon.MatrixTensor α m n)
+    (lr momentum : α) (params grads : Tensor α [m, n])
     (hresidual :
       Optim.Muon.ResidualApproxSuccess eps
         (Optim.Muon.newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps)
@@ -319,7 +322,7 @@ theorem newtonSchulz_initialized_step_state_eq
       (backend := Optim.Muon.newtonSchulzResidualCheckedOrthogonalizer
         (α := α) (m := m) (n := n) coeffs steps eps)
       (lr := lr) (momentum := momentum)
-      (buf := _root_.Spec.fill 0 (.dim m (.dim n .scalar)))
+      (buf := _root_.Spec.fill 0 [m, n])
       (params := params) (grads := grads) hresidual
   exact hstep.state_eq
 

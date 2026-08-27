@@ -46,8 +46,7 @@ Notes:
 - We use `i.val == j.val` rather than `DecidableEq (Fin n)` to keep the definition directly
   executable across backends.
 -/
-def identityTensorSpec {α : Type} [Zero α] [One α] : ∀ (n : Nat), Tensor α (.dim n (.dim n
-  .scalar))
+def identityTensorSpec {α : Type} [Zero α] [One α] : ∀ (n : Nat), Tensor α [n, n]
   | 0 => Tensor.dim (fun _ => Tensor.dim (fun _ => Tensor.scalar 0))
   -- Empty identity tensor for 0 dimensions
   | Nat.succ _ =>
@@ -61,9 +60,8 @@ Matrix multiplication (m x n) @ (n x p) = (m x p).
 This is the simplest definitional version: sum over the shared `n` dimension.
 For performance-oriented runtime code, use the runtime layer; this spec is about clarity and proofs.
 -/
-def matMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n p : Nat} (A : Tensor α (.dim m (.dim n
-  .scalar)))
-    (B : Tensor α (.dim n (.dim p .scalar))) : Tensor α (.dim m (.dim p .scalar)) :=
+def matMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n p : Nat} (A : Tensor α [m, n])
+    (B : Tensor α [n, p]) : Tensor α [m, p] :=
   match A, B with
   | Tensor.dim rowsA, Tensor.dim rowsB =>
     Tensor.dim (fun i =>
@@ -76,9 +74,8 @@ def matMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n p : Nat} (A : Tensor
               | Tensor.scalar a, Tensor.scalar b => sum + a * b) 0)))
 
 /-- Matrix-vector multiplication (m x n) @ (n) = (m). -/
-def matVecMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n : Nat} (A : Tensor α (.dim m (.dim n
-  .scalar)))
-    (v : Tensor α (.dim n .scalar)) : Tensor α (.dim m .scalar) :=
+def matVecMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n : Nat} (A : Tensor α [m, n])
+    (v : Tensor α [n]) : Tensor α [m] :=
   match A, v with
   | Tensor.dim rowsA, Tensor.dim valuesV =>
     Tensor.dim fun i =>
@@ -91,9 +88,9 @@ def matVecMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n : Nat} (A : Tenso
               Tensor.scalar (s + ak * vk))
           (Tensor.scalar 0)
 
-/-- Vector-matrix multiplication (m) @ (m x n) = (n). -/
-def vecMatMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n : Nat} (v : Tensor α (.dim m .scalar))
-    (A : Tensor α (.dim m (.dim n .scalar))) : Tensor α (.dim n .scalar) :=
+/-- Rank-one tensor by matrix multiplication: `(m) @ (m x n) = (n)`. -/
+def vecMatMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n : Nat} (v : Tensor α [m])
+    (A : Tensor α [m, n]) : Tensor α [n] :=
   match v, A with
   | Tensor.dim valuesV, Tensor.dim rowsA =>
     Tensor.dim (fun j =>
@@ -105,9 +102,9 @@ def vecMatMulSpec {α : Type} [Add α] [Mul α] [Zero α] {m n : Nat} (v : Tenso
             | Tensor.scalar aij => sum + vi * aij) 0))
 
 /-- Outer product (m) otimes (n) = (m x n). -/
-def outerProductSpec {α : Type} [Mul α] {m n : Nat} (a : Tensor α (.dim m .scalar)) (b : Tensor α
-  (.dim n .scalar)) :
-    Tensor α (.dim m (.dim n .scalar)) :=
+def outerProductSpec {α : Type} [Mul α] {m n : Nat} (a : Tensor α [m]) (b : Tensor α
+  [n]) :
+    Tensor α [m, n] :=
   match a, b with
   | Tensor.dim f1, Tensor.dim f2 =>
     Tensor.dim (fun i =>
@@ -117,15 +114,15 @@ def outerProductSpec {α : Type} [Mul α] {m n : Nat} (a : Tensor α (.dim m .sc
 
 /-- A coordinate of an outer product is the product of the corresponding vector entries. -/
 @[simp] theorem get2_outerProductSpec {α : Type} [Mul α] {m n : Nat}
-    (left : Tensor α (.dim m .scalar)) (right : Tensor α (.dim n .scalar))
+    (left : Tensor α [m]) (right : Tensor α [n])
     (i : Fin m) (j : Fin n) :
-    get2 (outerProductSpec left right) i j = Tensor.vecGet left i * Tensor.vecGet right j := by
+    get2 (outerProductSpec left right) i j = Tensor.getScalar left i * Tensor.getScalar right j := by
   cases left with
   | dim leftValues =>
       cases right with
       | dim rightValues =>
           cases hLeft : leftValues i
           cases hRight : rightValues j
-          simp [outerProductSpec, get2, Tensor.vecGet, get, getAtSpec, hLeft, hRight]
+          simp [outerProductSpec, get2, Tensor.getScalar, get, hLeft, hRight]
 
 end Spec

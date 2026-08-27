@@ -7,18 +7,12 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Runtime
-public import NN.GraphSpec.Models.TorchLean
-public import NN.Runtime.Autograd.TorchLean
-
-import Mathlib.Algebra.Order.Algebra
-import NN.Spec.Autograd.AutogradSpec
+public import NN.Runtime.Autograd.TorchLean.Module
 
 @[expose] public section
 
 namespace TorchLean
 namespace Module
-
-export _root_.Runtime.Autograd.Torch (ExecutionMode Options)
 
 /-!
 # Module Execution
@@ -33,8 +27,22 @@ state gradients, and update trainable entries. The shape lists remain part of bo
 construction and execution use the same state ordering.
 -/
 
-export _root_.Runtime.Autograd.TorchLean.Module
-  (Evaluator ObjectiveEvaluator ObjectiveDef Objective)
+/-- An immutable scalar objective together with its typed initial state. -/
+abbrev ObjectiveDef (β : Type) (stateShapes inputShapes : List Spec.Shape)
+    (dataInputShapes : List Spec.Shape := []) :=
+  _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef β stateShapes inputShapes dataInputShapes
+
+/-- Executable state for a model and scalar objective. -/
+abbrev Objective (α β : Type) [_root_.Context α] [DecidableEq Spec.Shape]
+    (stateShapes inputShapes : List Spec.Shape) (dataInputShapes : List Spec.Shape := []) :=
+  _root_.Runtime.Autograd.TorchLean.Module.Objective α β stateShapes inputShapes dataInputShapes
+
+/-- A reusable evaluator over an existing typed model state. -/
+abbrev Evaluator (α β : Type) (stateShapes inputShapes dataInputShapes : List Spec.Shape)
+    (outputShape : Spec.Shape) :=
+  _root_.Runtime.Autograd.TorchLean.Module.Evaluator α β stateShapes inputShapes dataInputShapes
+    outputShape
+
 namespace RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
   (FloatInit Plan xavierUniformForShape kaimingUniformForShape)
@@ -42,10 +50,12 @@ end RuntimeInit
 export _root_.Runtime.Autograd.TorchLean.Module.Objective
   (create loss lossAndGradState gradState sgdStepWithLoss sgdStep initOptimizer optimizerStep
    optimizerStepWithLoss state loadState trainSGD trainWithOptimizer meanLoss)
-export _root_.Runtime.Autograd.TorchLean.Module.Evaluator (evaluatePacked withState)
+export _root_.Runtime.Autograd.TorchLean.Module.Evaluator (withState)
+namespace Evaluator
+export _root_.Runtime.Autograd.TorchLean.Module.Evaluator (run)
+end Evaluator
 export _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
-  (evaluatorWithState lossWithState instantiate instantiateFloat64 instantiateWithPlan
-   instantiateWithInit)
+  (evaluatorWithState lossWithState instantiateFloat64 instantiateWithPlan)
 
 /--
 Instantiate an `ObjectiveDef` under explicit Torch options such as `execution` and `device`.
@@ -54,15 +64,31 @@ The supplied options are passed unchanged to module construction, including the 
 execution strategy.
 -/
 def instantiateAs
-    {α : Type} [_root_.Context α] [DecidableEq Spec.Shape]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    {stateShapes inputShapes natInputShapes : List Spec.Shape}
-    (defn : ObjectiveDef stateShapes inputShapes natInputShapes)
+    {α β : Type} [_root_.Context α] [DecidableEq Spec.Shape]
+    [Runtime.TensorTransfer α]
+    {stateShapes inputShapes dataInputShapes : List Spec.Shape}
+    (defn : ObjectiveDef β stateShapes inputShapes dataInputShapes)
     (cast : Float → α) (opts : Options) :
-    IO (Objective α stateShapes inputShapes natInputShapes) :=
+    IO (Objective α β stateShapes inputShapes dataInputShapes) :=
   _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
-    (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
-    (natInputShapes := natInputShapes) defn cast opts
+    (α := α) (β := β) (stateShapes := stateShapes) (inputShapes := inputShapes)
+    (dataInputShapes := dataInputShapes) defn cast opts
+
+/--
+Instantiate an executable objective using the runtime scalar's standard `Float` conversion.
+
+This is the low-level constructor for custom losses and multi-input programs. The higher-level
+`nn.Module` and `Trainer` APIs should be preferred for ordinary sequential models.
+-/
+def instantiate
+    {α β : Type} [_root_.Context α] [DecidableEq Spec.Shape] [Runtime.FromFloat α]
+    [Runtime.TensorTransfer α]
+    {stateShapes inputShapes dataInputShapes : List Spec.Shape}
+    (opts : Options)
+    (defn : ObjectiveDef β stateShapes inputShapes dataInputShapes)
+    (cast : Float → α := Runtime.ofFloat) :
+    IO (Objective α β stateShapes inputShapes dataInputShapes) :=
+  instantiateAs (α := α) (β := β) defn cast opts
 
 end Module
 end TorchLean

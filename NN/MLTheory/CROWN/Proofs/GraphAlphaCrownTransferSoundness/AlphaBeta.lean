@@ -40,10 +40,10 @@ Pointwise soundness of the graph-dialect α/β-CROWN transfer rule.
 This is the β-extended analog of `alphaCrown_transfer_sound`.
 
 Compared to plain α-CROWN, the step function additionally receives a `beta` array encoding
-per-ReLU phase constraints (active/inactive/unstable). When a phase is consistent with the IBP
-pre-activation interval, the relaxation reduces to an exact affine rule for that unit; otherwise
-the step falls back to the corresponding sound α-CROWN relaxation, or to an IBP-derived constant
-enclosure for operators outside this affine-transfer subset.
+per-ReLU phase constraints (active/inactive/unstable). A phase consistent with the IBP
+pre-activation interval gives an exact affine rule for that unit. An inconsistent phase rejects the
+step; it does not silently fall back to another relaxation. Operators outside the affine-transfer
+subset use an IBP-derived constant enclosure when that rule is available.
 
 The theorem states that this concrete step function satisfies `CrownTransferSound`, and thus can
 be used as the trusted “checker semantics” in `graph_crown_cert_soundness`.
@@ -51,12 +51,12 @@ be used as the trusted “checker semantics” in `graph_crown_cert_soundness`.
 theorem alphaBetaCrown_transfer_sound
     (g : Graph) (ps : ParamStore ℝ)
     (ibp : Array (Option (FlatBox ℝ)))
-    (alpha : Array (Option (FlatVec ℝ)))
+    (alpha : Array (Option (FlatTensor ℝ)))
     (beta : Array (Option (Array Int)))
     (cert : Array (Option (FlatAffineBounds ℝ)))
     (inputs : Std.HashMap Nat Val)
     (vals : Array (Option Val))
-    (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
     (htopo : TopoSorted g)
     (hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
     (hinputs : InputsMatch (inputs := inputs) (ctx := ctx) x)
@@ -99,12 +99,13 @@ theorem alphaBetaCrown_transfer_sound
               have hA := hsoundAlpha id hid hparents
               simpa [hsAlpha, hv] using hA
           | some phases =>
-              cases hps : (g.nodes[id]!).parents with
-              | nil =>
+              cases hps : NN.IR.unaryParent? (g.nodes[id]!).parents with
+              | none =>
                   -- ReLU needs a parent; the step cannot succeed.
                   simp [stepAlphaBeta, alphaBetaCrownStepNode?, hk, hbeta, hps] at hs
-              | cons p1 _ =>
-                have hpMem : p1 ∈ (g.nodes[id]!).parents := by simp [hps]
+              | some p1 =>
+                have hpMem : p1 ∈ (g.nodes[id]!).parents :=
+                  NN.IR.mem_of_unaryParent?_eq_some hps
 
                 -- Step-side: extract parent affine bounds + IBP box.
                 have hs' := hs
@@ -185,7 +186,7 @@ theorem alphaBetaCrown_transfer_sound
                             ·
                               -- Common local proof once we have a concrete `αt` + phase
                               -- relaxations.
-                              let x' : Tensor ℝ (.dim xin.inDim .scalar) :=
+                              let x' : Tensor ℝ [xin.inDim] :=
                                 castDimScalar (α := ℝ) (n := ctx.inputDim) (n' := xin.inDim)
                                   hinDim.symm x
                               let xLo : AffineVec ℝ xin.inDim preB.dim := by
@@ -194,12 +195,11 @@ theorem alphaBetaCrown_transfer_sound
                                 simpa [hout] using xin.hiAff
 
                               have relu_beta_common
-                                  (αt : Tensor ℝ (.dim preB.dim .scalar))
+                                  (αt : Tensor ℝ [preB.dim])
                                   (hαrange : ∀ i : Fin preB.dim,
-                                    (0 : ℝ) ≤ toVec αt i ∧ toVec αt i ≤ (1 : ℝ))
+                                    (0 : ℝ) ≤ getScalar αt i ∧ getScalar αt i ≤ (1 : ℝ))
                                   (relaxLo relaxHi :
-                                    Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax ℝ) (.dim preB.dim
-                                      .scalar))
+                                    Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax ℝ) [preB.dim])
                                   (hrelax :
                                     phaseRelaxVec? (α := ℝ) (n := preB.dim) preB.lo preB.hi αt
                                       phases =
@@ -236,7 +236,7 @@ theorem alphaBetaCrown_transfer_sound
                                   exact (Option.some.inj hbEq).symm
                                 -- Cast the semantic parent value into `preB.dim` so the ReLU is
                                 -- well-typed.
-                                let z : Tensor ℝ (.dim preB.dim .scalar) :=
+                                let z : Tensor ℝ [preB.dim] :=
                                   castDimScalar (α := ℝ) (n := vp.n) (n' := preB.dim) hdimIbp.symm
                                     vp.v
                                 have hreluCast :
@@ -249,7 +249,7 @@ theorem alphaBetaCrown_transfer_sound
 
                                 -- Derive the affine enclosure `lAff ≤ z ≤ uAff` from the parent's
                                 -- enclosure.
-                                let zXin : Tensor ℝ (.dim xin.outDim .scalar) :=
+                                let zXin : Tensor ℝ [xin.outDim] :=
                                   castDimScalar (α := ℝ) (n := vp.n) (n' := xin.outDim)
                                     hdn.symm vp.v
                                 have hzXin :
@@ -270,10 +270,10 @@ theorem alphaBetaCrown_transfer_sound
                                   have := (castDimScalar_trans (h₁ := hdn.symm) (h₂ := hout) (t :=
                                     vp.v)).symm
                                   simp [zXin, z] at this ⊢
-                                let lAff : Tensor ℝ (.dim preB.dim .scalar) :=
+                                let lAff : Tensor ℝ [preB.dim] :=
                                   affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim)
                                     xLo x'
-                                let uAff : Tensor ℝ (.dim preB.dim .scalar) :=
+                                let uAff : Tensor ℝ [preB.dim] :=
                                   affineEvalAt (α := ℝ) (inDim := xin.inDim) (outDim := preB.dim)
                                     xHi x'
                                 have hl :
@@ -339,11 +339,11 @@ theorem alphaBetaCrown_transfer_sound
                                     hiAff :=
                                       NN.MLTheory.CROWN.Runtime.Ops.ReLU.propagateAffine (α := ℝ)
                                         (inDim := xin.inDim) (hidDim := preB.dim) relaxHi xHi }
-                                have hzAffI := (encloses_iff_toVec (n := preB.dim) (lo := lAff) (hi
+                                have hzAffI := (encloses_iff_getScalar (n := preB.dim) (lo := lAff) (hi
                                   := uAff) (x := z)).1 hzAff
-                                have hzIbpI := (encloses_iff_toVec (n := preB.dim) (lo := preB.lo)
+                                have hzIbpI := (encloses_iff_getScalar (n := preB.dim) (lo := preB.lo)
                                   (hi := preB.hi) (x := z)).1 hzIbp
-                                have hphase := phaseRelaxVec?_some_toVec (n := preB.dim)
+                                have hphase := phaseRelaxVec?_some_getScalar (n := preB.dim)
                                   (lo := preB.lo) (hi := preB.hi) (αv := αt) (phases := phases)
                                   (relaxLo := relaxLo) (relaxHi := relaxHi) hrelax
 
@@ -353,7 +353,7 @@ theorem alphaBetaCrown_transfer_sound
                                       (Activation.reluSpec (α := ℝ) z) := by
                                   -- Now it suffices to show enclosure against the concrete lo/hi
                                   -- tensors.
-                                  refine (encloses_iff_toVec (n := preB.dim)
+                                  refine (encloses_iff_getScalar (n := preB.dim)
                                     (lo := (boundsEvalAt (α := ℝ) bout x').lo)
                                     (hi := (boundsEvalAt (α := ℝ) bout x').hi)
                                     (x := Activation.reluSpec (α := ℝ) z)).2 ?_
@@ -364,15 +364,15 @@ theorem alphaBetaCrown_transfer_sound
                                   have hzIhi := (hzIbpI i).2
                                   rcases hphase.2 i with ⟨ph, hcons, hrHi, hrLo⟩
 
-                                  let li := toVec preB.lo i
-                                  let ui := toVec preB.hi i
-                                  let zi := toVec z i
-                                  let ai := toVec αt i
+                                  let li := getScalar preB.lo i
+                                  let ui := getScalar preB.hi i
+                                  let zi := getScalar z i
+                                  let ai := getScalar αt i
                                   have hai0 : (0 : ℝ) ≤ ai := (hαrange i).1
                                   have hai1 : ai ≤ (1 : ℝ) := (hαrange i).2
 
-                                  let rpLo := toVec relaxLo i
-                                  let rpHi := toVec relaxHi i
+                                  let rpLo := getScalar relaxLo i
+                                  let rpHi := getScalar relaxHi i
                                   have hsLo : 0 ≤ rpLo.slope := by
                                     have hs :
                                         0 ≤ (phaseRelaxLowerScalar (α := ℝ) li ui ai ph).slope :=
@@ -387,29 +387,29 @@ theorem alphaBetaCrown_transfer_sound
                                     simpa [rpHi, li, ui, hrHi] using hs
 
                                   have hlo_def :
-                                      toVec (boundsEvalAt (α := ℝ) bout x').lo i
+                                      getScalar (boundsEvalAt (α := ℝ) bout x').lo i
                                         =
-                                        let rp := toVec relaxLo i
-                                        rp.slope * toVec lAff i + rp.bias := by
+                                        let rp := getScalar relaxLo i
+                                        rp.slope * getScalar lAff i + rp.bias := by
                                     simpa [CrownCertSoundness.boundsEvalAt,
                                       CrownCertSoundness.affineEvalAt, bout, lAff, x', xLo] using
-                                      (toVec_affineEvalAt_relu_propagate_affine
+                                      (getScalar_affineEvalAt_relu_propagate_affine
                                         (relax := relaxLo) (aff := xLo) (x := x') (i := i))
                                   have hhi_def :
-                                      toVec (boundsEvalAt (α := ℝ) bout x').hi i
+                                      getScalar (boundsEvalAt (α := ℝ) bout x').hi i
                                         =
-                                        let rp := toVec relaxHi i
-                                        rp.slope * toVec uAff i + rp.bias := by
+                                        let rp := getScalar relaxHi i
+                                        rp.slope * getScalar uAff i + rp.bias := by
                                     simpa [CrownCertSoundness.boundsEvalAt,
                                       CrownCertSoundness.affineEvalAt, bout, uAff, x', xHi] using
-                                      (toVec_affineEvalAt_relu_propagate_affine
+                                      (getScalar_affineEvalAt_relu_propagate_affine
                                         (relax := relaxHi) (aff := xHi) (x := x') (i := i))
 
                                   have hlo1 :
-                                      rpLo.slope * toVec lAff i + rpLo.bias
+                                      rpLo.slope * getScalar lAff i + rpLo.bias
                                         ≤
                                       rpLo.slope * zi + rpLo.bias := by
-                                    have hm : rpLo.slope * toVec lAff i ≤ rpLo.slope * zi := by
+                                    have hm : rpLo.slope * getScalar lAff i ≤ rpLo.slope * zi := by
                                       exact mul_le_mul_of_nonneg_left hzLo hsLo
                                     have h' := add_le_add_right hm rpLo.bias
                                     simpa [add_comm, add_left_comm, add_assoc] using h'
@@ -418,13 +418,13 @@ theorem alphaBetaCrown_transfer_sound
                                         ≤
                                       Activation.Math.reluSpec (α := ℝ) zi := by
                                     have :=
-                                      phaseRelaxLowerScalar_sound (l := li) (u := ui) (a := ai) (x
-                                        := zi)
+                                      NN.MLTheory.CROWN.Proofs.phaseRelaxLowerScalar_sound
+                                        (l := li) (u := ui) (a := ai) (x := zi)
                                         (hlx := hzIlo) (hxu := hzIhi) (ha0 := hai0) (ha1 := hai1)
                                         (ph := ph) (hcons := hcons)
                                     simpa [rpLo, li, ui, ai, zi, hrLo] using this
                                   have hlo :
-                                      toVec (boundsEvalAt (α := ℝ) bout x').lo i ≤
+                                      getScalar (boundsEvalAt (α := ℝ) bout x').lo i ≤
                                         Activation.Math.reluSpec (α := ℝ) zi := by
                                     simp [hlo_def]
                                     exact le_trans hlo1 hlo2
@@ -433,26 +433,27 @@ theorem alphaBetaCrown_transfer_sound
                                       Activation.Math.reluSpec (α := ℝ) zi ≤
                                         rpHi.slope * zi + rpHi.bias := by
                                     have :=
-                                      phaseRelaxUpperScalar_sound (l := li) (u := ui) (x := zi)
+                                      NN.MLTheory.CROWN.Proofs.phaseRelaxUpperScalar_sound
+                                        (l := li) (u := ui) (x := zi)
                                         (hlx := hzIlo) (hxu := hzIhi) (ph := ph) (hcons := hcons)
                                     simpa [rpHi, li, ui, zi, hrHi] using this
                                   have hhi2 :
                                       rpHi.slope * zi + rpHi.bias
                                         ≤
-                                      rpHi.slope * toVec uAff i + rpHi.bias := by
-                                    have hm : rpHi.slope * zi ≤ rpHi.slope * toVec uAff i := by
+                                      rpHi.slope * getScalar uAff i + rpHi.bias := by
+                                    have hm : rpHi.slope * zi ≤ rpHi.slope * getScalar uAff i := by
                                       exact mul_le_mul_of_nonneg_left hzHi hsHi
                                     have h' := add_le_add_right hm rpHi.bias
                                     simpa [add_comm, add_left_comm, add_assoc] using h'
                                   have hhi :
                                       Activation.Math.reluSpec (α := ℝ) zi ≤
-                                        toVec (boundsEvalAt (α := ℝ) bout x').hi i := by
+                                        getScalar (boundsEvalAt (α := ℝ) bout x').hi i := by
                                     simp [hhi_def]
                                     exact le_trans hhi1 hhi2
 
-                                  have hrelu : toVec (Activation.reluSpec (α := ℝ) z) i =
+                                  have hrelu : getScalar (Activation.reluSpec (α := ℝ) z) i =
                                       Activation.Math.reluSpec (α := ℝ) zi := by
-                                    simpa [zi] using (toVec_relu_spec (t := z) (i := i))
+                                    simpa [zi] using (getScalar_relu_spec (t := z) (i := i))
                                   constructor
                                   · rw [hrelu]
                                     exact hlo
@@ -479,10 +480,10 @@ theorem alphaBetaCrown_transfer_sound
                                   simp [hxin, hpre, hαopt, hout] at hs''
                                   by_cases hα : αv.n = preB.dim
                                   ·
-                                    let αt : Tensor ℝ (.dim preB.dim .scalar) :=
+                                    let αt : Tensor ℝ [preB.dim] :=
                                       castDimScalar (α := ℝ) (n := αv.n) (n' := preB.dim) hα αv.v
                                     have hαrange : ∀ i : Fin preB.dim,
-                                        (0 : ℝ) ≤ toVec αt i ∧ toVec αt i ≤ (1 : ℝ) := by
+                                        (0 : ℝ) ≤ getScalar αt i ∧ getScalar αt i ≤ (1 : ℝ) := by
                                       have hidA : id < alpha.size := by
                                         by_cases hltA : id < alpha.size
                                         · exact hltA
@@ -495,12 +496,12 @@ theorem alphaBetaCrown_transfer_sound
                                           exact False.elim this
                                       have hentry : alpha[id]! = some αv := by
                                         simpa [NN.MLTheory.CROWN.Cert.getAlpha?, hidA] using hαopt
-                                      have hrange0 : ∀ i : Fin αv.n, (0 : ℝ) ≤ toVec αv.v i ∧ toVec
+                                      have hrange0 : ∀ i : Fin αv.n, (0 : ℝ) ≤ getScalar αv.v i ∧ getScalar
                                         αv.v i ≤ (1 : ℝ) := by
                                         simpa [hentry] using halpha id hidA
                                       intro i
                                       have hri := hrange0 (Fin.cast hα.symm i)
-                                      simpa [αt, hα, toVec_castDimScalar] using hri
+                                      simpa [αt, hα, getScalar_castDimScalar] using hri
                                     simp [hα] at hs''
                                     cases hrelax : phaseRelaxVec? (α := ℝ) (n := preB.dim) preB.lo
                                       preB.hi αt phases with
@@ -535,10 +536,10 @@ theorem alphaBetaCrown_transfer_sound
                               | none =>
                                   have hs'' := hs'
                                   simp [hxin, hpre, hαopt, hout] at hs''
-                                  let αt : Tensor ℝ (.dim preB.dim .scalar) :=
+                                  let αt : Tensor ℝ [preB.dim] :=
                                     defaultAlphaVec (α := ℝ) (n := preB.dim) preB.lo preB.hi
                                   have hαrange : ∀ i : Fin preB.dim,
-                                      (0 : ℝ) ≤ toVec αt i ∧ toVec αt i ≤ (1 : ℝ) := by
+                                      (0 : ℝ) ≤ getScalar αt i ∧ getScalar αt i ≤ (1 : ℝ) := by
                                     simpa [αt] using defaultAlphaVec_range (lo := preB.lo) (hi :=
                                       preB.hi)
                                   cases hrelax : phaseRelaxVec? (α := ℝ) (n := preB.dim) preB.lo
@@ -603,12 +604,12 @@ agree node-by-node with TorchLean's α/β transfer function.
 theorem alphaBetaCrown_cert_encloses_semantics
     (g : Graph) (ps : ParamStore ℝ)
     (ibp : Array (Option (FlatBox ℝ)))
-    (alpha : Array (Option (FlatVec ℝ)))
+    (alpha : Array (Option (FlatTensor ℝ)))
     (beta : Array (Option (Array Int)))
     (cert : Array (Option (FlatAffineBounds ℝ)))
     (inputs : Std.HashMap Nat Val)
     (vals : Array (Option Val))
-    (ctx : AffineCtx) (x : Tensor ℝ (.dim ctx.inputDim .scalar))
+    (ctx : AffineCtx) (x : Tensor ℝ [ctx.inputDim])
     (htopo : TopoSorted g)
     (hsem : SemLocalOK (g := g) (ps := ps) (inputs := inputs) vals)
     (hinputs : InputsMatch (inputs := inputs) (ctx := ctx) x)

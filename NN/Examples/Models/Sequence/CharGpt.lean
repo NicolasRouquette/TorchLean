@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
-public import NN.Examples.Models.Common.RealData
+public import NN.Examples.ModelZoo.Training
 
 /-!
 # Char-GPT (minGPT-style) Example
@@ -55,10 +55,19 @@ namespace NN.Examples.Models.Sequence.CharGpt
 /-- CLI subcommand name used in terminal banners and error messages. -/
 def exeName : String := "torchlean chargpt"
 
+/-- Default local path for the Tiny Shakespeare corpus. -/
+def tinyShakespearePath : System.FilePath :=
+  "data" / "real" / "text" / "tiny_shakespeare.txt"
+
+/-- Data-preparation hint shown when Tiny Shakespeare is unavailable. -/
+def missingTinyShakespeareHint : String :=
+  "Download Tiny Shakespeare with:\n" ++
+  "  python3 scripts/datasets/download_example_data.py --tiny-shakespeare"
+
 /-- Parse corpus flags and return the UTF-8 training text plus remaining CLI arguments. -/
 def takeInputText (args : List String) : IO (String × List String) :=
-  text.Corpus.takeUtf8Input exeName RealData.tinyShakespearePath
-    [("--tiny-shakespeare", RealData.tinyShakespearePath)] RealData.missingTinyShakespeareHint args
+  text.Corpus.takeUtf8Input exeName tinyShakespearePath
+    [("--tiny-shakespeare", tinyShakespearePath)] missingTinyShakespeareHint args
 
 /-- Build a deterministic character alphabet from the corpus. -/
 def buildAlphabet (s : String) : Array Char :=
@@ -187,7 +196,7 @@ def parse (args : List String) (defaults : ExperimentConfig)
 end TrainOptions
 
 /-- Decode token ids for terminal output with control characters escaped. -/
-def escapeCharIdsForDisplay (t : text.Tokenizer) (ids : List Nat) : String :=
+def escapeCharIdsForDisplay (t : text.Tokenizer) (ids : Array Nat) : String :=
   text.escapeForDisplay (t.decode ids)
 
 /-- Printable-ASCII generation filter used by `--ascii-only`. -/
@@ -196,18 +205,37 @@ def asciiAllowed (c : Char) : Bool :=
 
 /-- Fitted predictor for a runtime-sized character GPT model. -/
 abbrev Predictor (α : Type) (batch seqLen vocab : Nat) :=
-  Tensor Nat (shape![batch, seqLen]) →
-    IO (Tensor α (shape![batch, seqLen, vocab]))
+  Tensor (Fin vocab) [batch, seqLen] →
+    IO (Tensor α [batch, seqLen, vocab])
+
+/-- Check that token ids inhabit a vocabulary and retain the bound in their type. -/
+def boundTokenIds (vocab : Nat) (ids : Array Nat) : Except String (Array (Fin vocab)) :=
+  ids.mapM fun id =>
+    if h : id < vocab then
+      pure ⟨id, h⟩
+    else
+      throw s!"token id {id} is outside vocabulary of size {vocab}"
+
+/-- Build a causal-language-model batch from tokens whose vocabulary bound is already proved. -/
+def tokenBatch {vocab : Nat} (batch seqLen : Nat) (tokens : Array (Fin vocab))
+    (seed step : Nat) (padId : Fin vocab) :
+    Tensor (Fin vocab) [batch, seqLen] × Tensor (Fin vocab) [batch, seqLen] :=
+  let offsetAt := text.Corpus.randomBatchOffsets tokens.size seqLen batch seed step
+  let input := Tensor.stack 0 fun bi =>
+    Tensor.stack 0 fun si => Tensor.full [] (tokens.getD (offsetAt bi + si.val) padId)
+  let target := Tensor.stack 0 fun bi =>
+    Tensor.stack 0 fun si => Tensor.full [] (tokens.getD (offsetAt bi + si.val + 1) padId)
+  (input, target)
 
 /-- Autoregressively extend character token ids using a trained CharGPT model. -/
 partial def generateSampledFromIds {α : Type}
     (toFloat : α → Float)
-    (batch seqLen vocab : Nat)
+    (batch seqLen vocab : Nat) [NeZero vocab]
     (predict : Predictor α batch seqLen vocab)
-    (promptIds : List Nat)
+    (promptIds : Array (Fin vocab))
     (steps : Nat) (temperature : Float) (topK seed repeatWindow : Nat)
-    (repeatPenalty : Float) (allowId : Nat → Bool := fun _ => true)
-    (padId : Nat := 0) : IO (List Nat) := do
+    (repeatPenalty : Float) (allowId : Fin vocab → Bool := fun _ => true)
+    (padId : Fin vocab := 0) : IO (Array (Fin vocab)) := do
   let gen : text.GenerationOptions :=
     { prompt := ""
       generate := steps
@@ -217,7 +245,7 @@ partial def generateSampledFromIds {α : Type}
       repeatWindow := repeatWindow
       seed := seed
       asciiOnly := false }
-  if seqLen = 0 then
+  if hSeqLen : seqLen = 0 then
     -- The CLI rejects this case, but keeping the definition total makes the stream reusable.
     pure promptIds
   else if hBatch : batch = 0 then
@@ -225,13 +253,32 @@ partial def generateSampledFromIds {α : Type}
     pure promptIds
   else
   let b0 : Fin batch := ⟨0, Nat.pos_of_ne_zero hBatch⟩
-  text.autoregressiveTokenIds seqLen padId promptIds gen
-    (fun padded predPos => do
-        let x : Tensor Nat (shape![batch, seqLen]) :=
-          Spec.Tensor.dim fun _ => Spec.Tensor.vector fun i => padded.get i
+  let rec loop (ids : Array (Fin vocab)) : Nat → IO (Array (Fin vocab))
+    | 0 => pure ids
+    | n + 1 => do
+        let generatedSoFar := steps - (n + 1)
+        let start := if ids.size > seqLen then ids.size - seqLen else 0
+        let window := (ids.drop start).take seqLen
+        let predPos : Fin seqLen :=
+          ⟨Nat.min (if window.isEmpty then 0 else window.size - 1) (seqLen - 1),
+            Nat.lt_of_le_of_lt
+              (Nat.min_le_right _ (seqLen - 1))
+              (Nat.sub_lt (Nat.pos_of_ne_zero hSeqLen) (by decide))⟩
+        let padded := Spec.Tensor.ofFn fun i => window.getD i.val padId
+        let x : Tensor (Fin vocab) [batch, seqLen] := Tensor.repeatAxis 0 batch padded
         let logits ← predict x
-        pure ((text.batchLogitScoresAt logits b0 predPos).map toFloat))
-    (allowId := allowId)
+        let scores := (text.batchLogitScoresAt logits b0 predPos).map toFloat
+        let recent :=
+          if repeatWindow = 0 then
+            #[]
+          else
+            (ids.drop (ids.size - Nat.min ids.size repeatWindow)).map Fin.val
+        let nextToken ←
+          match text.chooseNextToken scores gen generatedSoFar recent allowId with
+          | .ok token => pure token
+          | .error message => throw <| IO.userError message
+        loop (ids.push nextToken) n
+  loop promptIds steps
 
 /-- CLI entrypoint for character-level GPT training and sampling. -/
 def main (args : List String) : IO UInt32 := do
@@ -295,147 +342,154 @@ def main (args : List String) : IO UInt32 := do
           throw <| IO.userError s!"{exeName}: corpus contains no characters"
       let tok := text.Tokenizer.ofAlphabet alphabetFull unkId (unkChar := '?')
       let vocab := tok.vocabSize
-      let batch := train.batch
-      let seqLen := train.seqLen
-
-      let cfg : nn.models.CausalTransformer.Config :=
-        { seqLen := seqLen
-          vocab := vocab
-          numHeads := heads
-          headDim := width / heads
-          ffnHidden := 4 * width
-          layers := layers
-          activation := .relu
-          dropout? := if dropout == 0.0 then none else some dropout
-          normFirst := true
-          attentionOutputBias := true
-          parameterInit? := some (.normal 0.0 0.02) }
-      let seqWitness : Fin seqLen ←
-        if h : 0 < seqLen then
-          pure ⟨0, h⟩
-        else
-          throw <| IO.userError s!"{exeName}: --seq-len must be positive"
-      let modelWitness : Fin cfg.dModel ←
-        if h : 0 < cfg.dModel then
-          pure ⟨0, h⟩
-        else
-          throw <| IO.userError s!"{exeName}: model width must be positive"
-      have hSeq : seqLen ≠ 0 := by
+      have hVocab : vocab ≠ 0 := by
         intro h
-        rw [h] at seqWitness
-        exact Fin.elim0 seqWitness
-      have hModel : cfg.dModel ≠ 0 := by
-        intro h
-        rw [h] at modelWitness
-        exact Fin.elim0 modelWitness
-      let body : nn.Sequential
-          (nn.models.CausalTransformer.embeddingShape cfg (.dim batch .scalar))
-          (nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)) :=
-        nn.build train.seed <|
-          nn.models.CausalTransformer.fromEmbeddings cfg (.dim batch .scalar)
-            (h_seqLen := hSeq) (h_dModel := hModel)
+        have hAlphabet : alphabetFull.size = 0 := by
+          simpa [vocab, tok, text.Tokenizer.ofAlphabet] using h
+        rw [hAlphabet] at unkId
+        exact Fin.elim0 unkId
+      letI : NeZero vocab := ⟨hVocab⟩
+      do
+        let batch := train.batch
+        let seqLen := train.seqLen
 
-      let allTokens := (tok.encode corpus).toArray
-      let split := allTokens.size * 9 / 10
-      let trainTokens := allTokens.extract 0 split
-      let valTokens := allTokens.extract split allTokens.size
-      if trainTokens.size <= seqLen || valTokens.size <= seqLen then
-        throw <| IO.userError s!"{exeName}: corpus split is too short for context length {seqLen}"
+        let cfg : nn.models.CausalTransformer.Config :=
+          { seqLen := seqLen
+            vocab := vocab
+            numHeads := heads
+            headDim := width / heads
+            ffnHidden := 4 * width
+            layers := layers
+            activation := .relu
+            dropout? := if dropout == 0.0 then none else some dropout
+            normFirst := true
+            attentionOutputBias := true
+            parameterInit? := some (.normal 0.0 0.02) }
+        let seqWitness : Fin seqLen ←
+          if h : 0 < seqLen then
+            pure ⟨0, h⟩
+          else
+            throw <| IO.userError s!"{exeName}: --seq-len must be positive"
+        let modelWitness : Fin cfg.dModel ←
+          if h : 0 < cfg.dModel then
+            pure ⟨0, h⟩
+          else
+            throw <| IO.userError s!"{exeName}: model width must be positive"
+        have hSeq : seqLen ≠ 0 := by
+          intro h
+          rw [h] at seqWitness
+          exact Fin.elim0 seqWitness
+        have hModel : cfg.dModel ≠ 0 := by
+          intro h
+          rw [h] at modelWitness
+          exact Fin.elim0 modelWitness
+        let body : nn.Sequential
+            (nn.models.CausalTransformer.embeddingShape cfg [batch])
+            (nn.models.CausalTransformer.vocabularyShape cfg [batch]) :=
+          nn.build train.seed <|
+            nn.models.CausalTransformer.fromEmbeddings cfg [batch]
+              (h_seqLen := hSeq) (h_dModel := hModel)
 
-      let mkBatchSample (step : Nat) :=
-        Data.CausalLM.tokenBatch
-          batch seqLen trainTokens train.seed step (padId := 0)
-      let mkValSample (step : Nat) :=
-        Data.CausalLM.tokenBatch
-          batch seqLen valTokens (train.seed + 1000003) step (padId := 0)
-      let trainDef := nn.models.CausalTransformer.Indexed.objective cfg body
-      let evalDef := nn.models.CausalTransformer.Indexed.objectiveWithMode .eval cfg body
-      let module ← TorchLean.Module.instantiateAs trainDef Float.toFloat32 opts
-      match train.loadCheckpoint? with
-      | none => pure ()
-      | some path =>
-          Checkpoint.loadModule module path
-          IO.println s!"  loaded checkpoint: {path}"
-      let optimizer := _root_.Runtime.Autograd.TorchLean.Optim.adamw
-        (α := Float32)
-        (paramShapes := nn.models.CausalTransformer.Indexed.stateShapes cfg body)
-        (TorchLean.Runtime.ofFloat train.lr)
-        (TorchLean.Runtime.ofFloat 0.01)
-        (TorchLean.Runtime.ofFloat 0.9)
-        (TorchLean.Runtime.ofFloat 0.999)
-        (TorchLean.Runtime.ofFloat 1e-8)
-      let optimizerState ← TorchLean.Module.initOptimizer module optimizer
-      let optimizerStateRef ← IO.mkRef optimizerState
-      let storedScalarCount :=
-        (nn.models.CausalTransformer.Indexed.stateShapes cfg body).foldl
-          (fun total shape => total + Shape.size shape) 0
-      let trainableParameterCount :=
-        (List.zip (nn.models.CausalTransformer.Indexed.stateShapes cfg body)
-          (true :: nn.requiresGrad body)).foldl
-          (fun total entry => if entry.2 then total + Shape.size entry.1 else total) 0
-      IO.println s!"  trainable_parameters={trainableParameterCount}"
-      if storedScalarCount != trainableParameterCount then
-        IO.println s!"  non_trainable_state_scalars={storedScalarCount - trainableParameterCount}"
-      let evalLoss : IO Float := do
-        let losses ← (List.range evalIters).mapM fun i => do
-          let (tokens, targets) := mkValSample i
-          let loss ← TorchLean.Module.lossWithState
-            evalDef opts module.trainer.state .nil (.cons tokens (.cons targets .nil))
-          pure (Float32.toFloat (Spec.Tensor.item loss))
-        pure (losses.foldl (· + ·) 0.0 / Float.ofNat losses.length)
-      let beforeLoss ← evalLoss
-      IO.println s!"  step 0: val loss={beforeLoss}"
-      for step in [0:train.steps] do
-        let state ← optimizerStateRef.get
-        let (tokens, targets) := mkBatchSample step
-        let state' ← _root_.Runtime.Autograd.TorchLean.Module.Objective.optimizerStep
-          module optimizer state .nil
-          (.cons tokens (.cons targets .nil))
-        optimizerStateRef.set state'
-        let done := step + 1
-        if evalEvery != 0 && (done % evalEvery == 0 || done == train.steps) then
-          let loss ← evalLoss
-          IO.println s!"  step {done}: val loss={loss}"
-      let afterLoss ← evalLoss
-      let forwardProgram : _root_.Runtime.Autograd.TorchLean.ProgramWithNatInputs Float32
-          (nn.models.CausalTransformer.Indexed.stateShapes cfg body ++ [])
-          [nn.models.CausalTransformer.tokenShape cfg (.dim batch .scalar)]
-          (nn.models.CausalTransformer.vocabularyShape cfg (.dim batch .scalar)) := by
-        rw [List.append_nil]
-        exact fun {m} _ _ =>
-          nn.models.CausalTransformer.Indexed.program cfg body (α := Float32) (m := m)
-      let evaluator ← TorchLean.Module.withState forwardProgram
-        opts module.trainer.state
-      let predict := fun
-          (x : Tensor Nat (nn.models.CausalTransformer.tokenShape cfg (.dim batch .scalar))) => do
-        TorchLean.Module.evaluatePacked evaluator .nil (.cons x .nil)
-      let promptIds := tok.encode train.prompt
-      let allowId : Nat → Bool :=
-        if train.asciiOnly then
-          fun i => alphabetFull[i]?.any asciiAllowed
-        else
-          fun _ => true
-      let outIds ←
-        generateSampledFromIds Float32.toFloat batch seqLen vocab predict promptIds
-          train.generate train.temperature train.topK train.seed train.repeatWindow train.repeatPenalty
-          (allowId := allowId) (padId := 0)
-      let sampled := escapeCharIdsForDisplay tok outIds
-      match train.saveCheckpoint? with
-      | none => pure ()
-      | some path =>
-          Checkpoint.saveModule module path
-          IO.println s!"  wrote checkpoint: {path}"
-      IO.println s!"  vocab={vocab} (unique chars)"
-      IO.println s!"  architecture=width {width}, heads {heads}, layers {layers}, dropout {dropout}"
-      IO.println s!"  sampled={sampled}"
-      text.writeGenerationTrainLog
-        train.log "CharGPT (minGPT-style)" train.steps beforeLoss afterLoss
-        train.toGenerationOptions sampled
-        #[ModelZoo.deviceNote opts,
-          s!"vocab={vocab}",
-          s!"train_tokens={trainTokens.size}",
-          s!"validation_tokens={valTokens.size}",
-          ModelZoo.cudaMemoryNote opts train.steps train.cudaMemWatch]
-      pure 0)
+        let allTokens ← ModelZoo.orThrow exeName <| boundTokenIds vocab (tok.encode corpus)
+        let split := allTokens.size * 9 / 10
+        let trainTokens := allTokens.extract 0 split
+        let valTokens := allTokens.extract split allTokens.size
+        if trainTokens.size <= seqLen || valTokens.size <= seqLen then
+          throw <| IO.userError s!"{exeName}: corpus split is too short for context length {seqLen}"
+
+        let mkBatchSample (step : Nat) :=
+          tokenBatch batch seqLen trainTokens train.seed step unkId
+        let mkValSample (step : Nat) :=
+          tokenBatch batch seqLen valTokens (train.seed + 1000003) step unkId
+        let trainDef := nn.models.CausalTransformer.Indexed.objective cfg body
+        let evalDef := nn.models.CausalTransformer.Indexed.objectiveWithMode .eval cfg body
+        let module ← TorchLean.Module.instantiateAs trainDef Float.toFloat32 opts
+        match train.loadCheckpoint? with
+        | none => pure ()
+        | some path =>
+            Checkpoint.loadModule module path
+            IO.println s!"  loaded checkpoint: {path}"
+        let optimizer := _root_.Runtime.Autograd.TorchLean.Optim.adamw
+          (α := Float32)
+          (paramShapes := (nn.models.CausalTransformer.Indexed.model cfg body).stateShapes)
+          (TorchLean.Runtime.ofFloat train.lr)
+          (TorchLean.Runtime.ofFloat 0.01)
+          (TorchLean.Runtime.ofFloat 0.9)
+          (TorchLean.Runtime.ofFloat 0.999)
+          (TorchLean.Runtime.ofFloat 1e-8)
+        let optimizerState ← TorchLean.Module.initOptimizer module optimizer
+        let optimizerStateRef ← IO.mkRef optimizerState
+        let storedScalarCount :=
+          (nn.models.CausalTransformer.Indexed.model cfg body).stateShapes.foldl
+            (fun total shape => total + Shape.size shape) 0
+        let trainableParameterCount :=
+          ((nn.models.CausalTransformer.Indexed.model cfg body).stateShapes.toArray.zip
+            (#[true] ++ nn.requiresGrad body)).foldl
+            (fun total entry => if entry.2 then total + Shape.size entry.1 else total) 0
+        IO.println s!"  trainable_parameters={trainableParameterCount}"
+        if storedScalarCount != trainableParameterCount then
+          IO.println s!"  non_trainable_state_scalars={storedScalarCount - trainableParameterCount}"
+        let evalLoss : IO Float := do
+          let losses ← (List.range evalIters).mapM fun i => do
+            let (tokens, targets) := mkValSample i
+            let loss ← TorchLean.Module.lossWithState
+              evalDef opts module.trainer.state .nil (.cons tokens (.cons targets .nil))
+            pure (Float32.toFloat (Tensor.item loss))
+          pure (losses.foldl (· + ·) 0.0 / Float.ofNat losses.length)
+        let beforeLoss ← evalLoss
+        IO.println s!"  step 0: val loss={beforeLoss}"
+        for step in [0:train.steps] do
+          let state ← optimizerStateRef.get
+          let (tokens, targets) := mkBatchSample step
+          let state' ← _root_.Runtime.Autograd.TorchLean.Module.Objective.optimizerStep
+            module optimizer state .nil
+            (.cons tokens (.cons targets .nil))
+          optimizerStateRef.set state'
+          let done := step + 1
+          if evalEvery != 0 && (done % evalEvery == 0 || done == train.steps) then
+            let loss ← evalLoss
+            IO.println s!"  step {done}: val loss={loss}"
+        let afterLoss ← evalLoss
+        let forwardProgram : _root_.Runtime.Autograd.TorchLean.ProgramWithDataInputs
+            Float32 (Fin vocab)
+            ((nn.models.CausalTransformer.Indexed.model cfg body).stateShapes ++ [])
+            [nn.models.CausalTransformer.tokenShape cfg [batch]]
+            (nn.models.CausalTransformer.vocabularyShape cfg [batch]) := by
+          rw [List.append_nil]
+          exact fun {m} _ _ =>
+            nn.models.CausalTransformer.Indexed.program cfg body (α := Float32) (m := m)
+        let evaluator ← TorchLean.Module.withState
+          (program := forwardProgram) opts module.trainer.state
+        let predict := fun
+            (x : Tensor (Fin vocab) (nn.models.CausalTransformer.tokenShape cfg [batch])) => do
+          TorchLean.Module.Evaluator.run evaluator .nil (.cons x .nil)
+        let promptIds ← ModelZoo.orThrow exeName <| boundTokenIds vocab (tok.encode train.prompt)
+        let allowId : Fin vocab → Bool :=
+          if train.asciiOnly then
+            fun i => alphabetFull[i.val]?.any asciiAllowed
+          else
+            fun _ => true
+        let outIds ←
+          generateSampledFromIds Float32.toFloat batch seqLen vocab predict promptIds
+            train.generate train.temperature train.topK train.seed train.repeatWindow train.repeatPenalty
+            (allowId := allowId) (padId := unkId)
+        let sampled := escapeCharIdsForDisplay tok (outIds.map Fin.val)
+        match train.saveCheckpoint? with
+        | none => pure ()
+        | some path =>
+            Checkpoint.saveModule module path
+            IO.println s!"  wrote checkpoint: {path}"
+        IO.println s!"  vocab={vocab} (unique chars)"
+        IO.println s!"  architecture=width {width}, heads {heads}, layers {layers}, dropout {dropout}"
+        IO.println s!"  sampled={sampled}"
+        text.writeGenerationTrainLog
+          train.log "CharGPT (minGPT-style)" train.steps beforeLoss afterLoss
+          train.toGenerationOptions sampled
+          #[ModelZoo.deviceNote opts,
+            s!"vocab={vocab}",
+            s!"train_tokens={trainTokens.size}",
+            s!"validation_tokens={valTokens.size}",
+            ModelZoo.cudaMemoryNote opts train.steps train.cudaMemWatch]
+        pure 0)
 
 end NN.Examples.Models.Sequence.CharGpt

@@ -6,55 +6,21 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.IRExec.Correctness.Common
+public import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon
 
 /-!
-# Pooling
+# Pooling Correctness
 
-Pooling correctness lemmas for the IR-to-forward-executor lowering.
+Semantic preservation for lowering arbitrary-rank max and average pooling. A `WindowConfig`
+selects a spatial suffix and gives a separate kernel, stride, and symmetric padding for every
+pooled axis. All leading axes are preserved, including any number of batch dimensions.
 
-TorchLean models pooling on rank-3 image tensors `C × H × W` (and batched variants upstream in the
-runtime), matching the usual PyTorch max-pooling convention:
-`torch.nn.functional.max_pool2d` / `torch.nn.MaxPool2d`.
-
-This file proves the forward-correctness statement for the lowering path that lowers pooling IR
-nodes into a single SSA node whose `forward` computes the corresponding spec-level pooling
-operation. Concretely, successful lowering at graph index
-`i` implies that the IR evaluator `NN.IR.Graph.denoteAllFrom` and the forward-graph evaluator
-`denoteAllState` stay in semantic equivalence.
-
-References:
-
-* PyTorch functional max-pool docs:
-  <https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.max_pool2d>
-* PyTorch module max-pool docs:
-  <https://docs.pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html>
-
-## Main definitions
-
-- `buildFrom_denoteAllFrom_max_pool2d`: correctness step for unpadded max-pool lowering.
-- `buildFrom_denoteAllFrom_max_pool2d_pad`: correctness step for padded max-pool lowering.
-- `buildFrom_denoteAllFrom_avg_pool2d`: correctness step for unpadded average-pool lowering.
-- `buildFrom_denoteAllFrom_avg_pool2d_pad`: correctness step for padded average-pool lowering.
-
-## Implementation notes
-
-- The proof follows lowering control flow closely (shape checks, parent checks, guard conditions);
-  this one-to-one structure keeps maintenance direct when lowering rules evolve.
-- Impossible branches are discharged early via `throw_bind_ne_ok`, which keeps the success path
-  readable.
-- Pooling proofs build slowly because the output height and width are computed from kernel, stride,
-  and padding parameters, then reflected in dependent tensor shapes. Focused helper lemmas should isolate
-  those output-shape arithmetic facts so the semantic proof only compares the lowered pooling call
-  with the IR pooling evaluator.
-
-## Tags
-
-pool2d, correctness, ir, runtime, semantic equivalence
+Shape inference, denotational evaluation, and executable lowering share `OpContracts.PoolPlan`.
+Consequently, successful lowering records exactly the rank split and positivity evidence consumed
+by the typed pooling specification; there are no separate padded or two-dimensional proof paths.
 -/
 
 @[expose] public section
-
 
 namespace Runtime
 namespace Autograd
@@ -66,14 +32,13 @@ open Proofs.Autograd.Algebra
 open NN.IR
 open Internal
 
-/-- Correctness lemma for the `.max_pool2d` node lowering pass (no padding). -/
-theorem buildFrom_denoteAllFrom_max_pool2d
+/-- Lowering arbitrary-rank max pooling preserves the IR denotation. -/
+theorem buildFrom_denoteAllFrom_maxPool
     {α : Type} [Context α] [DecidableEq Shape]
     (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
     (gd : ForwardData α [inShape] ss) (i : Nat) (st' : State α inShape)
-    (x : Tensor α inShape) (n : NN.IR.Node)
-    (kH kW stride : Nat)
-    (hN : g.getNode i = .ok n) (hk : n.kind = .maxPool2d kH kW stride) (hi : i < g.nodes.size)
+    (x : Tensor α inShape) (n : NN.IR.Node) (config : WindowConfig)
+    (hN : g.getNode i = .ok n) (hk : n.kind = .maxPool config) (hi : i < g.nodes.size)
     (hBuild :
       buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
         (i := i) (st := (⟨ss, gd⟩ : State α inShape)) = .ok st')
@@ -82,164 +47,98 @@ theorem buildFrom_denoteAllFrom_max_pool2d
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
-      (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
+      (i := i) (vals := denoteAllState (α := α) inShape
+        (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
-    denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
-    ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let vals0 := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
+  let ctx := ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
-      exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-      | nil =>
-          cases hP : g.getNode pId with
-          | error msg =>
-              have hFalse : False := by
-                simp [hp, hP] at hBuild
-              cases hFalse
-          | ok pNode =>
-              simp [hp, hP] at hBuild
-              cases hS : pNode.outShape with
-              | scalar =>
-                  exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-              | dim inC sTail =>
-                  cases sTail with
-                  | scalar =>
-                      exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                  | dim inH sTail2 =>
-                      cases sTail2 with
-                      | scalar =>
-                          exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                      | dim inW sTail3 =>
-                          cases sTail3 with
-                          | dim _ _ =>
-                              exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                          | scalar =>
-                              by_cases hkH0 : kH = 0
-                              · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0] using
-                                hBuild)
-                              · by_cases hkW0 : kW = 0
-                                · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0]
-                                  using hBuild)
-                                · by_cases hs : stride = 0
-                                  · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0, hs]
-                                    using hBuild)
-                                  ·
-                                    let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                                    cases hIdx :
-                                        mkIdx (inShape := inShape) (ss := ss) pId sIn with
-                                    | error msg =>
-                                        have hGuarded :
-                                            (do
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d" "height" inH kH 0
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d" "width" inW kW 0
-                                                (Except.error msg : Except String (State α inShape))) =
-                                              Except.ok st' := by
-                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
-                                        have hTail :
-                                            (Except.error msg : Except String (State α inShape)) =
-                                              Except.ok st' :=
-                                          exceptUnit_two_bind_tail_ok hGuarded
-                                        cases hTail
-                                    | ok ip =>
-                                        simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        let expected : Shape :=
-                                          Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                                        by_cases hOut : expected = n.outShape
-                                        · simp [expected, hOut] at hBuild
-                                          have hFitH :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d" "height" inH kH 0 =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_first_ok hBuild
-                                          have hFitW :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d" "width" inW kW 0 =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_second_ok hBuild
-                                          let layer : Spec.MaxPool2dSpec kH kW stride hkH0 hkW0 hs := {}
-                                          let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape
-                                            :=
-                                            mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ :=
-                                              n.outShape) (fun ctx =>
-                                              let xCHW := getIdx (α := α) (xs := ctx) ip
-                                              let y : Tensor α expected :=
-                                                Spec.maxPool2dMultiSpec (α := α) (kH := kH) (kW :=
-                                                  kW)
-                                                  (inH := inH) (inW := inW) (inC := inC) (stride :=
-                                                    stride)
-                                                  (layer := layer) (input := xCHW)
-                                              hOut ▸ y)
-                                          let st1 : State α inShape :=
-                                            ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
-                                          have hRec :
-                                              buildFrom (α := α) (g := g) (payload := payload)
-                                                (inShape := inShape)
-                                                  (i := i + 1) st1 = .ok st' := by
-                                            simpa [st1, nodeData] using
-                                              exceptUnit_two_bind_tail_ok hBuild
-                                          have hGet :
-                                              vals0[pId]? = some (Spec.PackedTensor.mk (α := α) sIn
-                                                  (getIdx (α := α) (xs := ctx) ip)) := by
-                                            simpa [vals0, ctx, sIn] using
-                                              (denoteAllState_get_mkIdx? (inShape := inShape) (ss :=
-                                                ss)
-                                                (gd := gd) (x := x) (pid := pId) (s := sIn) (idx :=
-                                                  ip) hIdx)
-                                          have hEval :
-                                              NN.IR.Graph.evalAt (α := α) (g := g) (payload :=
-                                                payload)
-                                                  (input := input) (vals := vals0) (i := i) =
-                                                .ok (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                                              NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet,
-                                              nodeData, layer, sIn, expected, hkH0, hkW0, hs, hOut,
-                                              hFitH, hFitW]
-                                          have hStep :
-                                              denoteAllState (α := α) inShape st1 x =
-                                                vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simpa [vals0, st1, nodeData, ctx] using
-                                              (denoteAllState_snoc (α := α) (inShape := inShape) (ss
-                                                := ss) (τ := n.outShape)
-                                                (gd := gd) (nodeData := nodeData) (x := x))
-                                          have hTail := ih st1 hRec
-                                          exact buildFrom_denoteAllFrom_finish (α := α) (g := g)
-                                            (payload := payload)
-                                            (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                                            (nodeData := nodeData) (st1 := st1) (st' := st')
-                                            (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
-                                              hStep
-                                        · exact False.elim <|
-                                            throw_bind_ne_ok (by
-                                              simpa [expected, hOut, hs] using
-                                                exceptUnit_two_bind_tail_ok hBuild)
+  cases hp : unaryParent? n.parents with
+  | none => exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
+  | some pId =>
+          cases hParent : g.getNode pId with
+          | error message => simp [hp, hParent] at hBuild
+          | ok parentNode =>
+              let parentShape := parentNode.outShape
+              cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId parentShape with
+              | error message => simp [hp, hParent, parentShape, hIdx] at hBuild
+              | ok parentIdx =>
+                  cases hPlan : OpContracts.planPool "max_pool" config parentShape with
+                  | error message => simp [hp, hParent, parentShape, hIdx, hPlan] at hBuild
+                  | ok plan =>
+                      let expected := plan.outShape
+                      by_cases hOut : expected = n.outShape
+                      · simp [hp, hParent, parentShape, hIdx, hPlan, expected, hOut] at hBuild
+                        let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape :=
+                          mkForwardNode (fun context =>
+                            let parent := getIdx (α := α) (xs := context) parentIdx
+                            packedResultOrPanic (α := α) n.outShape <|
+                              NN.IR.Graph.evalMaxPool config (Spec.SomeTensor.ofTensor parent))
+                        let st1 : State α inShape :=
+                          ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
+                        have hRec :
+                            buildFrom (α := α) (g := g) (payload := payload)
+                              (inShape := inShape) (i := i + 1) st1 = .ok st' := by
+                          simpa [st1, nodeData] using hBuild
+                        have hGet :
+                            vals0[pId]? = some (Spec.SomeTensor.mk (α := α) parentShape
+                              (getIdx (α := α) (xs := ctx) parentIdx)) := by
+                          simpa [vals0, ctx, parentShape] using
+                            (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
+                              (gd := gd) (x := x) (pid := pId) (s := parentShape)
+                              (idx := parentIdx) hIdx)
+                        let parent := getIdx (α := α) (xs := ctx) parentIdx
+                        let input : Tensor α
+                            (plan.leading.concat (Shape.ofList plan.spatial.toList)) :=
+                          plan.concat_eq.symm ▸ parent
+                        let layer : Spec.MaxPoolSpec config.spatialRank config.kernel config.stride
+                            config.padding plan.kernelNonzero plan.strideNonzero := {}
+                        let output := Tensor.mapEach plan.leading
+                          (Spec.maxPoolSpatialSpec (α := α) (inSpatial := plan.spatial) layer) input
+                        have hPool :
+                            NN.IR.Graph.evalMaxPool config
+                                (Spec.SomeTensor.mk (α := α) parentShape parent) =
+                              .ok (Spec.SomeTensor.ofTensor output) := by
+                          simp [NN.IR.Graph.evalMaxPool, hPlan, input, layer, output]
+                        have hOutputShape : (Spec.SomeTensor.ofTensor output).shape = expected := by
+                          rfl
+                        have hResultShape : (Spec.SomeTensor.ofTensor output).shape = n.outShape :=
+                          hOutputShape.trans hOut
+                        have hEval :
+                            NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
+                                (input := Spec.SomeTensor.mk (α := α) inShape x)
+                                (vals := vals0) (i := i) =
+                              .ok (Spec.SomeTensor.mk (α := α) n.outShape
+                                (nodeData.eval ctx)) := by
+                          simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                            NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, hPool,
+                            nodeData, parent, packedResultOrPanic]
+                          split
+                          · simp_all
+                            congr 2
+                          · simp_all
+                        apply buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
+                          (payload := payload) (gd := gd) (i := i) (st' := st') (x := x)
+                          (hi := hi) (nodeData := nodeData)
+                        · exact ih st1 hRec
+                        · exact hEval
+                      · exact False.elim <| throw_bind_ne_ok <| by
+                          simpa [hp, hParent, parentShape, hIdx, hPlan, expected, hOut] using hBuild
 
-/-- Correctness lemma for the `.max_pool2d_pad` node lowering pass (explicit padding). -/
-theorem buildFrom_denoteAllFrom_max_pool2d_pad
+/-- Lowering arbitrary-rank average pooling preserves the IR denotation. -/
+theorem buildFrom_denoteAllFrom_avgPool
     {α : Type} [Context α] [DecidableEq Shape]
     (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
     (gd : ForwardData α [inShape] ss) (i : Nat) (st' : State α inShape)
-    (x : Tensor α inShape) (n : NN.IR.Node)
-    (kH kW stride padding : Nat)
-    (hN : g.getNode i = .ok n) (hk : n.kind = .maxPool2dPad kH kW stride padding) (hi : i <
-      g.nodes.size)
+    (x : Tensor α inShape) (n : NN.IR.Node) (config : WindowConfig)
+    (hN : g.getNode i = .ok n) (hk : n.kind = .avgPool config) (hi : i < g.nodes.size)
     (hBuild :
       buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
         (i := i) (st := (⟨ss, gd⟩ : State α inShape)) = .ok st')
@@ -248,493 +147,90 @@ theorem buildFrom_denoteAllFrom_max_pool2d_pad
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
-      (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
+      (i := i) (vals := denoteAllState (α := α) inShape
+        (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
-    denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
-    ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let vals0 := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
+  let ctx := ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
-      exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-      | nil =>
-          cases hP : g.getNode pId with
-          | error msg =>
-              have hFalse : False := by
-                simp [hp, hP] at hBuild
-              cases hFalse
-          | ok pNode =>
-              simp [hp, hP] at hBuild
-              cases hS : pNode.outShape with
-              | scalar =>
-                  exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-              | dim inC sTail =>
-                  cases sTail with
-                  | scalar =>
-                      exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                  | dim inH sTail2 =>
-                      cases sTail2 with
-                      | scalar =>
-                          exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                      | dim inW sTail3 =>
-                          cases sTail3 with
-                          | dim _ _ =>
-                              exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                          | scalar =>
-                              by_cases hkH0 : kH = 0
-                              · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0] using
-                                hBuild)
-                              · by_cases hkW0 : kW = 0
-                                · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0]
-                                  using hBuild)
-                                · by_cases hs : stride = 0
-                                  · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0, hs]
-                                    using hBuild)
-                                  ·
-                                    let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                                    cases hIdx :
-                                        mkIdx (inShape := inShape) (ss := ss) pId sIn with
-                                    | error msg =>
-                                        have hGuarded :
-                                            (do
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d_pad" "height" inH kH padding
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d_pad" "width" inW kW padding
-                                                (Except.error msg : Except String (State α inShape))) =
-                                              Except.ok st' := by
-                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
-                                        have hTail :
-                                            (Except.error msg : Except String (State α inShape)) =
-                                              Except.ok st' :=
-                                          exceptUnit_two_bind_tail_ok hGuarded
-                                        cases hTail
-                                    | ok ip =>
-                                        simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        let expected : Shape :=
-                                          Spec.pool2dMultiOutShapePad inC inH inW kH kW stride
-                                            padding
-                                        by_cases hOut : expected = n.outShape
-                                        · simp [expected, hOut] at hBuild
-                                          have hFitH :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d_pad" "height" inH kH padding =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_first_ok hBuild
-                                          have hFitW :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "max_pool2d_pad" "width" inW kW padding =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_second_ok hBuild
-                                          let layer : Spec.MaxPool2dSpec kH kW stride hkH0 hkW0 hs := {}
-                                          let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape
-                                            :=
-                                            mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ :=
-                                              n.outShape) (fun ctx =>
-                                              let xCHW := getIdx (α := α) (xs := ctx) ip
-                                              let y : Tensor α expected :=
-                                                Spec.maxPool2dMultiSpecPad (α := α) (kH := kH) (kW
-                                                  := kW)
-                                                  (inH := inH) (inW := inW) (inC := inC) (stride :=
-                                                    stride)
-                                                  (padding := padding) (layer := layer) (input :=
-                                                    xCHW)
-                                              hOut ▸ y)
-                                          let st1 : State α inShape :=
-                                            ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
-                                          have hRec :
-                                              buildFrom (α := α) (g := g) (payload := payload)
-                                                (inShape := inShape)
-                                                  (i := i + 1) st1 = .ok st' := by
-                                            simpa [st1, nodeData] using
-                                              exceptUnit_two_bind_tail_ok hBuild
-                                          have hGet :
-                                              vals0[pId]? = some (Spec.PackedTensor.mk (α := α) sIn
-                                                  (getIdx (α := α) (xs := ctx) ip)) := by
-                                            simpa [vals0, ctx, sIn] using
-                                              (denoteAllState_get_mkIdx? (inShape := inShape) (ss :=
-                                                ss)
-                                                (gd := gd) (x := x) (pid := pId) (s := sIn) (idx :=
-                                                  ip) hIdx)
-                                          have hEval :
-                                              NN.IR.Graph.evalAt (α := α) (g := g) (payload :=
-                                                payload)
-                                                  (input := input) (vals := vals0) (i := i) =
-                                                .ok (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                                              NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet,
-                                              nodeData, layer, sIn, expected, hkH0, hkW0, hs, hOut,
-                                              hFitH, hFitW]
-                                          have hStep :
-                                              denoteAllState (α := α) inShape st1 x =
-                                                vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simpa [vals0, st1, nodeData, ctx] using
-                                              (denoteAllState_snoc (α := α) (inShape := inShape) (ss
-                                                := ss) (τ := n.outShape)
-                                                (gd := gd) (nodeData := nodeData) (x := x))
-                                          have hTail := ih st1 hRec
-                                          exact buildFrom_denoteAllFrom_finish (α := α) (g := g)
-                                            (payload := payload)
-                                            (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                                            (nodeData := nodeData) (st1 := st1) (st' := st')
-                                            (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
-                                              hStep
-                                        · exact False.elim <|
-                                            throw_bind_ne_ok (by
-                                              simpa [expected, hOut, hs] using
-                                                exceptUnit_two_bind_tail_ok hBuild)
-
-/-- Correctness lemma for the `.avg_pool2d` node lowering pass (no padding). -/
-theorem buildFrom_denoteAllFrom_avg_pool2d
-    {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
-    (gd : ForwardData α [inShape] ss) (i : Nat) (st' : State α inShape)
-    (x : Tensor α inShape) (n : NN.IR.Node)
-    (kH kW stride : Nat)
-    (hN : g.getNode i = .ok n) (hk : n.kind = .avgPool2d kH kW stride) (hi : i < g.nodes.size)
-    (hBuild :
-      buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-        (i := i) (st := (⟨ss, gd⟩ : State α inShape)) = .ok st')
-    (ih :
-      ∀ (st1 : State α inShape),
-        buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-          (i := i + 1) st1 = .ok st' →
-        NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
-          (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
-          .ok (denoteAllState (α := α) inShape st' x)) :
-    NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
-      (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
-      .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
-    denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
-    ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
-  unfold buildFrom at hBuild
-  simp [hi, hN] at hBuild
-  simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
-      exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-      | nil =>
-          cases hP : g.getNode pId with
-          | error msg =>
-              have hFalse : False := by
-                simp [hp, hP] at hBuild
-              cases hFalse
-          | ok pNode =>
-              simp [hp, hP] at hBuild
-              cases hS : pNode.outShape with
-              | scalar =>
-                  exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-              | dim inC sTail =>
-                  cases sTail with
-                  | scalar =>
-                      exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                  | dim inH sTail2 =>
-                      cases sTail2 with
-                      | scalar =>
-                          exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                      | dim inW sTail3 =>
-                          cases sTail3 with
-                          | dim _ _ =>
-                              exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                          | scalar =>
-                              by_cases hkH0 : kH = 0
-                              · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0] using
-                                hBuild)
-                              · by_cases hkW0 : kW = 0
-                                · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0]
-                                  using hBuild)
-                                · by_cases hs : stride = 0
-                                  · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0, hs]
-                                    using hBuild)
-                                  ·
-                                    let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                                    cases hIdx :
-                                        mkIdx (inShape := inShape) (ss := ss) pId sIn with
-                                    | error msg =>
-                                        have hGuarded :
-                                            (do
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d" "height" inH kH 0
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d" "width" inW kW 0
-                                                (Except.error msg : Except String (State α inShape))) =
-                                              Except.ok st' := by
-                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
-                                        have hTail :
-                                            (Except.error msg : Except String (State α inShape)) =
-                                              Except.ok st' :=
-                                          exceptUnit_two_bind_tail_ok hGuarded
-                                        cases hTail
-                                    | ok ip =>
-                                        simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        let expected : Shape :=
-                                          Spec.pool2dMultiOutShape inC inH inW kH kW stride
-                                        by_cases hOut : expected = n.outShape
-                                        · simp [expected, hOut] at hBuild
-                                          have hFitH :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d" "height" inH kH 0 =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_first_ok hBuild
-                                          have hFitW :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d" "width" inW kW 0 =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_second_ok hBuild
-                                          let layer : Spec.AvgPool2dSpec kH kW stride hkH0 hkW0 hs := {}
-                                          let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape
-                                            :=
-                                            mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ :=
-                                              n.outShape) (fun ctx =>
-                                              let xCHW := getIdx (α := α) (xs := ctx) ip
-                                              let y : Tensor α expected :=
-                                                Spec.avgPool2dMultiSpec (α := α) (kH := kH) (kW :=
-                                                  kW)
-                                                  (inH := inH) (inW := inW) (inC := inC) (stride :=
-                                                    stride)
-                                                  (h1 := hkH0) (h2 := hkW0) (layer := layer) (input :=
-                                                    xCHW)
-                                              hOut ▸ y)
-                                          let st1 : State α inShape :=
-                                            ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
-                                          have hRec :
-                                              buildFrom (α := α) (g := g) (payload := payload)
-                                                (inShape := inShape)
-                                                  (i := i + 1) st1 = .ok st' := by
-                                            simpa [st1, nodeData] using
-                                              exceptUnit_two_bind_tail_ok hBuild
-                                          have hGet :
-                                              vals0[pId]? = some (Spec.PackedTensor.mk (α := α) sIn
-                                                  (getIdx (α := α) (xs := ctx) ip)) := by
-                                            simpa [vals0, ctx, sIn] using
-                                              (denoteAllState_get_mkIdx? (inShape := inShape) (ss :=
-                                                ss)
-                                                (gd := gd) (x := x) (pid := pId) (s := sIn) (idx :=
-                                                  ip) hIdx)
-                                          have hEval :
-                                              NN.IR.Graph.evalAt (α := α) (g := g) (payload :=
-                                                payload)
-                                                  (input := input) (vals := vals0) (i := i) =
-                                                .ok (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                                              NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet,
-                                              nodeData, layer, sIn, expected, hkH0, hkW0, hs, hOut,
-                                              hFitH, hFitW]
-                                          have hStep :
-                                              denoteAllState (α := α) inShape st1 x =
-                                                vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simpa [vals0, st1, nodeData, ctx] using
-                                              (denoteAllState_snoc (α := α) (inShape := inShape) (ss
-                                                := ss) (τ := n.outShape)
-                                                (gd := gd) (nodeData := nodeData) (x := x))
-                                          have hTail := ih st1 hRec
-                                          exact buildFrom_denoteAllFrom_finish (α := α) (g := g)
-                                            (payload := payload)
-                                            (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                                            (nodeData := nodeData) (st1 := st1) (st' := st')
-                                            (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
-                                              hStep
-                                        · exact False.elim <|
-                                            throw_bind_ne_ok (by
-                                              simpa [expected, hOut, hs] using
-                                                exceptUnit_two_bind_tail_ok hBuild)
-
-/-- Correctness lemma for the `.avg_pool2d_pad` node lowering pass (explicit padding). -/
-theorem buildFrom_denoteAllFrom_avg_pool2d_pad
-    {α : Type} [Context α] [DecidableEq Shape]
-    (g : NN.IR.Graph) (payload : Payload α) {inShape : Shape} {ss : List Shape}
-    (gd : ForwardData α [inShape] ss) (i : Nat) (st' : State α inShape)
-    (x : Tensor α inShape) (n : NN.IR.Node)
-    (kH kW stride padding : Nat)
-    (hN : g.getNode i = .ok n) (hk : n.kind = .avgPool2dPad kH kW stride padding) (hi : i <
-      g.nodes.size)
-    (hBuild :
-      buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-        (i := i) (st := (⟨ss, gd⟩ : State α inShape)) = .ok st')
-    (ih :
-      ∀ (st1 : State α inShape),
-        buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
-          (i := i + 1) st1 = .ok st' →
-        NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
-          (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
-          .ok (denoteAllState (α := α) inShape st' x)) :
-    NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
-      (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
-      .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
-    denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
-    ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
-  unfold buildFrom at hBuild
-  simp [hi, hN] at hBuild
-  simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
-      exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-  | cons pId ps =>
-      cases ps with
-      | cons _ _ =>
-          exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
-      | nil =>
-          cases hP : g.getNode pId with
-          | error msg =>
-              have hFalse : False := by
-                simp [hp, hP] at hBuild
-              cases hFalse
-          | ok pNode =>
-              simp [hp, hP] at hBuild
-              cases hS : pNode.outShape with
-              | scalar =>
-                  exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-              | dim inC sTail =>
-                  cases sTail with
-                  | scalar =>
-                      exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                  | dim inH sTail2 =>
-                      cases sTail2 with
-                      | scalar =>
-                          exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                      | dim inW sTail3 =>
-                          cases sTail3 with
-                          | dim _ _ =>
-                              exact False.elim <| throw_bind_ne_ok (by simpa [hS] using hBuild)
-                          | scalar =>
-                              by_cases hkH0 : kH = 0
-                              · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0] using
-                                hBuild)
-                              · by_cases hkW0 : kW = 0
-                                · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0]
-                                  using hBuild)
-                                · by_cases hs : stride = 0
-                                  · exact False.elim <| throw_bind_ne_ok (by simpa [hS, hkH0, hkW0, hs]
-                                    using hBuild)
-                                  ·
-                                    let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-                                    cases hIdx :
-                                        mkIdx (inShape := inShape) (ss := ss) pId sIn with
-                                    | error msg =>
-                                        have hGuarded :
-                                            (do
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d_pad" "height" inH kH padding
-                                                NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d_pad" "width" inW kW padding
-                                                (Except.error msg : Except String (State α inShape))) =
-                                              Except.ok st' := by
-                                          simpa [hS, hkH0, hkW0, hs, sIn, hIdx] using hBuild
-                                        have hTail :
-                                            (Except.error msg : Except String (State α inShape)) =
-                                              Except.ok st' :=
-                                          exceptUnit_two_bind_tail_ok hGuarded
-                                        cases hTail
-                                    | ok ip =>
-                                        simp [hS, hkH0, hkW0, hs, sIn, hIdx] at hBuild
-                                        let expected : Shape :=
-                                          Spec.pool2dMultiOutShapePad inC inH inW kH kW stride
-                                            padding
-                                        by_cases hOut : expected = n.outShape
-                                        · simp [expected, hOut] at hBuild
-                                          have hFitH :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d_pad" "height" inH kH padding =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_first_ok hBuild
-                                          have hFitW :
-                                              NN.IR.OpContracts.checkWindowFits
-                                                  "avg_pool2d_pad" "width" inW kW padding =
-                                                Except.ok () :=
-                                            exceptUnit_two_bind_second_ok hBuild
-                                          let layer : Spec.AvgPool2dSpec kH kW stride hkH0 hkW0 hs := {}
-                                          let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape
-                                            :=
-                                            mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ :=
-                                              n.outShape) (fun ctx =>
-                                              let xCHW := getIdx (α := α) (xs := ctx) ip
-                                              let y : Tensor α expected :=
-                                                Spec.avgPool2dMultiSpecPad (α := α) (kH := kH) (kW
-                                                  := kW)
-                                                  (inH := inH) (inW := inW) (inC := inC) (stride :=
-                                                    stride)
-                                                  (padding := padding) (h1 := hkH0) (h2 := hkW0)
-                                                    (layer := layer)
-                                                  (input := xCHW)
-                                              hOut ▸ y)
-                                          let st1 : State α inShape :=
-                                            ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
-                                          have hRec :
-                                              buildFrom (α := α) (g := g) (payload := payload)
-                                                (inShape := inShape)
-                                                  (i := i + 1) st1 = .ok st' := by
-                                            simpa [st1, nodeData] using
-                                              exceptUnit_two_bind_tail_ok hBuild
-                                          have hGet :
-                                              vals0[pId]? = some (Spec.PackedTensor.mk (α := α) sIn
-                                                  (getIdx (α := α) (xs := ctx) ip)) := by
-                                            simpa [vals0, ctx, sIn] using
-                                              (denoteAllState_get_mkIdx? (inShape := inShape) (ss :=
-                                                ss)
-                                                (gd := gd) (x := x) (pid := pId) (s := sIn) (idx :=
-                                                  ip) hIdx)
-                                          have hEval :
-                                              NN.IR.Graph.evalAt (α := α) (g := g) (payload :=
-                                                payload)
-                                                  (input := input) (vals := vals0) (i := i) =
-                                                .ok (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                                              NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet,
-                                              nodeData, layer, sIn, expected, hkH0, hkW0, hs, hOut,
-                                              hFitH, hFitW]
-                                          have hStep :
-                                              denoteAllState (α := α) inShape st1 x =
-                                                vals0.push (Spec.PackedTensor.mk (α := α) n.outShape
-                                                  (nodeData.eval ctx)) := by
-                                            simpa [vals0, st1, nodeData, ctx] using
-                                              (denoteAllState_snoc (α := α) (inShape := inShape) (ss
-                                                := ss) (τ := n.outShape)
-                                                (gd := gd) (nodeData := nodeData) (x := x))
-                                          have hTail := ih st1 hRec
-                                          exact buildFrom_denoteAllFrom_finish (α := α) (g := g)
-                                            (payload := payload)
-                                            (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                                            (nodeData := nodeData) (st1 := st1) (st' := st')
-                                            (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval
-                                              hStep
-                                        · exact False.elim <|
-                                            throw_bind_ne_ok (by
-                                              simpa [expected, hOut, hs] using
-                                                exceptUnit_two_bind_tail_ok hBuild)
-
-
+  cases hp : unaryParent? n.parents with
+  | none => exact False.elim <| throw_bind_ne_ok (by simpa [hp] using hBuild)
+  | some pId =>
+          cases hParent : g.getNode pId with
+          | error message => simp [hp, hParent] at hBuild
+          | ok parentNode =>
+              let parentShape := parentNode.outShape
+              cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId parentShape with
+              | error message => simp [hp, hParent, parentShape, hIdx] at hBuild
+              | ok parentIdx =>
+                  cases hPlan : OpContracts.planPool "avg_pool" config parentShape with
+                  | error message => simp [hp, hParent, parentShape, hIdx, hPlan] at hBuild
+                  | ok plan =>
+                      let expected := plan.outShape
+                      by_cases hOut : expected = n.outShape
+                      · simp [hp, hParent, parentShape, hIdx, hPlan, expected, hOut] at hBuild
+                        let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape :=
+                          mkForwardNode (fun context =>
+                            let parent := getIdx (α := α) (xs := context) parentIdx
+                            packedResultOrPanic (α := α) n.outShape <|
+                              NN.IR.Graph.evalAvgPool config (Spec.SomeTensor.ofTensor parent))
+                        let st1 : State α inShape :=
+                          ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩
+                        have hRec :
+                            buildFrom (α := α) (g := g) (payload := payload)
+                              (inShape := inShape) (i := i + 1) st1 = .ok st' := by
+                          simpa [st1, nodeData] using hBuild
+                        have hGet :
+                            vals0[pId]? = some (Spec.SomeTensor.mk (α := α) parentShape
+                              (getIdx (α := α) (xs := ctx) parentIdx)) := by
+                          simpa [vals0, ctx, parentShape] using
+                            (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
+                              (gd := gd) (x := x) (pid := pId) (s := parentShape)
+                              (idx := parentIdx) hIdx)
+                        let parent := getIdx (α := α) (xs := ctx) parentIdx
+                        let input : Tensor α
+                            (plan.leading.concat (Shape.ofList plan.spatial.toList)) :=
+                          plan.concat_eq.symm ▸ parent
+                        let layer : Spec.AvgPoolSpec config.spatialRank config.kernel config.stride
+                            config.padding plan.kernelNonzero plan.strideNonzero := {}
+                        let output := Tensor.mapEach plan.leading
+                          (Spec.avgPoolSpatialSpec (α := α) (inSpatial := plan.spatial) layer) input
+                        have hPool :
+                            NN.IR.Graph.evalAvgPool config
+                                (Spec.SomeTensor.mk (α := α) parentShape parent) =
+                              .ok (Spec.SomeTensor.ofTensor output) := by
+                          simp [NN.IR.Graph.evalAvgPool, hPlan, input, layer, output]
+                        have hOutputShape : (Spec.SomeTensor.ofTensor output).shape = expected := by
+                          rfl
+                        have hResultShape : (Spec.SomeTensor.ofTensor output).shape = n.outShape :=
+                          hOutputShape.trans hOut
+                        have hEval :
+                            NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
+                                (input := Spec.SomeTensor.mk (α := α) inShape x)
+                                (vals := vals0) (i := i) =
+                              .ok (Spec.SomeTensor.mk (α := α) n.outShape
+                                (nodeData.eval ctx)) := by
+                          simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                            NN.IR.Graph.normalizeNodeOutput, hN, hk, hp, hGet, hPool,
+                            nodeData, parent, packedResultOrPanic]
+                          split
+                          · simp_all
+                            congr 2
+                          · simp_all
+                        apply buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
+                          (payload := payload) (gd := gd) (i := i) (st' := st') (x := x)
+                          (hi := hi) (nodeData := nodeData)
+                        · exact ih st1 hRec
+                        · exact hEval
+                      · exact False.elim <| throw_bind_ne_ok <| by
+                          simpa [hp, hParent, parentShape, hIdx, hPlan, expected, hOut] using hBuild
 
 end IRExec
 end Autograd

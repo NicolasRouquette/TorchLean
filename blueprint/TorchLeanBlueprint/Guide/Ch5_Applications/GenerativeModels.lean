@@ -39,15 +39,14 @@ The command prints the exact typed network before training:
 ```
 torchlean diffusion: diffusion trainer (device=cpu)
 model:
-Sequential: [1, 4, 2, 2] -> [1, 3, 2, 2], layers=7, params=15
-  [0] Conv2d(4, 1): [1, 4, 2, 2] -> [1, 1, 2, 2]
+Sequential: [1, 4, 2, 2] -> [1, 3, 2, 2], layers=7, params=87
+  [0] Conv(rank=2, in=4, out=1): [1, 4, 2, 2] -> [1, 1, 2, 2]
   [1] ReLU: [1, 1, 2, 2] -> [1, 1, 2, 2]
-  [2] Conv2d(1, 1): [1, 1, 2, 2] -> [1, 1, 2, 2]
+  [2] Conv(rank=2, in=1, out=1): [1, 1, 2, 2] -> [1, 1, 2, 2]
   [3] ReLU: [1, 1, 2, 2] -> [1, 1, 2, 2]
-  [4] Conv2d(1, 1): [1, 1, 2, 2] -> [1, 1, 2, 2]
+  [4] Conv(rank=2, in=1, out=1): [1, 1, 2, 2] -> [1, 1, 2, 2]
   [5] ReLU: [1, 1, 2, 2] -> [1, 1, 2, 2]
-  [6] Conv2d(1, 3): [1, 1, 2, 2] -> [1, 3, 2, 2]
-steps=1 loss0=1.093821 loss1=1.092744
+  [6] Conv(rank=2, in=1, out=3): [1, 1, 2, 2] -> [1, 3, 2, 2]
   wrote TrainLog JSON: /tmp/diffusion-trainlog.json
 torchlean diffusion: ok
 ```
@@ -63,8 +62,8 @@ B\times C\times S.`
 The reusable constructor
 [`nn.models.epsConvNet`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/Diffusion.lean)
 is parameterized by arbitrary spatial rank. The runnable command instantiates two spatial axes and
-uses four $`1\times1` convolutions. A stronger residual same-resolution denoiser also exists in the API,
-but it is not the default command path.
+uses same-padded $`3\times3` kernels, so every predicted value can depend on its spatial
+neighborhood. A residual same-resolution denoiser is also available in the API for larger runs.
 
 # Forward Noising
 
@@ -226,26 +225,26 @@ NN.MLTheory.Generative.Latent.diagonalGaussianKlToStandardReal_nonneg
 and `betaVae_loss_eq_weightedTwoTerm` records the reconstruction-plus-weighted-KL decomposition.
 The theory also contains coordinatewise reparameterization laws.
 
-The current executable is intentionally narrower. Its output contains a reconstruction followed by
-latent mean and log-variance proxy channels, and its supervised target asks for the image plus zero
-latent proxies. It trains that target with MSE. Thus a runnable VAE-shaped network sits beside proved
-objective facts, while end-to-end stochastic variational inference remains future work.
+The `latent_stats` executable is intentionally separate from that VAE semantics. Its output contains
+a reconstruction followed by two auxiliary latent-statistic vectors, and its supervised target asks
+for the image plus zero auxiliary values. It trains that target with MSE; it does not perform latent
+sampling or optimize an ELBO.
 
 ```
-lake exe torchlean vae --device cpu \
+lake exe torchlean latent_stats --device cpu \
   --n-total 1 --steps 1 \
-  --log /tmp/vae-trainlog.json
+  --log /tmp/latent-stats-trainlog.json
 ```
 
 The current run reports:
 
 ```
-torchlean vae: CIFAR beta-VAE-style training (device=cpu)
+torchlean latent_stats: CIFAR latent-statistics reconstruction (device=cpu)
 dataset size = 1
 mean_loss(before) = 0.142191
 mean_loss(after) = 0.140895
 steps=1 loss0=0.142191 loss1=0.140895
-torchlean vae: ok
+torchlean latent_stats: ok
 ```
 
 # Finite Codebooks In VQ-VAE
@@ -269,9 +268,9 @@ The theory module
 proves `vqvae_loss_eq_weightedThreeTerm` and
 `nearestCode_minimizes_quantization_loss` for the stated finite codebook predicate.
 
-The current `vqvae` command is a compact reconstruction proxy with a narrow `tanh` bottleneck. The
-learned discrete lookup and straight-through estimator are not part of that path, so the theorem and
-runtime example cover adjacent pieces of the intended architecture rather than one completed proof.
+The separate `tanh_autoencoder` command is a compact continuous reconstruction model with a narrow
+`tanh` bottleneck. It does not claim the VQ-VAE semantics above: learned discrete lookup and a
+straight-through estimator are not part of that executable path.
 
 # Two Networks In The GAN Example
 

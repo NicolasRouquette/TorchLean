@@ -31,16 +31,16 @@ CUDA path below can execute those samples together, while this definition fixes 
 per-sample forward and backward meaning.
 -/
 def batchedMultiHeadAttentionCpuFallback {α : Type} (s : EagerSession α) [Context α]
-    [CudaBridge.TensorConv α] [DecidableEq Shape]
+    [TensorTransfer α] [DecidableEq Shape]
     {batch n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
-    (wq : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wk : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wv : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wo : TensorRef α (.dim (numHeads * headDim) (.dim dModel .scalar)))
-    (x : TensorRef α (.dim batch (.dim n (.dim dModel .scalar))))
-    (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    IO (TensorRef α (.dim batch (.dim n (.dim dModel .scalar)))) :=
-  _root_.Runtime.Autograd.mapLeadingAxisWith
+    (wq : TensorRef α [dModel, numHeads * headDim])
+    (wk : TensorRef α [dModel, numHeads * headDim])
+    (wv : TensorRef α [dModel, numHeads * headDim])
+    (wo : TensorRef α [numHeads * headDim, dModel])
+    (x : TensorRef α [batch, n, dModel])
+    (mask : Option (Tensor Bool [n, n]) := none) :
+    IO (TensorRef α [batch, n, dModel]) :=
+  _root_.Runtime.Autograd.mapOuterAxisWith
     (EagerSession.const s <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i))
     (fun x start len h => EagerSession.sliceLeadingAxisRange s x start len h)
     (fun x h => EagerSession.reshape s x h)
@@ -55,15 +55,15 @@ The CUDA executor folds `(batch, head)` into one BMM batch axis. Provider select
 explicit, and the checked default uses TorchLean's hard-masked softmax and backward rule.
 -/
 def batchedMultiHeadAttention {α : Type} (s : EagerSession α) [Context α]
-    [CudaBridge.TensorConv α] [DecidableEq Shape]
+    [TensorTransfer α] [DecidableEq Shape]
     {batch n numHeads dModel headDim : Nat} (hBatch : batch ≠ 0) (h1 : n ≠ 0)
-    (wq : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wk : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wv : TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wo : TensorRef α (.dim (numHeads * headDim) (.dim dModel .scalar)))
-    (x : TensorRef α (.dim batch (.dim n (.dim dModel .scalar))))
-    (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
-    IO (TensorRef α (.dim batch (.dim n (.dim dModel .scalar)))) := do
+    (wq : TensorRef α [dModel, numHeads * headDim])
+    (wk : TensorRef α [dModel, numHeads * headDim])
+    (wv : TensorRef α [dModel, numHeads * headDim])
+    (wo : TensorRef α [numHeads * headDim, dModel])
+    (x : TensorRef α [batch, n, dModel])
+    (mask : Option (Tensor Bool [n, n]) := none) :
+    IO (TensorRef α [batch, n, dModel]) := do
   let cpu := batchedMultiHeadAttentionCpuFallback s h1 wq wk wv wo x mask
   let cuda := fun attentionCapsule => do
     let t0 ← s.cudaTape.get
@@ -75,6 +75,7 @@ def batchedMultiHeadAttention {α : Type} (s : EagerSession α) [Context α]
     s.cudaTape.set t1
     pure (some { id := id })
   dispatchCudaCapsuleOpt (α := α) s .scaledDotProductAttention
-    [.nativeCuda, .torchLean, .libTorch] cpu cuda
+    #[wq.identity?, wk.identity?, wv.identity?, wo.identity?, x.identity?]
+    #[.nativeCuda, .torchLean, .libTorch] cpu cuda
 
 end Runtime.Autograd.Torch.Internal.EagerSession

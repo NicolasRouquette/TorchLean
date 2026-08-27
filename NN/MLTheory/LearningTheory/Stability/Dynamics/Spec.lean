@@ -249,23 +249,23 @@ This is a generic stability-style specification; concrete instances typically ch
 dataset metric and output norm.
 -/
 def isGeneralizationStable {s₁ s₂ : Shape}
-    (training_algorithm : List (Tensor α s₁ × Tensor α s₂) → (Tensor α s₁ → Tensor α s₂))
+    (training_algorithm : Array (Tensor α s₁ × Tensor α s₂) → (Tensor α s₁ → Tensor α s₂))
     (norm₁ : ∀ {s : Shape}, Tensor α s → α)
     (norm₂ : ∀ {s : Shape}, Tensor α s → α)
     (stability_constant : α) : Prop :=
-  ∀ dataset₁ dataset₂ : List (Tensor α s₁ × Tensor α s₂),
+  ∀ dataset₁ dataset₂ : Array (Tensor α s₁ × Tensor α s₂),
     let model₁ := training_algorithm dataset₁
     let model₂ := training_algorithm dataset₂
     ∀ x : Tensor α s₁,
       tensorDistance norm₂ (model₁ x) (model₂ x) ≤
       stability_constant * dataset_distance dataset₁ dataset₂
 where
-  dataset_distance (d₁ d₂ : List (Tensor α s₁ × Tensor α s₂)) : α :=
+  dataset_distance (d₁ d₂ : Array (Tensor α s₁ × Tensor α s₂)) : α :=
     let sample_distance : (Tensor α s₁ × Tensor α s₂) → (Tensor α s₁ × Tensor α s₂) → α :=
       fun p q => tensorDistance norm₁ p.1 q.1 + tensorDistance norm₂ p.2 q.2
     let aligned_distance :=
       (d₁.zip d₂).foldl (fun acc pq => acc + sample_distance pq.1 pq.2) 0
-    let len_penalty := MathFunctions.abs ((d₁.length : α) - (d₂.length : α))
+    let len_penalty := MathFunctions.abs ((d₁.size : α) - (d₂.size : α))
     aligned_distance + len_penalty
 
 end NN.MLTheory.Stability.Spec

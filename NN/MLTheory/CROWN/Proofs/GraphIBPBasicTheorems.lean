@@ -30,19 +30,12 @@ open _root_.Spec.Tensor
 
 namespace Box
 
-/-- Extract the underlying scalar value at index `i` from a vector tensor. -/
-def getScalar {n : Nat} (t : Tensor ℝ (.dim n .scalar)) (i : Fin n) : ℝ :=
-  match t with
-  | .dim f =>
-    match f i with
-    | .scalar v => v
-
 /-- Componentwise validity of a 1D interval box: `lo ≤ hi` for every coordinate. -/
 def Valid {n : Nat} (B : Box ℝ (.dim n .scalar)) : Prop :=
-  ∀ i : Fin n, getScalar B.lo i ≤ getScalar B.hi i
+  ∀ i : Fin n, Spec.Tensor.getScalar B.lo i ≤ Spec.Tensor.getScalar B.hi i
 
 /-- If a box contains any point, then it is componentwise valid (`lo ≤ hi`). -/
-theorem valid_of_contains {n : Nat} (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n .scalar))
+theorem valid_of_contains {n : Nat} (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ [n])
   (hx : Box.contains (α := ℝ) B x) : Valid B := by
   intro i
   cases B with
@@ -62,7 +55,7 @@ theorem valid_of_contains {n : Nat} (B : Box ℝ (.dim n .scalar)) (x : Tensor �
               | scalar v =>
                 have hv : l ≤ v ∧ v ≤ u := by
                   simpa [Box.contains, hL, hU, hX] using hx_i
-                simpa [Valid, getScalar, hL, hU] using (le_trans hv.1 hv.2)
+                simpa [Valid, Spec.Tensor.getScalar, Spec.get, Tensor.item, hL, hU] using (le_trans hv.1 hv.2)
 
 /-- A valid box contains its lower endpoint `lo`. -/
 theorem contains_lo_of_valid {n : Nat} (B : Box ℝ (.dim n .scalar)) (hB : Valid B) :
@@ -79,7 +72,7 @@ theorem contains_lo_of_valid {n : Nat} (B : Box ℝ (.dim n .scalar)) (hB : Vali
           cases hU : fhi i with
           | scalar u =>
             have hlu : l ≤ u := by
-              simpa [Valid, getScalar, hL, hU] using (hB i)
+              simpa [Valid, Spec.Tensor.getScalar, Spec.get, Tensor.item, hL, hU] using (hB i)
             -- scalar containment: l ≤ l and l ≤ u
             simp [Box.contains, hlu]
 
@@ -115,15 +108,20 @@ theorem valid_toFlatBox_real {n : Nat} (B : Box ℝ (.dim n .scalar)) (hB :
     | dim flo =>
       cases hi with
       | dim fhi =>
+        change Fin n at i
         cases hL : flo i with
         | scalar l =>
           cases hU : fhi i with
           | scalar u =>
             have hlu : l ≤ u := by
-              simpa [NN.MLTheory.CROWN.Box.Valid, NN.MLTheory.CROWN.Box.getScalar, hL, hU] using (hB
-                i)
-            simpa [NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar, toFlatBox,
-              hL, hU] using hlu
+              have hbi := hB i
+              change (Tensor.dim flo).getScalar i ≤ (Tensor.dim fhi).getScalar i at hbi
+              rw [Spec.Tensor.getScalar_dim_entry, Spec.Tensor.getScalar_dim_entry,
+                hL, hU] at hbi
+              exact hbi
+            change (Tensor.dim flo).getScalar i ≤ (Tensor.dim fhi).getScalar i
+            rw [Spec.Tensor.getScalar_dim_entry, Spec.Tensor.getScalar_dim_entry, hL, hU]
+            exact hlu
 
 /-- Converting a valid `FlatBox` into a `Box` preserves validity. -/
 theorem valid_ofFlatBox_real (B : FlatBox ℝ) (hB : B.Valid) :
@@ -135,14 +133,15 @@ theorem valid_ofFlatBox_real (B : FlatBox ℝ) (hB : B.Valid) :
     | dim flo =>
       cases hi with
       | dim fhi =>
+        change Fin n at i
         cases hL : flo i with
         | scalar l =>
           cases hU : fhi i with
           | scalar u =>
             have hlu : l ≤ u := by
-              simpa [NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar, hL, hU]
+              simpa [NN.MLTheory.CROWN.FlatBox.Valid, Spec.Tensor.getScalar, Spec.get, Tensor.item, hL, hU]
                 using (hB i)
-            simpa [NN.MLTheory.CROWN.Box.Valid, NN.MLTheory.CROWN.Box.getScalar, ofFlatBox, hL, hU]
+            simpa [NN.MLTheory.CROWN.Box.Valid, Spec.Tensor.getScalar, Spec.get, Tensor.item, ofFlatBox, hL, hU]
               using hlu
 
 /-- Validity is preserved by interval addition on `FlatBox` (over `ℝ`). -/
@@ -185,16 +184,16 @@ theorem valid_box_add_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid)
                       | scalar u2 =>
                         have h1i : l1 ≤ u1 := by
                           simpa [NN.MLTheory.CROWN.FlatBox.Valid,
-                            NN.MLTheory.CROWN.FlatBox.getScalar, hL1, hU1]
+                            Spec.Tensor.getScalar, Spec.get, Tensor.item, hL1, hU1]
                             using (h1 i)
                         have h2i : l2 ≤ u2 := by
                           simpa [NN.MLTheory.CROWN.FlatBox.Valid,
-                            NN.MLTheory.CROWN.FlatBox.getScalar, hL2, hU2]
+                            Spec.Tensor.getScalar, Spec.get, Tensor.item, hL2, hU2]
                             using (h2 i)
                         have hdown : BoundOps.addDown l1 l2 = l1 + l2 := rfl
                         have hup : BoundOps.addUp u1 u2 = u1 + u2 := rfl
                         -- unfold the scalar projections through `Tensor.add_spec`
-                        simpa [NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar,
+                        simpa [NN.MLTheory.CROWN.FlatBox.Valid, Spec.Tensor.getScalar, Spec.get, Tensor.item,
                           Tensor.map2Spec, hL1, hU1, hL2, hU2, hdown, hup]
                           using add_le_add h1i h2i
       · -- mismatch branch: returns B1 unchanged
@@ -244,17 +243,17 @@ theorem valid_box_sub_real (B1 B2 : FlatBox ℝ) (h1 : B1.Valid) (h2 : B2.Valid)
                       | scalar u2 =>
                         have h1i : l1 ≤ u1 := by
                           simpa [NN.MLTheory.CROWN.FlatBox.Valid,
-                            NN.MLTheory.CROWN.FlatBox.getScalar, hL1, hU1]
+                            Spec.Tensor.getScalar, Spec.get, Tensor.item, hL1, hU1]
                             using (h1 i)
                         have h2i : l2 ≤ u2 := by
                           simpa [NN.MLTheory.CROWN.FlatBox.Valid,
-                            NN.MLTheory.CROWN.FlatBox.getScalar, hL2, hU2]
+                            Spec.Tensor.getScalar, Spec.get, Tensor.item, hL2, hU2]
                             using (h2 i)
                         have hneg : -u2 ≤ -l2 := neg_le_neg h2i
                         have hadd : l1 + (-u2) ≤ u1 + (-l2) := add_le_add h1i hneg
                         have hdown : BoundOps.subDown l1 u2 = l1 - u2 := rfl
                         have hup : BoundOps.subUp u1 l2 = u1 - l2 := rfl
-                        simpa [NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar,
+                        simpa [NN.MLTheory.CROWN.FlatBox.Valid, Spec.Tensor.getScalar, Spec.get, Tensor.item,
                           Tensor.map2Spec, hL1, hU1, hL2, hU2, hdown, hup,
                           sub_eq_add_neg, add_assoc, add_left_comm, add_comm]
                           using hadd
@@ -277,19 +276,24 @@ theorem valid_box_relu_real (B : FlatBox ℝ) (hB : B.Valid) :
     | dim flo =>
       cases hi with
       | dim fhi =>
+        change Fin n at i
         cases hL : flo i with
         | scalar l =>
           cases hU : fhi i with
           | scalar u =>
             have hlu : l ≤ u := by
               have hi := hB i
-              simpa [NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar, hL, hU]
-                using hi
+              change (Tensor.dim flo).getScalar i ≤ (Tensor.dim fhi).getScalar i at hi
+              rw [Spec.Tensor.getScalar_dim_entry, Spec.Tensor.getScalar_dim_entry,
+                hL, hU] at hi
+              exact hi
             have hrelu : max l 0 ≤ max u 0 := max_le_max hlu (le_rfl)
             -- unfold the output scalars after `Tensor.map_spec`
-            simpa [boxRelu, NN.MLTheory.CROWN.FlatBox.Valid, NN.MLTheory.CROWN.FlatBox.getScalar,
-              Tensor.mapSpec, Activation.Math.reluSpec, hL, hU]
-              using hrelu
+            change
+              (Tensor.dim (fun i => Tensor.mapSpec (fun x => max x 0) (flo i))).getScalar i ≤
+                (Tensor.dim (fun i => Tensor.mapSpec (fun x => max x 0) (fhi i))).getScalar i
+            rw [Spec.Tensor.getScalar_dim_entry, Spec.Tensor.getScalar_dim_entry]
+            simpa [Tensor.mapSpec, hL, hU] using hrelu
 
 end FlatBoxTheorems
 
@@ -299,7 +303,7 @@ open NN.MLTheory.CROWN.Box
 
 /-- Validity of the `IBP.linear` transfer rule (over `ℝ`). -/
 theorem ibp_linear_valid_real {m n : Nat}
-  (W : Tensor ℝ (.dim m (.dim n .scalar)))
+  (W : Tensor ℝ [m, n])
   (xB : Box ℝ (.dim n .scalar))
   (bB : Box ℝ (.dim m .scalar))
   (hxB : Valid xB) (hbB : Valid bB) :
@@ -368,7 +372,7 @@ theorem graph_ibp_matmul_valid_real (id : Nat) (ps : ParamStore ℝ) (Xin : Flat
           exact NN.MLTheory.CROWN.Box.valid_castBoxDim (h := hdim) (B := ofFlatBox (α := ℝ) Xin)
             this
         -- zero bias point box is valid
-        let z : Tensor ℝ (.dim p.m .scalar) := Spec.fill (α := ℝ) 0 (.dim p.m .scalar)
+        let z : Tensor ℝ [p.m] := Spec.fill (α := ℝ) 0 (.dim p.m .scalar)
         have hbBoxValid : Valid (Box.point (α := ℝ) z) := by
           cases z with
           | dim _ =>

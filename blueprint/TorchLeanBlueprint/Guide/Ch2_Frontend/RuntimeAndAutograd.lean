@@ -44,7 +44,7 @@ Their lifetimes and uses determine which conclusions can be drawn from each one.
   * inspection and verification
   * explicit operation tags and payload references
 *
-  * `NN.Backend.GraphKernelPlan`
+  * `NN.Backend.IR.GraphKernelPlan`
   * kernel selection and audit
   * source node IDs and selected capsule metadata
 :::
@@ -199,20 +199,9 @@ produced while evaluating this model is still a separate trace of one execution.
 
 # Kernel Selection
 
-Before an eager operation executes, the session asks its backend profile for a capsule. The capsule
-declares:
-
-- semantic operation;
-- target and provider;
-- forward and VJP ownership;
-- shape and layout requirements;
-- numerical policy;
-- evidence level.
-
-The planner filters by operation and target, ranks candidates according to the profile, and runs an
-acceptance gate. The accepted capsule is cached in the session. Before execution, the runtime binds
-it to a typed `KernelHandler` with the same operation, provider, and device; a missing or mismatched
-handler is an error. The capsule can be printed on first use.
+Before an eager operation executes, the session resolves its backend profile and binds the accepted
+capsule to a matching runtime handler. A missing provider or handler is an error. Print the selected
+operation, provider, and evidence with `--show-backend`:
 
 Run:
 
@@ -228,36 +217,10 @@ lake -R -K cuda=true exe torchlean quickstart_mlp \
   --device cuda --steps 1 --seed 2026 --show-backend
 ```
 
-The report answers “which provider was selected for this semantic operation?” The handler binding
-also prevents a native CUDA selection from quietly entering the reference CPU closure. Neither fact
-proves that the provider computes the declared formula. That depends on the capsule's evidence and
-the executor's guards.
-
-# Planning Is Not Execution
-
-Suppose the planner accepts a native CUDA matmul capsule. The executor must still:
-
-1. bind the capsule to a matmul handler for native CUDA on the CUDA device;
-2. find the linked native symbol;
-3. verify device availability;
-4. check concrete dimensions and layout;
-5. allocate or reuse buffers;
-6. launch the operation;
-7. turn native failures into Lean errors;
-8. register the output and backward action.
-
-An accepted plan describes admissible execution. It is not a receipt showing that the launch
-completed.
-
-Native wrappers still validate concrete storage before trusting a launch result. Maintained CUDA
-convolution and pooling paths check dimension conversion, zero strides, element-count overflow,
-input/output buffer lengths, and operation domains before or across the FFI. These checks turn bad
-runtime inputs into errors and protect memory; they do not prove that a valid kernel's numeric value
-refines the real specification.
-
-Conversely, a native launch can succeed while violating an undeclared numerical assumption. This is
-why capsule metadata includes contraction, reduction, subnormal, and rounding policies rather than
-only a function pointer.
+The report identifies the implementation that ran; its evidence determines what can be claimed
+about that run. [Inside The Backend Planner](Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/)
+gives the full selection and assurance model. [From A Tensor Operation To A GPU Kernel](Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/)
+follows an accepted CUDA operation through storage checks, launch, and backward registration.
 
 # Runtime Parameter Storage
 
@@ -277,7 +240,7 @@ This is not erasing shape information. It moves the shape from a compile-time in
 collection into a value stored beside each registry entry. A lookup must recover and validate the
 expected shape before returning to the typed API.
 
-Parameter names, integer token inputs, RNG state, optimizer memory, and mutable model buffers belong
+Parameter names, bounded token inputs, RNG state, optimizer memory, and mutable model buffers belong
 to the instantiated runner. Train/eval mode also belongs there.
 
 # Train Mode And Eval Mode

@@ -49,6 +49,7 @@ namespace Autograd
 namespace TypedGraph
 
 open Spec
+open TorchLean
 
 open Proofs.Autograd.Algebra
 
@@ -63,15 +64,6 @@ abbrev GraphData (α : Type) (Γ : List Shape) (ss : List Shape) :=
   Proofs.Autograd.Algebra.GraphData α Unit Γ ss
 
 /--
-Typed list of tensors whose shapes are tracked in a type-level `List Shape`.
-
-This is the primary context representation for typed graph execution: graph evaluation produces a
-`TList α (Γ ++ ss)` containing all intermediate values.
--/
-abbrev TList (α : Type) (ss : List Shape) :=
-  Proofs.Autograd.Algebra.TList α ss
-
-/--
 Lower an executable `GraphData` into a runtime tape.
 
 This is the bridge from the shape-indexed SSA representation to the runtime tape engine:
@@ -82,8 +74,8 @@ The graph remains the persistent artifact; the tape contains the runtime closure
 execution and reverse pass.
 -/
 def lowerToTape {α : Type} [DecidableEq Shape]
-    {Γ : List Shape} {ss : List Shape} (g : GraphData α Γ ss) (x : TList α Γ) :
-    Runtime.Autograd.Tape α × TList α (Γ ++ ss) :=
+    {Γ : List Shape} {ss : List Shape} (g : GraphData α Γ ss) (x : _root_.TorchLean.TensorPack α Γ) :
+    Runtime.Autograd.Tape α × _root_.TorchLean.TensorPack α (Γ ++ ss) :=
   Proofs.Autograd.Algebra.Graph.lowerGraphDataToTape (α := α) (Δ := Unit) (Γ := Γ) (ss := ss) g x ()
 
 /--
@@ -97,24 +89,24 @@ that every stored VJP maps a zero cotangent to zero.
 def backwardDenseAllFrom {α : Type} [Add α] [Zero α] [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} {τ : Shape}
     (t : Runtime.Autograd.Tape α) (output : Idx (Γ ++ ss) τ) (seed : Tensor α τ) :
-    Runtime.Autograd.Result (Array (Spec.PackedTensor α)) :=
+    Runtime.Autograd.Result (Array (Spec.SomeTensor α)) :=
   Runtime.Autograd.Tape.backwardDenseFrom (t := t)
-    (grads0 := Proofs.Autograd.Algebra.TList.toPackedArray
-      (Proofs.Autograd.Algebra.TList.single output seed))
+    (grads0 := TorchLean.TensorPack.toShapeErasedArray
+      (Proofs.Autograd.Algebra.TensorPack.single output seed))
 
 /--
 Run reverse-mode backprop starting from an explicit seed gradient context.
 
-This is the most general entry point: callers provide a `TList` of initial gradients for every
+This is the most general entry point: callers provide a `_root_.TorchLean.TensorPack` of initial gradients for every
 value in the typed graph context `(Γ ++ ss)`, and we run the dense loop
 `Tape.backwardDenseFrom`.
 -/
 def backwardDenseFromSeedCtx {α : Type} [Add α] [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape}
-    (t : Runtime.Autograd.Tape α) (seed : TList α (Γ ++ ss)) :
-    Runtime.Autograd.Result (Array (Spec.PackedTensor α)) :=
+    (t : Runtime.Autograd.Tape α) (seed : _root_.TorchLean.TensorPack α (Γ ++ ss)) :
+    Runtime.Autograd.Result (Array (Spec.SomeTensor α)) :=
   Runtime.Autograd.Tape.backwardDenseFrom (t := t)
-    (grads0 := Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := Γ ++ ss) seed)
+    (grads0 := TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := Γ ++ ss) seed)
 
 /--
 Lowering a typed graph to the runtime tape preserves reverse mode from any typed output reference.
@@ -126,17 +118,17 @@ separate local laws carried by `Proofs.Autograd.Algebra.Node`.
 theorem backwardDenseAllFrom_lowerToTape_eq_backpropAllCtx
     {α : Type} [CommSemiring α] [DecidableEq Shape]
     {Γ : List Shape} {ss : List Shape} {τ : Shape}
-    (g : GraphData α Γ ss) (x : TList α Γ) (output : Idx (Γ ++ ss) τ)
+    (g : GraphData α Γ ss) (x : _root_.TorchLean.TensorPack α Γ) (output : Idx (Γ ++ ss) τ)
     (seed : Tensor α τ) :
     backwardDenseAllFrom (lowerToTape g x).1 output seed =
       .ok
-        (Proofs.Autograd.Algebra.TList.toPackedArray
+        (TorchLean.TensorPack.toShapeErasedArray
           (Proofs.Autograd.Algebra.GraphData.backpropAllCtx
-            g x () (Proofs.Autograd.Algebra.TList.single output seed))) := by
+            g x () (Proofs.Autograd.Algebra.TensorPack.single output seed))) := by
   simpa [backwardDenseAllFrom, lowerToTape] using
     (Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
       (α := α) (Δ := Unit) (Γ := Γ) (ss := ss) g x ()
-      (Proofs.Autograd.Algebra.TList.single output seed))
+      (Proofs.Autograd.Algebra.TensorPack.single output seed))
 
 end TypedGraph
 end Autograd

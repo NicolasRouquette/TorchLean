@@ -60,15 +60,15 @@ def cfg : nn.models.KanConfig :=
     outDim := outDim
     edge := nn.models.KanPiecewiseLinear.edgeFamily { gridSize := 4, inputScale := 3 } }
 
-abbrev σ := cfg.inputShape (.dim batch .scalar)
-abbrev τ := cfg.outputShape (.dim batch .scalar)
+abbrev σ := cfg.inputShape [batch]
+abbrev τ := cfg.outputShape [batch]
 
 /-- Generic KAN model. Regression/classification is selected by `Trainer`, not by the model name. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.kan cfg (.dim batch .scalar)
+  nn.models.kan cfg [batch]
 
 /-- Prepared Auto MPG CSV as a public trainer dataset. -/
-def data (path : System.FilePath) (seed : Nat) : Trainer.DataSource σ τ :=
+def data (path : System.FilePath) (seed : Nat) : Trainer.Dataset σ τ :=
   Data.tabularCsvDataset path batch inDim outDim
     (csvOptions := { skipHeader := true }) (shuffle := true) (seed := seed)
 

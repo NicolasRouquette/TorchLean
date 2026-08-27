@@ -128,7 +128,7 @@ Current CUDA coverage:
 | `NN/Tests/Runtime/Cuda/Attention.lean` | Multi-head attention and fused attention parity against composed operations. |
 | `NN/Tests/Runtime/Cuda/ConvPool.lean` | 2D and N-D convolution, max pool, average pool, smooth max pool, padded max-pool edge cases. |
 | `NN/Tests/Runtime/Cuda/ConvTranspose.lean` | 2D and 3D transposed convolution forward and backward. |
-| `NN/Tests/Runtime/Cuda/GatherScatter.lean` | Vector/row gather and scatter-add behavior, including gradients. |
+| `NN/Tests/Runtime/Cuda/GatherScatter.lean` | Rank-one and row gather/scatter-add behavior, including gradients. |
 | `NN/Tests/Runtime/Cuda/DeterministicReductions.lean` | Exact repeatability when deterministic reduction mode replaces atomic accumulation paths. |
 | `NN/Tests/Runtime/Cuda/SelectiveScan.lean` | Diagonal selective-scan buffer primitives used by the Mamba/SSM runtime path. |
 | `NN/Tests/Runtime/Cuda/PositionalEncoding.lean` | Sinusoidal positional encodings and RoPE/rotary embedding kernels. |

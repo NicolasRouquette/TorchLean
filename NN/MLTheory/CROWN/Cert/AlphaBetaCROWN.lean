@@ -154,12 +154,12 @@ Implementation notes:
 -/
 def phaseRelaxVec?
     {n : Nat}
-    (lo hi : Tensor α (.dim n .scalar))
-    (αv : Tensor α (.dim n .scalar))
+    (lo hi : Tensor α [n])
+    (αv : Tensor α [n])
     (phases : Array Int) :
     Option
-      (Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n .scalar) ×
-       Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n .scalar)) := by
+      (Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n] ×
+       Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n]) := by
   classical
   exact
     -- Check length first.
@@ -182,13 +182,13 @@ def phaseRelaxVec?
                   | none => false
                 | _, _, _, _ => false)
             if ok then
-              let relaxHi : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n .scalar) :=
+              let relaxHi : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n] :=
                 Tensor.dim (fun i =>
                   match flo i, fhi i, ReLUPhase.ofInt? (phaseAt i) with
                   | .scalar l, .scalar u, some ph =>
                     Tensor.scalar (phaseRelaxUpperScalar (α := α) l u ph)
                   | _, _, _ => Tensor.scalar { slope := 0, bias := 0 })
-              let relaxLo : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n .scalar) :=
+              let relaxLo : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n] :=
                 Tensor.dim (fun i =>
                   match flo i, fhi i, fa i, ReLUPhase.ofInt? (phaseAt i) with
                   | .scalar l, .scalar u, .scalar a, some ph =>
@@ -213,7 +213,7 @@ If no β info is present for this node, this is exactly `alphaCrownStepNode?`.
 def alphaBetaCrownStepNode?
     (nodes : Array Node) (ps : ParamStore α)
     (ibp : Array (Option (FlatBox α)))
-    (alpha : Array (Option (FlatVec α)))
+    (alpha : Array (Option (FlatTensor α)))
     (beta : Array (Option (Array Int)))
     (cert : Array (Option (FlatAffineBounds α)))
     (ctx : AffineCtx) (id : Nat) : Option (FlatAffineBounds α) :=
@@ -224,15 +224,15 @@ def alphaBetaCrownStepNode?
       | none =>
           alphaCrownStepNode? (α := α) nodes ps ibp alpha cert ctx id
       | some phases =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               match getAff? (α := α) cert p1, ibp[p1]!, getAlpha? (α := α) alpha id with
               | some xin, some preB, some αv =>
                   if hout : xin.outDim = preB.dim then
                     if hα : αv.n = preB.dim then
                       let xLo : AffineVec α xin.inDim preB.dim := by simpa [hout] using xin.loAff
                       let xHi : AffineVec α xin.inDim preB.dim := by simpa [hout] using xin.hiAff
-                      let αt : Tensor α (.dim preB.dim .scalar) :=
+                      let αt : Tensor α [preB.dim] :=
                         castDimScalar (α := α) (n := αv.n) (n' := preB.dim) hα αv.v
                       match phaseRelaxVec? (α := α) (n := preB.dim) preB.lo preB.hi αt phases with
                       | some (relaxLo, relaxHi) =>
@@ -267,7 +267,7 @@ def alphaBetaCrownStepNode?
                     | none => none
                   else none
               | _, _, _ => none
-          | _ => none
+          | none => none
   | _ =>
       alphaCrownStepNode? (α := α) nodes ps ibp alpha cert ctx id
 

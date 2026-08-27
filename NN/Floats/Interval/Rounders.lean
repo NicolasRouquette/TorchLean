@@ -59,7 +59,7 @@ This is the format-generic analogue of the IEEE-754 fact that rounding toward $-
 the exact real value.
 -/
 theorem roundDown_le (x : ℝ) : roundDown (β := β) (fexp := fexp) x ≤ x := by
-  -- Unfold `neural_round` and compare scaled mantissas; `β^e` is positive.
+  -- Unfold `neuralRound` and compare scaled mantissas; `β^e` is positive.
   simp [roundDown, TorchLean.Floats.neuralRound, TorchLean.Floats.neuralToReal]
   set s : ℝ := neuralScaledMantissa β fexp x
   set e : ℤ := neuralCexp β fexp x

@@ -78,7 +78,7 @@ correctly.
 ```
 
 The complete installation and platform guide includes a
-[worked capsule example](https://lean-dojo.github.io/TorchLean/installation/#what-a-kernel-capsule-looks-like).
+[installation and kernel overview](https://lean-dojo.github.io/TorchLean/installation/#from-a-model-to-a-kernel).
 
 # Looking Inside A Capsule
 
@@ -213,7 +213,7 @@ are acceptable for a run. The `verified` policy rejects all of those engineering
 The gate itself has a small Lean theorem:
 
 ```
-#check KernelPlanAudit.gate_eq_accepted_iff_gateFailures_eq_nil
+#check KernelPlanAudit.gate_eq_accepted_iff_gateFailures_eq_empty
 ```
 
 This theorem says exactly what the policy function does: it accepts precisely when the audit has no
@@ -254,10 +254,9 @@ the model's forward function unchanged. The public choices remain separate:
   device := .cpu }
 ```
 
-In this trainer path, typed graph execution records and reuses a typed SSA graph. It is not TorchLean's name for
-`torch.compile` and does not imply optimization, fusion, scheduling, or native code generation.
-TorchLean reserves *compilation* for those future transformations; conversion into the executable
-typed graph is *lowering*.
+Typed graph execution records and reuses a typed SSA graph. The execution chapter describes this
+lowering and its proof boundary; backend selection here determines which registered implementation
+may execute each operation.
 
 # Reading The Report
 

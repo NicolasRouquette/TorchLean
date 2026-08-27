@@ -115,10 +115,7 @@ def rowSoftmaxForward (x : Buffer) (rows cols : UInt32) : Buffer.WithWorkspace :
   let rowSum := Buffer.reduceSumByRow ex rows cols
   let sumB := Buffer.broadcastVecToCols rowSum rows cols
   let y := Buffer.div ex sumB
-  { value := y, workspace := [rowMax, maxB, shifted, ex, rowSum, sumB] }
-
-private def rowSoftmaxFwd (x : Buffer) (rows cols : UInt32) : Buffer :=
-  (rowSoftmaxForward x rows cols).value
+  { value := y, workspace := #[rowMax, maxB, shifted, ex, rowSum, sumB] }
 
 /--
 Row-wise hard-masked softmax.
@@ -127,7 +124,7 @@ Row-wise hard-masked softmax.
 literal zero numerator. This matches `Spec.hardMaskedSoftmaxSpec`, not a finite additive sentinel.
 -/
 def rowHardMaskedSoftmaxForward (x mask : Buffer) (rows cols : UInt32) : Buffer.WithWorkspace :=
-  { value := Buffer.hardMaskedSoftmaxByRow x mask rows cols, workspace := [] }
+  { value := Buffer.hardMaskedSoftmaxByRow x mask rows cols, workspace := #[] }
 
 /-- Row-wise softmax VJP: `dX = y * (dY - sum(dY*y, axis=1))`. -/
 def rowSoftmaxBwd (y dLdy : Buffer) (rows cols : UInt32) : Buffer :=
@@ -155,10 +152,7 @@ def rowLogSoftmaxForward (x : Buffer) (rows cols : UInt32) : Buffer.WithWorkspac
   let logSum := Buffer.log rowSum
   let logSumB := Buffer.broadcastVecToCols logSum rows cols
   let y := Buffer.sub shifted logSumB
-  { value := y, workspace := [rowMax, maxB, shifted, ex, rowSum, logSum, logSumB] }
-
-private def rowLogSoftmaxFwd (x : Buffer) (rows cols : UInt32) : Buffer :=
-  (rowLogSoftmaxForward x rows cols).value
+  { value := y, workspace := #[rowMax, maxB, shifted, ex, rowSum, logSum, logSumB] }
 
 /-- Row-wise log-softmax VJP: `dX = dY - exp(y) * sum(dY, axis=1)`. -/
 def rowLogSoftmaxBwd (y dLdy : Buffer) (rows cols : UInt32) : Buffer :=

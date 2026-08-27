@@ -76,14 +76,14 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.Builder (nn.Sequential (shape![2]) (shape![1])) :=
+    nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
     nn.linear 8 1
   ]
 
-def xs : Tensor Float (shape![4, 2]) :=
+def xs : Tensor Float [4, 2] :=
   tensor! [
     [0.0, 0.0],
     [0.0, 1.0],
@@ -91,11 +91,10 @@ def xs : Tensor Float (shape![4, 2]) :=
     [1.0, 1.0]
   ]
 
-def ys : Tensor Float (shape![4, 1]) :=
+def ys : Tensor Float [4, 1] :=
   tensor! [[0.0], [1.0], [1.0], [0.0]]
 
-def data : Trainer.DataSource (shape![2]) (shape![1]) :=
-  Data.tensorDataset xs ys
+def data := Data.tensorDataset xs ys
 
 def trainer :=
   Trainer.new model
@@ -112,11 +111,16 @@ def main : IO Unit := do
       logEvery := 5 }
   trained.printSummary
 
-  let heldout : Tensor Float (shape![2]) :=
+  let heldout : Tensor Float [2] :=
     tensor! [0.25, -0.75]
   let yhat ← trained.predict heldout
   IO.println s!"prediction={Tensor.pretty yhat}"
 ```
+
+As with PyTorch's `TensorDataset`, TorchLean infers `Trainer.Dataset [2] [1]` because `xs` has
+batched shape `[4, 2]` and `ys`
+has batched shape `[4, 1]`. The two shape parameters describe one input sample and one target
+sample; the leading batch dimension is removed by the dataset constructor.
 
 Check the definitions without starting the training run:
 
@@ -155,7 +159,7 @@ be built and invoked by name.
 Place the cursor on `model`. The infoview should show:
 
 ```
-nn.Builder (nn.Sequential (shape![2]) (shape![1]))
+nn.Builder (nn.Sequential [2] [1])
 ```
 
 Then change the final layer from `nn.linear 8 1` to `nn.linear 7 1`. The error is attached to model
@@ -217,8 +221,9 @@ def configuredTrainer :=
       (seed := 2026))
 ```
 
-`RunConfig` contains the optimizer, scalar semantics, execution mode, and complete backend profile.
-The profile keeps device, providers, evidence policy, and VJP ownership consistent.
+`RunConfig` contains the optimizer, scalar semantics, execution mode, and backend profile. See
+[Inside The Backend Planner](Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/) for the
+profile's provider, VJP, and evidence rules.
 
 Per-call `TrainOptions` controls step count, sample grouping, logging cadence, and artifact fields.
 Not every task dispatch consumes every optional field: exact-bits `loadCheckpoint?` and `saveCheckpoint?`
@@ -249,18 +254,19 @@ choose an executable scalar and record the provider boundary.
 
 # Data Is Runtime-Polymorphic
 
-`Trainer.DataSource σ τ` knows how to materialize samples after the trainer selects a scalar:
+`Trainer.Dataset inputShape targetShape` knows how to materialize samples after the trainer selects
+a scalar:
 
 ```
 Data.tensorDataset
 Data.samples
-Data.supervisedNpyDataset
+Data.supervisedDataset
 Data.tabularCsvDataset
 Data.batchDataset
 ```
 
-The model and dataset must agree on `σ` and `τ`. A file loader checks runtime dimensions before
-constructing the typed dataset.
+The model and dataset must agree on their input and target dimension lists. A file loader checks
+runtime dimensions before constructing the typed dataset.
 
 A true tensor minibatch changes shapes to `[batch,...]`. `Data.batchDataset` stores each fixed-size
 minibatch as one dataset item, so `TrainOptions.batchSize := 1` executes one vectorized
@@ -301,7 +307,7 @@ Use `nn.functional` when constructing a differentiable tensor program:
 
 ```
 def energy :
-    autograd.func.TensorFunction (shape![4]) Shape.scalar :=
+    autograd.func.TensorFunction [4] ([] : List Nat) :=
   fun x => do
     let x2 ← nn.functional.square x
     nn.functional.mean x2
@@ -333,7 +339,7 @@ import NN.API
 open TorchLean
 open Spec
 
-def point (x y : Float) : Tensor Float (shape![2]) :=
+def point (x y : Float) : Tensor Float [2] :=
   tensor! [x, y]
 
 def labels : KNN Float String 2 :=

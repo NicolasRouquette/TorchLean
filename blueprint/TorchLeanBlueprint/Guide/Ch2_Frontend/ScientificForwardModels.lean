@@ -29,7 +29,7 @@ import NN.API
 open TorchLean
 
 def attenuated :
-    autograd.func.TensorFunction Shape.scalar Shape.scalar :=
+    autograd.func.TensorFunction ([] : List Nat) ([] : List Nat) :=
   fun x => do
     let neg ← nn.functional.scale x (-2.0)
     let e ← nn.functional.exp neg
@@ -170,13 +170,13 @@ From it, TorchLean proves:
 
 ```
 theorem expBackward_eq_adjoint_fderiv
-    (x δ : Spec.Tensor ℝ (.dim 1 .scalar)) :
-    Proofs.Autograd.toVecE
+    (x δ : Tensor ℝ [1]) :
+    Proofs.Autograd.getScalarE
       (expProofSurface.correct.op.backward x δ) =
     Proofs.Autograd.vjp
       expProofSurface.forwardVec
-      (Proofs.Autograd.toVecE x)
-      (Proofs.Autograd.toVecE δ) := ...
+      (Proofs.Autograd.getScalarE x)
+      (Proofs.Autograd.getScalarE δ) := ...
 ```
 
 This is a universal mathematical statement over real tensors. It is stronger than the three Float
@@ -231,10 +231,10 @@ One clean representation is a typed input pack or a tensor whose final axis has 
 order. The choice must be explicit because the shape `[3]` alone does not tell us whether coordinate
 zero means $`a`, $`b`, or $`x`.
 
-The functional tensor namespace does not export every indexing operation. For a
-multi-feature program, use the implemented gather/projection operation at the appropriate layer or
-define a typed pack. Writing nonexistent `index1d` syntax in documentation would produce an example
-that cannot run.
+For a multi-feature tensor, `select` extracts one position along an explicit axis, while
+`indexSelect` gathers several positions using bounded indices. A typed input pack is often clearer
+when the inputs have different shapes or distinct physical meanings. In either representation, the
+feature order is part of the program rather than an unchecked convention.
 
 # From A Forward Model To An Inverse Problem
 

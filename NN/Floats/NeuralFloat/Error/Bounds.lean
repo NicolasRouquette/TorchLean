@@ -58,7 +58,7 @@ noncomputable def relativeError (exact computed : ℝ) (_ : exact ≠ 0) : ℝ :
   abs (computed - exact) / abs exact
 
 /--
-Relative error bound for a single `neural_round` step (ULP form).
+Relative error bound for a single `neuralRound` step (ULP form).
 
 This is the “divide the half-ULP absolute bound by `|x|`” version of the classic rounding model.
 It is often the easiest lemma to use when a proof is naturally phrased in relative terms.

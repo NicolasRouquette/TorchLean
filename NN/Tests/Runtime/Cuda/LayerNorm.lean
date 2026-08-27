@@ -33,22 +33,22 @@ abbrev embedDim : Nat := 4
 theorem hSeq : seqLen > 0 := by decide
 theorem hEmb : embedDim > 0 := by decide
 
-def x : Tensor Float (shape![seqLen, embedDim]) :=
-  tensorOfList! [seqLen, embedDim] [
+def x : Tensor Float [seqLen, embedDim] :=
+  tensorOfArray! [seqLen, embedDim] #[
     0.10, 0.20, 0.00, -0.10,
     -0.30, 0.50, 0.20, 0.10
   ]
 
-def gamma : Tensor Float (shape![embedDim]) :=
-  tensorOfList! [embedDim] [1.0, 0.9, 1.1, 1.0]
+def gamma : Tensor Float [embedDim] :=
+  tensorOfArray! [embedDim] #[1.0, 0.9, 1.1, 1.0]
 
-def beta : Tensor Float (shape![embedDim]) :=
-  tensorOfList! [embedDim] [0.0, 0.1, -0.1, 0.0]
+def beta : Tensor Float [embedDim] :=
+  tensorOfArray! [embedDim] #[0.0, 0.1, -0.1, 0.0]
 
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: layer_norm ==="
 
-  let outShape : Shape := shape![seqLen, embedDim]
+  let outShape : Shape := [seqLen, embedDim]
 
   -- CPU tape
   let t0 : Tape Float := Tape.empty
@@ -59,11 +59,11 @@ def run : IO Unit := do
     (Tape.layerNorm (α := Float) (t := t3) (seqLen := seqLen) (embedDim := embedDim)
       (h_seq_pos := hSeq) (h_embed_pos := hEmb) xId gId bId)
   let yCpu ← Utils.cpuValue (s := outShape) t4 yId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape)
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (fill (1.0 : Float) outShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := outShape) gradsCpu xId
-  let dGammaCpu ← Utils.cpuGrad (s := shape![embedDim]) gradsCpu gId
-  let dBetaCpu ← Utils.cpuGrad (s := shape![embedDim]) gradsCpu bId
+  let dGammaCpu ← Utils.cpuGrad (s := [embedDim]) gradsCpu gId
+  let dBetaCpu ← Utils.cpuGrad (s := [embedDim]) gradsCpu bId
 
   -- CUDA tape
   let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
@@ -82,13 +82,13 @@ def run : IO Unit := do
   let gradsCuda ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t4c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := outShape) gradsCuda xIdc
-  let dGammaCuda ← Utils.cudaGrad (s := shape![embedDim]) gradsCuda gIdc
-  let dBetaCuda ← Utils.cudaGrad (s := shape![embedDim]) gradsCuda bIdc
+  let dGammaCuda ← Utils.cudaGrad (s := [embedDim]) gradsCuda gIdc
+  let dBetaCuda ← Utils.cudaGrad (s := [embedDim]) gradsCuda bIdc
 
   Utils.assertTensorApprox (s := outShape) "layer_norm forward" yCuda yCpu (tol := 3e-3)
   Utils.assertTensorApprox (s := outShape) "layer_norm dx" dxCuda dxCpu (tol := 3e-3)
-  Utils.assertTensorApprox (s := shape![embedDim]) "layer_norm dgamma" dGammaCuda dGammaCpu (tol := 3e-3)
-  Utils.assertTensorApprox (s := shape![embedDim]) "layer_norm dbeta" dBetaCuda dBetaCpu (tol := 3e-3)
+  Utils.assertTensorApprox (s := [embedDim]) "layer_norm dgamma" dGammaCuda dGammaCpu (tol := 3e-3)
+  Utils.assertTensorApprox (s := [embedDim]) "layer_norm dbeta" dBetaCuda dBetaCpu (tol := 3e-3)
 
 end LayerNorm
 end Cuda

@@ -41,7 +41,7 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 /-- Self-attention block (`Q=K=V=x`, no mask) as an `Spec.Module`. -/
 def scaledDotProductSelfAttention
   (n dModel : Nat) (h1 : n ≠ 0) :
-  Spec.Module α (.dim n (.dim dModel .scalar)) (.dim n (.dim dModel .scalar)) :=
+  Spec.Module α ([n, dModel]) ([n, dModel]) :=
 { forward := fun x =>
     let ctx : AttentionContext α n n dModel h1 h1 :=
       { Q := x

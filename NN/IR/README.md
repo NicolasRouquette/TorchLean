@@ -1,8 +1,9 @@
 # `NN/IR`
 
-`NN.IR` is TorchLean's op tagged SSA/DAG intermediate representation. It is the small shared graph
-language that model lowering passes, verification passes, exporters, widgets, and typed-graph
-correctness proofs can all point at without each inventing a private graph format.
+`NN.IR` is TorchLean's shape-annotated, op-tagged topological DAG interchange representation. It is
+the small shared graph language used by model lowering, verification, export, widgets, and checked
+forward execution. It is distinct from the dependent `GraphData` representation recorded by the
+differentiable typed-graph session.
 
 For public use, prefer the broad library import or the IR entrypoint. Internal code that only needs
 one IR component should import the focused leaf directly.
@@ -23,12 +24,11 @@ smallest `NN.IR.*` dependency they need.
 
 - `Graph.lean`: graph syntax, node ids, op tags, arity conventions, and topological well formedness.
 - `OpContracts.lean`: shared shape arithmetic for ops such as concat, matmul, pooling, conv, and
-  axis-moving utilities. Concat rank checks and leading-axis output inference are list-indexed
-  rather than duplicated by parent count.
+  axis-moving utilities. Concat and matmul use list-indexed arbitrary-rank contracts.
 - `Infer.lean`: canonical declared-output-shape validation.
 - `Check.lean`: public validation wrappers and proposition-level `WellFormed` / `WellShaped` names.
 - `Semantics.lean`: denotational evaluator into spec-layer tensor operations with explicit payloads,
-  including the checked `Graph.expectLeadingAxisInput` boundary used by list-indexed concat, plus
+  including arbitrary-leading linear and matrix multiplication, checked arbitrary-axis concat, and
   the scoped `IR` notation for graph denotation.
 - `Pretty.lean`: readable text and GraphViz renderers for debugging.
 
@@ -72,7 +72,7 @@ how a particular runtime, lowering fragment, or certificate checker relates to t
 
 | Consumer | How it uses IR |
 | --- | --- |
-| Typed graph execution | Executes graph-shaped programs through runtime tensor values. |
+| Checked IR execution | `IRExec` validates and lowers supported IR nodes to a forward-only, shape-indexed `ForwardGraph`. The differentiable typed-graph session records `GraphData` directly instead. |
 | Verification | Runs IBP/CROWN-style passes, margin checks, and certificate replay over node ids and payloads. |
 | TorchLean lowering fragments | Prove that supported source fragments lower to IR with the same denotation. |
 | PyTorch/ONNX/export paths | Use a small graph format to make parameter order and tensor shapes explicit at the boundary. |
@@ -82,7 +82,9 @@ how a particular runtime, lowering fragment, or certificate checker relates to t
 
 The IR is the object shared by proofs and runtime code, but proof coverage is still named
 fragment-by-fragment. Current theorem work covers supported evaluator bridges, graph well-formedness
-conditions, selected typed-graph fragments, and verification-oriented bound propagation. A new
+conditions, selected checked IR-to-`ForwardGraph` lowering fragments, and verification-oriented
+bound propagation. Separately, `GraphData` lowers to the autograd tape; that typed lowering is not
+an assertion that every `NN.IR` node is differentiable. A new
 operator should therefore add three things in the right places:
 
 - its shape contract in `OpContracts`/`Infer`;
@@ -107,7 +109,7 @@ ceremonial than embedding everything in the node, but it is much easier to audit
 
 - Node ids are array indices: `g.nodes[i].id = i`.
 - Parents always point backward: every parent id is smaller than the child id.
-- Parameter tensors are not embedded in `Graph`; `const`, `linear`, and `conv2d` use external
+- Parameter tensors are not embedded in `Graph`; `const`, `linear`, and `conv` use external
   payload stores keyed by node id.
 - Shape checking is centralized through `Infer.inferNodeOutShape`; `Graph.checkShapes` delegates to
   that implementation to avoid duplicate op-contract logic.

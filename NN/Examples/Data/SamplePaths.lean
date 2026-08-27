@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API
+public import NN.API.CLI
 
 /-!
 # Generated Tutorial Dataset Paths

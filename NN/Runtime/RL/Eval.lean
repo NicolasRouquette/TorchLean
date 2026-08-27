@@ -51,14 +51,14 @@ open Tensor
 Pick a greedy discrete action from a logits vector by `argmax`.
 
 If `nActions = 0` then `Fin nActions` is uninhabited, so we require `[NeZero nActions]`.
-When `nActions > 0`, `Metrics.argmaxVector?` never returns `none`; the `none` branch returns `0` only as
+When `nActions > 0`, `Metrics.argmax?` never returns `none`; the `none` branch returns `0` only as
 an unreachable totality fallback.
  -/
 def greedyActionFromLogits {α : Type} [LT α] [DecidableRel ((· > ·) : α → α → Prop)]
     {nActions : Nat} [NeZero nActions]
-    (logits : Tensor α (.dim nActions .scalar)) : Fin nActions :=
-  match _root_.TorchLean.Metrics.argmaxVector? (α := α) (n := nActions) logits with
-  | some a => a
+    (logits : Tensor α [nActions]) : Fin nActions :=
+  match _root_.TorchLean.Metrics.argmax? (α := α) logits with
+  | some a => Fin.cast (by simp [Shape.size]) a
   | none =>
       -- This branch is unreachable when `nActions > 0`, but it keeps the API total.
       ⟨0, Nat.pos_of_ne_zero (NeZero.ne nActions)⟩
@@ -76,7 +76,7 @@ The episode terminates early when the checked transition reports `terminated || 
  -/
 def episodeTotalReward {obsShape : Shape} {nActions : Nat} [NeZero nActions]
     (sess : Session.CheckedSession obsShape nActions)
-    (policyLogits : Tensor Float obsShape → Tensor Float (.dim nActions .scalar))
+    (policyLogits : Tensor Float obsShape → Tensor Float [nActions])
     (maxSteps : Nat := 1000) :
     IO Float := do
   let mut s ← sess.start
@@ -104,7 +104,7 @@ not the underlying Python environment's internal state.
 -/
 def episodeSessPath {obsShape : Shape} {nActions : Nat} [NeZero nActions]
     (sess : Session.CheckedSession obsShape nActions)
-    (policyLogits : Tensor Float obsShape → Tensor Float (.dim nActions .scalar))
+    (policyLogits : Tensor Float obsShape → Tensor Float [nActions])
     (maxSteps : Nat := 1000) :
     IO (Array sess.Sess) := do
   let mut s ← sess.start
@@ -131,7 +131,7 @@ When `episodes = 0`, this function returns `0` by convention.
  -/
 def averageEpisodeTotalReward {obsShape : Shape} {nActions : Nat} [NeZero nActions]
     (mkSession : Nat → Session.CheckedSession obsShape nActions)
-    (policyLogits : Tensor Float obsShape → Tensor Float (.dim nActions .scalar))
+    (policyLogits : Tensor Float obsShape → Tensor Float [nActions])
     (baseSeed : Nat) (episodes : Nat)
     (maxSteps : Nat := 1000) :
     IO Float := do

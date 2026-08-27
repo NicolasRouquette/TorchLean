@@ -43,11 +43,11 @@ structure NewtonSchulzCoeffs (α : Type) where
 
 /-- Left Gram matrix $XX^\mathsf{T}$, useful for row-oriented rectangular Newton-Schulz updates. -/
 def leftGram {m n : Nat} (X : MatrixTensor α m n) : MatrixTensor α m m :=
-  matMulSpec X (Spec.Tensor.matrixTransposeSpec X)
+  matMulSpec X (Spec.Tensor.swapAdjacentAxes X 0)
 
 /-- Right/column Gram matrix $X^\mathsf{T}X$, matching TorchLean's column-orthogonality certificate. -/
 def rightGram {m n : Nat} (X : MatrixTensor α m n) : MatrixTensor α n n :=
-  matMulSpec (Spec.Tensor.matrixTransposeSpec X) X
+  matMulSpec (Spec.Tensor.swapAdjacentAxes X 0) X
 
 /-- One row-oriented Newton-Schulz polynomial step using $XX^\mathsf{T}$. -/
 def newtonSchulzLeftStep {m n : Nat} (coeffs : NewtonSchulzCoeffs α)
@@ -158,10 +158,10 @@ theorem newtonSchulzOrthogonalizer_fixed_apply {m n : Nat}
   exact newtonSchulzIter_fixed_of_step_fixed coeffs steps buffer hfixed
 
 /--
-If a buffer already has exact column Gram and is fixed by one Newton-Schulz step, then the
-finite-iteration Newton-Schulz backend exactly orthogonalizes that buffer.
+If a buffer already has exact column Gram and is fixed by one Newton-Schulz step, every finite
+iteration preserves that exact column Gram.
 -/
-theorem newtonSchulzFixedPoint_exactOrthogonalizesBuffer {m n : Nat}
+theorem newtonSchulzFixedPoint_preservesExactColumnGram {m n : Nat}
     (coeffs : NewtonSchulzCoeffs α) (steps : Nat) (buffer : MatrixTensor α m n)
     (hgram : HasExactColumnGram buffer)
     (hfixed : NewtonSchulzFixedPoint coeffs buffer) :
@@ -184,7 +184,7 @@ def newtonSchulzFixedPointCheckedExactOrthogonalizer {m n : Nat}
   { orthogonalizer := newtonSchulzOrthogonalizer (α := α) (m := m) (n := n) coeffs steps
     Success := fun buffer => HasExactColumnGram buffer ∧ NewtonSchulzFixedPoint coeffs buffer
     certified := fun buffer hsuccess =>
-      newtonSchulzFixedPoint_exactOrthogonalizesBuffer coeffs steps buffer
+      newtonSchulzFixedPoint_preservesExactColumnGram coeffs steps buffer
         hsuccess.1 hsuccess.2 }
 
 end Muon

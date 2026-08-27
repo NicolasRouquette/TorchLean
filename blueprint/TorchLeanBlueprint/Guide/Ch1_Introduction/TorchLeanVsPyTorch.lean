@@ -45,7 +45,7 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.Builder (nn.Sequential (.dim 4 .scalar) (.dim 2 .scalar)) :=
+    nn.Builder (nn.Sequential [4] [2]) :=
   nn.Sequential![
     nn.linear 4 8,
     nn.relu,
@@ -70,13 +70,11 @@ types require more information up front, but they make layer composition and lat
 statements much cleaner. TorchLean still accepts runtime-loaded data; it checks the dimensions once
 at the boundary and then works with the resulting typed tensor.
 
-Operator names match PyTorch only when the semantics match. TorchLean's `mm` multiplies two
-rank-two tensors and `bmm` multiplies a rank-three batch, just like `torch.mm` and `torch.bmm`.
-There is no public `matmul` spelling yet because TorchLean does not currently implement the full
-rank-polymorphic broadcasting contract of `torch.matmul`.
+Operator names match PyTorch only when the semantics match. Use `matmul` for matrices, batches of
+matrices, and higher-rank collections; it broadcasts compatible leading dimensions.
 
 There is also no special batch tensor type. Operations that preserve outer axes accept a leading
-shape explicitly. Thus `nn.flattenLeading shape![batch, time]` keeps the batch and time axes and
+shape explicitly. Thus `nn.flattenAfter [batch, time]` keeps the batch and time axes and
 flattens everything after them. Classification and regression heads use the same argument, so one
 definition works for single examples, batches, sequences of examples, and higher-rank collections.
 The resulting input and output shapes are still checked while the model is built.
@@ -123,8 +121,9 @@ order, and layout into this payload.
 Integer-indexed embeddings follow the same rule without encoding token ids as floating-point
 one-hot vectors. `nn.embedding vocab embedDim` constructs a trainable table,
 `nn.Embedding.ofWeight weight` preserves an existing table exactly, and `freeze := true` keeps that
-table in module state without requesting a parameter gradient. An index tensor of shape `σ` produces
-an output of shape `σ.appendDim embedDim`; repeated ids accumulate into the same gradient row.
+table in module state without requesting a parameter gradient. If the index tensor has dimensions
+`dims`, its output has dimensions `dims ++ [embedDim]`; repeated ids accumulate into the same
+gradient row.
 
 # Autograd: A Tape In Two Different Roles
 
@@ -147,11 +146,9 @@ $$`\bar{x}=J_f(x)^\mathsf{T}\bar{y}`.
 The runtime rule is the fast implementation. The ideal VJP is the equation we want it to implement.
 The theorem, when available for that operation, connects the two.
 
-External kernels make the three layers particularly important. The maintained LibTorch-forward
-attention path asks LibTorch to compute the forward value, records the ordinary
-TorchLean tape node, and uses TorchLean's local backward rule. Handing both forward and backward to
-LibTorch would instead trust LibTorch autograd, saved-tensor conventions, gradient extraction, and
-parameter ownership. Kernel capsules record which choice was made.
+External kernels make the three layers particularly important because forward and backward may
+cross different boundaries. The backend chapter records that ownership per operation instead of
+letting it hide inside the training loop.
 
 # Training Loops
 
@@ -198,40 +195,15 @@ PyTorch routes an operation through its dispatcher. Device, dtype, layout, compi
 available libraries determine the eventual implementation. A CUDA matrix multiplication may use
 cuBLAS, convolution may use cuDNN, and attention may select one of several fused kernels.
 
-TorchLean's backend framework expresses a smaller but more explicit decision:
+TorchLean records the corresponding choice as a device, operation, provider, and accepted kernel
+capsule. Reports name the implementation selected for each operation, and unavailable requests
+fail instead of becoming an unreported CPU run. This keeps the model, parameter layout, graph, and
+tape stable while selected operations cross a native boundary.
 
-- `Device` says where execution should occur;
-- `Provider` says which implementation family supplies the operation;
-- `BackendOp` identifies the requested operation;
-- a backend profile supplies provider preference, assurance policy, and available capsule modules;
-- a kernel capsule records shape/layout requirements, forward and VJP ownership, and numerical
-  policy.
-
-This planner answers a question that is often surprisingly hard to answer after a large run:
-*which implementation actually handled each expensive operation?* If LibTorch supplies attention
-while native CUDA supplies matrix multiplication, the audit report names both. If the requested
-provider is unavailable, planning fails instead of silently selecting another implementation.
-
-This is also how TorchLean scales. It can keep ownership of the model, parameter layout, graph, and
-tape while calling industrial kernels for the expensive arithmetic.
-
-# LibTorch, ATen, And The Actual Kernel
-
-These names are easy to mix up. LibTorch is PyTorch's C++ distribution. ATen is the tensor and
-operator layer used inside PyTorch. Beneath an ATen operation there may still be another library:
-cuBLAS for matrix multiplication, cuDNN for convolution, or a fused attention implementation.
-
-Calling LibTorch sends a particular operation across an FFI boundary while TorchLean retains the
-model. The maintained scaled-dot-product-attention path works like this:
-
-1. TorchLean owns the model and current parameter tensors.
-2. TorchLean asks LibTorch for the attention forward value.
-3. TorchLean stores that value and records its ordinary attention tape node.
-4. During backward, TorchLean applies its own attention VJP.
-
-Another profile can use native TorchLean CUDA for both forward and backward. A future profile could
-delegate both directions, but that would be a different capsule because it would trust LibTorch's
-autograd state as well as its forward kernel.
+[Inside The Backend Planner](Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/)
+explains capsules, provider preference, LibTorch forward ownership, and assurance policies in full.
+[From A Tensor Operation To A GPU Kernel](Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/)
+then follows the native CUDA boundary.
 
 # Graphs, Lowering, And Compilation
 

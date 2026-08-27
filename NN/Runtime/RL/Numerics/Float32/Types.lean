@@ -73,7 +73,7 @@ non-finite.
 -/
 def castTensorChecked {s : Shape} (t : Tensor Float s) :
     Except String (Tensor Float32Exec s) :=
-  let t32 : Tensor Float32Exec s := Spec.mapTensor (TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat) t
+  let t32 : Tensor Float32Exec s := Spec.Tensor.map (TorchLean.Floats.IEEE754.IEEE32Exec.ofFloat) t
   if Boundary.tensorAll (α := Float32Exec) (s := s) (fun x => TorchLean.Floats.IEEE754.IEEE32Exec.isFinite x) t32 then
     .ok t32
   else

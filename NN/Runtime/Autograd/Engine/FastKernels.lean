@@ -47,7 +47,7 @@ namespace Internal
 
 /-- Convert an `(m×n)` matrix tensor into the row arrays used by the reference loop. -/
 def matToRows {α : Type} {m n : Nat} :
-    Tensor α (.dim m (.dim n .scalar)) → Array (Array α)
+    Tensor α [m, n] → Array (Array α)
   | .dim rows =>
       Array.ofFn (fun i : Fin m =>
         match rows i with
@@ -66,11 +66,11 @@ spec-layer definitions when running eager autograd.
 -/
 def matmulReference {α : Type} [Context α]
     {m n p : Nat}
-    (a : Tensor α (.dim m (.dim n .scalar)))
-    (b : Tensor α (.dim n (.dim p .scalar))) :
-    Tensor α (.dim m (.dim p .scalar)) :=
-  let matmulLean (a : Tensor α (.dim m (.dim n .scalar))) (b : Tensor α (.dim n (.dim p .scalar))) :
-      Tensor α (.dim m (.dim p .scalar)) :=
+    (a : Tensor α [m, n])
+    (b : Tensor α [n, p]) :
+    Tensor α [m, p] :=
+  let matmulLean (a : Tensor α [m, n]) (b : Tensor α [n, p]) :
+      Tensor α [m, p] :=
     let aArr := Internal.matToRows (α := α) (m := m) (n := n) a
     let bArr := Internal.matToRows (α := α) (m := n) (n := p) b
     let cArr : Array (Array α) :=
@@ -99,9 +99,9 @@ end Internal
 
 /-- 2D matmul forward via cuBLAS DGEMM (`torchlean_dgemm_cuda` / `Cuda.torchleanDgemmCuda`). -/
 def matmulCublas64 {m n p : Nat}
-    (a : Tensor Float (.dim m (.dim n .scalar)))
-    (b : Tensor Float (.dim n (.dim p .scalar))) :
-    Tensor Float (.dim m (.dim p .scalar)) :=
+    (a : Tensor Float [m, n])
+    (b : Tensor Float [n, p]) :
+    Tensor Float [m, p] :=
   let aRows := FastKernels.Internal.matToRows a
   let bRows := FastKernels.Internal.matToRows b
   let flatA : FloatArray :=
@@ -132,9 +132,9 @@ This path uploads Lean `Float` values to `Cuda.Buffer` (rounding to float32), ca
 `Float`.
 -/
 def matmulCublas32 {m n p : Nat}
-    (a : Tensor Float (.dim m (.dim n .scalar)))
-    (b : Tensor Float (.dim n (.dim p .scalar))) :
-    Tensor Float (.dim m (.dim p .scalar)) :=
+    (a : Tensor Float [m, n])
+    (b : Tensor Float [n, p]) :
+    Tensor Float [m, p] :=
   let aBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
     (Runtime.Autograd.Cuda.Convert.flattenFloat (s := .dim m (.dim n .scalar)) a)
   let bBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
@@ -149,9 +149,9 @@ def matmulCublas32 {m n p : Nat}
 
 /-- Dispatch to the requested GPU matmul precision. -/
 def matmulCublas (precision : CublasPrecision) {m n p : Nat}
-    (a : Tensor Float (.dim m (.dim n .scalar)))
-    (b : Tensor Float (.dim n (.dim p .scalar))) :
-    Tensor Float (.dim m (.dim p .scalar)) :=
+    (a : Tensor Float [m, n])
+    (b : Tensor Float [n, p]) :
+    Tensor Float [m, p] :=
   match precision with
   | .fp32 => matmulCublas32 (m := m) (n := n) (p := p) a b
   | .fp64 => matmulCublas64 (m := m) (n := n) (p := p) a b

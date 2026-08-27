@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Verification.TorchLean.Proved.Correctness.Eval.Pooling
+public import NN.Verification.TorchLean.Proved.Correctness.Eval.Core
 
 /-!
 # LayerNorm IR Evaluation
@@ -32,7 +32,7 @@ namespace IRStep
 theorem layerNormWithoutAffine_eq_spec
     {α : Type} [Context α]
     (seqLen embedDim : Nat)
-    (x : Tensor α (.dim seqLen (.dim embedDim .scalar)))
+    (x : Tensor α [seqLen, embedDim])
     (hSeq : seqLen > 0)
     (hEmb : embedDim > 0) :
     Graph.layerNormWithoutAffine (α := α) (seqLen := seqLen) (embedDim := embedDim) x
@@ -59,7 +59,7 @@ theorem evalAt_layernorm_eq
     (x : Tensor α s)
     (hParams : OpContracts.layerNormMatrixDims axis s = .ok (seqLen, embedDim))
     (hNumel : Spec.Shape.size s = Spec.Shape.size (.dim seqLen (.dim embedDim .scalar)))
-    (y2d : Tensor α (.dim seqLen (.dim embedDim .scalar)))
+    (y2d : Tensor α [seqLen, embedDim])
     (hLayerNorm :
       Graph.layerNormWithoutAffine (α := α) (seqLen := seqLen) (embedDim := embedDim)
         (Tensor.reshapeSpec (α := α) (s₁ := s)
@@ -68,15 +68,24 @@ theorem evalAt_layernorm_eq
         Except.ok y2d) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.layernorm axis) s s)
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s x)
-        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
+        (input := Spec.SomeTensor.mk (α := α) s x)
+        (vals := #[Spec.SomeTensor.mk (α := α) s x]) (i := 1)
       =
       Except.ok
-        (Spec.PackedTensor.mk (α := α) s
+        (Spec.SomeTensor.mk (α := α) s
           (Tensor.reshapeSpec (α := α)
             (s₁ := .dim seqLen (.dim embedDim .scalar)) (s₂ := s) y2d hNumel.symm)) := by
-  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.expectShape, hParams, hNumel, hLayerNorm, Bind.bind, Except.bind, Pure.pure, Except.pure]
+  have hLayerNormMatrix :
+      Graph.layerNormMatrix seqLen embedDim
+          (Tensor.reshapeSpec (α := α) (s₁ := s)
+            (s₂ := .dim seqLen (.dim embedDim .scalar)) x hNumel)
+          (Spec.fill (α := α) 1 [embedDim]) (Spec.fill (α := α) 0 [embedDim])
+          Numbers.normalizationEpsilon = .ok y2d := by
+    simpa [Graph.layerNormWithoutAffine, Graph.layerNormMatrix] using hLayerNorm
+  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut,
+    Graph.getNode, Graph.getNode?, Graph.unaryParentId, unaryParent?, Graph.expectShape, hParams,
+    hNumel, Graph.resolveLayerNormAffine, hLayerNormMatrix, Bind.bind, Except.bind, Pure.pure,
+    Except.pure]
 
 end IRStep
 

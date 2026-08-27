@@ -38,7 +38,7 @@ the part of the source tree affected by a change.
     <div class="dep-controls">
       <label>
         Search module
-        <input id="dep-search" type="search" placeholder="GraphSpec, Runtime, Fno1d…" />
+        <input id="dep-search" type="search" placeholder="GraphSpec, Runtime, FNO…" />
       </label>
       <label>
         Importing area

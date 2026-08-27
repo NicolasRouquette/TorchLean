@@ -65,7 +65,7 @@ Used heavily when discharging impossible branches in lowering correctness proofs
 /-- One forward-only SSA node over the typed context `Γ`. -/
 structure ForwardNode (α : Type) (Γ : List Shape) (τ : Shape) where
   /-- Evaluate the node from the graph input and all preceding node values. -/
-  eval : TList α Γ → Tensor α τ
+  eval : _root_.TorchLean.TensorPack α Γ → Tensor α τ
 
 /--
 A shape-indexed forward SSA graph.
@@ -84,14 +84,14 @@ namespace ForwardData
 
 /-- Evaluate every node and return the input followed by all intermediate values. -/
 def eval {α : Type} {Γ ss : List Shape}
-    (g : ForwardData α Γ ss) (x : TList α Γ) : TList α (Γ ++ ss) :=
+    (g : ForwardData α Γ ss) (x : _root_.TorchLean.TensorPack α Γ) : _root_.TorchLean.TensorPack α (Γ ++ ss) :=
   match g with
-  | .nil => TList.cast (α := α) (h := (List.append_nil Γ).symm) x
+  | .nil => _root_.TorchLean.TensorPack.cast (α := α) (h := (List.append_nil Γ).symm) x
   | .snoc (ss := ss) (τ := τ) g node =>
       let ctx := eval g x
       let y := Tensor.materialize (node.eval ctx)
-      TList.cast (α := α) (h := List.append_assoc Γ ss [τ])
-        (TList.snoc (α := α) (ss := Γ ++ ss) (τ := τ) ctx y)
+      _root_.TorchLean.TensorPack.cast (α := α) (h := List.append_assoc Γ ss [τ])
+        (_root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ss) (τ := τ) ctx y)
 
 end ForwardData
 
@@ -121,7 +121,7 @@ Evaluate the lowered forward graph on a concrete input tensor.
 The result is the full typed runtime context `[inShape] ++ ss`, i.e. input followed by every
 lowered node value in topological order.
 -/
-def eval (e : ForwardGraph α) (x : Tensor α e.inShape) : TList α ([e.inShape] ++ e.ss) :=
+def eval (e : ForwardGraph α) (x : Tensor α e.inShape) : _root_.TorchLean.TensorPack α ([e.inShape] ++ e.ss) :=
   ForwardData.eval (α := α) (Γ := [e.inShape]) (ss := e.ss) e.body (.cons x .nil)
 
 end ForwardGraph
@@ -129,25 +129,25 @@ end ForwardGraph
 /-!
 ## Denotation Table Helper
 
-`ForwardGraph.eval` produces a typed runtime context `TList α ([inShape] ++ ss)`.
+`ForwardGraph.eval` produces a typed runtime context `_root_.TorchLean.TensorPack α ([inShape] ++ ss)`.
 
 For debugging and for the forward-correctness development in
 `NN.Runtime.Autograd.IRExec.Correctness`,
 we provide a helper that erases this context
-into an IR-style value table `Array (Spec.PackedTensor α)` in node-id order.
+into an IR-style value table `Array (Spec.SomeTensor α)` in node-id order.
 -/
 
 namespace Internal
 
 /--
-Convert a typed runtime context `TList α ss` into an IR-style value table.
+Convert a typed runtime context `_root_.TorchLean.TensorPack α ss` into an IR-style value table.
 
-This is phrased in terms of `Array (Spec.PackedTensor α)` because the IR denotation functions (`denoteAll*`)
-are array-based, while forward-graph execution evaluates into a typed context (`TList`).
+This is phrased in terms of `Array (Spec.SomeTensor α)` because the IR denotation functions (`denoteAll*`)
+are array-based, while forward-graph execution evaluates into a typed context (`_root_.TorchLean.TensorPack`).
 -/
 def packedTensorsOfContext {α : Type} {ss : List Shape}
-    (ctx : Proofs.Autograd.Algebra.TList α ss) : Array (Spec.PackedTensor α) :=
-  Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := ss) ctx
+    (ctx : TorchLean.TensorPack α ss) : Array (Spec.SomeTensor α) :=
+  TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := ss) ctx
 
 end Internal
 
@@ -156,12 +156,12 @@ namespace ForwardGraph
 variable {α : Type} [Context α]
 
 /--
-Convert the full evaluated context into an IR-style value table (one `Spec.PackedTensor` per node id).
+Convert the full evaluated context into an IR-style value table (one `Spec.SomeTensor` per node id).
 
 This is the bridge used to compare forward-graph evaluation with `NN.IR.Graph.denoteAll*`.
 -/
 def denoteAll (e : Runtime.Autograd.IRExec.ForwardGraph α)
-    (x : Tensor α e.inShape) : Array (Spec.PackedTensor α) :=
+    (x : Tensor α e.inShape) : Array (Spec.SomeTensor α) :=
   Internal.packedTensorsOfContext (α := α) (ss := [e.inShape] ++ e.ss)
     (Runtime.Autograd.IRExec.ForwardGraph.eval e x)
 

@@ -43,28 +43,28 @@ deriving Repr
 
 /-- Input shape `leading ++ (seqLen × inputSize)`. -/
 abbrev RecurrentConfig.inputShape (cfg : RecurrentConfig)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (.dim cfg.seqLen (.dim cfg.inputSize .scalar))
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.seqLen, cfg.inputSize]
 
 /-- Output shape `leading ++ (seqLen × outputSize)`. -/
 abbrev RecurrentConfig.outputShape (cfg : RecurrentConfig)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (.dim cfg.seqLen (.dim cfg.outputSize .scalar))
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.seqLen, cfg.outputSize]
 
 /--
 Vanilla RNN core plus time-distributed linear head:
 
 `rnn(seqLen, inputSize, hiddenSize) → linear(hiddenSize, outputSize)`.
 -/
-def rnnWithLinearHead (cfg : RecurrentConfig) (leading : Spec.Shape := .scalar) :
+def rnnWithLinearHead (cfg : RecurrentConfig) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) := do
   let recurrent ← nn.rnn cfg.seqLen cfg.inputSize cfg.hiddenSize (leading := leading)
   let headRaw ← linear cfg.hiddenSize cfg.outputSize
-    (leading := leading.concat (.dim cfg.seqLen .scalar))
+    (leading := leading ++ [cfg.seqLen])
   let head : nn.Sequential
-      (leading.concat (.dim cfg.seqLen (.dim cfg.hiddenSize .scalar)))
-      (leading.concat (.dim cfg.seqLen (.dim cfg.outputSize .scalar))) := by
-    simpa only [Spec.Shape.concat_appendDim, Spec.Shape.appendDim] using headRaw
+      (leading ++ [cfg.seqLen, cfg.hiddenSize])
+      (leading ++ [cfg.seqLen, cfg.outputSize]) := by
+    simpa [List.append_assoc] using headRaw
   pure (recurrent >>> head)
 
 /--
@@ -72,15 +72,15 @@ LSTM core plus time-distributed linear head:
 
 `lstm(seqLen, inputSize, hiddenSize) → linear(hiddenSize, outputSize)`.
 -/
-def lstmWithLinearHead (cfg : RecurrentConfig) (leading : Spec.Shape := .scalar) :
+def lstmWithLinearHead (cfg : RecurrentConfig) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) := do
   let recurrent ← nn.lstm cfg.seqLen cfg.inputSize cfg.hiddenSize (leading := leading)
   let headRaw ← linear cfg.hiddenSize cfg.outputSize
-    (leading := leading.concat (.dim cfg.seqLen .scalar))
+    (leading := leading ++ [cfg.seqLen])
   let head : nn.Sequential
-      (leading.concat (.dim cfg.seqLen (.dim cfg.hiddenSize .scalar)))
-      (leading.concat (.dim cfg.seqLen (.dim cfg.outputSize .scalar))) := by
-    simpa only [Spec.Shape.concat_appendDim, Spec.Shape.appendDim] using headRaw
+      (leading ++ [cfg.seqLen, cfg.hiddenSize])
+      (leading ++ [cfg.seqLen, cfg.outputSize]) := by
+    simpa [List.append_assoc] using headRaw
   pure (recurrent >>> head)
 
 end models

@@ -53,7 +53,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | none   => boxes
   | .detach =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (some (get! p1))
+    | #[p1] => boxes.set! id (some (get! p1))
     | _ => boxes
   | .randUniform _ | .bernoulliMask _ =>
     -- Stochastic nodes are treated as *nondeterministic-but-bounded* for verification.
@@ -64,196 +64,64 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     boxes.set! id (some { dim := d, lo := lo, hi := hi })
   | .add =>
     match node.parents with
-    | p1 :: p2 :: _ => boxes.set! id (some (boxAdd (get! p1) (get! p2)))
+    | #[p1, p2] => boxes.set! id (some (boxAdd (get! p1) (get! p2)))
     | _ => boxes
   | .sub =>
     match node.parents with
-    | p1 :: p2 :: _ => boxes.set! id (some (boxSub (get! p1) (get! p2)))
+    | #[p1, p2] => boxes.set! id (some (boxSub (get! p1) (get! p2)))
     | _ => boxes
   | .abs =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (some (boxAbs (α := α) (get! p1)))
+    | #[p1] => boxes.set! id (some (boxAbs (α := α) (get! p1)))
     | _ => boxes
   | .sqrt =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match boxSqrt? (α := α) (get! p1) with
       | some B => boxes.set! id (some B)
       | none => boxes
     | _ => boxes
   | .inv =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
         match boxInv? (α := α) (get! p1) with
         | some B => boxes.set! id (some B)
         | none => boxes
     | _ => boxes
   | .maxElem =>
     match node.parents with
-    | p1 :: p2 :: _ => boxes.set! id (some (boxMaxElem (α := α) (get! p1) (get! p2)))
+    | #[p1, p2] => boxes.set! id (some (boxMaxElem (α := α) (get! p1) (get! p2)))
     | _ => boxes
   | .minElem =>
     match node.parents with
-    | p1 :: p2 :: _ => boxes.set! id (some (boxMinElem (α := α) (get! p1) (get! p2)))
+    | #[p1, p2] => boxes.set! id (some (boxMinElem (α := α) (get! p1) (get! p2)))
     | _ => boxes
-  | .maxPool2d kH kW stride =>
+  | .maxPool config =>
     match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match nodes[p1]!.outShape with
-      | .dim inC (.dim inH (.dim inW .scalar)) =>
-        let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-        let expectedInDim := sIn.size
-        if hIn : Xin.dim = expectedInDim then
-            if hkH : kH = 0 then
-              boxes
-            else if hkW : kW = 0 then
-              boxes
-            else if hs : stride = 0 then
-              boxes
-            else
-              let sFlat := Shape.dim Xin.dim Shape.scalar
-              let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-              have hsize : sFlat.size = sIn.size := by
-                simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
-              let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-              let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hs := {}
-              let yLo : Tensor α outShape :=
-                Spec.maxPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
-                  (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-                  (layer := layer) (input := xLo)
-            let yHi : Tensor α outShape :=
-              Spec.maxPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
-                (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-                (layer := layer) (input := xHi)
-            let flatLo := Tensor.flattenSpec (α := α) yLo
-            let flatHi := Tensor.flattenSpec (α := α) yHi
-            boxes.set! id (some { dim := outShape.size, lo := flatLo, hi := flatHi })
-        else boxes
-      | _ => boxes
+    | #[p1] =>
+      match ibpMonotoneSomeTensor? (α := α) nodes[p1]!.outShape node.outShape
+          (NN.IR.Graph.evalMaxPool (α := α) config) (get! p1) with
+      | some result => boxes.set! id (some result)
+      | none => boxes
     | _ => boxes
-  | .maxPool2dPad kH kW stride padding =>
+  | .avgPool config =>
     match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match nodes[p1]!.outShape with
-      | .dim inC (.dim inH (.dim inW .scalar)) =>
-        let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-        let expectedInDim := sIn.size
-        if hIn : Xin.dim = expectedInDim then
-            if hkH : kH = 0 then
-              boxes
-            else if hkW : kW = 0 then
-              boxes
-            else if hs : stride = 0 then
-              boxes
-            else
-              let sFlat := Shape.dim Xin.dim Shape.scalar
-              let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding
-              have hsize : sFlat.size = sIn.size := by
-                simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
-              let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-              let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.MaxPool2dSpec kH kW stride hkH hkW hs := {}
-              let yLo : Tensor α outShape :=
-                Spec.maxPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
-                  (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
-                  (layer := layer) (input := xLo)
-            let yHi : Tensor α outShape :=
-              Spec.maxPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
-                (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
-                (layer := layer) (input := xHi)
-            let flatLo := Tensor.flattenSpec (α := α) yLo
-            let flatHi := Tensor.flattenSpec (α := α) yHi
-            boxes.set! id (some { dim := outShape.size, lo := flatLo, hi := flatHi })
-        else boxes
-      | _ => boxes
-    | _ => boxes
-  | .avgPool2d kH kW stride =>
-    match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match nodes[p1]!.outShape with
-      | .dim inC (.dim inH (.dim inW .scalar)) =>
-        let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-        let expectedInDim := sIn.size
-        if hIn : Xin.dim = expectedInDim then
-            if hkH : kH = 0 then
-              boxes
-            else if hkW : kW = 0 then
-              boxes
-            else if hs : stride = 0 then
-              boxes
-            else
-              let sFlat := Shape.dim Xin.dim Shape.scalar
-              let outShape : Shape := Spec.pool2dMultiOutShape inC inH inW kH kW stride
-              have hsize : sFlat.size = sIn.size := by
-                simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
-              let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-              let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hs := {}
-              let yLo : Tensor α outShape :=
-                Spec.avgPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
-                  (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-                  (h1 := hkH) (h2 := hkW) (layer := layer) (input := xLo)
-            let yHi : Tensor α outShape :=
-              Spec.avgPool2dMultiSpec (α := α) (kH := kH) (kW := kW)
-                (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-                (h1 := hkH) (h2 := hkW) (layer := layer) (input := xHi)
-            let flatLo := Tensor.flattenSpec (α := α) yLo
-            let flatHi := Tensor.flattenSpec (α := α) yHi
-            boxes.set! id (some { dim := outShape.size, lo := flatLo, hi := flatHi })
-        else boxes
-      | _ => boxes
-    | _ => boxes
-  | .avgPool2dPad kH kW stride padding =>
-    match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match nodes[p1]!.outShape with
-      | .dim inC (.dim inH (.dim inW .scalar)) =>
-        let sIn : Shape := .dim inC (.dim inH (.dim inW .scalar))
-        let expectedInDim := sIn.size
-        if hIn : Xin.dim = expectedInDim then
-            if hkH : kH = 0 then
-              boxes
-            else if hkW : kW = 0 then
-              boxes
-            else if hs : stride = 0 then
-              boxes
-            else
-              let sFlat := Shape.dim Xin.dim Shape.scalar
-              let outShape : Shape := Spec.pool2dMultiOutShapePad inC inH inW kH kW stride padding
-              have hsize : sFlat.size = sIn.size := by
-                simp [sFlat, sIn, expectedInDim, Spec.Shape.size, hIn]
-              let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-              let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-              let layer : Spec.AvgPool2dSpec kH kW stride hkH hkW hs := {}
-              let yLo : Tensor α outShape :=
-                Spec.avgPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
-                  (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
-                  (h1 := hkH) (h2 := hkW) (layer := layer) (input := xLo)
-            let yHi : Tensor α outShape :=
-              Spec.avgPool2dMultiSpecPad (α := α) (kH := kH) (kW := kW)
-                (inH := inH) (inW := inW) (inC := inC) (stride := stride) (padding := padding)
-                (h1 := hkH) (h2 := hkW) (layer := layer) (input := xHi)
-            let flatLo := Tensor.flattenSpec (α := α) yLo
-            let flatHi := Tensor.flattenSpec (α := α) yHi
-            boxes.set! id (some { dim := outShape.size, lo := flatLo, hi := flatHi })
-        else boxes
-      | _ => boxes
+    | #[p1] =>
+      match ibpMonotoneSomeTensor? (α := α) nodes[p1]!.outShape node.outShape
+          (NN.IR.Graph.evalAvgPool (α := α) config) (get! p1) with
+      | some result => boxes.set! id (some result)
+      | none => boxes
     | _ => boxes
   | .broadcastTo s₁ s₂ =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match ibpBroadcastTo (α := α) s₁ s₂ (get! p1) with
       | some yB => boxes.set! id (some yB)
       | none => boxes
     | _ => boxes
   | .reduceSum axis =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let s := nodes[p1]!.outShape
       match ibpReduceSumAxis (α := α) axis (get! p1) s with
       | some yB => boxes.set! id (some yB)
@@ -261,7 +129,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .reduceMean axis =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let s := nodes[p1]!.outShape
       match ibpReduceMeanAxis (α := α) axis (get! p1) s with
       | some yB => boxes.set! id (some yB)
@@ -269,18 +137,18 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .relu =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (some (boxRelu (get! p1)))
+    | #[p1] => boxes.set! id (some (boxRelu (get! p1)))
     | _ => boxes
   | .linear =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match ibpLinear (α:=α) id ps (get! p1) with
       | some yB => boxes.set! id (some yB)
       | none    => boxes
     | _ => boxes
   | .matmul =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       let A := get! p1
       let B := get! p2
       let sA := nodes[p1]!.outShape
@@ -294,7 +162,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
               if hA : A.dim = m * k then
                 if hB : B.dim = k * n then
                   let outDim := m * n
-                  let loT : Tensor α (.dim outDim .scalar) :=
+                  let loT : Tensor α [outDim] :=
                     Tensor.dim (fun idx =>
                       let t := idx.val
                       let i := t / n
@@ -310,7 +178,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                           (accLo + pLo, accHi + pHi)
                         ) (0, 0)
                       Tensor.scalar sumLo)
-                  let hiT : Tensor α (.dim outDim .scalar) :=
+                  let hiT : Tensor α [outDim] :=
                     Tensor.dim (fun idx =>
                       let t := idx.val
                       let i := t / n
@@ -346,7 +214,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                       let block : Nat := m * n
                       let strideA : Nat := m * k
                       let strideB : Nat := k * n
-                      let loT : Tensor α (.dim outDim .scalar) :=
+                      let loT : Tensor α [outDim] :=
                         Tensor.dim (fun idx =>
                           let t := idx.val
                           let bi := t / block
@@ -366,7 +234,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
                               (accLo + pLo, accHi + pHi)
                             ) (0, 0)
                           Tensor.scalar sumLo)
-                      let hiT : Tensor α (.dim outDim .scalar) :=
+                      let hiT : Tensor α [outDim] :=
                         Tensor.dim (fun idx =>
                           let t := idx.val
                           let bi := t / block
@@ -396,70 +264,33 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
       | some yB, _ => boxes.set! id (some yB)
       | none, some yB => boxes.set! id (some yB)
       | none, none => boxes
-    | p1 :: _ =>
+    | #[p1] =>
       match ibpMatmul (α:=α) id ps (get! p1) with
       | some yB => boxes.set! id (some yB)
       | none    => boxes
     | _ => boxes
   | .reshape _ _ =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (boxes[p1]!)
+    | #[p1] => boxes.set! id (boxes[p1]!)
     | _ => boxes
   | .flatten _ =>
     match node.parents with
-    | p1 :: _ => boxes.set! id (boxes[p1]!)
+    | #[p1] => boxes.set! id (boxes[p1]!)
     | _ => boxes
-  | .swap_first_two =>
+  | .transpose axis₁ axis₂ =>
     match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match nodes[p1]!.outShape with
-      | .dim m (.dim n rest) =>
-        let sIn : Shape := .dim m (.dim n rest)
-        if hdim : Xin.dim = sIn.size then
-          let sFlat : Shape := .dim Xin.dim .scalar
-          have hsize : sFlat.size = sIn.size := by
-            simp [sFlat, sIn, Spec.Shape.size, hdim]
-          let xLo : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-          let xHi : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-          let yLoT : Tensor α (.dim n (.dim m rest)) := Tensor.swapFirstTwoSpec (α:=α) xLo
-          let yHiT : Tensor α (.dim n (.dim m rest)) := Tensor.swapFirstTwoSpec (α:=α) xHi
-          let flatLo := Tensor.flattenSpec (α:=α) yLoT
-          let flatHi := Tensor.flattenSpec (α:=α) yHiT
-          boxes.set! id (some { dim := (Shape.dim n (Shape.dim m rest)).size, lo := flatLo, hi :=
-            flatHi })
-        else boxes
-      | _ => boxes
-    | _ => boxes
-  | .transpose3dLastTwo =>
-    match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match nodes[p1]!.outShape with
-      | .dim a (.dim b (.dim c .scalar)) =>
-        let sIn : Shape := .dim a (.dim b (.dim c .scalar))
-        if hdim : Xin.dim = sIn.size then
-          let sFlat : Shape := .dim Xin.dim .scalar
-          have hsize : sFlat.size = sIn.size := by
-            simp [sFlat, sIn, Spec.Shape.size, hdim]
-          let xLo : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-          let xHi : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-          let yLoT : Tensor α (.dim a (.dim c (.dim b .scalar))) :=
-            Tensor.transpose3DLastTwoSpec (α:=α) xLo
-          let yHiT : Tensor α (.dim a (.dim c (.dim b .scalar))) :=
-            Tensor.transpose3DLastTwoSpec (α:=α) xHi
-          let flatLo := Tensor.flattenSpec (α:=α) yLoT
-          let flatHi := Tensor.flattenSpec (α:=α) yHiT
-          boxes.set! id
-            (some { dim := (Shape.dim a (Shape.dim c (Shape.dim b Shape.scalar))).size,
-                    lo := flatLo,
-                    hi := flatHi })
-        else boxes
-      | _ => boxes
+    | #[p1] =>
+      let transposeOp := fun value => do
+        let perm ← OpContracts.transposePerm value.shape.rank axis₁ axis₂
+        NN.IR.Graph.permuteSomeTensor (α := α) value perm
+      match ibpMonotoneSomeTensor? (α := α) nodes[p1]!.outShape node.outShape transposeOp
+          (get! p1) with
+      | some result => boxes.set! id (some result)
+      | none => boxes
     | _ => boxes
   | .permute perm =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let Xin := get! p1
       let sIn := nodes[p1]!.outShape
       if hdim : Xin.dim = sIn.size then
@@ -468,14 +299,14 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
           simp [sFlat, sIn, Spec.Shape.size, hdim]
         let xLo : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
         let xHi : Tensor α sIn := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-        match permutePackedTensor? (α := α) (v := ⟨sIn, xLo⟩) perm, permutePackedTensor? (α := α) (v := ⟨sIn, xHi⟩)
-          perm with
+        match permuteSomeTensor? (α := α) (v := ⟨sIn, xLo⟩) perm,
+            permuteSomeTensor? (α := α) (v := ⟨sIn, xHi⟩) perm with
         | some yLoV, some yHiV =>
-            let sOut := Spec.PackedTensor.shape (α := α) yLoV
-            if hSame : Spec.PackedTensor.shape (α := α) yHiV = sOut then
+            let sOut := Spec.SomeTensor.shape (α := α) yLoV
+            if hSame : Spec.SomeTensor.shape (α := α) yHiV = sOut then
               if hOut : sOut = node.outShape then
-                let yLoSOut : Tensor α sOut := Spec.PackedTensor.tensor (α := α) yLoV
-                let yHiSOut : Tensor α sOut := hSame ▸ Spec.PackedTensor.tensor (α := α) yHiV
+                let yLoSOut : Tensor α sOut := Spec.SomeTensor.tensor (α := α) yLoV
+                let yHiSOut : Tensor α sOut := hSame ▸ Spec.SomeTensor.tensor (α := α) yHiV
                 let yLoT : Tensor α node.outShape := hOut ▸ yLoSOut
                 let yHiT : Tensor α node.outShape := hOut ▸ yHiSOut
                 let flatLo := Tensor.flattenSpec (α:=α) yLoT
@@ -491,19 +322,19 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .mul_elem =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match boxMulElem (α:=α) (get! p1) (get! p2) with
       | some prod => boxes.set! id (some prod)
       | none => boxes
     | _ => boxes
   | .sum =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       boxes.set! id (some (boxSum (α := α) (get! p1)))
     | _ => boxes
   | .mseLoss =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       let Y := get! p1
       let T := get! p2
       if Y.dim = T.dim then
@@ -514,24 +345,23 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
         | none => boxes
       else boxes
     | _ => boxes
-  | .conv2d .. =>
-    match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      match ibpConv2dNode (α:=α) id ps Xin with
-      | some yB => boxes.set! id (some yB)
-      | none =>
-        -- Fallback: allow callers to inject a flattened linear form when conv params are absent.
-        match ibpLinear (α:=α) id ps Xin with
+  | .conv config =>
+    if !crownNodeSemanticsSupported (α := α) nodes ps id then
+      boxes
+    else
+      match node.parents with
+      | #[p1] =>
+        let Xin := get! p1
+        match ibpConvNode (α:=α) config nodes[p1]!.outShape node.outShape id ps Xin with
         | some yB => boxes.set! id (some yB)
-        | none    => boxes
-    | _ => boxes
-  | .batchNorm2dNchwEval .. =>
+        | none => boxes
+      | _ => boxes
+  | .batchNormEval channelAxis _ =>
     match node.parents with
-    | p1 :: _ =>
-      match ps.batchNorm2dNchwEval[id]? with
+    | #[p1] =>
+      match ps.batchNormEval[id]? with
       | some cfg =>
-        match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+        match batchNormEvalLinear? (α := α) nodes[p1]!.outShape channelAxis cfg with
         | some p =>
           let Xin := get! p1
           match ibpLinearParams (α := α) p Xin with
@@ -542,7 +372,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .exp =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let Xin := get! p1
       match boxUnaryEnclosure? (α := α) NonlinearBoundOps.expBounds Xin with
       | some B => boxes.set! id (some B)
@@ -550,7 +380,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .log =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let Xin := get! p1
       let flo := getDimScalarFn (α:=α) Xin.lo
       -- Raw IR `log` rejects nonpositive values. An interval crossing that boundary therefore has
@@ -566,44 +396,49 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
         boxes
     | _ => boxes
   -- layernorm/concat handled in dedicated cases below
-  | .concat _ =>
-    -- Concatenate two flattened boxes along the vector dimension
-    match node.parents with
-    | p1 :: p2 :: _ =>
-      let B1 := get! p1; let B2 := get! p2
-      match B1, B2 with
-      | ⟨n1, lo1, hi1⟩, ⟨n2, lo2, hi2⟩ =>
-        let f1lo := getDimScalarFn (α:=α) lo1
-        let f2lo := getDimScalarFn (α:=α) lo2
-        let f1hi := getDimScalarFn (α:=α) hi1
-        let f2hi := getDimScalarFn (α:=α) hi2
-        let lo :=
-          Tensor.dim (fun i =>
-            Fin.addCases (fun i1 => f1lo i1) (fun i2 => f2lo i2) i)
-        let hi :=
-          Tensor.dim (fun i =>
-            Fin.addCases (fun i1 => f1hi i1) (fun i2 => f2hi i2) i)
-        boxes.set! id (some { dim := n1 + n2, lo := lo, hi := hi })
-    | _ => boxes
+  | .concat axis =>
+    if axis != 0 then
+      boxes
+    else
+      -- Leading-axis concatenation is contiguous in row-major flattened storage.
+      match node.parents with
+      | #[p1, p2] =>
+        let B1 := get! p1; let B2 := get! p2
+        match B1, B2 with
+        | ⟨n1, lo1, hi1⟩, ⟨n2, lo2, hi2⟩ =>
+          let f1lo := getDimScalarFn (α:=α) lo1
+          let f2lo := getDimScalarFn (α:=α) lo2
+          let f1hi := getDimScalarFn (α:=α) hi1
+          let f2hi := getDimScalarFn (α:=α) hi2
+          let lo :=
+            Tensor.dim (fun i =>
+              Fin.addCases (fun i1 => f1lo i1) (fun i2 => f2lo i2) i)
+          let hi :=
+            Tensor.dim (fun i =>
+              Fin.addCases (fun i1 => f1hi i1) (fun i2 => f2hi i2) i)
+          boxes.set! id (some { dim := n1 + n2, lo := lo, hi := hi })
+      | _ => boxes
   | .layernorm axis =>
-    -- Last-axis LayerNorm bounds (without affine gamma/beta).
-    -- We only implement `axis = rank-1` (the TorchLean usage); other axes are left unsupported.
-    match node.parents with
-    | p1 :: _ =>
-      let Xin := get! p1
-      let s := node.outShape
-      if axis = Spec.Shape.rank s - 1 then
-        if hdim : Xin.dim = s.size then
-          match ibpLayerNormRange? (α := α) s Xin.dim with
-          | some B => boxes.set! id (some B)
-          | none => boxes
+    if !crownNodeSemanticsSupported (α := α) nodes ps id then
+      boxes
+    else
+      -- Only payload-free normalization over the last axis is currently supported.
+      match node.parents with
+      | #[p1] =>
+        let Xin := get! p1
+        let s := node.outShape
+        if axis = Spec.Shape.rank s - 1 then
+          if hdim : Xin.dim = s.size then
+            match ibpLayerNormRange? (α := α) s Xin.dim with
+            | some B => boxes.set! id (some B)
+            | none => boxes
+          else boxes
         else boxes
-      else boxes
-    | _ => boxes
+      | _ => boxes
   | .softmax axis =>
     -- Last-axis softmax bounds. We only implement `axis = rank-1`.
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let Xin := get! p1
       let s := node.outShape
       if axis = Spec.Shape.rank s - 1 then
@@ -614,7 +449,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
     | _ => boxes
   | .hardMaskedSoftmax mask =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       let Xin := get! p1
       let s := node.outShape
       if hdim : Xin.dim = s.size then
@@ -642,7 +477,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
   | .tanh =>
     let Xin :=
       match node.parents with
-      | p1 :: _ => get! p1
+      | #[p1] => get! p1
       | _ => get! 0
     match boxUnaryEnclosure? (α := α) NonlinearBoundOps.tanhBounds Xin with
     | some B => boxes.set! id (some B)
@@ -650,7 +485,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
   | .sigmoid =>
     let Xin :=
       match node.parents with
-      | p1 :: _ => get! p1
+      | #[p1] => get! p1
       | _ => get! 0
     match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sigmoidBounds Xin with
     | some B => boxes.set! id (some B)
@@ -658,7 +493,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
   | .sin =>
     let Xin :=
       match node.parents with
-      | p1 :: _ => get! p1
+      | #[p1] => get! p1
       | _ => get! 0
     match boxUnaryEnclosure? (α := α) NonlinearBoundOps.sinBounds Xin with
     | some B => boxes.set! id (some B)
@@ -666,7 +501,7 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
   | .cos =>
     let Xin :=
       match node.parents with
-      | p1 :: _ => get! p1
+      | #[p1] => get! p1
       | _ => get! 0
     match boxUnaryEnclosure? (α := α) NonlinearBoundOps.cosBounds Xin with
     | some B => boxes.set! id (some B)
@@ -675,6 +510,10 @@ def propagateIBPNode (nodes : Array Node) (ps : ParamStore α) (boxes : Array (O
 /-- Run an IBP pass over the whole graph. Caller seeds inputs via ParamStore.inputBoxes. -/
 def runIBP (g : Graph) (ps : ParamStore α) : Array (Option (FlatBox α)) :=
   let init := Array.replicate g.nodes.size none
-  (List.finRange g.nodes.size).foldl (fun acc i => propagateIBPNode (α:=α) g.nodes ps acc i) init
+  if crownGraphSemanticsSupported (α := α) g ps then
+    (List.finRange g.nodes.size).foldl (fun acc i => propagateIBPNode (α:=α) g.nodes ps acc i)
+      init
+  else
+    init
 
 end NN.MLTheory.CROWN.Graph

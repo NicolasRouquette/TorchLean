@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.GraphSpec.Models.TorchLean.Autoencoder
-public import NN.GraphSpec.Models.TorchLean.Cnn
 public import NN.GraphSpec.Models.TorchLean.Mlp
 public import NN.GraphSpec.Models.TorchLean.TransformerBlock
 

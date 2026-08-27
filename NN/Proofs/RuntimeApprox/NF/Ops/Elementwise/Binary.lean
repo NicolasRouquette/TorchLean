@@ -78,7 +78,7 @@ theorem approxTensor_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                         -- The RHS is `abs` of the scalar bound; widen using `le_abs_self`.
                         refine le_trans hxy ?_
                         -- `linf_norm` of the scalar bound tensor is `abs` of its scalar entry.
-                        simpa [addBoundTensor, tensorToSpec, Spec.mapTensor, map2Spec,
+                        simpa [addBoundTensor, tensorToSpec, Spec.Tensor.map, map2Spec,
                           MathFunctions.abs,
                           linfNorm, RuntimeApprox.linfNorm, tensorLinfNorm] using
                           (le_abs_self (epsx + epsy +
@@ -141,7 +141,7 @@ theorem approxTensor_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                               (s := s) epsx epsy (xRf i) (yRf i)) ≤ B := by
                           -- `add_bound_tensor` is shape-preserving, so this is a
                           -- max-over-components inequality.
-                          simpa [B, addBoundTensor, tensorToSpec, Spec.mapTensor, map2Spec]
+                          simpa [B, addBoundTensor, tensorToSpec, Spec.Tensor.map, map2Spec]
                             using
                             (linf_norm_le_get_dim
                               (t :=
@@ -192,18 +192,18 @@ theorem approxTensor_add_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                             (acc := (0 : ℝ)) (eps := B) hB_nonneg hf
                         -- Rewrite back into the `tensorDistance` fold over the outer dimension.
                         simp [tensorDistance,
-                          linfNorm, RuntimeApprox.linfNorm, tensorToSpec, Spec.mapTensor]
+                          linfNorm, RuntimeApprox.linfNorm, tensorToSpec]
                         change
                           List.foldl
                             (fun a i =>
                               max a
                                 (tensorLinfNorm
                                   (((xSf i).addSpec (ySf i)).subSpec
-                                    (mapTensor (toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                                    (Tensor.map (toSpec (β := β) (fexp := fexp) (rnd := rnd))
                                       ((xRf i).addSpec (yRf i))))))
                             0 (List.finRange n) ≤ B
                         simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
-                          MathFunctions.abs, Spec.mapTensor] using hfold
+                          MathFunctions.abs, Spec.Tensor.map] using hfold
 
                       -- Conclude `approxTensor` for the whole tensor.
                       simpa [approxTensor, approxWith, B, addSpec, map2Spec] using this
@@ -279,7 +279,7 @@ theorem approxTensor_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                                 (s := Shape.scalar) epsx epsy (Tensor.scalar xR) (Tensor.scalar yR))
                                   := by
                         refine le_trans hxy ?_
-                        simpa [mulBoundTensor, tensorToSpec, Spec.mapTensor, map2Spec,
+                        simpa [mulBoundTensor, tensorToSpec, Spec.Tensor.map, map2Spec,
                           MathFunctions.abs,
                           linfNorm, RuntimeApprox.linfNorm, tensorLinfNorm] using
                           (le_abs_self
@@ -338,7 +338,7 @@ theorem approxTensor_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                         have hB_ge :
                             linfNorm (mulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                               (s := s) epsx epsy (xRf i) (yRf i)) ≤ B := by
-                          simpa [B, mulBoundTensor, tensorToSpec, Spec.mapTensor, map2Spec]
+                          simpa [B, mulBoundTensor, tensorToSpec, Spec.Tensor.map, map2Spec]
                             using
                             (linf_norm_le_get_dim
                               (t :=
@@ -382,18 +382,18 @@ theorem approxTensor_mul_spec {s : Shape} [NeuralValidRndToNearest rnd] :
                                   (mulSpec (xRf i) (yRf i))))
                             (acc := (0 : ℝ)) (eps := B) hB_nonneg hf
                         simp [tensorDistance,
-                          linfNorm, RuntimeApprox.linfNorm, tensorToSpec, Spec.mapTensor]
+                          linfNorm, RuntimeApprox.linfNorm, tensorToSpec]
                         change
                           List.foldl
                             (fun a i =>
                               max a
                                 (tensorLinfNorm
                                   (((xSf i).mulSpec (ySf i)).subSpec
-                                    (mapTensor (toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                                    (Tensor.map (toSpec (β := β) (fexp := fexp) (rnd := rnd))
                                       ((xRf i).mulSpec (yRf i))))))
                             0 (List.finRange n) ≤ B
                         simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
-                          MathFunctions.abs, Spec.mapTensor] using hfold
+                          MathFunctions.abs, Spec.Tensor.map] using hfold
 
                       simpa [approxTensor, approxWith, B, mulSpec, map2Spec] using this
 

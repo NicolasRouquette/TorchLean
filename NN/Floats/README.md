@@ -24,8 +24,8 @@ adapter under `NN.Floats.Arb` is not imported by `NN.Floats`.
 
 ## Numerical Models
 
-The library has several representations because rounded-real error analysis and complete IEEE
-execution answer different mathematical questions.
+The library has several representations because rounded-real error analysis and special-value-aware
+binary32 execution answer different mathematical questions.
 
 ### `NeuralFloat`
 
@@ -64,8 +64,9 @@ definitions cover normal and subnormal values, signed zeros, infinities, NaNs, o
 nearest-even rounding, and the five IEEE exception indicators.
 
 The core implementation is in `IEEEExec/Exec32.lean`. Special-value rules are in
-`IEEEExec/Rules/SpecialRules.lean`, status-bearing operations are gathered under
-`IEEEExec/Status.lean`, and order-sensitive reductions are in `IEEEExec/Reductions.lean`.
+`IEEEExec/Rules/SpecialRules.lean`; status-bearing operations are defined in
+`IEEEExec/Exec32/Arithmetic.lean`; and order-sensitive reductions are in
+`IEEEExec/Reductions.lean`.
 Executable directed rounding is also available for addition, subtraction, multiplication,
 division, fused multiply-add, and square root.
 

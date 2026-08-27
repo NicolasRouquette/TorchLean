@@ -32,13 +32,15 @@ Run a backward pass and return a dense array of gradients for *all* leaf tensors
 This is the explicit dense-array version of calling backward and then reading every leaf gradient.
 -/
 def backwardDenseAll {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   {sh : Shape} (out : _root_.Runtime.Autograd.Torch.TensorRef α sh) (seed : Tensor α sh) :
-  IO (Array (_root_.Spec.PackedTensor α)) := do
+  IO (Array (_root_.Spec.SomeTensor α)) := do
   match s.state with
   | .eager sess =>
+      sess.inner.validateTensorRef out
       EagerSession.backwardDenseAll (α := α) sess (sh := sh) out seed
   | .typedGraph sess =>
+      sess.validateTensorRef out
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.backwardDenseAll (α := α) sess (sh := sh) out
         seed
 
@@ -51,10 +53,10 @@ Invariant: the hook must preserve each gradient tensor's shape; we check this an
 changes.
 -/
 def applyGradHook {α : Type}
-    (grads : Array (_root_.Spec.PackedTensor α))
-    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) :
-    IO (Array (_root_.Spec.PackedTensor α)) := do
-  let mut out : Array (_root_.Spec.PackedTensor α) := #[]
+    (grads : Array (_root_.Spec.SomeTensor α))
+    (hook : Nat → _root_.Spec.SomeTensor α → IO (_root_.Spec.SomeTensor α)) :
+    IO (Array (_root_.Spec.SomeTensor α)) := do
+  let mut out : Array (_root_.Spec.SomeTensor α) := #[]
   for i in List.finRange grads.size do
     let g := grads[i]
     let g' ← hook i.1 g
@@ -74,30 +76,27 @@ Backward pass with an optional gradient hook applied to the *dense* gradient arr
 This is a runtime utility (similar in spirit to PyTorch hooks), not part of the proof semantics.
 -/
 def backwardDenseAllWithHook {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     {sh : Shape} (out : _root_.Runtime.Autograd.Torch.TensorRef α sh) (seed : Tensor α sh)
-    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) :
-    IO (Array (_root_.Spec.PackedTensor α)) := do
+    (hook : Nat → _root_.Spec.SomeTensor α → IO (_root_.Spec.SomeTensor α)) :
+    IO (Array (_root_.Spec.SomeTensor α)) := do
   Internal.applyGradHook (α := α) (grads := (← backwardDenseAll (α := α) s (sh := sh) out seed))
     hook
 
 /-- Backward pass for a scalar loss, returning the dense gradient array (seed is implicitly `1`). -/
 def backwardScalarDenseAll {α : Type} (s : Session α) [Add α] [Zero α] [One α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) :
-  IO (Array (_root_.Spec.PackedTensor α)) := do
-  match s.state with
-  | .eager sess => EagerSession.backwardScalarDenseAll (α := α) sess loss
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.backwardScalarDenseAll (α := α) sess loss
+  IO (Array (_root_.Spec.SomeTensor α)) :=
+  backwardDenseAll (α := α) s loss (Tensor.scalar (1 : α))
 
 /-- `backwardScalarDenseAll` with a per-leaf gradient hook applied. -/
 def backwardScalarDenseAllWithHook {α : Type} (s : Session α) [Add α] [Zero α] [One α] [DecidableEq
   Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar)
-    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) :
-    IO (Array (_root_.Spec.PackedTensor α)) := do
+    (hook : Nat → _root_.Spec.SomeTensor α → IO (_root_.Spec.SomeTensor α)) :
+    IO (Array (_root_.Spec.SomeTensor α)) := do
   Internal.applyGradHook (α := α) (grads := (← backwardScalarDenseAll (α := α) s loss)) hook
 
 /--
@@ -105,9 +104,12 @@ Extract the gradient for a particular tensor ref from a dense gradient array.
 
 This is the non-mutating counterpart of reading `x.grad`.
 -/
-def grad {α : Type} {sh : Shape} [DecidableEq Shape]
-  (grads : Array (_root_.Spec.PackedTensor α)) (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
+def grad {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
+  (grads : Array (_root_.Spec.SomeTensor α)) (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (Tensor α sh) := do
+  match s.state with
+  | .eager sess => sess.inner.validateTensorRef x
+  | .typedGraph sess => sess.validateTensorRef x
   let gAny ← match grads[x.id]? with
     | some g => pure g
     | none => throw <| IO.userError "torchlean: gradient array out of bounds"
@@ -119,24 +121,24 @@ def grad {α : Type} {sh : Shape} [DecidableEq Shape]
 
 /-- Vector-Jacobian product: `vjp(out, seed)[x]`. -/
 def vjp {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     {shOut shX : Shape}
     (out : _root_.Runtime.Autograd.Torch.TensorRef α shOut)
     (seed : Tensor α shOut)
     (x : _root_.Runtime.Autograd.Torch.TensorRef α shX) :
     IO (Tensor α shX) := do
   let grads ← backwardDenseAll (α := α) s (sh := shOut) out seed
-  grad (α := α) (sh := shX) grads x
+  grad (α := α) s (sh := shX) grads x
 
 /-- Scalar-loss VJP with implicit seed `1`: `∇_x loss`. -/
 def vjpScalar {α : Type} (s : Session α) [Add α] [Zero α] [One α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     {shX : Shape}
     (loss : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar)
     (x : _root_.Runtime.Autograd.Torch.TensorRef α shX) :
     IO (Tensor α shX) := do
   let grads ← backwardScalarDenseAll (α := α) s loss
-  grad (α := α) (sh := shX) grads x
+  grad (α := α) s (sh := shX) grads x
 
 /-! ## Forward-mode: JVP -/
 
@@ -179,7 +181,7 @@ Jacobian-vector product with explicit tangents for all *leaf* tensors.
 def jvpDenseAll {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
     {shOut : Shape}
     (out : _root_.Runtime.Autograd.Torch.TensorRef α shOut)
-    (dxs : Array (_root_.Spec.PackedTensor α)) :
+    (dxs : Array (_root_.Spec.SomeTensor α)) :
     IO (Tensor α shOut) := do
   match s.state with
   | .eager _ =>
@@ -196,8 +198,8 @@ This is an optimizer helper used by examples; for a higher-level API see
 -/
 def sgdStepAll {α : Type} (s : Session α)
   [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-  (lr : α) (grads : Array (_root_.Spec.PackedTensor α)) : IO Unit := do
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
+  (lr : α) (grads : Array (_root_.Spec.SomeTensor α)) : IO Unit := do
   match s.state with
   | .eager sess => EagerSession.sgdStepAll (α := α) sess lr grads
   | .typedGraph sess =>
@@ -217,7 +219,7 @@ This is the "session-style training step" helper for imperative workflows that a
 -/
 def sgdStepScalarGraph {α : Type} (s : Session α)
     [Sub α] [Mul α] [Add α] [Zero α] [One α] [DecidableEq Shape]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     (lr : α)
     (buildLoss : IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar)) :
     IO α :=
@@ -240,9 +242,9 @@ PyTorch analogy:
 -/
 def sgdStepAllWithHook {α : Type} (s : Session α)
     [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (lr : α) (grads : Array (_root_.Spec.PackedTensor α))
-    (hook : Nat → _root_.Spec.PackedTensor α → IO (_root_.Spec.PackedTensor α)) : IO Unit := do
+    [_root_.Runtime.Autograd.Torch.TensorTransfer α]
+    (lr : α) (grads : Array (_root_.Spec.SomeTensor α))
+    (hook : Nat → _root_.Spec.SomeTensor α → IO (_root_.Spec.SomeTensor α)) : IO Unit := do
   sgdStepAll (α := α) s lr (← Internal.applyGradHook (α := α) grads hook)
 
 end Session

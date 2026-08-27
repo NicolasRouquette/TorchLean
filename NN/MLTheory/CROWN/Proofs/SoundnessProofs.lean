@@ -182,7 +182,7 @@ computed by `bound_affine` is indeed an overapproximation of the true network ou
 theorem crown_affine_twoLayerMlp_sound {inDim hidDim outDim : Nat}
     (net : TwoLayerMLP ℝ inDim hidDim outDim)
     (xB : Box ℝ (.dim inDim .scalar))
-    (x : Tensor ℝ (.dim inDim .scalar))
+    (x : Tensor ℝ [inDim])
     (hx : Box.contains xB x) :
     Box.contains (boundAffine net xB) (forward net x) := by
   -- `bound_affine` falls back to pure IBP bounds.

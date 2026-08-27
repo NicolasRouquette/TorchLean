@@ -74,10 +74,10 @@ import NN.API
 
 open TorchLean
 
-def point : Tensor Float (shape![2]) :=
-  tensorOfList! [2] [0.25, -0.75]
+def point : Tensor Float [2] :=
+  tensor! [0.25, -0.75]
 
-def model : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def model : nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -123,66 +123,46 @@ The model summary should confirm `params=49`.
 
 # Tensor Constructors
 
-TorchLean offers two useful styles for fixed data. `tensorOfList!` takes dimensions and a flat
-row-major list:
+Nested `tensor!` syntax follows the visible dimensions:
 
 ```
-def matrix : Tensor Float (shape![2, 3]) :=
-  tensorOfList! [2, 3] [
-    1.0, 2.0, 3.0,
-    4.0, 5.0, 6.0
-  ]
-```
-
-The nested `tensor!` syntax mirrors the visible dimensions:
-
-```
-def sameMatrix : Tensor Float (shape![2, 3]) :=
+def matrix : Tensor Float [2, 3] :=
   tensor! [
     [1.0, 2.0, 3.0],
     [4.0, 5.0, 6.0]
   ]
 ```
 
-Both constructors check their dimensions. `Tensor.vector` is convenient when the length should be
-inferred from a list:
-
-```
-def inferred := Tensor.vector (α := Float) [1.0, 2.0, 3.0]
-
-#check inferred
--- inferred : Tensor Float (shape![3])
-```
-
-Use an explicit type when the shape belongs to an interface. Use inference for local data whose
-length is already clear from the value.
+Lean checks the literal against `[2, 3]` while elaborating the file. `Tensor.ofArray` is the runtime
+alternative for data whose flat row-major storage is computed while the program runs; it returns an
+error when the requested dimensions and number of entries disagree.
 
 # Turn Rows Into A Dataset
 
 A supervised dataset pairs one input tensor with one target tensor. Add to `Tour.lean`:
 
 ```
-def xs : Tensor Float (shape![4, 2]) :=
-  tensorOfList! [4, 2] [
-    0.0, 0.0,
-    0.0, 1.0,
-    1.0, 0.0,
-    1.0, 1.0
+def xs : Tensor Float [4, 2] :=
+  tensor! [
+    [0.0, 0.0],
+    [0.0, 1.0],
+    [1.0, 0.0],
+    [1.0, 1.0]
   ]
 
-def ys : Tensor Float (shape![4, 1]) :=
-  tensorOfList! [4, 1] [0.2, 1.0, 1.0, 1.8]
+def ys : Tensor Float [4, 1] :=
+  tensor! [[0.2], [1.0], [1.0], [1.8]]
 
-def dataset : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
-  Data.tensorDataset xs ys
+def dataset : Trainer.Dataset [2] [1] := Data.tensorDataset xs ys
 
 #check dataset
 ```
 
-The outer dimension `4` counts examples. `Data.tensorDataset` removes that common batch axis from
-the sample types, so each input has shape `[2]` and each target has shape `[1]`.
+The outer dimension `4` counts examples. The dataset type records the shape of one input and one
+target, so `Data.tensorDataset` checks the common leading dimension and removes it. Four tensor
+rows therefore become four samples with input shape `[2]` and target shape `[1]`.
 
-Try changing the declared type of `ys` to `shape![4]` while leaving `dataset` unchanged. Lean
+Try changing the declared type of `ys` to `[4]` while leaving `dataset` unchanged. Lean
 rejects the dataset because its target samples would be scalars rather than length-one vectors. This
 is the same distinction the model output type makes.
 
@@ -196,7 +176,7 @@ statically shaped dataset.
 Add:
 
 ```
-def trainer : Trainer (.dim 2 .scalar) (.dim 1 .scalar) :=
+def trainer : Trainer [2] [1] :=
   Trainer.new model
     { task := .regression
       optimizer := optim.adam { lr := 0.03 }

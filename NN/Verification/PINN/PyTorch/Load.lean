@@ -54,16 +54,16 @@ structure PinnLayer where
   /-- Output dimension. -/
   outDim : Nat
   /-- Layer weight matrix, shaped as PyTorch stores `Linear.weight`. -/
-  weights : Tensor Float (.dim outDim (.dim inDim .scalar))
+  weights : Tensor Float [outDim, inDim]
   /-- Layer bias vector. -/
-  bias    : Tensor Float (.dim outDim .scalar)
+  bias    : Tensor Float [outDim]
 
 /-- A parsed PINN state dict together with the inferred TorchLean sequential PINN architecture. -/
 structure PinnState where
   /-- Inferred sequential fully-connected PINN architecture. -/
   arch   : SequentialPINNArch
   /-- Layer stack. -/
-  layers : List PinnLayer
+  layers : Array PinnLayer
 
 /-!
 ## Activation metadata
@@ -111,13 +111,13 @@ def loadPinnState (j : Json) : Option PinnState := do
         match parseIndexedKey "layers." ".weight" kv.fst with
         | some idx => idx :: acc
         | none => acc)
-      ([] : List Nat)).toArray.qsort (· < ·) |>.toList
+      ([] : List Nat)).toArray.qsort (· < ·)
 
-  match weightIdxs with
-  | [] => none
-  | _ =>
+  match weightIdxs[0]? with
+  | none => none
+  | some _ =>
     let activation := Internal.parseActivation (o.get? "meta")
-    let layersRev ←
+    let layers ←
       weightIdxs.foldlM (fun acc idx => do
         let base := s!"layers.{idx}"
         let wJson ← getJson? o (base ++ ".weight")
@@ -125,18 +125,14 @@ def loadPinnState (j : Json) : Option PinnState := do
         let (outDim, inDim) ← inferMatrixDims wJson
         let weights ← parseTensor (.dim outDim (.dim inDim .scalar)) wJson
         let bias ← parseTensor (.dim outDim .scalar) bJson
-        pure ({ inDim := inDim, outDim := outDim, weights := weights, bias := bias } :: acc)) []
+        pure (acc.push { inDim := inDim, outDim := outDim, weights := weights, bias := bias })) #[]
 
-    let layers := layersRev.reverse
-    match layers with
-    | [] => none
-    | first :: _ =>
+    match layers[0]? with
+    | none => none
+    | some first =>
       let outDims := layers.map (·.outDim)
-      let hidden := dropLastNat outDims
-      let outputDim :=
-        match outDims.reverse with
-        | [] => 0
-        | x :: _ => x
+      let hidden := outDims.extract 0 (outDims.size - 1)
+      let outputDim := outDims.back?.getD 0
       let arch : SequentialPINNArch :=
         { inputDim := first.inDim
           hiddenDims := hidden

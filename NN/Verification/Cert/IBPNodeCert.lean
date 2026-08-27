@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
 public import NN.Verification.Cert.NodeReplay
 public import Lean.Data.Json
 

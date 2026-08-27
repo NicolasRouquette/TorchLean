@@ -3,7 +3,7 @@
 
 from typing import Any
 
-from common import centered_box, matmul_interval, softmax_interval, write_json
+from common import centered_box, matmul_interval, softmax_range_interval, write_json
 
 # Attention-softmax graph:
 # input -> score projection -> softmax -> value projection.
@@ -30,8 +30,10 @@ def run_ibp() -> dict[str, Any]:
     """Compute the attention certificate payload consumed by Lean."""
     score_weight, value_weight = seed_params()
     x_lo, x_hi = seed_input_box(0.5)
-    score_lo, score_hi = matmul_interval(score_weight, x_lo, x_hi)
-    prob_lo, prob_hi = softmax_interval(score_lo, score_hi)
+    # The score projection is part of the graph even though the format-independent checker only
+    # needs the softmax row length for its conservative range enclosure.
+    matmul_interval(score_weight, x_lo, x_hi)
+    prob_lo, prob_hi = softmax_range_interval(nScores)
     output_lo, output_hi = matmul_interval(value_weight, prob_lo, prob_hi)
     return {
         "graph": "attention_softmax_workflow_v1",

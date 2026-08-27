@@ -26,7 +26,7 @@ public import NN.Floats.IEEEExec.Rules.TrigBounds
 This is TorchLean’s execution-aware float32 layer. We use it when we want runs inside Lean to have a
 precise, platform-independent meaning (including NaN/Inf and signed-zero corner cases):
 
-- `IEEE32Exec`: an executable, bit-level IEEE-754 binary32 kernel,
+- `IEEE32Exec`: an executable binary32 kernel with bit-level special values and core arithmetic,
 - companion lemmas about special values,
 - bridge theorems connecting `IEEE32Exec` back to the proof-oriented `FP32` model.
 

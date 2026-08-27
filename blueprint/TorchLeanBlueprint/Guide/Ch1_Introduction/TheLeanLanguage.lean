@@ -48,17 +48,16 @@ Lean's editor can show the type of any known name. Add:
 #check Trainer.new
 ```
 
-The relevant parts of the output are:
+Try the checks on concrete values as well:
 
 ```
-TorchLean.Tensor (α : Type) : Spec.Shape → Type
-nn.linear 2 4 : nn.Builder (nn.Sequential ...2... ...4...)
-Trainer.new ... : TorchLean.Trainer σ τ
+#check (Tensor.full [4, 2] 0.0 : Tensor Float [4, 2])
+#check (nn.Sequential![nn.linear 2 4])
 ```
 
 The full output contains qualified internal names and implicit arguments. That detail is useful when
-debugging, but the second line already gives the useful information: a `2 → 4` linear layer is a seeded model
-builder whose input and output shapes occur in its type.
+debugging, but the useful part is already visible: the scalar type is `Float`, the tensor dimensions
+are `[4, 2]`, and a `2 → 4` linear layer carries its input and output widths in its type.
 
 # Definitions Compute
 
@@ -163,8 +162,8 @@ this is a dependent type.
 Add a vector to `Primer.lean`:
 
 ```
-def point : Tensor Float (shape![2]) :=
-  tensorOfList! [2] [0.25, -0.75]
+def point : Tensor Float [2] :=
+  tensor! [0.25, -0.75]
 
 #check point
 #eval Tensor.pretty point
@@ -173,19 +172,19 @@ def point : Tensor Float (shape![2]) :=
 The output is:
 
 ```
-point : Tensor Float (Spec.Shape.ofList [2])
+point : Tensor Float [2]
 "[0.250000, -0.750000]"
 ```
 
-The macro `shape![2]` expands to TorchLean's recursive shape value. The constructor
-`tensorOfList! [2]` checks that two scalar entries were supplied and builds a tensor with that shape.
+The shape `[2]` is checked as part of the tensor's type. The `tensor!` literal must therefore
+contain exactly two scalar entries.
 The quotation marks in the second output appear because `Tensor.pretty` returns a `String`.
 
 Shapes themselves are ordinary values:
 
 ```
-#eval Shape.toList (shape![2, 3])
-#eval Shape.size (shape![2, 3])
+#eval Shape.toList [2, 3]
+#eval Shape.size [2, 3]
 ```
 
 Lean prints:
@@ -203,7 +202,7 @@ tensors share exactly the same shape.
 Add a valid model:
 
 ```
-def model : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def model : nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -263,7 +262,7 @@ printing behavior without fixing every program to one scalar type.
 A declaration such as
 
 ```
-def preserveShape {α : Type} (x : Tensor α (shape![2])) := x
+def preserveShape {α : Type} (x : Tensor α [2]) := x
 ```
 
 can be instantiated once with `Float`, once with `Rat`, and once with
@@ -276,7 +275,7 @@ A definition that returns data can compute:
 
 ```
 def outputWidth : Nat :=
-  Shape.size (shape![1])
+  Shape.size [1]
 ```
 
 A definition that returns `Prop` states a claim:
@@ -342,7 +341,7 @@ Long TorchLean types become easier when read from the result backward. For examp
 
 ```
 nn.linear 2 4 :
-  nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 4 .scalar))
+  nn.Builder (nn.Sequential [2] [4])
 ```
 
 Read it as:
@@ -370,7 +369,7 @@ qualified implementation names. Start by finding:
 - the first shape, scalar type, or namespace where they differ.
 
 For model composition, work from left to right and compare each layer's output with the next layer's
-input. For tensors, compare both the scalar type and the recursive shape. For training, check that
+input. For tensors, compare both the scalar type and the dimension list. For training, check that
 the dataset target shape agrees with the model output and task.
 
 The editor's hover information and `#check` are often faster than guessing. Reduce a large

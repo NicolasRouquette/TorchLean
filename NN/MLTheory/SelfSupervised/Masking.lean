@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-import Mathlib.Data.List.Basic
+import Mathlib.Init
 
 /-!
 # Masking primitives for self-supervised objectives
@@ -55,43 +55,42 @@ def complement {n : Nat} (m : Mask n) : Mask n :=
   simp [selected, complement]
 
 /--
-Generic masked loss over an explicit list of selected indices.
+Generic masked loss over an explicit array of selected indices.
 
 For theory files we keep the scalar loss as `Nat`; concrete runtime losses can instantiate this
 with squared-error bins, quantized patch losses, or any other executable per-patch score.
 -/
-def maskedLoss {n : Nat} (idxs : List (Fin n)) (perPatchLoss : Fin n → Nat) : Nat :=
+def maskedLoss {n : Nat} (idxs : Array (Fin n)) (perPatchLoss : Fin n → Nat) : Nat :=
   (idxs.map perPatchLoss).sum
 
 @[simp] theorem maskedLoss_nil {n : Nat} (perPatchLoss : Fin n → Nat) :
-    maskedLoss ([] : List (Fin n)) perPatchLoss = 0 := by
+    maskedLoss (#[] : Array (Fin n)) perPatchLoss = 0 := by
   simp [maskedLoss]
 
-@[simp] theorem maskedLoss_cons {n : Nat} (i : Fin n) (idxs : List (Fin n))
+@[simp] theorem maskedLoss_push {n : Nat} (idxs : Array (Fin n)) (i : Fin n)
     (perPatchLoss : Fin n → Nat) :
-    maskedLoss (i :: idxs) perPatchLoss =
-      perPatchLoss i + maskedLoss idxs perPatchLoss := by
-  simp [maskedLoss]
+    maskedLoss (idxs.push i) perPatchLoss =
+      maskedLoss idxs perPatchLoss + perPatchLoss i := by
+  simp [maskedLoss, Array.map_push]
 
-theorem maskedLoss_append {n : Nat} (xs ys : List (Fin n)) (perPatchLoss : Fin n → Nat) :
+theorem maskedLoss_append {n : Nat} (xs ys : Array (Fin n)) (perPatchLoss : Fin n → Nat) :
     maskedLoss (xs ++ ys) perPatchLoss =
       maskedLoss xs perPatchLoss + maskedLoss ys perPatchLoss := by
-  simp [maskedLoss, List.map_append, List.sum_append]
+  simp [maskedLoss, Array.map_append, Array.sum_append]
 
-theorem maskedLoss_reverse {n : Nat} (idxs : List (Fin n)) (perPatchLoss : Fin n → Nat) :
+theorem maskedLoss_reverse {n : Nat} (idxs : Array (Fin n)) (perPatchLoss : Fin n → Nat) :
     maskedLoss idxs.reverse perPatchLoss = maskedLoss idxs perPatchLoss := by
-  simp [maskedLoss]
+  simp [maskedLoss, Array.map_reverse, Array.sum_reverse]
 
-theorem maskedLoss_eq_zero_of_all_zero {n : Nat} (idxs : List (Fin n))
+theorem maskedLoss_eq_zero_of_all_zero {n : Nat} (idxs : Array (Fin n))
     (perPatchLoss : Fin n → Nat) (h : ∀ i ∈ idxs, perPatchLoss i = 0) :
     maskedLoss idxs perPatchLoss = 0 := by
-  induction idxs with
-  | nil => simp
-  | cons i rest ih =>
-      have hi : perPatchLoss i = 0 := h i (by simp)
-      have hrest : ∀ j ∈ rest, perPatchLoss j = 0 := by
-        intro j hj
-        exact h j (by simp [hj])
-      simp [maskedLoss_cons, hi, ih hrest]
+  have hmap : idxs.map perPatchLoss = Array.replicate idxs.size 0 := by
+    apply Array.ext <;> simp only [Array.size_map, Array.size_replicate]
+    intro i hiMap hiReplicate
+    rw [Array.getElem_map, Array.getElem_replicate]
+    exact h idxs[i] (Array.getElem_mem hiMap)
+  rw [maskedLoss, hmap]
+  simp
 
 end NN.MLTheory.SelfSupervised

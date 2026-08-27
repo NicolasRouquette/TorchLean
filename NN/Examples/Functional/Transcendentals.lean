@@ -52,7 +52,7 @@ autograd uses the native tape externs, which the interpreter cannot load (see th
 namespace NN.Examples.Functional.Transcendentals
 
 open Spec.Tensor
-open NN.Tensor
+open TorchLean.Tensor
 open TorchLean
 
 /-! ## Proof objects and runtime checks -/
@@ -75,10 +75,10 @@ For scalar exp over `ℝ`, the proved backward rule is the adjoint of the Fréch
 This is the theorem-level statement that the executable regression check is meant to complement.
 -/
 theorem expBackward_eq_adjoint_fderiv
-    (x δ : Spec.Tensor ℝ (.dim 1 .scalar)) :
-    Proofs.Autograd.toVecE (expProofSurface.correct.op.backward x δ) =
-      Proofs.Autograd.vjp expProofSurface.forwardVec (Proofs.Autograd.toVecE x)
-        (Proofs.Autograd.toVecE δ) :=
+    (x δ : Spec.Tensor ℝ [1]) :
+    Proofs.Autograd.getScalarE (expProofSurface.correct.op.backward x δ) =
+      Proofs.Autograd.vjp expProofSurface.forwardVec (Proofs.Autograd.getScalarE x)
+        (Proofs.Autograd.getScalarE δ) :=
   Proofs.Autograd.OpSpecFDerivCorrect.backward_eq_adjoint_fderiv expProofSurface x δ
 
 end
@@ -86,18 +86,18 @@ end
 /-! ## Functions under test (written once; gradients come from autograd) -/
 
 /-- $f(x)=e^x$. -/
-def expFn : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar :=
+def expFn : autograd.func.TensorFunction [] [] :=
   fun x => nn.functional.exp x
 
 /-- $f(x)=e^{-2x}$ — the shape of the AVS canopy two-way transmittance as a
 function of the attenuation parameter. -/
-def expNegativeTwoFn : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar :=
+def expNegativeTwoFn : autograd.func.TensorFunction [] [] :=
   fun x => do
     let u ← nn.functional.scale x (-Numbers.two)
     nn.functional.exp u
 
 /-- $f(x)=3x+1$ via the scalar-affine op. -/
-def affineFn : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar :=
+def affineFn : autograd.func.TensorFunction [] [] :=
   fun x => nn.functional.affine x Numbers.three Numbers.one
 
 /-! ## Float checks -/
@@ -121,10 +121,10 @@ def expectNot (name : String) (got wrong : Float) (tol : Float := 1e-6) : IO Uni
     IO.println s!"[PASS-NEG] {name}: grad = {got} ≠ {wrong} (test discriminates)"
 
 /-- Differentiate a scalar→scalar `Fn` at a Float point, returning the gradient. -/
-def gradAt (f : autograd.func.TensorFunction Spec.Shape.scalar Spec.Shape.scalar) (x0 : Float) :
+def gradAt (f : autograd.func.TensorFunction [] []) (x0 : Float) :
     IO Float := do
-  let x : Spec.Tensor Float Spec.Shape.scalar := Spec.fill (x0 : Float) Spec.Shape.scalar
-  let g ← autograd.func.grad (α := Float) f x
+  let x := Tensor.full [] x0
+  let g ← autograd.func.grad (inputShape := []) (α := Float) f x
   pure (Spec.toScalarSpec g)
 
 def checkAll : IO Unit := do

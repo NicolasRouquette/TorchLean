@@ -16,6 +16,7 @@ module
 
 public import NN.API
 public import NN.Examples.ModelZoo
+public import NN.Examples.Models.Common.Train
 public import NN.Runtime.Autograd.Engine.Cuda.Fno1dRfftFused
 public import NN.Spec.Layers.Loss
 
@@ -71,22 +72,21 @@ def defaultTrainRows : Nat := 128
 /-- Default number of held-out rows expected from the preparation script. -/
 def defaultTestRows : Nat := 32
 
-/-- Spec.Shape-level FNO configuration shared by the constructor and sample loaders. -/
+/-- FNO configuration shared by the constructor and sample loaders. -/
 def modelCfg : nn.models.FnoConfig 1 :=
-  { spatial := Vector.replicate 1 grid
-    modes := Vector.replicate 1 modes
+  { spatial := Spec.fill grid [1]
+    modes := Spec.fill modes [1]
     spatialNonzero := by intro i; fin_cases i; decide
     modesFit := by intro i; fin_cases i; decide
     width := width
     widthNonzero := by decide
-    blocks := blocks
-    seed := 0 }
+    blocks := blocks }
 
 /-- Model input shape: one sampled initial condition on the fixed grid. -/
-abbrev σ : Spec.Shape := modelCfg.inputShape
+abbrev σ : List Nat := modelCfg.inputShape
 
 /-- Model output shape: one predicted terminal solution on the same grid. -/
-abbrev τ : Spec.Shape := modelCfg.outputShape
+abbrev τ : List Nat := modelCfg.outputShape
 
 /-- Directory where the preparation script writes Burgers tensors by default. -/
 def defaultDir : System.FilePath := "data/real/fno"
@@ -128,8 +128,8 @@ structure BurgersOptions extends
 deriving Repr
 
 /-- All required dataset files for this run. -/
-def dataPaths (cfg : BurgersOptions) : List System.FilePath :=
-  [cfg.trainX, cfg.trainY, cfg.testX, cfg.testY]
+def dataPaths (cfg : BurgersOptions) : Array System.FilePath :=
+  #[cfg.trainX, cfg.trainY, cfg.testX, cfg.testY]
 
 namespace BurgersOptions
 
@@ -172,10 +172,10 @@ def mkModel : nn.Builder (nn.Sequential σ τ) :=
 /-- Load one fixed-grid Burgers split as supervised TorchLean samples. -/
 def loadDataset
     (xPath yPath : System.FilePath) (n : Nat) :
-    IO (Data.Dataset (Sample.Supervised Float σ τ)) := do
+    IO (Data.SampleStream (Sample.Supervised Float σ τ)) := do
   let samples ← ModelZoo.orThrow exeName =<<
     Data.loadSupervisedNpy xPath yPath n [grid] [grid]
-  pure <| _root_.Runtime.Autograd.Train.Dataset.ofList samples.toList
+  pure <| _root_.TorchLean.Data.SampleStream.ofArray samples
 
 /-- Write one FNO prediction row to CSV for the companion plotting script. -/
 def writePredictionProbe (plotCsv : System.FilePath)
@@ -183,8 +183,10 @@ def writePredictionProbe (plotCsv : System.FilePath)
   let rows := (List.finRange grid).map (fun i =>
     let denom := Float.ofNat (Nat.max 1 (grid - 1))
     let xpos := Float.ofNat i.val / denom
-    [toString i.val, toString xpos, toString (Spec.Tensor.vecGet x i),
-      toString (Spec.Tensor.vecGet target i), toString (Spec.Tensor.vecGet prediction i)])
+    [toString i.val, toString xpos,
+      toString (TorchLean.Tensor.item (TorchLean.Tensor.get x i)),
+      toString (TorchLean.Tensor.item (TorchLean.Tensor.get target i)),
+      toString (TorchLean.Tensor.item (TorchLean.Tensor.get prediction i))])
   if let some parent := plotCsv.parent then
     IO.FS.createDirAll parent
   let header := ["i", "x", "input", "target", "prediction"]
@@ -209,9 +211,9 @@ def writeMetricLog (dest : Training.LogDestination) (hist : Training.MetricHisto
 /-- Loaded train/test splits before evaluation prefixes and cycling streams are derived. -/
 structure LoadedData where
   /-- Training split as supervised samples. -/
-  train : Data.Dataset (Sample.Supervised Float σ τ)
+  train : Data.SampleStream (Sample.Supervised Float σ τ)
   /-- Held-out split as supervised samples. -/
-  test : Data.Dataset (Sample.Supervised Float σ τ)
+  test : Data.SampleStream (Sample.Supervised Float σ τ)
 
 /-- Validate paths and load both Burgers splits. -/
 def loadData (cfg : BurgersOptions) :
@@ -223,14 +225,14 @@ def loadData (cfg : BurgersOptions) :
 
 /-- Deterministic evaluation prefixes and cycling stream derived from the loaded train/test sets. -/
 structure EvalData where
-  trainDatasetSamples : List (Sample.Supervised Float σ τ)
-  testDatasetSamples : List (Sample.Supervised Float σ τ)
-  trainSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
-  testSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
-  reportTrainDatasetSamples : List (Sample.Supervised Float σ τ)
-  reportTestDatasetSamples : List (Sample.Supervised Float σ τ)
-  reportTrainSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
-  reportTestSamples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)
+  trainDatasetSamples : Array (Sample.Supervised Float σ τ)
+  testDatasetSamples : Array (Sample.Supervised Float σ τ)
+  trainSamples : Array (Spec.Tensor Float σ × Spec.Tensor Float τ)
+  testSamples : Array (Spec.Tensor Float σ × Spec.Tensor Float τ)
+  reportTrainDatasetSamples : Array (Sample.Supervised Float σ τ)
+  reportTestDatasetSamples : Array (Sample.Supervised Float σ τ)
+  reportTrainSamples : Array (Spec.Tensor Float σ × Spec.Tensor Float τ)
+  reportTestSamples : Array (Spec.Tensor Float σ × Spec.Tensor Float τ)
   trainCycle : Nat → Sample.Supervised Float σ τ
 
 /--
@@ -243,12 +245,13 @@ The fused CUDA path:
 - emit the same train/test MSE metric history.
 -/
 def mkEvalData (cfg : BurgersOptions) (data : LoadedData) : IO EvalData := do
-  let trainDatasetSamples := data.train.toList
-  let testDatasetSamples := data.test.toList
+  let trainDatasetSamples := data.train.toArray
+  let testDatasetSamples := data.test.toArray
   let trainSamples := trainDatasetSamples.map Sample.toPair
   let testSamples := testDatasetSamples.map Sample.toPair
   let trainCycle ← ModelZoo.orThrow exeName <|
-    Data.cycleListOrError trainDatasetSamples "empty Burgers training dataset"
+    (Data.SampleStream.ofArray trainDatasetSamples).cycleOrError
+      "empty Burgers training dataset"
   pure
     { trainDatasetSamples := trainDatasetSamples
       testDatasetSamples := testDatasetSamples
@@ -275,7 +278,7 @@ namespace FusedCuda
 abbrev Param := _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.Param
 
 /-- Mean MSE over a finite evaluation prefix using the fused CUDA FNO implementation. -/
-def meanLoss (ps : Array Param) (samples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)) :
+def meanLoss (ps : Array Param) (samples : Array (Spec.Tensor Float σ × Spec.Tensor Float τ)) :
     IO Float := do
   let result ←
     _root_.Runtime.Autograd.Cuda.Fno1dRfftFused.meanLoss
@@ -283,14 +286,14 @@ def meanLoss (ps : Array Param) (samples : List (Spec.Tensor Float σ × Spec.Te
   _root_.Runtime.Autograd.okOrThrow result
 
 /-- Train/test MSE pair for the current fused CUDA parameters. -/
-def evalLosses (trainEval testEval : List (Spec.Tensor Float σ × Spec.Tensor Float τ))
+def evalLosses (trainEval testEval : Array (Spec.Tensor Float σ × Spec.Tensor Float τ))
     (ps : Array Param) : IO (Float × Float) := do
   let trainLoss ← meanLoss ps trainEval
   let testLoss ← meanLoss ps testEval
   pure (trainLoss, testLoss)
 
 /-- Append one fused-CUDA evaluation point to the metric history. -/
-def recordEval (trainEval testEval : List (Spec.Tensor Float σ × Spec.Tensor Float τ))
+def recordEval (trainEval testEval : Array (Spec.Tensor Float σ × Spec.Tensor Float τ))
     (hist : Training.MetricHistory) (step : Nat) (ps : Array Param) (tag : String) :
     IO Training.MetricHistory := do
   let (trainLoss, testLoss) ← evalLosses trainEval testEval ps
@@ -348,9 +351,9 @@ def run (cfg : BurgersOptions) : IO Unit := do
     if ModelZoo.shouldLogStep progressEvery (step + 1) then
       hist ← recordEval eval.reportTrainSamples eval.reportTestSamples hist (step + 1) ps s!"step {step + 1}"
   hist ← recordEval eval.reportTrainSamples eval.reportTestSamples hist cfg.steps ps "after"
-  match eval.testSamples with
-  | [] => pure ()
-  | sample :: _ =>
+  match eval.testSamples[0]? with
+  | none => pure ()
+  | some sample =>
       let (x, y) := sample
       let yhat ← predict ps x
       writePredictionProbe cfg.plotCsv x y yhat
@@ -374,15 +377,15 @@ def runPortableDense
   trainer.printInfo
   let histRef ← IO.mkRef metricHistory
   let meanPredMse (predict : Spec.Tensor Float σ → IO (Spec.Tensor Float τ))
-      (samples : List (Spec.Tensor Float σ × Spec.Tensor Float τ)) : IO Float := do
-    match samples with
-    | [] => pure 0.0
-    | xs =>
-        let mut total : Float := 0.0
-        for (x, y) in xs do
-          let yhat ← predict x
-          total := total + _root_.Spec.mseSpec yhat y
-        pure (total / Float.ofNat xs.length)
+      (samples : Array (Spec.Tensor Float σ × Spec.Tensor Float τ)) : IO Float := do
+    if samples.isEmpty then
+      pure 0.0
+    else
+      let mut total : Float := 0.0
+      for (x, y) in samples do
+        let yhat ← predict x
+        total := total + _root_.Spec.mseSpec yhat y
+      pure (total / Float.ofNat samples.size)
   let recordEval
       (step : Nat) (tag : String)
       (predict : Spec.Tensor Float σ → IO (Spec.Tensor Float τ)) : IO Unit := do
@@ -391,9 +394,9 @@ def runPortableDense
     let hist ← histRef.get
     histRef.set (← pushLossPoint hist step tag trainLoss testLoss)
   let evalSample ←
-    match eval.reportTrainDatasetSamples with
-    | sample :: _ => pure sample
-    | [] => throw <| IO.userError s!"{exeName}: empty Burgers training evaluation prefix"
+    match eval.reportTrainDatasetSamples[0]? with
+    | some sample => pure sample
+    | none => throw <| IO.userError s!"{exeName}: empty Burgers training evaluation prefix"
   let progressEvery : Nat := Nat.max 1 (cfg.steps / 10)
   let trained ← trainer.trainStream opts
     (fun step => eval.trainCycle (cfg.seed + step))
@@ -402,17 +405,14 @@ def runPortableDense
     (curveEvery := progressEvery)
     (cudaMemWatch := cfg.cudaMemWatch)
     (onEval := recordEval)
-  -- Save one prediction slice so the example reports both scalar loss curves and a field-level
-  -- Burgers trajectory comparison.
-  match eval.testSamples with
-  | [] => pure ()
-  | sample :: _ =>
+  match eval.testSamples[0]? with
+  | none => pure ()
+  | some sample =>
       let (x, y) := sample
       let yhat ← trained.predict x
       writePredictionProbe cfg.plotCsv x y yhat
   let hist ← histRef.get
   writeMetricLog cfg.log hist cfg "portable dense DFT ops" (ModelZoo.deviceName opts)
-
 
 def logRunHeader (opts : Options) (cfg : BurgersOptions) : IO Unit := do
   IO.println s!"{exeName}: native real-split FNO1D Burgers"
@@ -431,6 +431,16 @@ def logRunHeader (opts : Options) (cfg : BurgersOptions) : IO Unit := do
 def main (args : List String) : IO UInt32 := do
   Module.Command.runFloat32 exeName args
     (banner := ModelZoo.bannerWithDevice exeName "native FNO1D Burgers")
+    (usage? := some <| TrainCommand.optimizerUsage exeName #[
+      "  --x PATH           training input NPY file",
+      "  --y PATH           training target NPY file",
+      "  --test-x PATH      held-out input NPY file",
+      "  --test-y PATH      held-out target NPY file",
+      "  --train-rows N     training rows to load",
+      "  --test-rows N      held-out rows to load",
+      "  --eval-rows N      held-out rows used for reporting",
+      "  --plot-csv PATH    prediction/target CSV output"
+    ])
     (k := fun opts rest => do
       let (cfg, rest) ← ModelZoo.orThrow exeName <| BurgersOptions.parse rest
       CLI.requireNoArgs exeName rest

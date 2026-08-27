@@ -205,8 +205,8 @@ parameters instead of letting a raw tensor dictionary float around unchecked. Th
 including McCormick style pieces and branch and bound support.
 
 The bundled `pinn-cert` path is intentionally smaller than that full target. Its graph is the fixed
-`1 -> 16 -> 16 -> 1` tanh network `buildGraph`, and its deterministic parameters are
-`seedParamsFloat`, both defined in Lean. The JSON supplies sample points, box radii, a PDE
+`1 -> 16 -> 16 -> 1` tanh network `buildReferenceGraph 1`, and its deterministic parameters are
+`referenceParams 1`, both defined in Lean. The JSON supplies sample points, box radii, a PDE
 expression, and expected value, derivative, and residual intervals. `verifyCert` recomputes those
 quantities with the Float bound implementation and compares them with the artifact. It returns
 success or an error; it does not construct a proof object for a uniform residual proposition.
@@ -235,7 +235,8 @@ Important Lean objects:
 
 ```
 #check NN.Verification.PINN.SequentialPINNArch
-#check NN.Verification.PINN.buildGraph
+#check NN.Verification.PINN.buildReferenceGraph
+#check NN.Verification.PINN.referenceParams
 #check NN.Verification.PINN.PdeAst.Expr
 #check NN.Verification.PINN.PdeAst.eval
 #check NN.Verification.PINN.ResidualAffine.crownUBoundsForward

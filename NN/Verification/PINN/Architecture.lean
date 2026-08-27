@@ -40,7 +40,7 @@ structure SequentialPINNArch where
   /-- Input dimension. -/
   inputDim   : Nat
   /-- Hidden layer widths, in order. -/
-  hiddenDims : List Nat
+  hiddenDims : Array Nat
   /-- Output dimension. -/
   outputDim  : Nat
   /-- Shared hidden activation function. -/
@@ -51,15 +51,14 @@ namespace SequentialPINNArch
 
 /-- Number of linear layers in the architecture. -/
 def linearLayerCount (arch : SequentialPINNArch) : Nat :=
-  arch.hiddenDims.length + 1
+  arch.hiddenDims.size + 1
 
 /-- Dimensions (input, output) for each linear layer, in order. -/
-def linearDims (arch : SequentialPINNArch) : List (Nat × Nat) :=
-  let targets := arch.hiddenDims ++ [arch.outputDim]
-  let rec go : Nat → List Nat → List (Nat × Nat)
-    | _, [] => []
-    | inDim, outDim :: rest => (inDim, outDim) :: go outDim rest
-  go arch.inputDim targets
+def linearDims (arch : SequentialPINNArch) : Array (Nat × Nat) :=
+  let (_, dims) := (arch.hiddenDims.push arch.outputDim).foldl
+    (fun (inDim, dims) outDim => (outDim, dims.push (inDim, outDim)))
+    (arch.inputDim, #[])
+  dims
 
 /-- Node id assigned to the k-th linear layer (0-indexed). -/
 def linearNodeId (idx : Nat) : Nat :=
@@ -87,29 +86,30 @@ definitions should not depend on `private` helpers.
 -/
 def buildNodes
     (activation : HiddenActivation)
-    (remaining : List (Nat × Nat))
+    (remaining : Array (Nat × Nat))
     (prevId nextId : Nat)
-    (acc : Array Node) : Array Node :=
-  match remaining with
-  | [] => acc
-  | (_, outDim) :: rest =>
-    let linearNode : Node :=
-      { id := nextId,
-        parents := [prevId],
-        kind := NN.IR.OpKind.linear,
+    (acc : Array Node) : Array Node := Id.run do
+  let mut previous := prevId
+  let mut fresh := nextId
+  let mut nodes := acc
+  for i in [:remaining.size] do
+    let (_, outDim) := remaining[i]!
+    nodes := nodes.push
+      { id := fresh
+        parents := #[previous]
+        kind := NN.IR.OpKind.linear
         outShape := .dim outDim .scalar }
-    let acc := acc.push linearNode
-    let prevId := nextId
-    let nextId := nextId + 1
-    match rest with
-    | [] => buildNodes activation rest prevId nextId acc
-    | _ =>
-      let actNode : Node :=
-        { id := nextId,
-          parents := [prevId],
-          kind := activationOpKind activation,
+    previous := fresh
+    fresh := fresh + 1
+    if i + 1 < remaining.size then
+      nodes := nodes.push
+        { id := fresh
+          parents := #[previous]
+          kind := activationOpKind activation
           outShape := .dim outDim .scalar }
-      buildNodes activation rest nextId (nextId + 1) (acc.push actNode)
+      previous := fresh
+      fresh := fresh + 1
+  return nodes
 
 end Internal
 
@@ -117,7 +117,7 @@ end Internal
 def buildGraph (arch : SequentialPINNArch) : Graph :=
   let nodes : Array Node :=
     Internal.buildNodes arch.activation arch.linearDims 0 1
-      #[{ id := 0, parents := [], kind := NN.IR.OpKind.input, outShape := .dim arch.inputDim .scalar
+      #[{ id := 0, parents := #[], kind := NN.IR.OpKind.input, outShape := .dim arch.inputDim .scalar
         }]
   { nodes := nodes }
 

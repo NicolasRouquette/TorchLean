@@ -45,21 +45,21 @@ namespace NaiveBayes
 /-- One training example: a bag-of-words feature multiset and a class label. -/
 structure Example where
   /-- features. -/
-  features : List String  -- multiset-like: allows duplicates
+  features : Array String  -- multiset-like: allows duplicates
   /-- Label. -/
   label : String
 deriving Repr
 
 -- Count occurrences of each label.
 /-- Count how many times each label appears in the dataset. -/
-private def countLabels (data : List Example) : HashMap String Nat :=
+private def countLabels (data : Array Example) : HashMap String Nat :=
   data.foldl (fun acc ex =>
     acc.insert ex.label (acc.getD ex.label 0 + 1)
   ) {}
 
 -- Count occurrences of each feature per label.
 /-- Count how many times each feature appears *within each label*. -/
-private def countFeaturesPerLabel (data : List Example) : HashMap String (HashMap String Nat) :=
+private def countFeaturesPerLabel (data : Array Example) : HashMap String (HashMap String Nat) :=
   data.foldl (fun acc ex =>
     let labelMap := acc.getD ex.label {}
     let updated := ex.features.foldl (fun m f =>
@@ -75,9 +75,11 @@ private def totalFeatureCounts (counts : HashMap String (HashMap String Nat)) : 
   counts.map (fun _ fmap => fmap.fold (fun acc _ v => acc + v) 0)
 
 -- Get all distinct features in the dataset.
-/-- Collect the vocabulary: the list of distinct feature strings in the dataset. -/
-private def distinctFeatures (data : List Example) : List String :=
-  data.foldl (fun acc ex => acc ++ ex.features) [] |>.eraseDups
+/-- Collect the vocabulary as an array of distinct feature strings. -/
+private def distinctFeatures (data : Array Example) : Array String :=
+  let seen : HashMap String Unit := data.foldl (fun seen ex =>
+    ex.features.foldl (fun seen feature => seen.insert feature ()) seen) {}
+  seen.keysArray
 
 /-!
 ## Fitted model
@@ -101,25 +103,25 @@ structure Model where
   /-- total Counts. -/
   totalCounts : HashMap String Nat
   /-- labels. -/
-  labels : List String
+  labels : Array String
   /-- vocab. -/
-  vocab : List String
+  vocab : Array String
   /-- total Examples. -/
   totalExamples : Nat
 
 /-- Fit a naive Bayes model by collecting counts from the dataset. -/
-def fit (data : List Example) : Model :=
+def fit (data : Array Example) : Model :=
   let labelCounts := countLabels data
   let featureCounts := countFeaturesPerLabel data
   let totalCounts := totalFeatureCounts featureCounts
-  let labels := labelCounts.toList.map (·.fst)
+  let labels := labelCounts.keysArray
   let vocab := distinctFeatures data
-  { labelCounts, featureCounts, totalCounts, labels, vocab, totalExamples := data.length }
+  { labelCounts, featureCounts, totalCounts, labels, vocab, totalExamples := data.size }
 
 /-- Vocabulary size (number of distinct features). -/
-private def vocabSize (m : Model) : Nat := m.vocab.length
+private def vocabSize (m : Model) : Nat := m.vocab.size
 /-- Number of distinct labels. -/
-private def nLabels (m : Model) : Nat := m.labels.length
+private def nLabels (m : Model) : Nat := m.labels.size
 
 /-!
 ## Scoring and prediction
@@ -144,7 +146,7 @@ private def logCond {α : Type} [Context α] (m : Model) (lbl : String) (f : Str
   MathFunctions.log (((countF + 1) : α) / ((totalF + vocabSize m) : α))
 
 /-- Unnormalized log score `log P(lbl) + Σ log P(f|lbl)` for a bag of features. -/
-def score {α : Type} [Context α] (m : Model) (input : List String) (lbl : String) : α :=
+def score {α : Type} [Context α] (m : Model) (input : Array String) (lbl : String) : α :=
   let prior := logPrior (α := α) m lbl
   let cond := input.foldl (fun acc f => acc + logCond (α := α) m lbl f) 0
   prior + cond
@@ -152,13 +154,13 @@ def score {α : Type} [Context α] (m : Model) (input : List String) (lbl : Stri
 /-- Predict a label using a trained Naive Bayes model. -/
 def predictModel
   (m : Model)
-  (input : List String)
+  (input : Array String)
   (α : Type) [Context α] : String :=
-  match m.labels with
-  | [] => ""
-  | lbl0 :: rest =>
+  match m.labels[0]? with
+  | none => ""
+  | some lbl0 =>
       let initScore := score (α := α) m input lbl0
-      rest.foldl (fun (bestLbl, bestScore) lbl =>
+      m.labels.foldl (fun (bestLbl, bestScore) lbl =>
         let sc := score (α := α) m input lbl
         if Context.gtBool sc bestScore then (lbl, sc) else (bestLbl, bestScore)
       ) (lbl0, initScore) |>.fst
@@ -177,28 +179,28 @@ objective is useful for:
 - unit tests / runtime checks
 -/
 
-/-- Sum a list by left-folding with `+` (used by `logSumExp`). -/
-private def listSum {α : Type} [Add α] [Zero α] (xs : List α) : α :=
+/-- Sum an array by left-folding with `+` (used by `logSumExp`). -/
+private def arraySum {α : Type} [Add α] [Zero α] (xs : Array α) : α :=
   xs.foldl (fun acc x => acc + x) 0
 
 /-- Numerically stable `log (sum_i exp xs[i])`. -/
-private def logSumExp {α : Type} [Context α] (xs : List α) : α :=
+private def logSumExp {α : Type} [Context α] (xs : Array α) : α :=
   -- Numerically-stable log-sum-exp:
   --   log Σ exp(x_i) = m + log Σ exp(x_i - m), where m = max_i x_i.
-  match xs with
-  | [] => MathFunctions.log (0 : α)
-  | x0 :: rest =>
+  match xs[0]? with
+  | none => MathFunctions.log (0 : α)
+  | some x0 =>
       let m :=
-        rest.foldl (fun cur x => if x > cur then x else cur) x0
-      let s := listSum (xs.map (fun x => MathFunctions.exp (x - m)))
+        xs.foldl (fun cur x => if x > cur then x else cur) x0
+      let s := arraySum (xs.map (fun x => MathFunctions.exp (x - m)))
       m + MathFunctions.log s
 
 /-- Negative log-likelihood of the dataset under the trained Naive Bayes model. -/
-def negLogLikelihood {α : Type} [Context α] (m : Model) (data : List Example) : α :=
+def negLogLikelihood {α : Type} [Context α] (m : Model) (data : Array Example) : α :=
   data.foldl (fun acc ex =>
-    match m.labels with
-    | [] => acc
-    | _ =>
+    if m.labels.isEmpty then
+      acc
+    else
       let logits := m.labels.map (fun lbl => score (α := α) m ex.features lbl)
       let logZ := logSumExp (α := α) logits
       let trueLogit := score (α := α) m ex.features ex.label

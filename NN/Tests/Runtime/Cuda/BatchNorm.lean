@@ -12,9 +12,9 @@ public import NN.Tensor
 public import NN.Tests.Runtime.Cuda.Utils
 
 /-!
-# CUDA Kernel Coverage: BatchNorm (Channel-First)
+# CUDA Kernel Coverage: BatchNorm
 
-Compares CPU eager tape vs CUDA eager tape for `batchnorm_channel_first` (forward + backward).
+Compares CPU eager tape and CUDA eager tape for arbitrary-rank spatial BatchNorm.
 -/
 
 @[expose] public section
@@ -35,8 +35,13 @@ theorem hC : channels > 0 := by decide
 theorem hH : height > 0 := by decide
 theorem hW : width > 0 := by decide
 
-def x : Tensor Float (shape![channels, height, width]) :=
-  tensorOfList! [channels, height, width] [
+abbrev spatial : Shape := [height, width]
+
+theorem hInput : (spatial.prependDim channels).wellFormed := by
+  exact ⟨hC, ⟨hH, ⟨hW, trivial⟩⟩⟩
+
+def x : Tensor Float [channels, height, width] :=
+  tensorOfArray! [channels, height, width] #[
     -- channel 0
     1.0, 2.0,
     3.0, 4.0,
@@ -45,16 +50,16 @@ def x : Tensor Float (shape![channels, height, width]) :=
     1.5, -1.0
   ]
 
-def gamma : Tensor Float (shape![channels]) :=
-  tensorOfList! [channels] [1.0, 0.5]
+def gamma : Tensor Float [channels] :=
+  tensorOfArray! [channels] #[1.0, 0.5]
 
-def beta : Tensor Float (shape![channels]) :=
-  tensorOfList! [channels] [0.0, 0.1]
+def beta : Tensor Float [channels] :=
+  tensorOfArray! [channels] #[0.0, 0.1]
 
 def run : IO Unit := do
-  IO.println "=== CUDA kernel coverage: batchnorm_channel_first ==="
+  IO.println "=== CUDA kernel coverage: batch_norm ==="
 
-  let outShape : Shape := shape![channels, height, width]
+  let outShape : Shape := [channels, height, width]
 
   -- CPU tape
   let t0 : Tape Float := Tape.empty
@@ -62,14 +67,14 @@ def run : IO Unit := do
   let (t2, gId) := Tape.leaf (t := t1) gamma (name := some "gamma")
   let (t3, bId) := Tape.leaf (t := t2) beta (name := some "beta")
   let (t4, yId) ← Utils.okOrThrow
-    (Tape.batchNormChannelFirst (α := Float) (t := t3) (channels := channels) (height := height)
-      (width := width) (h_c := hC) (h_h := hH) (h_w := hW) xId gId bId)
+    (Tape.batchNorm (α := Float) (t := t3) (channels := channels) (sSpatial := spatial)
+      hInput xId gId bId)
   let yCpu ← Utils.cpuValue (s := outShape) t4 yId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape)
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (fill (1.0 : Float) outShape)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := outShape) gradsCpu xId
-  let dGammaCpu ← Utils.cpuGrad (s := shape![channels]) gradsCpu gId
-  let dBetaCpu ← Utils.cpuGrad (s := shape![channels]) gradsCpu bId
+  let dGammaCpu ← Utils.cpuGrad (s := [channels]) gradsCpu gId
+  let dBetaCpu ← Utils.cpuGrad (s := [channels]) gradsCpu bId
 
   -- CUDA tape
   let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
@@ -80,21 +85,21 @@ def run : IO Unit := do
   let (t3c, bIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t2c) (Utils.tensorToAnyBuffer beta)
     (name := some "beta")
   let (t4c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.batchNormChannelFirst (t := t3c) (channels := channels)
-      (height := height) (width := width) (h_c := hC) (h_h := hH) (h_w := hW) xIdc gIdc bIdc)
+    (Runtime.Autograd.Cuda.Tape.batchNorm (t := t3c) (channels := channels)
+      (spatial := spatial) hInput xIdc gIdc bIdc)
   let yCuda ← Utils.cudaValue (s := outShape) t4c yIdc
   let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
     { s := outShape, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size outShape)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t4c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := outShape) gradsCuda xIdc
-  let dGammaCuda ← Utils.cudaGrad (s := shape![channels]) gradsCuda gIdc
-  let dBetaCuda ← Utils.cudaGrad (s := shape![channels]) gradsCuda bIdc
+  let dGammaCuda ← Utils.cudaGrad (s := [channels]) gradsCuda gIdc
+  let dBetaCuda ← Utils.cudaGrad (s := [channels]) gradsCuda bIdc
 
   Utils.assertTensorApprox (s := outShape) "batchnorm forward" yCuda yCpu (tol := 5e-3)
   Utils.assertTensorApprox (s := outShape) "batchnorm dx" dxCuda dxCpu (tol := 5e-3)
-  Utils.assertTensorApprox (s := shape![channels]) "batchnorm dgamma" dGammaCuda dGammaCpu (tol := 5e-3)
-  Utils.assertTensorApprox (s := shape![channels]) "batchnorm dbeta" dBetaCuda dBetaCpu (tol := 5e-3)
+  Utils.assertTensorApprox (s := [channels]) "batchnorm dgamma" dGammaCuda dGammaCpu (tol := 5e-3)
+  Utils.assertTensorApprox (s := [channels]) "batchnorm dbeta" dBetaCuda dBetaCpu (tol := 5e-3)
 
 end BatchNorm
 end Cuda

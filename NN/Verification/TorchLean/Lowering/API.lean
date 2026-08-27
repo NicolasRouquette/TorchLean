@@ -65,6 +65,13 @@ def lInfBall {α : Type} [Context α] {s : Shape}
     (center : Tensor α s) (eps : α) : NN.MLTheory.CROWN.FlatBox α :=
   NN.MLTheory.CROWN.FlatBox.lInfBall (α := α) center eps
 
+/-- Flattening an $\ell^\infty$ ball preserves the number of tensor entries as its dimension. -/
+@[simp] theorem lInfBall_dim {α : Type} [Context α] {s : Shape}
+    (center : Tensor α s) (eps : α) :
+    (lInfBall center eps).dim = s.size := by
+  simp [lInfBall, NN.MLTheory.CROWN.FlatBox.lInfBall,
+    NN.MLTheory.CROWN.FlatBox.lInfBox]
+
 /-- Seed the distinguished verifier input with a uniform $\ell^\infty$ ball. -/
 def LoweredIR.seedLInfBall {α : Type} [Context α] {s : Shape}
     (lowered : LoweredIR α) (center : Tensor α s) (eps : α) :
@@ -159,7 +166,7 @@ def LoweredIR.outputBoxCROWNOrThrow {α : Type} [Context α] [NN.MLTheory.CROWN.
 def LoweredIR.backwardObjectiveBox? {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
     (lowered : LoweredIR α) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (ibp : Array (Option (NN.MLTheory.CROWN.FlatBox α)))
-    (xB : NN.MLTheory.CROWN.FlatBox α) (obj : NN.MLTheory.CROWN.Graph.FlatVec α) :
+    (xB : NN.MLTheory.CROWN.FlatBox α) (obj : NN.MLTheory.CROWN.Graph.FlatTensor α) :
     Except String (NN.MLTheory.CROWN.FlatBox α) := do
   let ctx ← lowered.affineCtx?
   NN.MLTheory.CROWN.Graph.backwardObjectiveBox? (α := α) lowered.graph ps ctx
@@ -169,18 +176,18 @@ def LoweredIR.backwardObjectiveBox? {α : Type} [Context α] [NN.MLTheory.CROWN.
 def LoweredIR.backwardObjectiveBoxOrThrow {α : Type} [Context α] [NN.MLTheory.CROWN.BoundOps α]
     (lowered : LoweredIR α) (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (ibp : Array (Option (NN.MLTheory.CROWN.FlatBox α)))
-    (xB : NN.MLTheory.CROWN.FlatBox α) (obj : NN.MLTheory.CROWN.Graph.FlatVec α) :
+    (xB : NN.MLTheory.CROWN.FlatBox α) (obj : NN.MLTheory.CROWN.Graph.FlatTensor α) :
     IO (NN.MLTheory.CROWN.FlatBox α) := do
   match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outB => pure outB
   | .error msg => throw <| IO.userError msg
 
-/-- Convert a parameter `TList` into constant references for IR lowering. -/
-def refListConstOfTList {α : Type} [Context α] :
-    {ss : List Shape} → Runtime.Autograd.Torch.TList α ss → Runtime.Autograd.Torch.RefList (Ref α)
+/-- Convert a parameter `_root_.TorchLean.TensorPack` into constant references for IR lowering. -/
+def refListConstOfPack {α : Type} [Context α] :
+    {ss : List Shape} → TorchLean.TensorPack α ss → Runtime.Autograd.Torch.RefList (Ref α)
       ss
   | [], .nil => .nil
-  | _s :: ss, .cons t ts => .cons (.const t) (refListConstOfTList (ss := ss) ts)
+  | _s :: ss, .cons t ts => .cons (.const t) (refListConstOfPack (ss := ss) ts)
 
 /--
 Lower a TorchLean forward model with one distinguished input, supplied as its last argument.
@@ -193,12 +200,12 @@ def lowerForwardToIR
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}
     (model : Runtime.Autograd.TorchLean.Program α (paramShapes ++ [inShape]) outShape)
-    (params : Runtime.Autograd.Torch.TList α paramShapes) :
+    (params : TorchLean.TensorPack α paramShapes) :
     Except String (LoweredIR α) :=
   let build : BuildM α Nat := do
     let x : Ref α inShape ← emitInput (α := α)
     let psRefs : Runtime.Autograd.Torch.RefList (Ref α) paramShapes :=
-      refListConstOfTList (α := α) (ss := paramShapes) params
+      refListConstOfPack (α := α) (ss := paramShapes) params
     let allRefs : Runtime.Autograd.Torch.RefList (Ref α) (paramShapes ++ [inShape]) :=
       Runtime.Autograd.Torch.RefList.append (ss₁ := paramShapes) (ss₂ := [inShape]) psRefs (.cons x
         .nil)

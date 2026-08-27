@@ -6,10 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.Sequence
-public import NN.Spec.Core.Tensor
-public import NN.Spec.Core.Tensor.Linalg
-public import NN.Spec.Core.TensorOps
+public import NN.Tensor
 
 /-!
 # Low-Rank Adapters
@@ -37,34 +34,35 @@ open _root_.Spec.Tensor
 /-- LoRA factors for a linear weight of shape `inDim × outDim`. -/
 structure Params (α : Type) (inDim rank outDim : Nat) where
   /-- Projection from the input dimension to the adapter rank. -/
-  A : Tensor α (.dim inDim (.dim rank .scalar))
+  A : Tensor α [inDim, rank]
   /-- Projection from the adapter rank to the output dimension. -/
-  B : Tensor α (.dim rank (.dim outDim .scalar))
+  B : Tensor α [rank, outDim]
 
 /-- The scaled low-rank update $sAB$. -/
 def delta {α : Type} [Add α] [Mul α] [Zero α]
     {inDim rank outDim : Nat} (p : Params α inDim rank outDim) (scale : α) :
-    Tensor α (.dim inDim (.dim outDim .scalar)) :=
+    Tensor α [inDim, outDim] :=
   scaleSpec (matMulSpec p.A p.B) scale
 
 /-- Add a LoRA update to a base linear weight. -/
 def effectiveWeight {α : Type} [Add α] [Mul α] [Sub α] [Zero α]
     {inDim rank outDim : Nat}
-    (base : Tensor α (.dim inDim (.dim outDim .scalar)))
+    (base : Tensor α [inDim, outDim])
     (p : Params α inDim rank outDim) (scale : α) :
-    Tensor α (.dim inDim (.dim outDim .scalar)) :=
+    Tensor α [inDim, outDim] :=
   addSpec base (delta p scale)
 
 /-- Apply a linear map whose weight is augmented by a LoRA update at every leading index. -/
 def linear {α : Type} [Add α] [Mul α] [Sub α] [Zero α]
-    {leading : Shape} {inDim rank outDim : Nat}
-    (x : Tensor α (leading.appendDim inDim))
-    (base : Tensor α (.dim inDim (.dim outDim .scalar)))
+    {leading : List Nat} {inDim rank outDim : Nat}
+    (x : Tensor α (leading ++ [inDim]))
+    (base : Tensor α [inDim, outDim])
     (p : Params α inDim rank outDim) (scale : α) :
-    Tensor α (leading.appendDim outDim) :=
-  by
-    rw [Shape.appendDim_eq_concat] at x ⊢
-    exact Tensor.mapLeading leading
-      (fun row => vecMatMulSpec row (effectiveWeight base p scale)) x
+    Tensor α (leading ++ [outDim]) := by
+  let x' : Tensor α ((Shape.ofList leading).concat (Shape.ofList [inDim])) := by
+    simpa only [Shape.ofList_append] using x
+  simpa only [Shape.ofList_append] using
+    Spec.Tensor.mapEach (Shape.ofList leading)
+      (fun row => vecMatMulSpec row (effectiveWeight base p scale)) x'
 
 end TorchLean.Adapters.LoRA

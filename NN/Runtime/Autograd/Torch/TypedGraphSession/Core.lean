@@ -64,7 +64,7 @@ structure TypedGraphSessionState (α : Type) where
   /-- Leaf shapes (inputs/parameters), in creation order. -/
   Γ : List Shape
   /-- Leaf values, aligned with `Γ`. -/
-  x : _root_.Proofs.Autograd.Algebra.TList α Γ
+  x : TorchLean.TensorPack α Γ
   /-- Runtime metadata aligned with the leaves in `Γ`. -/
   leafMetadata : Array LeafMetadata := #[]
   /-- Non-differentiable external inputs (e.g. class labels/indices). -/
@@ -101,6 +101,10 @@ structure TypedGraphSession (α : Type) where
   st : IO.Ref (TypedGraphSessionState α)
   /-- Map from graph leaf ids to mutable parameter objects. -/
   paramsByLeaf : IO.Ref (Std.HashMap Nat (AnyParam α))
+  /-- Process-unique owner id for session references. -/
+  refOwner : Nat
+  /-- Current recording generation for session references. -/
+  refGeneration : IO.Ref Nat
 
 namespace TypedGraphSession
 
@@ -113,7 +117,43 @@ identifiers to parameters. Call `resetTape` to begin a new graph recording phase
 def new {α : Type} (opts : Options := {}) : IO (TypedGraphSession α) := do
   let st ← IO.mkRef (TypedGraphSessionState.empty (α := α))
   let paramsByLeaf ← IO.mkRef (Std.HashMap.emptyWithCapacity)
-  pure { opts := opts, st := st, paramsByLeaf := paramsByLeaf }
+  let refOwner ← RefIdentity.freshOwner
+  let refGeneration ← IO.mkRef 0
+  pure { opts, st, paramsByLeaf, refOwner, refGeneration }
+
+/-- Capture the current owner and generation for a newly recorded handle. -/
+def currentRefIdentity {α : Type} (s : TypedGraphSession α) : IO RefIdentity := do
+  pure { owner := s.refOwner, generation := ← s.refGeneration.get }
+
+/-- Construct a tensor handle owned by the current recording phase. -/
+def makeTensorRef {α : Type} {sh : Shape} (s : TypedGraphSession α) (id : Nat) :
+    IO (TensorRef α sh) := do
+  pure { id, identity? := some (← s.currentRefIdentity) }
+
+/-- Construct a non-differentiable handle owned by the current recording phase. -/
+def makeNatRef {α : Type} (s : TypedGraphSession α) (id : Nat) : IO NatRef := do
+  pure { id, identity? := some (← s.currentRefIdentity) }
+
+/-- Validate one tensor handle before using its numeric graph id. -/
+def validateTensorRef {α : Type} (s : TypedGraphSession α) {sh : Shape}
+    (x : TensorRef α sh) : IO Unit := do
+  match x.identity? with
+  | some identity => identity.validateAgainst s.refOwner s.refGeneration "tensor reference"
+  | none => throw <| IO.userError "torch: tensor reference has no session owner"
+
+/-- Validate tensor handles consumed by one graph operation. -/
+def validateRefIdentities {α : Type} (s : TypedGraphSession α)
+    (identities : Array (Option RefIdentity)) : IO Unit := do
+  for identity? in identities do
+    match identity? with
+    | some identity => identity.validateAgainst s.refOwner s.refGeneration "tensor reference"
+    | none => throw <| IO.userError "torch: tensor reference has no session owner"
+
+/-- Validate one non-differentiable handle before using its environment index. -/
+def validateNatRef {α : Type} (s : TypedGraphSession α) (x : NatRef) : IO Unit := do
+  match x.identity? with
+  | some identity => identity.validateAgainst s.refOwner s.refGeneration "Nat reference"
+  | none => throw <| IO.userError "torch: Nat reference has no session owner"
 
 /--
 Reset the session to an empty snapshot.
@@ -124,6 +164,7 @@ Important invariant: this session requires that **all leaves are created before 
 def resetTape {α : Type} (s : TypedGraphSession α) : IO Unit := do
   s.st.set (TypedGraphSessionState.empty (α := α))
   s.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
+  s.refGeneration.modify (fun generation => generation + 1)
 
 /--
 Create a mutable parameter object (not yet part of the recorded graph).
@@ -169,8 +210,8 @@ def addLeaf {α : Type} (s : TypedGraphSession α) {sh : Shape} (v : Tensor α s
   ensureNoNodes st0
   let id := st0.Γ.length
   let Γ' := st0.Γ ++ [sh]
-  let x' : _root_.Proofs.Autograd.Algebra.TList α Γ' :=
-    _root_.Proofs.Autograd.Algebra.TList.snoc (α := α) (ss := st0.Γ) (τ := sh) st0.x v
+  let x' : TorchLean.TensorPack α Γ' :=
+    TorchLean.TensorPack.snoc (α := α) (ss := st0.Γ) (τ := sh) st0.x v
   -- No nodes yet, so the graph stays `nil`.
   let st1 : TypedGraphSessionState α :=
     { Γ := Γ'
@@ -180,7 +221,7 @@ def addLeaf {α : Type} (s : TypedGraphSession α) {sh : Shape} (v : Tensor α s
       ss := []
       g := .nil }
   s.st.set st1
-  pure { id := id }
+  s.makeTensorRef id
 
 /--
 Use a `Param` in the recorded graph by reading its current value and recording it as a leaf.
@@ -222,10 +263,11 @@ def inputNat {α : Type} (s : TypedGraphSession α) (v : Nat) : IO NatRef := do
   ensureNoNodes st0
   let id := st0.nat.size
   s.st.set { st0 with nat := st0.nat.push v }
-  pure { id := id }
+  s.makeNatRef id
 
 /-- Read a previously recorded `NatRef`. -/
 def getNat {α : Type} (s : TypedGraphSession α) (r : NatRef) : IO Nat := do
+  s.validateNatRef r
   let st0 ← s.st.get
   if h : r.id < st0.nat.size then
     pure <| st0.nat[r.id]'h
@@ -234,69 +276,13 @@ def getNat {α : Type} (s : TypedGraphSession α) (r : NatRef) : IO Nat := do
 
 /-- Overwrite a previously recorded `NatRef`. -/
 def setNat {α : Type} (s : TypedGraphSession α) (r : NatRef) (v : Nat) : IO Unit := do
+  s.validateNatRef r
   let st0 ← s.st.get
   if h : r.id < st0.nat.size then
     let i : Fin st0.nat.size := ⟨r.id, h⟩
     s.st.set { st0 with nat := st0.nat.set i v }
   else
     throw <| IO.userError "torch(TypedGraphSession): invalid nat id"
-
-/--
-Convert a small `Tensor Nat (.dim k .scalar)` into an `Array Nat`.
-
-This is used to stage `NatVecRef` inputs into the session nat-environment.
--/
-def natVecToArray {k : Nat} (v : Tensor Nat (.dim k .scalar)) : Array Nat :=
-  Array.ofFn (fun i : Fin k =>
-    match getAtSpec v i with
-    | .scalar n => n)
-
-/--
-Record a non-differentiable vector of `Nat` inputs.
-
-Returns a `NatVecRef k` which points into the nat-environment. This is useful for "runtime gather"
-style ops where indices are supplied externally (and are not differentiable).
--/
-def inputNatVec {α : Type} {k : Nat} (s : TypedGraphSession α) (v : Tensor Nat (.dim k .scalar)) : IO
-  (NatVecRef k) := do
-  let st0 ← s.st.get
-  ensureNoNodes st0
-  let start := st0.nat.size
-  let xsNew := (natVecToArray (k := k) v).foldl (fun acc x => acc.push x) st0.nat
-  s.st.set { st0 with nat := xsNew }
-  pure { start := start }
-
-/-- Read back the `k`-vector stored at a `NatVecRef k`. -/
-def getNatVec {α : Type} {k : Nat} (s : TypedGraphSession α) (r : NatVecRef k) : IO (Tensor Nat (.dim k
-  .scalar)) := do
-  let st0 ← s.st.get
-  if h : r.start + k ≤ st0.nat.size then
-    pure <|
-      Tensor.dim (fun i =>
-        have hi : r.start + i.val < r.start + k := Nat.add_lt_add_left i.is_lt r.start
-        have hi' : r.start + i.val < st0.nat.size := lt_of_lt_of_le hi h
-        Tensor.scalar (st0.nat[r.start + i.val]'hi'))
-  else
-    throw <| IO.userError "torch(TypedGraphSession): invalid nat vec ref (out of bounds)"
-
-/-- Overwrite the nat-environment segment referenced by `NatVecRef k`. -/
-def setNatVec {α : Type} {k : Nat} (s : TypedGraphSession α) (r : NatVecRef k) (v : Tensor Nat (.dim k
-  .scalar)) : IO Unit := do
-  let st0 ← s.st.get
-  if h : r.start + k ≤ st0.nat.size then
-    let xs' :=
-      (List.finRange k).foldl (fun acc (i : Fin k) =>
-        have hi : r.start + i.val < st0.nat.size := by
-          have hlt : r.start + i.val < r.start + k := Nat.add_lt_add_left i.is_lt r.start
-          exact lt_of_lt_of_le hlt h
-        let vi : Nat :=
-          match getAtSpec v i with
-          | .scalar n => n
-        acc.set! (r.start + i.val) vi
-      ) st0.nat
-    s.st.set { st0 with nat := xs' }
-  else
-    throw <| IO.userError "torch(TypedGraphSession): invalid nat vec ref (out of bounds)"
 
 /--
 Build a typed index into the current context `Γ ++ ss` from a raw numeric id and expected shape.
@@ -326,9 +312,10 @@ nat-environment. It does **not** run the runtime tape or mutate session state.
 -/
 def getValue {α : Type} (s : TypedGraphSession α) {sh : Shape} [DecidableEq Shape]
   (x : TensorRef α sh) : IO (Tensor α sh) := do
+  s.validateTensorRef x
   let st0 ← s.st.get
   -- Evaluate the recorded graph at the recorded leaf values.
-  let ctx : _root_.Proofs.Autograd.Algebra.TList α (st0.Γ ++ st0.ss) :=
+  let ctx : TorchLean.TensorPack α (st0.Γ ++ st0.ss) :=
     _root_.Proofs.Autograd.Algebra.GraphData.eval (α := α) (Δ := NatEnv) (Γ := st0.Γ) (ss := st0.ss)
       st0.g st0.x st0.nat
   let idx ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st0.Γ) (ss := st0.ss) x.id sh)

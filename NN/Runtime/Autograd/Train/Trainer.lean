@@ -55,11 +55,11 @@ structure StepReport (a : Type) where
   /-- Scalar objective value for this step or evaluation pass. -/
   loss : a
   /-- Additional named scalar metrics for logging/monitoring. -/
-  metrics : List (Metric a) := []
+  metrics : Array (Metric a) := #[]
 
-/-- Render a list of metrics as a comma-separated string. -/
-def renderMetrics {a : Type} [ToString a] (metrics : List (Metric a)) : String :=
-  String.intercalate ", " (metrics.map Metric.render)
+/-- Render an array of metrics as a comma-separated string. -/
+def renderMetrics {a : Type} [ToString a] (metrics : Array (Metric a)) : String :=
+  String.intercalate ", " (metrics.map Metric.render).toList
 
 /-- Render a single step report (loss + metrics). -/
 def renderReport {a : Type} [ToString a] (step : Nat) (r : StepReport a) : String :=
@@ -70,11 +70,8 @@ def renderReport {a : Type} [ToString a] (step : Nat) (r : StepReport a) : Strin
     base ++ ", " ++ renderMetrics r.metrics
 
 /-- Render reports for a full run, with step numbers starting at `0`. -/
-def renderReports {a : Type} [ToString a] (reports : List (StepReport a)) : List String :=
-  let rec go : Nat -> List (StepReport a) -> List String
-    | _, [] => []
-    | step, r :: rs => renderReport step r :: go (step + 1) rs
-  go 0 reports
+def renderReports {a : Type} [ToString a] (reports : Array (StepReport a)) : Array String :=
+  reports.mapIdx fun step report => renderReport step report
 
 /-!
 ## Generic training loop
@@ -90,13 +87,13 @@ This is a generic utility (not Torch-specific): it threads a `state` value and a
 -/
 def runStepsM {m : Type -> Type} [Monad m] {state out : Type}
   (steps : Nat) (init : state) (step : state -> m (Prod state out)) :
-  m (Prod state (List out)) := by
-  let rec go : Nat -> state -> List out -> m (Prod state (List out))
-    | 0, s, acc => pure (s, acc.reverse)
-    | n + 1, s, acc => do
+  m (Prod state (Array out)) := by
+  let rec go : Nat -> state -> Array out -> m (Prod state (Array out))
+    | 0, s, outputs => pure (s, outputs)
+    | n + 1, s, outputs => do
         let (s', out) ← step s
-        go n s' (out :: acc)
-  exact go steps init []
+        go n s' (outputs.push out)
+  exact go steps init #[]
 
 /-!
 ## Trainer structure
@@ -131,19 +128,20 @@ def noLog {m : Type -> Type} [Monad m] {state a : Type}
 /-- Run a trainer for `steps` steps, returning the final state and the collected reports. -/
 def run {m : Type -> Type} [Monad m] {state a : Type}
   (steps : Nat) (t : Trainer m state a) :
-  m (Prod state (List (StepReport a))) := by
-  let rec go : Nat -> Nat -> state -> List (StepReport a) -> m (Prod state (List (StepReport a)))
-    | 0, _, s, acc => pure (s, acc.reverse)
-    | n + 1, stepIdx, s, acc => do
+  m (Prod state (Array (StepReport a))) := by
+  let rec go : Nat -> Nat -> state -> Array (StepReport a) ->
+      m (Prod state (Array (StepReport a)))
+    | 0, _, s, reports => pure (s, reports)
+    | n + 1, stepIdx, s, reports => do
         let (s', report) ← t.step s
         t.logger stepIdx s' report
-        go n (stepIdx + 1) s' (report :: acc)
-  exact go steps 0 t.init []
+        go n (stepIdx + 1) s' (reports.push report)
+  exact go steps 0 t.init #[]
 
 /-- Run a trainer and project the report stream to per-step losses. -/
 def runLosses {m : Type -> Type} [Monad m] {state a : Type}
   (steps : Nat) (t : Trainer m state a) :
-  m (Prod state (List a)) := do
+  m (Prod state (Array a)) := do
   let (s, reports) ← run (steps := steps) t
   pure (s, reports.map (fun r => r.loss))
 

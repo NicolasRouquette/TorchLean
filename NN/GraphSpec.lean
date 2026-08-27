@@ -65,7 +65,7 @@ namespace Model
 @[inherit_doc DAG.Model.specFwd]
 abbrev specFwd {ps ins : List Spec.Shape} {τ : Spec.Shape} (m : Model ps ins τ)
     {α : Type 0} [Context α] :
-    Runtime.Autograd.Torch.TList α ps → Runtime.Autograd.Torch.TList α ins → Spec.Tensor α τ :=
+    TorchLean.TensorPack α ps → TorchLean.TensorPack α ins → Spec.Tensor α τ :=
   DAG.Model.specFwd (ps := ps) (ins := ins) (τ := τ) m
 
 @[inherit_doc DAG.Model.toProgram]

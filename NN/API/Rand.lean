@@ -10,7 +10,7 @@ module
 
 public import NN.API.Scalar
 public import NN.Runtime.Autograd.TorchLean.Random
-public import NN.Tensor.API
+public import NN.Tensor
 
 /-!
 # Random Seeds
@@ -67,13 +67,9 @@ def next (s : SeedStream) : Nat × SeedStream :=
   (out, { s with counter := s.counter + 1 })
 
 /-- Draw `n` fresh seeds. -/
-def nextN (n : Nat) (s : SeedStream) : List Nat × SeedStream :=
-  let rec go : Nat → SeedStream → List Nat → (List Nat × SeedStream)
-    | 0, st, acc => (acc.reverse, st)
-    | k + 1, st, acc =>
-        let (x, st') := next st
-        go k st' (x :: acc)
-  go n s []
+def nextN (n : Nat) (s : SeedStream) : Array Nat × SeedStream :=
+  let seeds := Array.ofFn fun i : Fin n => nextSeed s.seed (s.counter + i)
+  (seeds, { s with counter := s.counter + n })
 
 end SeedStream
 

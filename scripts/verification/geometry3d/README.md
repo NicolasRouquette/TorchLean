@@ -11,6 +11,12 @@ JSON, ask Lean to check the exported tensor artifact, and render overlays for hu
 
 ## Real Model Path
 
+Install the producer dependencies:
+
+```bash
+python3 -m pip install -r scripts/verification/geometry3d/requirements-realworld.txt
+```
+
 Run the real-image certificate suite:
 
 ```bash

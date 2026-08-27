@@ -34,10 +34,10 @@ variable {α : Type} [Context α]
 
 /-- A linear SVM represented as a single-output linear module. -/
 def linearSvm {p : ℕ} (model : LinearSVM p α) :
-  Spec.Module α (.dim p .scalar) (.dim 1 .scalar) :=
-  let weightMatrix : Tensor α (.dim 1 (.dim p .scalar)) :=
+  Spec.Module α ([p]) ([1]) :=
+  let weightMatrix : Tensor α [1, p] :=
     Tensor.dim (fun _ => model.w)
-  let biasVec : Tensor α (.dim 1 .scalar) :=
+  let biasVec : Tensor α [1] :=
     Tensor.dim (fun _ => Tensor.scalar model.b)
   let linearSpec : Spec.LinearSpec α p 1 :=
     { weights := weightMatrix, bias := biasVec }

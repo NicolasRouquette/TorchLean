@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.TypedGraphSession.ConvAttention
+public import NN.Tensor.ShapeErasure
 
 /-!
 # Typed Graph Session: Differentiation and Backpropagation
@@ -60,7 +61,8 @@ Run reverse-mode backprop for the whole recorded context and return a dense grad
 -/
 def backwardDenseAll {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [DecidableEq Shape]
   {sh : Shape} (out : TensorRef α sh) (seed : Tensor α sh) :
-  IO (Array (Spec.PackedTensor α)) := do
+  IO (Array (Spec.SomeTensor α)) := do
+  s.validateTensorRef out
   let st0 ← s.st.get
   let output ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st0.Γ) (ss := st0.ss) out.id sh)
   let t ← okOrThrow (lowerTape (α := α) (st := st0))
@@ -73,7 +75,7 @@ Run backward from a scalar loss with seed `1`.
 PyTorch comparison: `loss.backward()` for a scalar loss.
 -/
 def backwardScalarDenseAll {α : Type} (s : TypedGraphSession α) [Add α] [Zero α] [One α] [DecidableEq Shape]
-  (loss : TensorRef α Shape.scalar) : IO (Array (Spec.PackedTensor α)) :=
+  (loss : TensorRef α Shape.scalar) : IO (Array (Spec.SomeTensor α)) :=
   backwardDenseAll (α := α) s (sh := Shape.scalar) loss (Tensor.scalar (1 : α))
 
 /--
@@ -82,7 +84,7 @@ Extract the gradient tensor for a particular `TensorRef` from a dense gradient a
 This is the typed analogue of looking up `grads[x.id]` and casting it to the expected shape.
 -/
 def grad {α : Type} {sh : Shape} [DecidableEq Shape]
-  (grads : Array (Spec.PackedTensor α)) (x : TensorRef α sh) : IO (Tensor α sh) := do
+  (grads : Array (Spec.SomeTensor α)) (x : TensorRef α sh) : IO (Tensor α sh) := do
   let gAny ← match grads[x.id]? with
     | some g => pure g
     | none => throw <| IO.userError "torch(TypedGraphSession): gradient array out of bounds"
@@ -111,32 +113,28 @@ def mkLeafIdxOrThrow {_α : Type} {Γ : List Shape} (id : Nat) (s : Shape) :
     exact .error s!"torch(TypedGraphSession): invalid leaf id={id} for leafLen={Γ.length}"
 
 /--
-Convert a dense tangent array (aligned with leaf creation order) into a typed `TList α Γ`.
+Convert a dense tangent array (aligned with leaf creation order) into a typed `_root_.TorchLean.TensorPack α Γ`.
 
 This is the main adapter needed to call the proved `GraphData.jvpCtx` forward-mode routine.
 -/
-def dxTListFromAnyArray {α : Type} [Zero α] [DecidableEq Shape]
-    (Γ : List Shape) (dxs : Array (Spec.PackedTensor α)) :
-    IO (_root_.Proofs.Autograd.Algebra.TList α Γ) := do
-  if _hlen : dxs.size = Γ.length then
-    let rec go : (Γ' : List Shape) → (off : Nat) → IO (_root_.Proofs.Autograd.Algebra.TList α Γ')
-      | [], _ => pure .nil
-      | s :: ss, off => do
-          let any ← match dxs[off]? with
-            | some v => pure v
-            | none => throw <| IO.userError "torch(TypedGraphSession): dx array out of bounds"
-            if hs : any.shape = s then
-              let t : Tensor α s := any.cast hs
-              pure (.cons t (← go ss (off + 1)))
-            else
-              throw <| IO.userError <|
-                s!"torch(TypedGraphSession): dx shape mismatch at idx={off} (expected "
-                  ++ s!"{Shape.pretty s}, got "
-                  ++ s!"{Shape.pretty any.shape})"
-    go Γ 0
+def tangentPackOfShapeErasedArray {α : Type} [DecidableEq Shape]
+    (Γ : List Shape) (dxs : Array (Spec.SomeTensor α)) :
+    IO (TorchLean.TensorPack α Γ) := do
+  if dxs.size = Γ.length then
+    okOrThrow (TorchLean.TensorPack.ofShapeErasedArray (α := α) dxs (shapes := Γ))
   else
     throw <| IO.userError
       s!"torch(TypedGraphSession): dx array size mismatch (expected {Γ.length}, got {dxs.size})"
+
+/-- Evaluate a JVP from a tangent pack aligned with the session's typed leaf context. -/
+def jvpWithTangentPack {α : Type} (st : TypedGraphSessionState α) [DecidableEq Shape]
+    {sh : Shape} (out : TensorRef α sh) (dx : TorchLean.TensorPack α st.Γ) :
+    IO (Tensor α sh) := do
+  let dctx : TorchLean.TensorPack α (st.Γ ++ st.ss) :=
+    _root_.Proofs.Autograd.Algebra.GraphData.jvpCtx
+      (α := α) (Δ := NatEnv) (Γ := st.Γ) (ss := st.ss) st.g st.x dx st.nat
+  let idx ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st.Γ) (ss := st.ss) out.id sh)
+  pure (_root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := dctx) idx)
 
 /--
 Jacobian-vector product for the current session snapshot.
@@ -144,29 +142,25 @@ Jacobian-vector product for the current session snapshot.
 `dxs` is a dense array of tangents for leaf tensors, aligned with leaf creation order.
 -/
 def jvpDenseAll {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
-    {sh : Shape} (out : TensorRef α sh) (dxs : Array (Spec.PackedTensor α)) :
-    IO (Tensor α sh) := do
+    {sh : Shape} (out : TensorRef α sh) (dxs : Array (Spec.SomeTensor α)) :
+  IO (Tensor α sh) := do
+  s.validateTensorRef out
   let st0 ← s.st.get
-  let dx ← dxTListFromAnyArray (α := α) (Γ := st0.Γ) dxs
-  let dctx : _root_.Proofs.Autograd.Algebra.TList α (st0.Γ ++ st0.ss) :=
-    _root_.Proofs.Autograd.Algebra.GraphData.jvpCtx (α := α) (Δ := NatEnv) (Γ := st0.Γ) (ss :=
-      st0.ss)
-      st0.g st0.x dx st0.nat
-  let idx ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st0.Γ) (ss := st0.ss) out.id sh)
-  pure (_root_.Proofs.Autograd.Algebra.getIdx (α := α) (xs := dctx) idx)
+  let dx ← tangentPackOfShapeErasedArray (α := α) st0.Γ dxs
+  jvpWithTangentPack (α := α) st0 out dx
 
 /-- JVP for a single leaf: tangent is nonzero only at `x`. -/
 def jvpLeaf {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
     {shOut shX : Shape}
     (out : TensorRef α shOut) (x : TensorRef α shX) (dx : Tensor α shX) :
     IO (Tensor α shOut) := do
+  s.validateTensorRef out
+  s.validateTensorRef x
   let st0 ← s.st.get
   let idxX ← okOrThrow (mkLeafIdxOrThrow (_α := α) (Γ := st0.Γ) x.id shX)
-  let dxAll : _root_.Proofs.Autograd.Algebra.TList α st0.Γ :=
-    _root_.Proofs.Autograd.Algebra.TList.single (α := α) (Γ := st0.Γ) (s := shX) idxX dx
-  let dxs : Array (Spec.PackedTensor α) :=
-    _root_.Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := st0.Γ) dxAll
-  jvpDenseAll (α := α) (sh := shOut) s out dxs
+  let dxAll : TorchLean.TensorPack α st0.Γ :=
+    Proofs.Autograd.Algebra.TensorPack.single (α := α) (Γ := st0.Γ) (s := shX) idxX dx
+  jvpWithTangentPack (α := α) st0 out dxAll
 
 /-- Scalar-loss JVP for a single leaf. -/
 def jvpScalarLeaf {α : Type} (s : TypedGraphSession α) [Zero α] [DecidableEq Shape]
@@ -186,7 +180,7 @@ PyTorch comparison: like iterating `params` and doing `p.data -= lr * p.grad`.
 -/
 def sgdStepAll {α : Type} (s : TypedGraphSession α)
   [Sub α] [Mul α] [Add α] [Zero α] [DecidableEq Shape]
-  (lr : α) (grads : Array (Spec.PackedTensor α)) : IO Unit := do
+  (lr : α) (grads : Array (Spec.SomeTensor α)) : IO Unit := do
   let m ← s.paramsByLeaf.get
   for (id, p) in m.toList.filter (fun entry => entry.2.requiresGrad) do
     let gAny ← match grads[id]? with
@@ -199,7 +193,7 @@ def sgdStepAll {α : Type} (s : TypedGraphSession α)
         let gT : Tensor α p.s := gAny.cast hs
         let updated : Tensor α p.s :=
           Tensor.materialize <| subSpec pvT (scaleSpec (α := α) (s := p.s) gT lr)
-        p.set (Spec.PackedTensor.ofTensor updated)
+        p.set (Spec.SomeTensor.ofTensor updated)
       else
         throw <| IO.userError "torch(TypedGraphSession): internal param shape mismatch"
     else
@@ -211,21 +205,21 @@ def sgdStepAll {α : Type} (s : TypedGraphSession α)
 Running the runtime reverse-mode loop on the lowered tape equals `GraphData` backpropagation.
 
 `lowerGraphDataToTape` produces a tape, and `Tape.backwardDenseFrom` is equal to
-`GraphData.backpropAllCtx` up to the `TList.toPackedArray` representation change. This theorem proves
+`GraphData.backpropAllCtx` up to the `_root_.TorchLean.TensorPack.toShapeErasedArray` representation change. This theorem proves
 the lowering faithful to the stored VJP program. It does not prove that the VJP is the derivative
 of the stored forward function; that stronger statement requires proof-carrying `Node`s.
 -/
 theorem backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
     {α : Type} [DecidableEq Shape] [CommSemiring α]
-    (st : TypedGraphSessionState α) (seed : _root_.Proofs.Autograd.Algebra.TList α (st.Γ ++ st.ss)) :
+    (st : TypedGraphSessionState α) (seed : TorchLean.TensorPack α (st.Γ ++ st.ss)) :
     Runtime.Autograd.Tape.backwardDenseFrom
         (t := (Proofs.Autograd.Algebra.Graph.lowerGraphDataToTape (α := α) (Δ := NatEnv) (Γ := st.Γ) (ss
           := st.ss) st.g st.x st.nat).1)
-        (grads0 := _root_.Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := st.Γ ++ st.ss)
+        (grads0 := TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := st.Γ ++ st.ss)
           seed)
       =
       .ok
-        (_root_.Proofs.Autograd.Algebra.TList.toPackedArray (α := α) (ss := st.Γ ++ st.ss)
+        (TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := st.Γ ++ st.ss)
           (_root_.Proofs.Autograd.Algebra.GraphData.backpropAllCtx (α := α) (Δ := NatEnv) (Γ :=
             st.Γ) (ss := st.ss) st.g st.x st.nat seed)) := by
   simpa using

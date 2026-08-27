@@ -2,11 +2,9 @@
 title: Diffusion Walkthrough
 ---
 
-The diffusion example in `NN.Examples.Models.Generative.Diffusion` keeps the model definition,
-training loop, sampler, and specification-level diffusion definitions in Lean.
-
-The walkthrough runs from data to image artifact: where the pixels come from, how noising is
-represented, what the denoiser predicts, and what gets saved after a run.
+`NN.Examples.Models.Generative.Diffusion` follows data through noising, denoiser training, sampling,
+and a saved image artifact. The model, sampler, and specification-level diffusion definitions are
+all Lean code.
 
 <div class="media-slab">
   <img src="{{ '/assets/media/examples/diffusion_imagenette64_real_vs_generated_plot.png' | relative_url }}" alt="Real, noisy, and generated diffusion images"/>
@@ -40,8 +38,9 @@ typed tensors, runtime model, sampler, and saved artifacts.
 TorchLean does not decode JPEG/PNG inside Lean. Image decoding and resizing happen before Lean; the
 Lean side receives fixed-layout `.npy` tensors and checks their shapes.
 
-Once the arrays exist, the Lean side loads `NCHW` tensors, checks the shape and class range, and
-batches them.
+Once the arrays exist, Lean loads tensors with axes ordered as
+`[batch, channel, height, width]`, checks their shapes and class range, and batches them. This is a
+layout convention for the dataset, not a separate image tensor type.
 
 The two dataset modes in `NN.Examples.Models.Generative.Diffusion` are:
 
@@ -59,9 +58,8 @@ Inside the example, the loader path is straightforward:
 That last step is a single line in the example code:
 
 ```lean
-def toDiffusionRange (unitImage : Tensor Float (cleanImageShape c h w)) :
-    Tensor Float (cleanImageShape c h w) :=
-  Spec.Tensor.mapSpec (fun x => 2.0 * x - 1.0) unitImage
+def toTrainingImage (unitImage : Tensor Float [c, h, w]) : Tensor Float [c, h, w] :=
+  diffusion.unitToSignedUnit unitImage
 ```
 
 ## The Spec Layer: What We Mean By “Diffusion”
@@ -130,32 +128,20 @@ Two choices matter in the example:
 2. Time is fed to the model as an extra channel: when the data has $c$ channels, the input has
    $c+1$ channels. The last channel is the normalized timestep broadcast across spatial positions.
 
-That “append time as a channel” trick is defined once in the API:
+That “append time as a channel” trick is defined once in the public API. Callers provide the
+leading dimensions and spatial extents; the helper returns a tensor with one additional channel:
 
 ```lean
-def appendTimeChannel (leading : Spec.Shape) {d c : Nat} (spatial : Vector Nat d)
-    (x : Spec.Tensor Float
-      (leading.concat (Spec.Shape.ofList (c :: spatial.toList)))) (tNorm : Float) :
-    Spec.Tensor Float
-      (leading.concat (Spec.Shape.ofList ((c + 1) :: spatial.toList))) := ...
+let conditioned := diffusion.appendTimeChannel leading spatial noisy tNorm
 ```
 
-The model is a same-resolution residual CNN sized to run as an example. The excerpt below is
-compressed; the source file expands each convolution with the exact tensor shapes and seeded
-initializers:
+The model is a same-resolution residual CNN sized to run as an example. Its public constructor
+owns the convolution geometry, residual blocks, and seeded initialization:
 
 ```lean
-def epsResidualConvNet (cfg : EpsConvNetConfig d) (leading : Spec.Shape := .scalar) :
+def epsResidualConvNet (cfg : EpsConvNetConfig d) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
-  nn.Sequential![
-    conv3x3SameImages,
-    nn.relu,
-    residualBlock,
-    nn.relu,
-    residualBlock,
-    nn.relu,
-    conv3x3SameImages
-  ]
+  nn.models.epsResidualConvNet cfg leading
 ```
 
 The contract is dimension-general: the input has arbitrary leading axes, one channel axis, and an
@@ -173,24 +159,16 @@ Training is classic DDPM-style $\varepsilon$-prediction. Each step:
 5. take an optimizer step on MSE.
 
 TorchLean makes the supervised pair explicit as a `Sample.Supervised` value. The operation that
-constructs $x_t$ from $x_0$ and $\varepsilon$ is `NN.API.diffusion.noisedSampleFromNoise`; it is the runtime
-version of the same formula used by `qSample` in the spec layer.
+constructs $x_t$ from $x_0$ and $\varepsilon$ is
+`TorchLean.diffusion.noisedSampleFromNoise`; it is the runtime version of the same formula used by
+`qSample` in the spec layer.
 
-The excerpt below leaves out the local definitions of `sqrtAb`, `sqrtOneMinusAb`, and `tNorm`, but
-keeps the actual tensor transformation:
+The helper performs the schedule lookup, noising formula, time-channel append, and supervised-pair
+construction:
 
 ```lean
-def noisedSampleFromNoise (leading : Spec.Shape) {d c T : Nat} [NeZero T]
-    (spatial : Vector Nat d) (alphaBars : Vector Float T)
-    (x0 eps : Tensor Float
-      (leading.concat (Spec.Shape.ofList (c :: spatial.toList)))) (step : Nat) :
-    Sample.Supervised Float
-      (leading.concat (Spec.Shape.ofList ((c + 1) :: spatial.toList)))
-      (leading.concat (Spec.Shape.ofList (c :: spatial.toList))) :=
-  let x_t :=
-    Spec.Tensor.scaleSpec x0 sqrtAb +
-    Spec.Tensor.scaleSpec eps sqrtOneMinusAb
-  Sample.mk (appendTimeChannel x_t tNorm) eps
+let sample :=
+  diffusion.noisedSampleFromNoise leading spatial alphaBars x0 eps step
 ```
 
 The schedule length is part of the type. A coefficient vector for `T` diffusion steps cannot be
@@ -202,27 +180,17 @@ schedule coefficient.
 
 The example uses deterministic DDIM because it is easy to audit and stable at small scale.
 
-The reverse update used by the runnable example is `NN.API.diffusion.ddimPrev`. It does the usual
+The reverse update used by the runnable example is `TorchLean.diffusion.ddimPrev`. It does the usual
 “predict x0, clip, remix” step:
 
 - estimate $\hat{x}_0$ from $x_t$ and $\hat{\varepsilon}$,
 - clamp it to $[-1,1]$,
 - recombine it using the previous schedule coefficients.
 
-The implementation follows that recipe. Here is the compact form, with the schedule coefficients
-shown by name:
+The public helper takes the current sample, predicted noise, and adjacent schedule coefficients:
 
 ```lean
-def ddimPrev {s : Spec.Shape}
-    (abPrev ab : Float)
-    (x_t epsHat : Tensor Float s) : Tensor Float s :=
-  let x0Hat :=
-    Spec.Tensor.scaleSpec
-      (Spec.Tensor.subSpec x_t (Spec.Tensor.scaleSpec epsHat sqrtOneMinusAb))
-      (1.0 / (if sqrtAb > 1e-12 then sqrtAb else 1e-12))
-  let x0Clipped := Spec.Tensor.clampSpec x0Hat (-1.0) 1.0
-  Spec.Tensor.scaleSpec x0Clipped sqrtAbPrev +
-    Spec.Tensor.scaleSpec epsHat sqrtOneMinusAbPrev
+let previous := diffusion.ddimPrev abPrev ab x_t epsHat
 ```
 
 The sampler also produces the “three pictures” view:

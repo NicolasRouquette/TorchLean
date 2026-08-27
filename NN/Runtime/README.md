@@ -69,24 +69,14 @@ let trained ← trainer.train data { steps := 200 }
 let prediction ← trained.predict input
 ```
 
-The names separate intent from implementation.
+Eager mode executes through the dynamic tape. Typed graph mode records and reuses a typed SSA graph.
+Device and provider choices are separate runtime settings; external bridges exchange data or run
+selected operations without changing the public model API.
 
-| Choice | Meaning |
-| --- | --- |
-| Eager TorchLean | Execute operations directly through the TorchLean-native tape; this is the most direct path to inspect. |
-| Typed graph TorchLean | Lower the model into a typed SSA graph and reuse that representation while keeping TorchLean as the owner of the model and graph. |
-| CUDA TorchLean | Use native CUDA kernels for supported operations while keeping TorchLean's runtime and tape contract at the boundary. |
-| ATen/libtorch provider | Use selected PyTorch/ATen kernels as fast numeric providers only when TorchLean still records the corresponding graph/tape node and owns the backward rule. |
-| PyTorch/Julia/Gymnasium bridges | Exchange data with external systems when the example needs a comparison target, imported weights, a simulator, or a runtime environment. |
-
-The typed graph path runs the same TorchLean model through its graph representation. Typed graph/eager
-equivalence checks and graph-correctness modules connect that execution path to the original object.
-
-For no-grad inference, an ATen/libtorch provider can return a value under an explicit agreement
-assumption. During training, a supported ATen-backed operation
-should compute the forward value, attach that value to the normal TorchLean node/cache, and use the
-normal TorchLean backward rule. If an operation cannot preserve that relation yet, the training path
-should fall back to the TorchLean-native forward for that op.
+The guide's [backend chapter](https://lean-dojo.github.io/TorchLean/blueprint/Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/)
+owns the detailed provider, capsule, VJP, fallback, and assurance-policy account. The
+[GPU chapter](https://lean-dojo.github.io/TorchLean/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/)
+covers native CUDA dispatch and checks.
 
 ## Tests, Checkers, And Proofs
 
@@ -101,12 +91,9 @@ Runtime evidence and proof evidence are different, and both have a role.
 
 ## Trust Boundaries
 
-The Lean runtime specifies and executes TorchLean's own tensor and tape semantics. Native CUDA,
-ATen/libtorch, PyTorch exporters, Julia, and Gymnasium integrations are external trust boundaries:
-Lean side modules record the contracts, shape checks, fixtures, regression tests, and theorem
-interfaces for the objects those systems produce. Claims that depend on foreign C, CUDA, C++,
-Python, or Julia code should cite the corresponding producer boundary or a separate checker/theorem
-that discharges it.
+Native CUDA, LibTorch, PyTorch exporters, Julia, and Gymnasium remain named external boundaries.
+Claims that depend on them should cite the corresponding boundary or a checker or theorem that
+discharges it.
 
 Theorems and checkers live under `NN.Proofs.*`, `NN.MLTheory.*`, and `NN.Verification.*`; this
 directory supplies the executable objects they refer to.

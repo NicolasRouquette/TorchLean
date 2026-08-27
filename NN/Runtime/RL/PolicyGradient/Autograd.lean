@@ -82,7 +82,7 @@ def actionLogProbOneHotBatch
   let s : Shape := .dim batch (.dim nActions .scalar)
   let _ : Shape.WellFormed s := by infer_instance
   let _ : Shape.HasNonemptyAxis 1 s :=
-    Shape.hasNonemptyAxisOne (h₂ := NeZero.ne nActions)
+    Shape.inferNonemptyAxis (by simp [s, Shape.rank])
   let logp ← F.logSoftmax (m := m) (α := α) (s := s) 1 logits
   let masked ← mul (m := m) (α := α) (s := s) actionOneHot logp
   reduceSum (m := m) (α := α) (s := s) (axis := 1) masked
@@ -104,7 +104,7 @@ def entropyMean
   let s : Shape := .dim batch (.dim nActions .scalar)
   let _ : Shape.WellFormed s := by infer_instance
   let _ : Shape.HasNonemptyAxis 1 s :=
-    Shape.hasNonemptyAxisOne (h₂ := NeZero.ne nActions)
+    Shape.inferNonemptyAxis (by simp [s, Shape.rank])
   let logp ← F.logSoftmax (m := m) (α := α) (s := s) 1 logits
   let probs ← exp (m := m) (α := α) (s := s) logp
   let plogp ← mul (m := m) (α := α) (s := s) probs logp
@@ -189,13 +189,13 @@ def ppoActorCriticObjectiveDef
     {stateShape : Shape} {batch nActions : Nat} [NeZero batch] [NeZero nActions]
     (actor : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim nActions .scalar)))
     (critic : _root_.Runtime.Autograd.TorchLean.NN.Seq stateShape (.dim batch (.dim 1 .scalar))) :
-    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
+    _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef Unit
       (_root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor ++
         _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic)
       [stateShape, (.dim batch (.dim nActions .scalar)), (.dim batch .scalar), (.dim batch .scalar),
         (.dim batch (.dim 1 .scalar))] :=
   { initState :=
-      _root_.Proofs.Autograd.Algebra.TList.append (α := Float)
+      TorchLean.TensorPack.append (α := Float)
         (ss₁ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes actor)
         (ss₂ := _root_.Runtime.Autograd.TorchLean.NN.Seq.stateShapes critic)
         (_root_.Runtime.Autograd.TorchLean.NN.Seq.initState actor)

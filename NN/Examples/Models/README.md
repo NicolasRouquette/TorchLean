@@ -14,7 +14,7 @@ The website guide explains the examples in context. This file lists the local co
 | `Supervised/` | MLP and KAN tabular regression, plus LSTM forecasting |
 | `Vision/` | CNN and ViT image classifiers |
 | `Sequence/` | RNN/LSTM checks, Transformer blocks, GPT-style models, Mamba, GPT-adder |
-| `Generative/` | autoencoder, MAE, VAE, VQ-VAE, GAN, and diffusion examples |
+| `Generative/` | autoencoder, MAE, latent-statistics, GAN, and diffusion examples |
 | `Operators/` | FNO and operator-learning examples |
 | `RL/` | DQN and PPO examples |
 | `Runner.lean` | shared `lake exe torchlean ...` command dispatcher |
@@ -29,7 +29,7 @@ The runner currently exposes these model and workflow commands:
 | Supervised/tabular | `mlp`, `kan`, `lstm_regression` |
 | Vision | `cnn`, `vit` |
 | Sequence/text | `rnn`, `lstm`, `transformer`, `gpt2`, `gpt2_saved`, `text_gpt2`, `chargpt`, `gpt_adder`, `mamba` |
-| Generative | `autoencoder`, `mae`, `vae`, `vqvae`, `gan`, `diffusion` |
+| Generative | `autoencoder`, `mae`, `latent_stats`, `tanh_autoencoder`, `gan`, `diffusion` |
 | Operator learning | `fno1d_burgers` |
 | Reinforcement learning | `ppo_cartpole`, `ppo_gridworld`, `ppo_pong_ram`, `dqn_replay` |
 | Data/interoperability | `data_csv`, `data_npy`, `data_cifar10`, `pytorch_roundtrip`, `pytorch_export_check` |
@@ -136,9 +136,9 @@ Shakespeare experiment.
 
 ```bash
 lake -R -K cuda=true exe torchlean autoencoder --device cuda --steps 1 --n-total 1
-lake -R -K cuda=true exe torchlean vae --device cuda --steps 1 --n-total 1 \
-  --log data/model_zoo/vae_trainlog.json
-lake -R -K cuda=true exe torchlean vqvae --device cuda --steps 1 --n-total 1
+lake -R -K cuda=true exe torchlean latent_stats --device cuda --steps 1 --n-total 1 \
+  --log data/model_zoo/latent_stats_trainlog.json
+lake -R -K cuda=true exe torchlean tanh_autoencoder --device cuda --steps 1 --n-total 1
 lake -R -K cuda=true exe torchlean gan --device cuda --steps 1 --n-total 1 \
   --log data/model_zoo/gan_trainlog.json
 

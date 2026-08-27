@@ -51,7 +51,7 @@ def meanArray (xs : Array α) : α :=
 
 /-- One-transition DQN squared TD loss from online and target Q-functions. -/
 def transitionMSELoss {obsShape : Shape} {nActions : Nat}
-    (onlineQ targetQ : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (onlineQ targetQ : Tensor α obsShape → Tensor α [nActions])
     (gamma : α)
     (tr : Core.Transition α obsShape nActions) : α :=
   ValueLearning.dqnMSELoss (α := α)
@@ -64,7 +64,7 @@ def transitionMSELoss {obsShape : Shape} {nActions : Nat}
 
 /-- One-transition DQN Huber TD loss from online and target Q-functions. -/
 def transitionHuberLoss {obsShape : Shape} {nActions : Nat}
-    (onlineQ targetQ : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (onlineQ targetQ : Tensor α obsShape → Tensor α [nActions])
     (gamma : α) (delta : α := 1)
     (tr : Core.Transition α obsShape nActions) : α :=
   ValueLearning.dqnHuberLoss (α := α)
@@ -78,7 +78,7 @@ def transitionHuberLoss {obsShape : Shape} {nActions : Nat}
 
 /-- One-transition Double-DQN Huber TD loss. -/
 def transitionDoubleHuberLoss {obsShape : Shape} {nActions : Nat}
-    (onlineQ targetQ : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (onlineQ targetQ : Tensor α obsShape → Tensor α [nActions])
     (gamma : α) (delta : α := 1)
     (tr : Core.Transition α obsShape nActions) : α :=
   let qPred := onlineQ tr.state
@@ -91,21 +91,21 @@ def transitionDoubleHuberLoss {obsShape : Shape} {nActions : Nat}
 
 /-- Mean DQN squared TD loss over a replay minibatch. -/
 def minibatchMSELoss {obsShape : Shape} {nActions : Nat}
-    (onlineQ targetQ : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (onlineQ targetQ : Tensor α obsShape → Tensor α [nActions])
     (gamma : α)
     (batch : Array (Core.Transition α obsShape nActions)) : α :=
   meanArray (α := α) <| batch.map (transitionMSELoss (α := α) onlineQ targetQ gamma)
 
 /-- Mean DQN Huber TD loss over a replay minibatch. -/
 def minibatchHuberLoss {obsShape : Shape} {nActions : Nat}
-    (onlineQ targetQ : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (onlineQ targetQ : Tensor α obsShape → Tensor α [nActions])
     (gamma : α) (delta : α := 1)
     (batch : Array (Core.Transition α obsShape nActions)) : α :=
   meanArray (α := α) <| batch.map (transitionHuberLoss (α := α) onlineQ targetQ gamma delta)
 
 /-- Mean Double-DQN Huber TD loss over a replay minibatch. -/
 def minibatchDoubleHuberLoss {obsShape : Shape} {nActions : Nat}
-    (onlineQ targetQ : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (onlineQ targetQ : Tensor α obsShape → Tensor α [nActions])
     (gamma : α) (delta : α := 1)
     (batch : Array (Core.Transition α obsShape nActions)) : α :=
   meanArray (α := α) <| batch.map (transitionDoubleHuberLoss (α := α) onlineQ targetQ gamma delta)

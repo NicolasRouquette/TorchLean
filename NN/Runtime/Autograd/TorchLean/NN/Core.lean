@@ -102,7 +102,7 @@ structure Layer (σ τ : Shape) where
   /-- Shapes of parameters and persistent buffers, in the order expected by `forward`. -/
   stateShapes : List Shape
   /-- Initial model state, stored as `Float` tensors for convenient initialization. -/
-  initState : Torch.TList Float stateShapes
+  initState : TorchLean.TensorPack Float stateShapes
   /--
   Optional storage-first initialization plan for executable `Float` backends.
 
@@ -117,7 +117,7 @@ structure Layer (σ τ : Shape) where
 
   PyTorch analogy: `tensor.requires_grad_(...)` on parameters/buffers.
   -/
-  requiresGrad : List Bool := List.replicate stateShapes.length true
+  requiresGrad : Array Bool := Array.replicate stateShapes.length true
   /--
   Optional buffer update function (used for running-statistics style layers).
 
@@ -129,7 +129,7 @@ structure Layer (σ τ : Shape) where
   updateBuffers :
     Option (
       Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
-        Torch.TList α stateShapes → Tensor α σ → IO (Torch.TList α stateShapes)
+        TorchLean.TensorPack α stateShapes → Tensor α σ → IO (TorchLean.TensorPack α stateShapes)
     ) := none
   /--
   Forward pass as a typed TorchLean program.
@@ -142,7 +142,7 @@ structure Layer (σ τ : Shape) where
       TorchLean.Program α (stateShapes ++ [σ]) τ
 
 /--
-Update rule for a running statistics vector using momentum.
+Update running statistics of any shape using momentum.
 
 This implements an exponential moving average:
 
@@ -150,128 +150,111 @@ This implements an exponential moving average:
 
 PyTorch analogy: the update performed for `running_mean` / `running_var` in BatchNorm.
 -/
-def updateRunningVec {α : Type} [Context α] {c : Nat}
-    (running batch : Tensor α (.dim c .scalar)) (momentum : Tensor α Shape.scalar) :
-    Tensor α (.dim c .scalar) :=
-  match running, batch, momentum with
-  | .dim runningF, .dim batchF, .scalar mom =>
-      let keep : Tensor α Shape.scalar := Tensor.scalar ((1 : α) - mom)
-      Tensor.dim (fun i =>
-        addSpec
-          (mulSpec (runningF i) keep)
-          (mulSpec (batchF i) (Tensor.scalar mom)))
+def updateRunning {α : Type} [Context α] {s : Shape}
+    (running batch : Tensor α s) (momentum : Tensor α .scalar) : Tensor α s :=
+  match momentum with
+  | .scalar mom =>
+      addSpec (scaleSpec running ((1 : α) - mom)) (scaleSpec batch mom)
 
 /--
 Convert the biased variance used by BatchNorm's training forward pass into the unbiased estimate
 stored in its running buffer. For a singleton sample set there is no unbiased estimate; TorchLean
 keeps the finite biased value rather than dividing by zero.
 -/
-def unbiasedRunningVariance {α : Type} [Context α] {c : Nat}
-    (biased : Tensor α (.dim c .scalar)) (sampleCount : Nat) :
-    Tensor α (.dim c .scalar) :=
+def unbiasedRunningVariance {α : Type} [Context α] {s : Shape}
+    (biased : Tensor α s) (sampleCount : Nat) : Tensor α s :=
   if sampleCount > 1 then
     scaleSpec biased ((sampleCount : α) / (sampleCount - 1 : Nat))
   else
     biased
 
 /--
-Compute per-channel mean and biased variance for a CHW tensor (no batch dimension).
+Compute per-channel mean and biased variance for a tensor with an arbitrary spatial suffix and no
+batch dimension.
 
-This reduces over the spatial axes `(H, W)` and returns `(mean, var)` vectors of length `channels`.
+This reduces over every spatial axis and returns `(mean, var)` vectors of length `channels`.
 
 The biased variance is the value used to normalize the current input. Convert it with
 `unbiasedRunningVariance` before updating a PyTorch-compatible running-variance buffer.
 -/
-def chwBatchStats {α : Type} [Context α]
-    {channels height width : Nat}
-    (x : Tensor α (.dim channels (.dim height (.dim width .scalar)))) :
-    Tensor α (.dim channels .scalar) × Tensor α (.dim channels .scalar) :=
-  let means : Tensor α (.dim channels .scalar) :=
+def channelStats {α : Type} [Context α]
+    {channels : Nat} {spatial : Shape}
+    (x : Tensor α (.dim channels spatial)) :
+    Tensor α [channels] × Tensor α [channels] :=
+  let spatialSize := Shape.size spatial
+  let flatShape : Shape := .dim channels (.dim spatialSize .scalar)
+  let xFlat : Tensor α flatShape := reshapeSpec x (by
+    simp only [flatShape, spatialSize, Shape.size, Nat.mul_one])
+  let means : Tensor α [channels] :=
     Tensor.dim (fun c =>
-      let channelData := getAtSpec x c
+      let channelData := get xFlat c
       let channelSum :=
-        (List.finRange height).foldl (fun accH i =>
-          (List.finRange width).foldl (fun accW j =>
-            if hI : i < height then
-              if hJ : j < width then
-                addSpec accW (getAtSpec (getAtSpec channelData ⟨i, hI⟩) ⟨j, hJ⟩)
-              else accW
-            else accW
-          ) accH
+        (List.finRange spatialSize).foldl (fun acc i =>
+          if hI : i < spatialSize then
+            addSpec acc (get channelData ⟨i, hI⟩)
+          else acc
         ) (Tensor.scalar 0)
-      divSpec channelSum (Tensor.scalar ((height * width : Nat) : α)))
-  let vars : Tensor α (.dim channels .scalar) :=
+      divSpec channelSum (Tensor.scalar (spatialSize : α)))
+  let vars : Tensor α [channels] :=
     Tensor.dim (fun c =>
-      let channelData := getAtSpec x c
-      let mean := getAtSpec means c
+      let channelData := get xFlat c
+      let mean := get means c
       let varianceSum :=
-        (List.finRange height).foldl (fun accH i =>
-          (List.finRange width).foldl (fun accW j =>
-            if hI : i < height then
-              if hJ : j < width then
-                let v := getAtSpec (getAtSpec channelData ⟨i, hI⟩) ⟨j, hJ⟩
-                let d := subSpec v mean
-                addSpec accW (mulSpec d d)
-              else accW
-            else accW
-          ) accH
+        (List.finRange spatialSize).foldl (fun acc i =>
+          if hI : i < spatialSize then
+            let d := subSpec (get channelData ⟨i, hI⟩) mean
+            addSpec acc (mulSpec d d)
+          else acc
         ) (Tensor.scalar 0)
-      divSpec varianceSum (Tensor.scalar ((height * width : Nat) : α)))
+      divSpec varianceSum (Tensor.scalar (spatialSize : α)))
   (means, vars)
 
 /--
-Compute per-channel mean and biased variance for an NCHW tensor.
+Compute per-channel mean and biased variance for a batched tensor.
 
-This reduces over `(N, H, W)` and returns `(mean, var)` vectors of length `c`.
-
-These are the statistics used by `torch.nn.BatchNorm2d` to normalize the current batch. Its
-running-variance update stores `unbiasedRunningVariance vars (n * h * w)` instead.
+The first two axes are batch and channel; every remaining axis is reduced. The result is a pair of
+vectors indexed by channel. A running-variance update uses
+`unbiasedRunningVariance vars (batch * spatial.size)` instead.
 -/
-def nchwBatchStats {α : Type} [Context α]
-    {n c h w : Nat}
-    (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    Tensor α (.dim c .scalar) × Tensor α (.dim c .scalar) :=
-  let means : Tensor α (.dim c .scalar) :=
+def batchChannelStats {α : Type} [Context α]
+    {batch channels : Nat} {spatial : Shape}
+    (x : Tensor α (.dim batch (.dim channels spatial))) :
+    Tensor α [channels] × Tensor α [channels] :=
+  let spatialSize := Shape.size spatial
+  let flatShape : Shape := .dim batch (.dim channels (.dim spatialSize .scalar))
+  let xFlat : Tensor α flatShape := reshapeSpec x (by
+    simp only [flatShape, spatialSize, Shape.size, Nat.mul_one])
+  let sampleCount := batch * spatialSize
+  let means : Tensor α [channels] :=
     Tensor.dim (fun ch =>
       let total :=
-        (List.finRange n).foldl (fun accN ni =>
-          (List.finRange h).foldl (fun accH i =>
-            (List.finRange w).foldl (fun accW j =>
-              if hN : ni < n then
-                if hI : i < h then
-                  if hJ : j < w then
-                    let sample := getAtSpec x ⟨ni, hN⟩
-                    let channel := getAtSpec sample ch
-                    addSpec accW (getAtSpec (getAtSpec channel ⟨i, hI⟩) ⟨j, hJ⟩)
-                  else accW
-                else accW
-              else accW
-            ) accH
-          ) accN
+        (List.finRange batch).foldl (fun accBatch ni =>
+          (List.finRange spatialSize).foldl (fun accSpatial i =>
+            if hN : ni < batch then
+              if hI : i < spatialSize then
+                let channel := get (get xFlat ⟨ni, hN⟩) ch
+                addSpec accSpatial (get channel ⟨i, hI⟩)
+              else accSpatial
+            else accSpatial
+          ) accBatch
         ) (Tensor.scalar 0)
-      divSpec total (Tensor.scalar ((n * h * w : Nat) : α)))
-  let vars : Tensor α (.dim c .scalar) :=
+      divSpec total (Tensor.scalar (sampleCount : α)))
+  let vars : Tensor α [channels] :=
     Tensor.dim (fun ch =>
-      let mean := getAtSpec means ch
+      let mean := get means ch
       let total :=
-        (List.finRange n).foldl (fun accN ni =>
-          (List.finRange h).foldl (fun accH i =>
-            (List.finRange w).foldl (fun accW j =>
-              if hN : ni < n then
-                if hI : i < h then
-                  if hJ : j < w then
-                    let sample := getAtSpec x ⟨ni, hN⟩
-                    let channel := getAtSpec sample ch
-                    let v := getAtSpec (getAtSpec channel ⟨i, hI⟩) ⟨j, hJ⟩
-                    let d := subSpec v mean
-                    addSpec accW (mulSpec d d)
-                  else accW
-                else accW
-              else accW
-            ) accH
-          ) accN
+        (List.finRange batch).foldl (fun accBatch ni =>
+          (List.finRange spatialSize).foldl (fun accSpatial i =>
+            if hN : ni < batch then
+              if hI : i < spatialSize then
+                let channel := get (get xFlat ⟨ni, hN⟩) ch
+                let d := subSpec (get channel ⟨i, hI⟩) mean
+                addSpec accSpatial (mulSpec d d)
+              else accSpatial
+            else accSpatial
+          ) accBatch
         ) (Tensor.scalar 0)
-      divSpec total (Tensor.scalar ((n * h * w : Nat) : α)))
+      divSpec total (Tensor.scalar (sampleCount : α)))
   (means, vars)
 
 namespace Layer
@@ -286,16 +269,16 @@ there is no parameter copy or alias table hidden by this constructor.
 -/
 def ofRef {σ τ : Shape} {ps : List Shape}
     (kind : String)
-    (initState : Torch.TList Float ps)
+    (initState : TorchLean.TensorPack Float ps)
     (run : Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
       ∀ {m : Type → Type}, [Monad m] → [Torch.Ops (m := m) (α := α)] →
         Torch.RefList (RefTy (m := m) (α := α)) ps →
         RefTy (m := m) (α := α) σ → m (RefTy (m := m) (α := α) τ))
     (runtimeInit : Option (TorchLean.Module.RuntimeInit.Plan ps) := none)
-    (requiresGrad : List Bool := List.replicate ps.length true)
+    (requiresGrad : Array Bool := Array.replicate ps.length true)
     (updateBuffers : Option (
       Mode → ∀ {α : Type}, [Context α] → [DecidableEq Shape] →
-        Torch.TList α ps → Tensor α σ → IO (Torch.TList α ps)) := none) :
+        TorchLean.TensorPack α ps → Tensor α σ → IO (TorchLean.TensorPack α ps)) := none) :
     Layer σ τ :=
   { kind
     stateShapes := ps
@@ -340,12 +323,12 @@ PyTorch analogy: running a forward pass eagerly on concrete tensors.
 -/
 def forwardTensor {σ τ : Shape} (l : Layer σ τ) (mode : Mode)
     {α : Type} [Context α] [DecidableEq Shape]
-    (ps : Torch.TList α l.stateShapes) (x : Tensor α σ) : IO (Tensor α τ) := do
+    (ps : TorchLean.TensorPack α l.stateShapes) (x : Tensor α σ) : IO (Tensor α τ) := do
   let graph ← _root_.Runtime.Autograd.TorchLean.Autodiff.lowerToTypedGraph (α := α)
     (paramShapes := l.stateShapes) (inputShapes := [σ]) (τ := τ)
     (l.forward mode)
-  let args : Torch.TList α (l.stateShapes ++ [σ]) :=
-    _root_.Proofs.Autograd.Algebra.TList.append (α := α) (ss₁ := l.stateShapes) (ss₂ := [σ]) ps
+  let args : TorchLean.TensorPack α (l.stateShapes ++ [σ]) :=
+    TorchLean.TensorPack.append (α := α) (ss₁ := l.stateShapes) (ss₂ := [σ]) ps
       (.cons x .nil)
   pure <| _root_.Runtime.Autograd.Torch.TypedGraph.forward graph args
 

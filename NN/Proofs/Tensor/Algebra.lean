@@ -45,40 +45,6 @@ open Tensor
 
 noncomputable section
 
-/-! ## Vector views -/
-
-/--
-View a 1D tensor of shape `(n,)` as a function `Fin n → α`.
-
-Informally: this is the spec-level analogue of PyTorch indexing `t[i]` for a vector.
--/
-def toVec {α : Type} {n : Nat} (t : Tensor α (.dim n .scalar)) : Fin n → α :=
-  match t with
-  | .dim f => fun i => match f i with | .scalar x => x
-
-/--
-Build a 1D tensor of shape `(n,)` from a function `Fin n → α`.
-
-`ofVec` is the inverse direction of `toVec` (up to definitional equality).
--/
-def ofVec {α : Type} {n : Nat} (v : Fin n → α) : Tensor α (.dim n .scalar) :=
-  .dim (fun i => .scalar (v i))
-
-@[simp] theorem toVec_ofVec {α : Type} {n : Nat} (v : Fin n → α) :
-    toVec (ofVec v) = v := by
-  funext i
-  simp [toVec, ofVec]
-
-theorem ofVec_toVec {α : Type} {n : Nat} (t : Tensor α (.dim n .scalar)) :
-    ofVec (toVec t) = t := by
-  cases t with
-  | dim f =>
-    apply congrArg Tensor.dim
-    funext i
-    cases h : f i with
-    | scalar x =>
-      simp [toVec, h]
-
 /-! ## Recursive same-shape dot product -/
 
 /--
@@ -326,8 +292,8 @@ For vectors `(n,)`, `dot` can be expressed as an explicit `Finset.univ.sum`.
 
 This is the bridge between the recursive `dot` definition and “PyTorch-looking” summation formulas.
 -/
-theorem dot_vec_eq_sum {n : Nat} (a b : Tensor α (.dim n .scalar)) :
-    dot (α := α) a b = ∑ i : Fin n, (toVec a i) * (toVec b i) := by
+theorem dot_vec_eq_sum {n : Nat} (a b : Tensor α [n]) :
+    dot (α := α) a b = ∑ i : Fin n, (getScalar a i) * (getScalar b i) := by
   classical
   cases a with
   | dim fa =>
@@ -339,25 +305,25 @@ theorem dot_vec_eq_sum {n : Nat} (a b : Tensor α (.dim n .scalar)) :
         List.finRange_foldl_add_eq_finset_sum (f := fun i : Fin n => dot (α := α) (fa i) (fb i))
       have hterm :
           (∑ i : Fin n, dot (α := α) (fa i) (fb i)) =
-            (∑ i : Fin n, (toVec (Tensor.dim fa) i) * (toVec (Tensor.dim fb) i)) := by
+            (∑ i : Fin n, (getScalar (Tensor.dim fa) i) * (getScalar (Tensor.dim fb) i)) := by
         refine Finset.sum_congr rfl ?_
         intro i _
         cases hfa : fa i with
         | scalar ai =>
           cases hfb : fb i with
           | scalar bi =>
-            simp [TensorAlgebra.dot, toVec, hfa, hfb]
+            simp [TensorAlgebra.dot, getScalar, hfa, hfb]
       calc
         dot (α := α) (Tensor.dim fa) (Tensor.dim fb)
             = (List.finRange n).foldl (fun s i => s + dot (α := α) (fa i) (fb i)) 0 := by
                 simp [TensorAlgebra.dot]
         _ = ∑ i : Fin n, dot (α := α) (fa i) (fb i) := hfold
-        _ = ∑ i : Fin n, (toVec (Tensor.dim fa) i) * (toVec (Tensor.dim fb) i) := hterm
+        _ = ∑ i : Fin n, (getScalar (Tensor.dim fa) i) * (getScalar (Tensor.dim fb) i) := hterm
 
 /-! ## Matrix/vector adjointness: `⟪y, W x⟫ = ⟪y W, x⟫` -/
 
 omit [CommSemiring α] in
-lemma get2_eq {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) :
+lemma get2_eq {m n : Nat} (A : Tensor α [m, n]) (i : Fin m) (j : Fin n) :
     get2 A i j =
       match Spec.get A i with
       | Tensor.dim row =>
@@ -370,14 +336,14 @@ omit [CommSemiring α] in
 lemma get_eq {m : Nat} {s : Shape} (t : Tensor α (.dim m s)) (i : Fin m) :
     Spec.get t i = match t with
       | Tensor.dim f => f i := by
-  unfold Spec.get
+  cases t
   rfl
 
 -- Helper: convert the scalar-tensor fold used in `mat_vec_mul_spec` into a fold on scalars.
 lemma foldl_matvec_scalar {n : Nat} (l : List (Fin n)) (a : α)
-  (cols vals : Fin n → Tensor α Shape.scalar) :
+  (cols vals : Fin n → Tensor α .scalar) :
   l.foldl
-      (fun (acc : Tensor α Shape.scalar) (k : Fin n) =>
+      (fun (acc : Tensor α .scalar) (k : Fin n) =>
         match acc, cols k, vals k with
         | Tensor.scalar s, Tensor.scalar ak, Tensor.scalar vk =>
             Tensor.scalar (s + ak * vk))
@@ -405,10 +371,10 @@ Matrix-vector multiply coordinate expansion.
 This is a spec-to-proof bridge: it turns the `List.finRange` fold in `mat_vec_mul_spec` into a
 `Finset.univ.sum` formula, matching the textbook / PyTorch view of matvec as a dot product.
 -/
-lemma toVec_mat_vec_mul_spec {m n : Nat}
-  (A : Tensor α (.dim m (.dim n .scalar)))
-  (v : Tensor α (.dim n .scalar)) (i : Fin m) :
-  toVec (matVecMulSpec A v) i = ∑ k : Fin n, (get2 A i k) * (toVec v k) := by
+lemma getScalar_mat_vec_mul_spec {m n : Nat}
+  (A : Tensor α [m, n])
+  (v : Tensor α [n]) (i : Fin m) :
+  getScalar (matVecMulSpec A v) i = ∑ k : Fin n, (get2 A i k) * (getScalar v k) := by
   classical
   cases A with
   | dim rowsA =>
@@ -416,15 +382,15 @@ lemma toVec_mat_vec_mul_spec {m n : Nat}
     | dim valuesV =>
       cases hrow : rowsA i with
       | dim colsA =>
-        -- Unfold `toVec (mat_vec_mul_spec A v) i`:
+        -- Unfold `getScalar (mat_vec_mul_spec A v) i`:
         -- this produces a `match` that extracts the scalar from the fold accumulator.
-        simp [matVecMulSpec, toVec, hrow]
+        simp [matVecMulSpec, getScalar, hrow]
         -- Convert the scalar-tensor fold into a scalar fold on `α`, then rewrite the outer `match`
         -- extraction.
         have hleft :
             (match
                 (List.finRange n).foldl
-                  (fun (acc : Tensor α Shape.scalar) (k : Fin n) =>
+                  (fun (acc : Tensor α .scalar) (k : Fin n) =>
                     match acc, colsA k, valuesV k with
                     | Tensor.scalar s, Tensor.scalar ak, Tensor.scalar vk =>
                         Tensor.scalar (s + ak * vk))
@@ -438,8 +404,15 @@ lemma toVec_mat_vec_mul_spec {m n : Nat}
           have hfold :=
             foldl_matvec_scalar (l := List.finRange n) (a := (0 : α)) (cols := colsA) (vals :=
               valuesV)
-          -- Apply the scalar-extraction function `Tensor.scalar x ↦ x` to both sides.
-          simpa using congrArg (fun t => match t with | Tensor.scalar x => x) hfold
+          change
+            Tensor.item
+                ((List.finRange n).foldl
+                  (fun (acc : Tensor α .scalar) (k : Fin n) =>
+                    match acc, colsA k, valuesV k with
+                    | Tensor.scalar s, Tensor.scalar ak, Tensor.scalar vk =>
+                        Tensor.scalar (s + ak * vk))
+                  (Tensor.scalar 0)) = _
+          exact congrArg (fun t : Tensor α .scalar => t.item) hfold
         -- Put the fold into canonical `s + f k` form, then convert to a `Finset.univ.sum`.
         let f : Fin n → α := fun k =>
           match colsA k, valuesV k with
@@ -459,13 +432,13 @@ lemma toVec_mat_vec_mul_spec {m n : Nat}
         have hsum : (List.finRange n).foldl (fun s k => s + f k) 0 = ∑ k : Fin n, f k := by
           simpa using List.finRange_foldl_add_eq_finset_sum (f := f)
         have hf :
-            ∀ k : Fin n, f k = get2 (Tensor.dim rowsA) i k * toVec (Tensor.dim valuesV) k := by
+            ∀ k : Fin n, f k = get2 (Tensor.dim rowsA) i k * getScalar (Tensor.dim valuesV) k := by
           intro k
           cases hcol : colsA k with
           | scalar ak =>
             cases hv : valuesV k with
             | scalar vk =>
-              simp [f, get2_eq, get_eq, toVec, hrow, hcol, hv]
+              simp [f, get2_eq, get_eq, getScalar, hrow, hcol, hv]
         have hfoldFun :
             (List.finRange n).foldl
                 (fun (s : α) (k : Fin n) =>
@@ -476,23 +449,23 @@ lemma toVec_mat_vec_mul_spec {m n : Nat}
           exact congrArg (fun fn => (List.finRange n).foldl fn 0) hfun
         refine hleft.trans (hfoldFun.trans (hsum.trans ?_))
         exact Finset.sum_congr rfl (fun k _ => by
-          simpa [toVec] using hf k)
+          simpa [getScalar] using hf k)
 
 /--
-Vector-matrix multiply coordinate expansion.
+Rank-one tensor by matrix multiplication, expanded coordinatewise.
 
-This is the right-adjoint analogue of `toVec_mat_vec_mul_spec`.
+This is the right-adjoint analogue of `getScalar_mat_vec_mul_spec`.
 -/
-lemma toVec_vec_mat_mul_spec {m n : Nat}
-  (v : Tensor α (.dim m .scalar))
-  (A : Tensor α (.dim m (.dim n .scalar))) (j : Fin n) :
-  toVec (vecMatMulSpec v A) j = ∑ i : Fin m, (toVec v i) * (get2 A i j) := by
+lemma getScalar_vec_mat_mul_spec {m n : Nat}
+  (v : Tensor α [m])
+  (A : Tensor α [m, n]) (j : Fin n) :
+  getScalar (vecMatMulSpec v A) j = ∑ i : Fin m, (getScalar v i) * (get2 A i j) := by
   classical
   cases v with
   | dim valuesV =>
     cases A with
     | dim rowsA =>
-      simp [vecMatMulSpec, toVec, get2_eq, get_eq]
+      simp [vecMatMulSpec, getScalar, get2_eq, get_eq]
       let f : Fin m → α := fun i =>
         match valuesV i, rowsA i with
         | Tensor.scalar vi, Tensor.dim colsA =>
@@ -548,55 +521,55 @@ written with explicit sums.
 -/
 theorem dot_mat_linear_adjoint
   {inDim outDim : Nat}
-  (W : Tensor α (.dim outDim (.dim inDim .scalar)))
-  (dLdy : Tensor α (.dim outDim .scalar))
-  (dx : Tensor α (.dim inDim .scalar)) :
+  (W : Tensor α [outDim, inDim])
+  (dLdy : Tensor α [outDim])
+  (dx : Tensor α [inDim]) :
   dot (α := α) dLdy (matVecMulSpec W dx)
   = dot (α := α) (vecMatMulSpec dLdy W) dx := by
   classical
   calc
     dot (α := α) dLdy (matVecMulSpec W dx)
-        = ∑ i : Fin outDim, (toVec dLdy i) * (toVec (matVecMulSpec W dx) i) := by
+        = ∑ i : Fin outDim, (getScalar dLdy i) * (getScalar (matVecMulSpec W dx) i) := by
             simpa using (dot_vec_eq_sum (α := α) (a := dLdy) (b := matVecMulSpec W dx))
-    _ = ∑ i : Fin outDim, (toVec dLdy i) * (∑ k : Fin inDim, (get2 W i k) * (toVec dx k)) := by
+    _ = ∑ i : Fin outDim, (getScalar dLdy i) * (∑ k : Fin inDim, (get2 W i k) * (getScalar dx k)) := by
             refine Finset.sum_congr rfl ?_
             intro i _
-            simp [toVec_mat_vec_mul_spec (α := α) (A := W) (v := dx) (i := i)]
+            simp [getScalar_mat_vec_mul_spec (α := α) (A := W) (v := dx) (i := i)]
     _ = ∑ i : Fin outDim, ∑ k : Fin inDim,
-          (toVec dLdy i) * ((get2 W i k) * (toVec dx k)) := by
+          (getScalar dLdy i) * ((get2 W i k) * (getScalar dx k)) := by
             refine Finset.sum_congr rfl ?_
             intro i _
             simpa using
               (Finset.mul_sum (s := (Finset.univ : Finset (Fin inDim)))
-                (f := fun k : Fin inDim => (get2 W i k) * (toVec dx k))
-                (a := toVec dLdy i))
+                (f := fun k : Fin inDim => (get2 W i k) * (getScalar dx k))
+                (a := getScalar dLdy i))
     _ = ∑ k : Fin inDim, ∑ i : Fin outDim,
-          (toVec dLdy i) * ((get2 W i k) * (toVec dx k)) := by
+          (getScalar dLdy i) * ((get2 W i k) * (getScalar dx k)) := by
             simpa using
               (Finset.sum_comm
                 (s := (Finset.univ : Finset (Fin outDim)))
                 (t := (Finset.univ : Finset (Fin inDim)))
-                (f := fun i k => (toVec dLdy i) * ((get2 W i k) * (toVec dx k))))
+                (f := fun i k => (getScalar dLdy i) * ((get2 W i k) * (getScalar dx k))))
     _ = ∑ k : Fin inDim,
-          (∑ i : Fin outDim, (toVec dLdy i) * (get2 W i k)) * (toVec dx k) := by
+          (∑ i : Fin outDim, (getScalar dLdy i) * (get2 W i k)) * (getScalar dx k) := by
             refine Finset.sum_congr rfl ?_
             intro k _
             calc
-              (∑ i : Fin outDim, (toVec dLdy i) * ((get2 W i k) * (toVec dx k)))
-                  = ∑ i : Fin outDim, ((toVec dLdy i) * (get2 W i k)) * (toVec dx k) := by
+              (∑ i : Fin outDim, (getScalar dLdy i) * ((get2 W i k) * (getScalar dx k)))
+                  = ∑ i : Fin outDim, ((getScalar dLdy i) * (get2 W i k)) * (getScalar dx k) := by
                       refine Finset.sum_congr rfl ?_
                       intro i _
                       simp [mul_assoc]
-              _ = (∑ i : Fin outDim, (toVec dLdy i) * (get2 W i k)) * (toVec dx k) := by
+              _ = (∑ i : Fin outDim, (getScalar dLdy i) * (get2 W i k)) * (getScalar dx k) := by
                       symm
                       simpa using
                         (Finset.sum_mul (s := (Finset.univ : Finset (Fin outDim)))
-                          (f := fun i : Fin outDim => (toVec dLdy i) * (get2 W i k))
-                          (a := toVec dx k))
-    _ = ∑ k : Fin inDim, (toVec (vecMatMulSpec dLdy W) k) * (toVec dx k) := by
+                          (f := fun i : Fin outDim => (getScalar dLdy i) * (get2 W i k))
+                          (a := getScalar dx k))
+    _ = ∑ k : Fin inDim, (getScalar (vecMatMulSpec dLdy W) k) * (getScalar dx k) := by
             refine Finset.sum_congr rfl ?_
             intro k _
-            simp [toVec_vec_mat_mul_spec (α := α) (v := dLdy) (A := W) (j := k), mul_comm]
+            simp [getScalar_vec_mat_mul_spec (α := α) (v := dLdy) (A := W) (j := k), mul_comm]
     _ = dot (α := α) (vecMatMulSpec dLdy W) dx := by
             symm
             simpa using (dot_vec_eq_sum (α := α) (a := vecMatMulSpec dLdy W) (b := dx))

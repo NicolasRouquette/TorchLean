@@ -104,18 +104,18 @@ arguments to the spec.
 -/
 structure RunningStats (channels : Nat) where
   /-- Inference-time running mean, usually learned/updated during training. -/
-  mean : Spec.Tensor ℝ (.dim channels .scalar)
+  mean : Spec.Tensor ℝ [channels]
   /-- Inference-time running variance, clamped by the spec before normalization. -/
-  variance : Spec.Tensor ℝ (.dim channels .scalar)
+  variance : Spec.Tensor ℝ [channels]
 
 /-- Evaluation-time BatchNorm with state packaged as an explicit value. -/
 def batchNormEvalWithStats {channels : Nat} {sSpatial : Spec.Shape}
-    (x : Spec.Tensor ℝ (.dim channels sSpatial))
+    (x : Spec.Tensor ℝ (sSpatial.prependDim channels))
     (stats : RunningStats channels)
-    (gamma : Spec.Tensor ℝ (.dim channels .scalar))
-    (beta : Spec.Tensor ℝ (.dim channels .scalar))
+    (gamma : Spec.Tensor ℝ [channels])
+    (beta : Spec.Tensor ℝ [channels])
     (epsilon : ℝ := Numbers.normalizationEpsilon) :
-    Spec.Tensor ℝ (.dim channels sSpatial) :=
+    Spec.Tensor ℝ (sSpatial.prependDim channels) :=
   Spec.batchNormInference
     (x := x)
     (runningMean := stats.mean)
@@ -126,10 +126,10 @@ def batchNormEvalWithStats {channels : Nat} {sSpatial : Spec.Shape}
 
 /-- The packaged-state wrapper is exactly the public inference-time BatchNorm spec. -/
 theorem batchNormEvalWithStats_unfolds {channels : Nat} {sSpatial : Spec.Shape}
-    (x : Spec.Tensor ℝ (.dim channels sSpatial))
+    (x : Spec.Tensor ℝ (sSpatial.prependDim channels))
     (stats : RunningStats channels)
-    (gamma : Spec.Tensor ℝ (.dim channels .scalar))
-    (beta : Spec.Tensor ℝ (.dim channels .scalar))
+    (gamma : Spec.Tensor ℝ [channels])
+    (beta : Spec.Tensor ℝ [channels])
     (epsilon : ℝ := Numbers.normalizationEpsilon) :
     batchNormEvalWithStats x stats gamma beta epsilon =
       Spec.batchNormInference
@@ -150,20 +150,20 @@ made explicit.
 -/
 theorem batchNormEvalWithStats_is_affine
     {channels : Nat} {sSpatial : Spec.Shape}
-    (x : Spec.Tensor ℝ (.dim channels sSpatial))
+    (x : Spec.Tensor ℝ (sSpatial.prependDim channels))
     (stats : RunningStats channels)
-    (gamma : Spec.Tensor ℝ (.dim channels .scalar))
-    (beta : Spec.Tensor ℝ (.dim channels .scalar))
+    (gamma : Spec.Tensor ℝ [channels])
+    (beta : Spec.Tensor ℝ [channels])
     (epsilon : ℝ := Numbers.normalizationEpsilon) :
-    ∃ scale bias : Spec.Tensor ℝ (.dim channels sSpatial),
+    ∃ scale bias : Spec.Tensor ℝ (sSpatial.prependDim channels),
       batchNormEvalWithStats x stats gamma beta epsilon =
         Spec.Tensor.addSpec (Spec.Tensor.mulSpec x scale) bias := by
-  let s : Spec.Shape := .dim channels sSpatial
-  let runningVar := Spec.Tensor.maxSpec stats.variance (Spec.fill 0 (.dim channels .scalar))
-  let mean_b := Spec.broadcastChannelFirst sSpatial stats.mean
-  let var_b := Spec.broadcastChannelFirst sSpatial runningVar
-  let gamma_b := Spec.broadcastChannelFirst sSpatial gamma
-  let beta_b := Spec.broadcastChannelFirst sSpatial beta
+  let s : Spec.Shape := sSpatial.prependDim channels
+  let runningVar := Spec.Tensor.maxSpec stats.variance (Spec.fill 0 [channels])
+  let mean_b := Spec.broadcastChannel sSpatial stats.mean
+  let var_b := Spec.broadcastChannel sSpatial runningVar
+  let gamma_b := Spec.broadcastChannel sSpatial gamma
+  let beta_b := Spec.broadcastChannel sSpatial beta
   let std := Spec.Tensor.sqrtSpec (Spec.Tensor.addSpec var_b (Spec.fill epsilon s))
   refine
     ⟨Spec.Tensor.divSpec gamma_b std,

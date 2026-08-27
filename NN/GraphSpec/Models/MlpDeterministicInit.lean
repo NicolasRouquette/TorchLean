@@ -38,9 +38,7 @@ namespace Models
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
-
-open Runtime.Autograd.Torch (TList)
+open _root_.TorchLean.Tensor
 
 /--
 Deterministic init for `Models.mlp` is exactly the concatenation of the two TorchLean `Linear`
@@ -57,9 +55,9 @@ theorem mlp_detInitParams_eq_torchlean_linear_inits
         (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim))
     =
     .ok
-      (Proofs.Autograd.Algebra.TList.append (α := Float)
-        (ss₁ := [.dim hidDim (.dim inDim .scalar), .dim hidDim .scalar])
-        (ss₂ := [.dim outDim (.dim hidDim .scalar), .dim outDim .scalar])
+      (TorchLean.TensorPack.append (α := Float)
+        (ss₁ := [[hidDim, inDim], [hidDim]])
+        (ss₂ := [[outDim, hidDim], [outDim]])
         (Runtime.Autograd.TorchLean.NN.linear inDim hidDim (seedW := 0) (seedB := 1)).initState
         (Runtime.Autograd.TorchLean.NN.linear hidDim outDim (seedW := 2) (seedB := 3)).initState)
           := by
@@ -72,7 +70,7 @@ theorem mlp_detInitParams_eq_torchlean_linear_inits
     , Primitive.linear, Primitive.relu
     ]
   -- Discharge the “ReLU contributes no params” bookkeeping.
-  simp [Proofs.Autograd.Algebra.TList.append,
+  simp [TorchLean.TensorPack.append,
     Runtime.Autograd.TorchLean.NN.relu]
 
 end Models

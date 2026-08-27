@@ -69,7 +69,7 @@ def collectRolloutSessionWith {obsShape : Shape} {nActions horizon : Nat} {Sess 
     (stepChecked : Sess → Fin nActions → IO (Boundary.Transition obsShape nActions × Sess))
     (castObs : Float → α)
     (castReward : Float → α)
-    (predictLogits : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (predictLogits : Tensor α obsShape → Tensor α [nActions])
     (predictValue : Tensor α obsShape → α)
     (rngSeed rngCounter : Nat) :
     IO (Rollout α obsShape nActions horizon × Nat) := do
@@ -81,9 +81,9 @@ def collectRolloutSessionWith {obsShape : Shape} {nActions horizon : Nat} {Sess 
 
   for _t in [0:horizon] do
     let obsF := observe sess
-    let obs : Tensor α obsShape := Spec.mapTensor castObs obsF
+    let obs : Tensor α obsShape := Spec.Tensor.map castObs obsF
 
-    let logits : Tensor α (.dim nActions .scalar) := predictLogits obs
+    let logits : Tensor α [nActions] := predictLogits obs
     let (counter', a) :=
       PolicyGradient.sampleActionFromLogits (α := α) (nActions := nActions)
         (seed := rngSeed) (counter := counter) logits
@@ -96,7 +96,7 @@ def collectRolloutSessionWith {obsShape : Shape} {nActions horizon : Nat} {Sess 
     sess := sess'
 
     let done : Bool := tr.terminated || tr.truncated
-    let nextObs : Tensor α obsShape := Spec.mapTensor castObs tr.nextObservation
+    let nextObs : Tensor α obsShape := Spec.Tensor.map castObs tr.nextObservation
     let nv : α := predictValue nextObs
 
     steps := steps.push
@@ -127,7 +127,7 @@ def collectRolloutCheckedSessionWith {obsShape : Shape} {nActions horizon : Nat}
     (sess : Session.CheckedSession obsShape nActions)
     (castObs : Float → α)
     (castReward : Float → α)
-    (predictLogits : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (predictLogits : Tensor α obsShape → Tensor α [nActions])
     (predictValue : Tensor α obsShape → α)
     (rngSeed rngCounter : Nat) :
     IO (Rollout α obsShape nActions horizon × Nat) :=
@@ -150,7 +150,7 @@ def collectRolloutWith {obsShape : Shape} {nActions horizon : Nat}
     (castObs : Float → α)
     (castReward : Float → α)
     (gym : Gymnasium.Client obsShape nActions)
-    (predictLogits : Tensor α obsShape → Tensor α (.dim nActions .scalar))
+    (predictLogits : Tensor α obsShape → Tensor α [nActions])
     (predictValue : Tensor α obsShape → α)
     (rngSeed rngCounter : Nat)
     (resetSeed : Nat) :

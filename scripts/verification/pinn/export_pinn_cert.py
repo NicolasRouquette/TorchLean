@@ -13,6 +13,18 @@ from typing import List, Dict, Any, Tuple
 HIDDEN_WIDTH, MIDDLE_WIDTH = 16, 16
 
 
+def round_down(x: float) -> float:
+    """Move one binary64 value toward negative infinity."""
+
+    return math.nextafter(x, -math.inf)
+
+
+def round_up(x: float) -> float:
+    """Move one binary64 value toward positive infinity."""
+
+    return math.nextafter(x, math.inf)
+
+
 def seed_weights() -> Tuple[List[List[float]], List[float], List[List[float]], List[float]]:
     """Return deterministic tanh-MLP weights used by the bundled PINN fixture."""
     first_weight = [[(i + 1) * 0.1] for i in range(HIDDEN_WIDTH)]
@@ -27,29 +39,25 @@ def seed_weights() -> Tuple[List[List[float]], List[float], List[List[float]], L
 
 
 def ibp_linear(W: List[List[float]], b: List[float], lo: List[float], hi: List[float]) -> Tuple[List[float], List[float]]:
-    """Propagate interval bounds through an affine layer."""
+    """Propagate affine bounds in the operation order used by TorchLean's checker."""
     m, n = len(W), len(W[0])
     out_lo, out_hi = [], []
     for i in range(m):
-        li, ui = b[i], b[i]
+        li, ui = 0.0, 0.0
         for j in range(n):
             a = W[i][j]
-            p, q = a * lo[j], a * hi[j]
-            li += min(p, q)
-            ui += max(p, q)
-        out_lo.append(li)
-        out_hi.append(ui)
+            li = round_down(li + min(round_down(a * lo[j]), round_down(a * hi[j])))
+            ui = round_up(ui + max(round_up(a * lo[j]), round_up(a * hi[j])))
+        out_lo.append(round_down(li + b[i]))
+        out_hi.append(round_up(ui + b[i]))
     return out_lo, out_hi
 
 
 def ibp_tanh(lo: List[float], hi: List[float]) -> Tuple[List[float], List[float]]:
-    """Propagate interval bounds through elementwise tanh."""
-    out_lo, out_hi = [], []
-    for l, u in zip(lo, hi):
-        tl, tu = math.tanh(l), math.tanh(u)
-        out_lo.append(min(tl, tu))
-        out_hi.append(max(tl, tu))
-    return out_lo, out_hi
+    """Use TorchLean's format-independent global enclosure for ``tanh``."""
+
+    assert len(lo) == len(hi)
+    return [-1.0] * len(lo), [1.0] * len(lo)
 
 
 def fd_residual_bounds(
@@ -72,66 +80,45 @@ def fd_residual_bounds(
 
 # Interval helpers
 def mul_interval(a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[float, float]:
-    """Multiply two scalar intervals."""
+    """Multiply two scalar intervals with outward-rounded endpoint products."""
     (al, ah), (bl, bh) = a, b
-    products = [al * bl, al * bh, ah * bl, ah * bh]
-    return min(products), max(products)
+    products_lo = [round_down(al * bl), round_down(al * bh),
+                   round_down(ah * bl), round_down(ah * bh)]
+    products_hi = [round_up(al * bl), round_up(al * bh),
+                   round_up(ah * bl), round_up(ah * bh)]
+    return min(products_lo), max(products_hi)
 
 
 def add_interval(a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[float, float]:
-    """Add two scalar intervals."""
-    return a[0] + b[0], a[1] + b[1]
+    """Add two scalar intervals with outward rounding."""
+    return round_down(a[0] + b[0]), round_up(a[1] + b[1])
 
 
 def square_interval(a: Tuple[float, float]) -> Tuple[float, float]:
-    """Square one scalar interval."""
+    """Square one scalar interval with outward rounding."""
     l, u = a
-    lower_sq, upper_sq = l * l, u * u
+    lower_sq = round_down(l * l)
+    upper_sq = round_up(u * u)
     if l <= 0.0 <= u:
-        return 0.0, max(lower_sq, upper_sq)
-    return (min(lower_sq, upper_sq), max(lower_sq, upper_sq))
+        return 0.0, max(round_up(l * l), upper_sq)
+    return min(lower_sq, round_down(u * u)), max(round_up(l * l), upper_sq)
 
 
 def lin_deriv(W: List[List[float]], d_lo: List[float], d_hi: List[float]) -> Tuple[List[float], List[float]]:
     """Propagate derivative interval bounds through a zero-bias linear layer."""
-    # Like ibp_linear but with zero bias
-    m, n = len(W), len(W[0])
-    out_lo, out_hi = [], []
-    for i in range(m):
-        li, ui = 0.0, 0.0
-        for j in range(n):
-            a = W[i][j]
-            p, q = a * d_lo[j], a * d_hi[j]
-            li += min(p, q)
-            ui += max(p, q)
-        out_lo.append(li)
-        out_hi.append(ui)
-    return out_lo, out_hi
+    return ibp_linear(W, [0.0] * len(W), d_lo, d_hi)
 
 
 def tanh_prime_bounds(y_lo: float, y_hi: float) -> Tuple[float, float]:
-    """Bound `d/dz tanh(z) = 1 - tanh(z)^2` from tanh-value bounds."""
-    yl2, yh2 = y_lo * y_lo, y_hi * y_hi
-    s_max = max(yl2, yh2)
-    if y_lo <= 0.0 <= y_hi:
-        s_min = 0.0
-    else:
-        s_min = min(yl2, yh2)
-    return 1.0 - s_max, 1.0 - s_min
+    """Use TorchLean's global enclosure for the first derivative of ``tanh``."""
+    assert y_lo <= y_hi
+    return 0.0, 1.0
 
 
 def tanh_second_bounds(y_lo: float, y_hi: float) -> Tuple[float, float]:
-    """Bound the second tanh derivative expressed as a function of `y = tanh(z)`."""
-    # f2(y) = -2y(1 - y^2) = -2y + 2y^3, extrema at y = ± 1/sqrt(3)
-    def f2(y: float) -> float:
-        """Evaluate the second-derivative polynomial in tanh-value space."""
-        return -2.0 * y + 2.0 * (y * y * y)
-    candidates = [f2(y_lo), f2(y_hi)]
-    r = 1.0 / math.sqrt(3.0)
-    for c in (-r, r):
-        if y_lo < c < y_hi:
-            candidates.append(f2(c))
-    return min(candidates), max(candidates)
+    """Use TorchLean's global enclosure for the second derivative of ``tanh``."""
+    assert y_lo <= y_hi
+    return -2.0, 2.0
 
 
 def deriv_and_second_for_mlp(

@@ -18,11 +18,11 @@ lake exe verify -- <tool> [args...]
 
 The first runs examples, training applications, data checks, and numerical deep dives. The second
 runs verifiers and certificate checkers. Keeping them separate makes a successful training command
-harder to confuse with acceptance of a certificate. Small source-local programs can also be
-executed directly:
+harder to confuse with acceptance of a certificate. Run the tensor quickstart through the same
+checked command dispatcher:
 
 ```
-lake env lean --run NN/Examples/Quickstart/TensorBasics.lean
+lake exe torchlean quickstart_tensors
 ```
 
 The dispatch tables are ordinary Lean definitions:
@@ -356,7 +356,7 @@ The current registry is broader than those representative commands. Its families
   `pinn-dataset-check`, `spline-cert`, `ode`;
 - TorchLean graph workflows: `torchlean-robustness`, `torchlean-ibp`,
   `torchlean-transformer-ibp`, `torchlean-crown-ops`, `torchlean-mlp-workflow`;
-- robustness suites: `margin-cert`, `digits`, `digits-train-certify`, `vnncomp-mnistfc`;
+- robustness suites: `margin-report`, `digits`, `digits-train-certify`, `vnncomp-mnistfc`;
 - imported and two-stage evidence: `abcrown-leaf`, `twostage-pythononly-certgen`,
   `twostage-hybrid-van-stage2`, `twostage-torchlean-cegis-van`.
 

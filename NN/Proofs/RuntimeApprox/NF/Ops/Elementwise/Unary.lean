@@ -352,7 +352,7 @@ theorem approxTensor_relu_spec {s : Shape} :
                         (s := Shape.scalar) eps (Tensor.scalar xR)) := by
                 -- The RHS is `abs (eps + ulp(max xhat 0)/2)`; widen via `le_abs_self`.
                 refine le_trans htriangle ?_
-                simpa [reluBoundTensor, tensorToSpec, Spec.mapTensor, mapSpec, linfNorm,
+                simpa [reluBoundTensor, tensorToSpec, Spec.Tensor.map, mapSpec, linfNorm,
                   RuntimeApprox.linfNorm,
                   tensorLinfNorm, MathFunctions.abs, xhat] using
                   (le_abs_self (eps + neuralUlp β fexp (max xhat 0) / 2))
@@ -391,7 +391,7 @@ theorem approxTensor_relu_spec {s : Shape} :
                 have hB_ge :
                     linfNorm (reluBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                       (s := s) eps (xRf i)) ≤ B := by
-                  simpa [B, reluBoundTensor, tensorToSpec, Spec.mapTensor, mapSpec] using
+                  simpa [B, reluBoundTensor, tensorToSpec, Spec.Tensor.map, mapSpec] using
                     (linf_norm_le_get_dim
                       (t := reluBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := Shape.dim n s) eps (Tensor.dim xRf)) i)
@@ -430,19 +430,18 @@ theorem approxTensor_relu_spec {s : Shape} :
                     (Tensor.dim fun i => mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) (xRf
                       i)))
                 ≤ B := by
-                simp [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
-                  Spec.mapTensor]
+                simp [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec]
                 change
                   List.foldl
                     (fun a i =>
                       max a
                         (tensorLinfNorm
                           ((mapSpec (fun x => max x 0) (xSf i)).subSpec
-                            (mapTensor (toSpec (β := β) (fexp := fexp) (rnd := rnd))
+                            (Tensor.map (toSpec (β := β) (fexp := fexp) (rnd := rnd))
                               (mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) (xRf i))))))
                     0 (List.finRange n) ≤ B
                 simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
-                  MathFunctions.abs, Spec.mapTensor] using hfold
+                  MathFunctions.abs, Spec.Tensor.map] using hfold
               simpa [approxTensor, approxWith, B, mapSpec] using this
 
 

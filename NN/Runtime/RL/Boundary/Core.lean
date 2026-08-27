@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.RL.Environment
-public import NN.Tensor.API
+public import NN.Tensor
 
 /-!
 # RL Trust Boundary (External Rollouts)

@@ -27,7 +27,7 @@ variable {α : Type} [Context α]
 
 /-- Autoencoder module specification following `Spec.Module`. -/
 def autoencoder {inputDim hiddenDim : Nat} (m : AutoencoderSpec α inputDim hiddenDim) :
-  Spec.Module α (.dim inputDim .scalar) (.dim inputDim .scalar) :=
+  Spec.Module α ([inputDim]) ([inputDim]) :=
 {
   forward := autoencoderForwardSpec m,
   kind := "Autoencoder",

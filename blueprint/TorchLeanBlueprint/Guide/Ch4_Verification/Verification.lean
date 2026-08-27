@@ -79,7 +79,8 @@ TorchLean has two relevant forward correspondences. The typed first-order
 [proved forward fragment](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/TorchLean/Proved.lean)
 lowers `NN.Verification.TorchLean.Proved.ForwardProgram` values. Its constructors cover constants,
 parameters, arithmetic, ReLU, `exp`, `log`, inverse, matrix products, reshapes and permutations,
-last-axis softmax, 2D LayerNorm, linear and convolution layers, and MSE loss.
+softmax along any valid axis, axis-parametrized LayerNorm, linear and convolution layers, and MSE
+loss.
 `Correctness.lowerForwardProgramToIR_wellFormed` proves structural well-formedness, while
 `Correctness.runForwardIR_eq_evalForward` proves equality with the typed program evaluator.
 
@@ -257,7 +258,7 @@ therefore computational evidence until that bridge is supplied.
 
 The first-derivative interval pass is seeded. `runDirectionalDerivative` propagates a point or
 interval of input directions, so coordinate vectors give partial-derivative bounds without a
-second operator traversal. `runFirstDerivative1D` is the scalar-input specialization and rejects a
+second operator traversal. `runScalarDerivative` is the scalar-input specialization and rejects a
 non-scalar input box. Both entrypoints use the same local transfer function; their supported
 operators cannot drift apart. The current second-derivative pass remains one-dimensional.
 
@@ -292,7 +293,7 @@ The graph numerical certificate records source ranges, derived node ranges, a re
 and a backend-plan audit. `generateChecked` reconstructs this data, and `executeIEEE32` performs a
 bit-level reference replay while checking each intermediate tensor. A `GraphRangeContract`
 contains an executable `derive` function but no semantic soundness field. A proof-level error trace
-therefore also requires a separately constructed `CheckedRealExecution`, whose fields supply the
+therefore also requires a separately constructed `ProvedRealEnclosure`, whose fields supply the
 real denotation and enclosure proof. See the runtime-approximation section for the complete
 boundary.
 
@@ -386,7 +387,7 @@ A verification report should make the following boundary visible:
 *
   * numerical range check plus IEEE replay
   * stored trace and one reference execution pass executable checks
-  * real semantic enclosure without `CheckedRealExecution`
+  * real semantic enclosure without `ProvedRealEnclosure`
 *
   * FP32 approximation theorem
   * rounded-real output is within its stated budget

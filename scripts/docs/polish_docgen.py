@@ -1303,7 +1303,7 @@ def rename_docgen_header(docs: Path) -> None:
         )
         semantic_equivalence_source = (
             "https://github.com/lean-dojo/TorchLean/blob/main/"
-            "NN/Runtime/Autograd/TypedGraph/IRExec/Correctness/SemanticEquivalence.lean"
+            "NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalence.lean"
         )
         updated = re.sub(
             r'href="[^"]*Correctness/SemanticEquivalence\.html"',
@@ -1312,7 +1312,8 @@ def rename_docgen_header(docs: Path) -> None:
         )
         updated = re.sub(
             r'href="[^"]*https://github\.com/lean-dojo/TorchLean/blob/main/'
-            r'NN/Runtime/Autograd/TypedGraph/IRExec/Correctness/SemanticEquivalence\.lean"',
+            r'NN/Runtime/Autograd/(?:TypedGraph/)?IRExec/Correctness/'
+            r'SemanticEquivalence\.lean"',
             f'href="{semantic_equivalence_source}"',
             updated,
         )

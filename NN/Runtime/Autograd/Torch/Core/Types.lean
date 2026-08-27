@@ -14,8 +14,6 @@ public import NN.Runtime.Autograd.Engine.Cuda.ConvPool
 public import NN.Runtime.Autograd.Engine.Cuda.Ops
 public import NN.Runtime.Autograd.Engine.Cuda.Shape
 public import NN.Backend.Profile
-import Batteries.Data.Vector.Lemmas
-import Init.Data.Vector.Lemmas
 import Mathlib.Algebra.Order.Algebra
 
 /-!
@@ -35,14 +33,6 @@ namespace Torch
 open Spec
 open Tensor
 open Proofs.Autograd.Algebra
-
-/--
-`TList` is the dependently typed heterogeneous tensor list used by typed graphs.
-
-We re-export it here under the `Torch` front-end namespace because many user-facing helpers
-(trainer APIs, parameter packs, etc.) are naturally expressed as `TList`s.
--/
-abbrev TList (α : Type) (ss : List Shape) := Proofs.Autograd.Algebra.TList α ss
 
 /--
 Execution mode for the Torch-style front-end.
@@ -177,28 +167,68 @@ def effectiveBackendProfile (opts : Options) : Except String NN.Backend.BackendP
 def planBackendOp (opts : Options) (op : NN.Backend.BackendOp) :
     Except String NN.Backend.AcceptedKernel := do
   let profile ← opts.effectiveBackendProfile
-  match profile.planOps [op] with
-  | .ok { kernels := k :: _ } =>
+  let plan ← profile.planOps #[op]
+  match plan.kernels[0]? with
+  | some k =>
       match k.accept profile.policy.assurance with
       | .error failures =>
           .error s!"backend profile {profile.name} rejected `{op.name}`: {repr failures}"
       | .ok accepted => .ok accepted
-  | .ok { kernels := [] } =>
+  | none =>
       .error s!"backend profile {profile.name} returned no capsule for {op.name}"
-  | .error msg => .error msg
 
 end Options
+
+/-- Runtime identity attached to a session-owned handle.
+
+`owner` is a process-unique session id. The stored `generation` distinguishes recording phases
+within one session.
+-/
+structure RefIdentity where
+  /-- Process-unique owner id allocated when the session is created. -/
+  owner : Nat
+  /-- Generation observed when the handle was created. -/
+  generation : Nat
+
+instance : Repr RefIdentity where
+  reprPrec identity _ := s!"RefIdentity(generation={identity.generation})"
+
+namespace RefIdentity
+
+initialize ownerCounter : Std.Mutex Nat ← Std.Mutex.new 0
+
+/-- Allocate a process-unique owner id, serializing concurrent session creation. -/
+def freshOwner : IO Nat :=
+  ownerCounter.atomically do
+    let owner ← get
+    set (owner + 1)
+    pure owner
+
+/-- Reject a handle from another session or an earlier recording phase. -/
+def validateAgainst (expectedOwner : Nat) (expectedGeneration : IO.Ref Nat) (identity : RefIdentity)
+    (kind : String := "reference") : IO Unit := do
+  unless expectedOwner == identity.owner do
+    throw <| IO.userError s!"torch: {kind} belongs to a different session"
+  let currentGeneration ← expectedGeneration.get
+  if identity.generation != currentGeneration then
+    throw <| IO.userError <|
+      s!"torch: stale {kind} from generation {identity.generation}; current generation is " ++
+        s!"{currentGeneration} (resetTape invalidates recorded references)"
+
+end RefIdentity
 
 /--
 Opaque handle to a tensor value in the current execution context.
 
-The identifier refers to a leaf or node in the owning eager tape or typed graph recorder. It has no
-meaning outside that owner. The phantom shape index `s` makes shape mismatches explicit at compile
-time.
+The identifier refers to a leaf or node in the owning eager tape or typed graph recorder. Runtime
+validation checks both owner identity and recording generation before the id is used. The phantom
+shape index `s` makes shape mismatches explicit at compile time.
 -/
 structure TensorRef (α : Type) (s : Shape) where
   /-- Node/leaf identifier in the owning session tape. -/
   id : Nat
+  /-- Owning session and recording generation; absent only on internal, not-yet-committed handles. -/
+  identity? : Option RefIdentity := none
 deriving Repr
 
 /--
@@ -210,14 +240,8 @@ receive gradients.
 structure NatRef where
   /-- Index into the session's non-differentiable `Nat` environment. -/
   id : Nat
-deriving Repr
-
-/--
-Handle to a contiguous block of `k` `Nat`s in the session's non-differentiable environment.
--/
-structure NatVecRef (k : Nat) where
-  /-- Start offset of the contiguous `k`-element block in the session's `Nat` environment. -/
-  start : Nat
+  /-- Owning session and recording generation. -/
+  identity? : Option RefIdentity := none
 deriving Repr
 
 /--
@@ -262,9 +286,9 @@ structure AnyParam (α : Type) where
   /-- Whether the underlying parameter receives optimizer updates. -/
   requiresGrad : Bool
   /-- Read the current parameter value with its runtime shape. -/
-  get : IO (Spec.PackedTensor α)
+  get : IO (Spec.SomeTensor α)
   /-- Overwrite the current parameter value, checking shape at the call site. -/
-  set : Spec.PackedTensor α → IO Unit
+  set : Spec.SomeTensor α → IO Unit
   /-- Store a CUDA buffer mirror without forcing an immediate host download. -/
   setCuda : Runtime.Autograd.Cuda.AnyBuffer → IO Unit
 
@@ -284,14 +308,15 @@ def observeCudaCleanupFlag (released : UInt32) : IO Unit :=
   else
     pure ()
 
-/-- Release a cached CUDA mirror, if one exists.
+/-- Atomically clear and release a cached CUDA mirror, if one exists.
 
 CUDA buffers are external objects whose native finalizer tolerates repeated cleanup attempts, but
 parameter updates know exactly when an old device mirror is no longer the current value. Releasing
-that mirror here keeps eager CUDA sessions explicit about ownership.
+that mirror here keeps eager CUDA sessions explicit about ownership. The cache is cleared before
+native release, so no caller can subsequently observe the released handle through `cudaValue`.
 -/
 def releaseCachedCudaValue {α : Type} {s : Shape} (p : Param α s) : IO Unit := do
-  match ← p.cudaValue.get with
+  match ← p.cudaValue.swap none with
   | none => pure ()
   | some any =>
       let released ← Runtime.Autograd.Cuda.Buffer.releaseIO any.buf
@@ -308,7 +333,7 @@ def ofParam {α : Type} {s : Shape} (p : Param α s) : AnyParam α :=
     requiresGrad := p.requiresGrad
     get := do
       let v ← p.value.get
-      pure (Spec.PackedTensor.ofTensor v)
+      pure (Spec.SomeTensor.ofTensor v)
     set := fun v => do
       if h : v.shape = s then
         releaseCachedCudaValue p

@@ -1,16 +1,17 @@
 # NN/CI
 
-This directory holds proof and check targets for CI rather than the everyday development loop.
+This directory holds import checks for maintained modules outside the downstream `NN` umbrella.
 
-Some proofs take long enough to elaborate that building them on every local edit would slow people
-down. The umbrella modules here let CI build those checks explicitly, or on a schedule, while normal
-development stays focused on the files being changed.
+`NN.CI.All` covers ordinary library modules. `NN.CI.SlowProofs` isolates the end-to-end IR semantic
+equivalence proof, which the documentation workflow typechecks before DocGen. Examples and tests
+use `NNExamples` and `NNTests`; they do not pass through a second CI import tree.
 
 See:
 
 * `NN/Runtime/Autograd/IRExec/Correctness.lean` (runtime lowering correctness,
   including the semantic equivalence theorem)
-* `NN/CI/All.lean` (CI umbrella for broad compile checks)
+* `NN/CI/All.lean` (ordinary modules omitted from the downstream umbrella)
+* `NN/CI/SlowProofs.lean` (the explicit proof-heavy target)
 
 If you run one of these locally and it appears to pause, Lean is often elaborating one large module
 without intermediate progress output.
@@ -25,8 +26,8 @@ CI targets should answer questions that are broader than a local executable regr
 - do CUDA and non-CUDA builds still expose the same Lean names where the public API expects them?
 - do import umbrellas still expose every intended public feature?
 
-This directory is not a second documentation tree and not a dumping ground for examples. It should
-contain import targets whose job is to make CI exercise a meaningful slice of the repository.
+This directory is not a second documentation tree and does not wrap examples or tests. It contains
+only import targets whose job is to exercise maintained library modules.
 
 ## Suggested Local Checks
 
@@ -34,22 +35,20 @@ For ordinary code changes that stay inside Lean definitions, examples, or docs:
 
 ```bash
 lake build
-lake exe verify -- all
-lake exe nn_tests_suite
+lake build NNCI NNExamples NNTests
+lake test
 ```
 
 For proof-heavy or public API changes:
 
 ```bash
-lake build NN.CI.All
-lake build NN.API NN.Verification NN.Proofs
-lake build NN.Examples.Zoo NN.Examples.BugZoo.All
+lake build NNCI NNSlowProofs
 ```
 
 For CUDA changes:
 
 ```bash
-lake -R -K cuda=true build NN.CI.All
+lake -R -K cuda=true build NN NNCI NNExamples NNTests
 lake -R -K cuda=true exe nn_tests_suite
 scripts/checks/cuda_sanitize_tests.sh --all-tools
 ```

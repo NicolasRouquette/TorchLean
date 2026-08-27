@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Spec.Layers.Attention
 public import NN.Spec.Layers.Conv
 public import NN.Spec.Layers.Linear
@@ -22,7 +22,7 @@ This is intended to be the "runtime" counterpart to `Spec.OpSpec`: instead of ma
 backward passes end-to-end, you build a tape during a forward pass and then call `backward`.
 
 Design goals:
-- Works for arbitrary `Tensor α s` shapes using `Spec.PackedTensor` values.
+- Works for arbitrary `Tensor α s` shapes using `Spec.SomeTensor` values.
 - Supports DAGs (shared subexpressions): gradients are accumulated by summation.
 - Preserves typed tensors at operator boundaries and reports dynamic shape mismatches as errors.
 
@@ -54,7 +54,7 @@ open Tensor
 The eager autograd engine is built out of a few small pieces:
 
 * `Result`: a pure error monad used throughout the tape API.
-* `Spec.PackedTensor`: a shape-erased tensor used to store heterogeneous node values on one tape.
+* `Spec.SomeTensor`: a shape-erased tensor used to store heterogeneous node values on one tape.
 * `Node`: one recorded computation step, with a local backward (VJP) rule.
 * `Tape`: a grow-only array of nodes; reverse-mode traversals walk it in reverse order.
 -/
@@ -76,7 +76,7 @@ def okOrThrow {α : Type} : Result α → IO α
   | .ok a => pure a
   | .error e => throw <| IO.userError e
 
-namespace PackedTensor
+namespace SomeTensor
 
 /--
 Accumulate two packed tensors by elementwise addition, with a dynamic shape check.
@@ -85,14 +85,14 @@ This is the heart of DAG support: if two different paths contribute gradients to
 we sum the contributions.
 -/
 def add {α : Type} [Add α] [DecidableEq Shape]
-  (a b : Spec.PackedTensor α) : Result (Spec.PackedTensor α) := by
+  (a b : Spec.SomeTensor α) : Result (Spec.SomeTensor α) := by
   if h : a.shape = b.shape then
     let b' : Tensor α a.shape := b.cast h.symm
-    exact .ok ((Spec.PackedTensor.ofTensor (addSpec a.tensor b')).materialize)
+    exact .ok ((Spec.SomeTensor.ofTensor (addSpec a.tensor b')).materialize)
   else
     exact .error "autograd: gradient shape mismatch during accumulation"
 
-end PackedTensor
+end SomeTensor
 
 /--
 A tape node representing a single tensor value in the recorded computation graph.
@@ -110,7 +110,7 @@ structure Node (α : Type) where
   /-- Optional node name used for debugging and pretty-printing. -/
   name : Option String := none
   /-- Forward value computed at this node (shape-erased). -/
-  value : Spec.PackedTensor α
+  value : Spec.SomeTensor α
   /--
   Whether reverse-mode propagation should visit this node.
 
@@ -118,15 +118,15 @@ structure Node (α : Type) where
   -/
   requiresGrad : Bool := true
   /-- Parent node ids (dependencies) in the tape. -/
-  parents : List Nat := []
+  parents : Array Nat := #[]
   /--
   Local VJP rule for this node.
 
-  Given an upstream cotangent for `value`, return a list of `(parentId, parentCotangent)`
+  Given an upstream cotangent for `value`, return an array of `(parentId, parentCotangent)`
   contributions. If multiple children contribute to the same parent, the engine will sum
-  contributions via `PackedTensor.add`.
+  contributions via `SomeTensor.add`.
   -/
-  backward : Spec.PackedTensor α → Result (List (Nat × Spec.PackedTensor α))
+  backward : Spec.SomeTensor α → Result (Array (Nat × Spec.SomeTensor α))
 
 /--
 Autograd tape: a grow-only array of nodes.
@@ -166,7 +166,7 @@ def getNode? (t : Tape α) (id : Nat) : Option (Node α) :=
   t.nodes[id]?
 
 /-- Read just the stored forward value for a node id. -/
-def getValue? (t : Tape α) (id : Nat) : Option (Spec.PackedTensor α) :=
+def getValue? (t : Tape α) (id : Nat) : Option (Spec.SomeTensor α) :=
   (t.getNode? id).map (·.value)
 
 /--
@@ -199,10 +199,10 @@ def leaf {α : Type} {s : Shape}
   Tape α × Nat :=
   t.addNode {
     name := name,
-    value := Spec.PackedTensor.ofTensor value,
+    value := Spec.SomeTensor.ofTensor value,
     requiresGrad := requiresGrad,
-    parents := [],
-    backward := fun _ => .ok []
+    parents := #[],
+    backward := fun _ => .ok #[]
   }
 
 /--
@@ -229,7 +229,7 @@ This is the backward analogue of `Tape.requireValue`: it checks that the upstrea
 expected shape `τ` and then performs the dependent cast.
 -/
 def requireGrad {α : Type} [DecidableEq Shape] {τ : Shape}
-    (dLdyAny : Spec.PackedTensor α) : Result (Tensor α τ) := by
+    (dLdyAny : Spec.SomeTensor α) : Result (Tensor α τ) := by
   if h : dLdyAny.shape = τ then
     exact .ok (dLdyAny.cast h)
   else
@@ -254,12 +254,12 @@ def unary {α : Type} [DecidableEq Shape] {σ τ : Shape}
   let y := forward x
   let node : Node α :=
     { name := some opName
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := τ) dLdyAny
         let dLdx : Tensor α σ := backward x dLdy
-        pure [(xId, Spec.PackedTensor.ofTensor dLdx)]
+        pure #[(xId, Spec.SomeTensor.ofTensor dLdx)]
     }
   pure (t.addNode node)

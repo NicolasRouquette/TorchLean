@@ -14,9 +14,9 @@ public import NN.Spec.Module.Core
 
 This file wraps selected normalization specs as `Spec.Module`s for composition/export.
 
-For `Spec.Module.layerNorm`, we require (defaulted) proofs that dimensions are positive. This matches
-the spec-level intent: normalization divides by the number of features and uses variance/standard
- deviation, so degenerate "zero-width" cases are excluded when we want clean theorems.
+For `Spec.Module.layerNorm`, the final axis is the feature axis and every preceding axis is treated
+as a batch axis. The implementation flattens those leading axes only while applying the
+matrix-level normalization semantics.
 
 PyTorch mental picture: `nn.LayerNorm(embedDim)` applied at each timestep, with `weight=gamma` and
 `bias=beta`.
@@ -31,17 +31,21 @@ open Tensor
 
 variable {α : Type} [Context α]
 
-/-- LayerNorm over the last dimension, wrapped as an `Spec.Module`. -/
-def layerNorm (seqLen embedDim : Nat)
-  (gamma : Tensor α (.dim embedDim .scalar))
-  (beta : Tensor α (.dim embedDim .scalar))
-  (hSeqPos : seqLen > 0)
-  (hEmbedPos : embedDim > 0) :
-  Spec.Module α (.dim seqLen (.dim embedDim .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
+/-- LayerNorm over the final axis, wrapped as a `Spec.Module`. -/
+def layerNorm (leading : Shape) (width : Nat)
+  (gamma : Tensor α [width])
+  (beta : Tensor α [width])
+  (hLeading : 0 < leading.size)
+  (hWidth : 0 < width) :
+  Spec.Module α (leading.appendDim width) (leading.appendDim width) :=
   { forward := fun x =>
-      Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
-        x gamma beta hSeqPos hEmbedPos
+      let matrix : Tensor α [leading.size, width] :=
+        reshapeSpec x (by simp [Shape.size_appendDim, Shape.size])
+      let normalized :=
+        Spec.layerNorm (α := α) (seqLen := leading.size) (embedDim := width)
+          matrix gamma beta hLeading hWidth
+      reshapeSpec normalized (by simp [Shape.size_appendDim, Shape.size])
     kind := "LayerNorm"
-    pythonExpr := s!"nn.LayerNorm({embedDim})" }
+    pythonExpr := s!"nn.LayerNorm({width})" }
 
 end Spec.Module

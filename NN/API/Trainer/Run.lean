@@ -8,6 +8,7 @@ module
 
 public import NN.API.Data.Synthetic
 public import NN.API.Trainer.Core
+public import NN.API.Trainer.Dataset
 public import NN.API.CLI
 
 /-!
@@ -22,41 +23,30 @@ namespace TorchLean
 
 namespace Trainer
 
-/-- Supervised data source that can be materialized at the trainer's selected scalar type. -/
-structure DataSource (σ τ : Shape) where
-  /-- Materialize the dataset at the runtime-selected scalar type. -/
-  build :
-    {α : Type} →
-    [_root_.Context α] →
-    [Runtime.FromFloat α] →
-    IO (Training.Dataset (Sample.Supervised α σ τ))
-
 /-- A small input probe printed before and after training. -/
-structure Probe (σ : Shape) where
+structure Probe (inputShape : List Nat) where
   /-- Human-facing probe name. -/
   name : String
   /-- Human-facing input description. -/
   inputText : String := ""
   /-- Runtime-polymorphic input tensor. -/
-  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor α σ
+  input : {α : Type} → [_root_.Context α] → [Runtime.FromFloat α] → Tensor α inputShape
   /-- Optional expected value shown beside the prediction. -/
   expected : Option String := none
 
 namespace Probe
 
 /-- Probe built from a concrete `Float` tensor. -/
-def ofFloatTensor {σ : Shape} (name : String) (x : Tensor Float σ)
+def ofFloatTensor {inputShape : List Nat} (name : String) (x : Tensor Float inputShape)
     (inputText : String := "") (expected : Option String := none) :
-    Probe σ :=
+    Probe inputShape :=
   { name := name
     inputText := inputText
-    input := fun {α} _ _ => TorchLean.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) x
+    input := fun {α} _ _ =>
+      TorchLean.Tensor.map (_root_.TorchLean.Runtime.ofFloat (α := α)) x
     expected := expected }
 
 end Probe
-
-/-- Runtime and optimizer settings stored with a trainer. -/
-structure RunConfig extends RuntimeSettings where
 
 namespace RunConfig
 
@@ -188,9 +178,9 @@ end RunConfig
 namespace Config
 
 /-- Build trainer options from an already parsed runtime configuration. -/
-def fromRunConfig {σ τ : Shape}
-    (run : RunConfig) (task : Task σ τ := .regression) (seed : Nat := 0) :
-    Config σ τ :=
+def fromRunConfig {inputShape outputShape : List Nat}
+    (run : RunConfig) (task : Task outputShape := .regression) (seed : Nat := 0) :
+    Config inputShape outputShape :=
   { task := task
     seed := seed
     optimizer := run.optimizer
@@ -202,7 +192,45 @@ def fromRunConfig {σ τ : Shape}
 
 end Config
 
-namespace Implementation
+namespace Internal
+
+namespace SelectedTask
+
+/-- Run a selected supervised task under either public real scalar backend. -/
+def withRunnerFor {inputShape outputShape : List Nat} {β : Type}
+    (selected : SelectedTask inputShape outputShape) (run : RunConfig)
+    (float32 : TorchLean.Trainer.Manual.Runner Float32 selected.task → IO β)
+    (ieee32Exec :
+      TorchLean.Trainer.Manual.Runner TorchLean.Floats.IEEE32Exec selected.task → IO β) :
+    IO β := do
+  let opts := run.toRuntimeOptions
+  if opts.usesCuda && run.scalar != .float32 then
+    throw <| IO.userError
+      "TorchLean.Trainer: CUDA execution currently requires --scalar float32"
+  match run.scalar with
+  | .float32 =>
+      let runner ← Manual.Runner.instantiate
+        (task := selected.task) (α := Float32) (opts := opts)
+      float32 runner
+  | .ieee32Exec =>
+      let runner ← Manual.Runner.instantiate
+        (task := selected.task) (α := TorchLean.Floats.IEEE32Exec) (opts := opts)
+      ieee32Exec runner
+  | .complex64 =>
+      throw <| IO.userError
+        "TorchLean.Trainer: supervised training currently supports real scalar backends"
+
+/-- Run a selected task with the scalar capabilities shared by trainer implementations. -/
+def withRunner {inputShape outputShape : List Nat} {β : Type}
+    (selected : SelectedTask inputShape outputShape) (run : RunConfig)
+    (k : {α : Type} → [_root_.Context α] → [DecidableEq Shape] → [ToString α] →
+      [Runtime.FromFloat α] → [Runtime.TensorTransfer α] →
+      Manual.Runner α selected.task → IO β) : IO β :=
+  withRunnerFor selected run
+    (fun runner => k (α := Float32) runner)
+    (fun runner => k (α := TorchLean.Floats.IEEE32Exec) runner)
+
+end SelectedTask
 
 /--
 Run a callback under runtime scalar semantics that can also be read back to host `Float` tensors.
@@ -215,7 +243,7 @@ def withReadableRuntime {β : Type}
     (scalar : Runtime.ScalarMode)
     (k : ∀ {α : Type}, [_root_.Context α] → [DecidableEq Shape] → [ToString α] →
       [Runtime.FromFloat α] →
-      [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α] → IO β) :
+      [Runtime.TensorTransfer α] → IO β) :
     IO (Except String β) := do
   match scalar with
   | .float32 =>
@@ -228,31 +256,7 @@ def withReadableRuntime {β : Type}
       pure (.error
         "complex runtime trainer predictions do not yet have a public Float readback path")
 
-namespace Regression
-
-/-- Runtime configuration carried by this trainer. -/
-def runConfig {σ τ : Shape} (trainer : Regression σ τ) : Trainer.RunConfig :=
-  { toRuntimeSettings := trainer.runtime }
-
-end Regression
-
-namespace OneHotCrossEntropy
-
-/-- Runtime configuration carried by this trainer. -/
-def runConfig {σ τ : Shape} (trainer : OneHotCrossEntropy σ τ) : Trainer.RunConfig :=
-  { toRuntimeSettings := trainer.runtime }
-
-end OneHotCrossEntropy
-
-namespace Custom
-
-/-- Runtime configuration carried by this trainer. -/
-def runConfig {σ τ : Shape} (trainer : Custom σ τ) : Trainer.RunConfig :=
-  { toRuntimeSettings := trainer.runtime }
-
-end Custom
-
-end Implementation
+end Internal
 
 /-- Per-training-call options for the trainer API. -/
 structure TrainOptions where

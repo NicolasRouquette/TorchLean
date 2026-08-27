@@ -39,21 +39,21 @@ open _root_.Spec.Tensor
 
 /-- Four-node `3 → 4 → 2` ReLU MLP graph used by the compact LiRPA certificate example. -/
 def buildGraph : Graph :=
-  let inputNode : Node := { id := 0, parents := [], kind := .input, outShape := .dim 3 .scalar }
-  let hiddenLinearNode : Node := { id := 1, parents := [0], kind := .linear, outShape := .dim 4 .scalar }
-  let reluNode : Node := { id := 2, parents := [1], kind := .relu, outShape := .dim 4 .scalar }
-  let outputLinearNode : Node := { id := 3, parents := [2], kind := .linear, outShape := .dim 2 .scalar }
+  let inputNode : Node := { id := 0, parents := #[], kind := .input, outShape := .dim 3 .scalar }
+  let hiddenLinearNode : Node := { id := 1, parents := #[0], kind := .linear, outShape := .dim 4 .scalar }
+  let reluNode : Node := { id := 2, parents := #[1], kind := .relu, outShape := .dim 4 .scalar }
+  let outputLinearNode : Node := { id := 3, parents := #[2], kind := .linear, outShape := .dim 2 .scalar }
   { nodes := #[inputNode, hiddenLinearNode, reluNode, outputLinearNode] }
 
 /-- Deterministic Float weights and biases for both linear nodes in `buildGraph`. -/
 def seedParamsFloat : ParamStore Float :=
-  let hiddenWeight : Tensor Float (.dim 4 (.dim 3 .scalar)) :=
+  let hiddenWeight : Tensor Float [4, 3] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (1 + (i.val + j.val)))))
-  let hiddenBias : Tensor Float (.dim 4 .scalar) := Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val +
+  let hiddenBias : Tensor Float [4] := Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val +
     1)))
-  let outputWeight : Tensor Float (.dim 2 (.dim 4 .scalar)) :=
+  let outputWeight : Tensor Float [2, 4] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (2 + (i.val + j.val)))))
-  let outputBias : Tensor Float (.dim 2 .scalar) := Tensor.dim (fun i => Tensor.scalar (Float.ofNat
+  let outputBias : Tensor Float [2] := Tensor.dim (fun i => Tensor.scalar (Float.ofNat
     (i.val)))
   let emptyStore : ParamStore Float := {}
   let withHiddenLayer :=

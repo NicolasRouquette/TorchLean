@@ -6,17 +6,13 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API
+public import NN.Tensor
 public import NN.Proofs
 
 /-!
 # Quickstart: Proving Small TorchLean Facts
 
-TorchLean examples are not only executable scripts. Many guarantees are ordinary Lean theorems:
-shape round-trips, typed tensor construction, activation identities, and later full verification
-statements.
-
-The boundary where TorchLean becomes more than an executable ML library is:
+Many TorchLean guarantees are ordinary Lean theorems. These examples cover:
 
 - compile-time guarantees from shape-indexed tensor types, and
 - ordinary mathematical lemmas about the public API.
@@ -34,25 +30,15 @@ open TorchLean
 A tensor's shape is part of its type.
 
 If this definition compiles, Lean has already checked that the literal has exactly two entries and
-therefore really is a `Vec 2`. The commented shape-mismatch below is the kind of bug Lean catches
-before runtime:
+therefore has type `Tensor Float [2]`. The commented shape mismatch below is the kind of bug Lean
+catches before runtime:
 
 ```lean
--- def badVector : Tensor Float (shape![3]) := tensor! [1.0, 2.0]
+-- def badTensor : Tensor Float [3] := tensor! [1.0, 2.0]
 ```
 -/
-def twoVector : Tensor Float (shape![2]) :=
+def twoTensor : Tensor Float [2] :=
   tensor! [1.0, 2.0]
-
-/--
-Runtime dimension lists can still be related back to static TorchLean shapes.
-
-This is the compact theorem behind many JSON/CLI/data-loader paths: parse dimensions dynamically,
-then recover the precise `Shape` used by the typed tensor API.
--/
-theorem matrix_shape_roundtrip :
-    Shape.ofList (Shape.toList (shape![2, 3])) = shape![2, 3] := by
-  simp
 
 /-- ReLU fixes every nonnegative real number. -/
 theorem relu_eq_self_of_nonnegative (x : ℝ) (hx : 0 ≤ x) :

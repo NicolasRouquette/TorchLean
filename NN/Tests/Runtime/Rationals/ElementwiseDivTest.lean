@@ -49,23 +49,23 @@ open Runtime.Autograd
 abbrev tag : String := "elementwise_div_test (Rat)"
 
 /-- Two-element vector shape. -/
-abbrev s2 : Shape := .dim 2 .scalar
+abbrev s2 : Shape := [2]
 
 /-- Numerator `a`. -/
-def a : Tensor ℚ s2 := tensorOfList! [2] [6.0, 8.0]
+def a : Tensor ℚ s2 := tensorOfArray! [2] #[6.0, 8.0]
 /-- Denominator `b`. -/
-def b : Tensor ℚ s2 := tensorOfList! [2] [2.0, 4.0]
+def b : Tensor ℚ s2 := tensorOfArray! [2] #[2.0, 4.0]
 /-- Upstream gradient $\partial L/\partial y$. -/
-def dLdy : Tensor ℚ s2 := tensorOfList! [2] [1.0, 1.0]
+def dLdy : Tensor ℚ s2 := tensorOfArray! [2] #[1.0, 1.0]
 
 /-- Expected forward value $a/b=[3,2]$. -/
-def yExp : Tensor ℚ s2 := tensorOfList! [2] [3.0, 2.0]
+def yExp : Tensor ℚ s2 := tensorOfArray! [2] #[3.0, 2.0]
 /-- Expected gradient $\partial L/\partial a=\mathrm{dLdy}/b=[1/2,1/4]$. -/
-def daExp : Tensor ℚ s2 := tensorOfList! [2] [0.5, 0.25]
+def daExp : Tensor ℚ s2 := tensorOfArray! [2] #[0.5, 0.25]
 /-- Expected gradient
 $\partial L/\partial b=-\mathrm{dLdy}\,a/b^2=[-3/2,-1/2]$
 (built by negating $[3/2,1/2]$). -/
-def dbExp : Tensor ℚ s2 := - tensorOfList! [2] [1.5, 0.5]
+def dbExp : Tensor ℚ s2 := - tensorOfArray! [2] #[1.5, 0.5]
 
 /-- Build a tape for $y=a/b$, run the backward pass, and check the forward value and both
 input gradients against the exact rational references. -/
@@ -77,7 +77,7 @@ def checkDiv : Runtime.Autograd.Result Bool := do
     let yId ← TapeM.div (s := s2) aId bId
     let t ← TapeM.getTape
     let yVal ← liftM (Tape.requireValue (α := ℚ) (t := t) (s := s2) yId)
-    let grads ← liftM (Tape.backward (t := t) yId (Spec.PackedTensor.ofTensor dLdy))
+    let grads ← liftM (Tape.backward (t := t) yId (Spec.SomeTensor.ofTensor dLdy))
     pure (aId, bId, yVal, grads)
   let ((aId, bId, yVal, grads), _) ← TapeM.run t0 m
   let da ← Train.requireGradTensor (tag := tag) (s := s2) grads aId

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import Mathlib.Data.List.Basic
+public import Batteries.Data.Array.Scan
 
 /-!
 # Core Reinforcement-Learning Definitions
@@ -24,18 +24,17 @@ These definitions are intentionally spec-level rather than runtime-level:
 That keeps the actual RL mathematics in a proof-friendly namespace and avoids duplicating it inside
 runtime/trainer code.
 
-## Why Lists (Not Tensors)?
+## Numerical Containers
 
-Several helpers here operate on `List α` rather than `Tensor α (.dim n .scalar)` on purpose.
+Dynamic trajectories use `Array α`; fixed-horizon trajectories use vectors.
 
 - A trajectory length is usually *data-dependent* (episode termination, truncation, variable rollout
-  horizon), so a dependent tensor length is often the wrong abstraction.
+  horizon), so its length may not be available in the tensor type.
 - TorchLean uses typed tensors heavily for *fixed-shape* objects (value tables, Q-tables, logits,
-  etc.). For variable-length traces, `List` is the proof-friendly finite-sequence choice.
+  and fixed rollout windows). Arrays are the homogeneous runtime-sized counterpart.
 
-When you do have a fixed horizon `n`, it is reasonable to use `Fin n → α` or a vector tensor and
-define specialized “returns/GAE” helpers on top. We keep the core definitions here compact and
-general, and add fixed-horizon variants where they meaningfully improve downstream code.
+This keeps numerical payloads in the same two representations used elsewhere in TorchLean:
+`Tensor α shape` when the shape is known and `Array α` when it is not.
 
 Primary references:
 
@@ -93,17 +92,11 @@ def tdResidual [Zero α] [One α] [Add α] [Mul α] [Sub α]
 /-- Discounted returns with a bootstrap value on the far right:
 $G_t=r_t+\gamma G_{t+1}$. -/
 def discountedReturnsFrom [Zero α] [Add α] [Mul α]
-    (gamma : α) (rewards : List α) (bootstrap : α := 0) : List α :=
-  let (_, returns) :=
-    rewards.reverse.foldl
-      (fun (acc : α × List α) reward =>
-        let g := reward + gamma * acc.1
-        (g, g :: acc.2))
-      (bootstrap, [])
-  returns
+    (gamma : α) (rewards : Array α) (bootstrap : α := 0) : Array α :=
+  (rewards.scanr (fun reward future => reward + gamma * future) bootstrap).pop
 
 /-- Discounted returns for a terminal trajectory (bootstrap defaults to `0`). -/
-def discountedReturns [Zero α] [Add α] [Mul α] (gamma : α) (rewards : List α) : List α :=
+def discountedReturns [Zero α] [Add α] [Mul α] (gamma : α) (rewards : Array α) : Array α :=
   discountedReturnsFrom (α := α) gamma rewards 0
 
 /-- Discounted returns with explicit termination markers.
@@ -111,38 +104,29 @@ def discountedReturns [Zero α] [Add α] [Mul α] (gamma : α) (rewards : List �
 When `done = true`, the future return is reset before bootstrapping the current reward.
 -/
 def discountedReturnsDone [Zero α] [One α] [Add α] [Mul α]
-    (gamma : α) (rewards : List α) (dones : List Bool) (bootstrap : α := 0) :
-    List α :=
-  let (_, returns) :=
-    (List.zip rewards dones).reverse.foldl
-      (fun (acc : α × List α) step =>
-        let g := discountedBackup (α := α) step.1 gamma acc.1 step.2
-        (g, g :: acc.2))
-      (bootstrap, [])
-  returns
+    (gamma : α) (rewards : Array α) (dones : Array Bool) (bootstrap : α := 0) :
+    Array α :=
+  ((rewards.zip dones).scanr
+    (fun step future => discountedBackup (α := α) step.1 gamma future step.2)
+    bootstrap).pop
 
 /-- Generalized Advantage Estimation (GAE).
 
-Each input step provides $r_t$, $V(s_t)$, $V(s_{t+1})$, and $\mathtt{done}_t$. The resulting list contains
+Each input step provides $r_t$, $V(s_t)$, $V(s_{t+1})$, and $\mathtt{done}_t$. The resulting array contains
 advantages in forward time order.
 -/
 def generalizedAdvantageEstimation [Zero α] [One α] [Add α] [Mul α] [Sub α]
-    (gamma lam : α) (steps : List (AdvantageStep α)) : List α :=
-  let (_, advantages) :=
-    steps.reverse.foldl
-      (fun (acc : α × List α) step =>
-        let mask := continueMask (α := α) step.done
-        let delta := step.reward + gamma * mask * step.nextValue - step.value
-        let adv := delta + gamma * lam * mask * acc.1
-        (adv, adv :: acc.2))
-      (0, [])
-  advantages
+    (gamma lam : α) (steps : Array (AdvantageStep α)) : Array α :=
+  (steps.scanr
+    (fun step nextAdvantage =>
+      let mask := continueMask (α := α) step.done
+      let delta := step.reward + gamma * mask * step.nextValue - step.value
+      delta + gamma * lam * mask * nextAdvantage)
+    0).pop
 
 /-- Recover lambda-returns from advantages and baseline values via $R_t=A_t+V(s_t)$. -/
-def returnsFromAdvantages [Add α] : List α → List α → List α
-  | [], _ => []
-  | _, [] => []
-  | a :: as, v :: vs => (a + v) :: returnsFromAdvantages as vs
+def returnsFromAdvantages [Add α] (advantages values : Array α) : Array α :=
+  Array.zipWith (fun advantage value => advantage + value) advantages values
 
 end RL
 end Spec

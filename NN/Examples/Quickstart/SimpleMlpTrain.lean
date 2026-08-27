@@ -47,7 +47,7 @@ def inDim : Nat := 2
 def outDim : Nat := 1
 
 /-- A small 2-layer MLP `2 -> 8 -> 1`. -/
-def model : nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
+def model : nn.Builder (nn.Sequential [inDim] [outDim]) :=
   nn.Sequential![
     nn.linear inDim 8,
     nn.relu,
@@ -69,16 +69,16 @@ def target (x1 x2 : Float) : Float :=
   (0.8 * relu (x1 + x2)) - (0.4 * relu (x2 - x1)) + 0.2
 
 /-- Evaluate the scalar target on one shape-indexed input row. -/
-def targetTensor (x : Tensor Float (.dim inDim .scalar)) :
-    Tensor Float (.dim outDim .scalar) :=
+def targetTensor (x : Tensor Float [inDim]) :
+    Tensor Float [outDim] :=
   let x1 := Tensor.item (_root_.Spec.get x ⟨0, by decide⟩)
   let x2 := Tensor.item (_root_.Spec.get x ⟨1, by decide⟩)
-  Tensor.dim fun _ => Tensor.scalar (target x1 x2)
+  tensor! [target x1 x2]
 
 /-- Build the tutorial dataset at the runtime-selected scalar type. -/
-def buildDataset : Trainer.DataSource (.dim inDim .scalar) (.dim outDim .scalar) :=
+def buildDataset : Trainer.Dataset [inDim] [outDim] :=
   let inputs := Data.Synthetic.squareGrid (-1.0) 1.0 5
-  let targets := Tensor.mapLeading (.dim (5 * 5) .scalar) targetTensor inputs
+  let targets := Tensor.mapEach [5 * 5] targetTensor inputs
   Data.tensorDataset inputs targets
 
 /-- Command-line help for the simple MLP quickstart. -/
@@ -119,15 +119,15 @@ def main (args : List String) : IO Unit := do
   IO.println s!"seed  = {seed}"
   IO.println s!"steps = {parsed.train.steps}"
 
-  let probes := [
-    Trainer.Probe.ofFloatTensor "center" (Tensor.vector (α := Float) [0.0, 0.0])
+  let probes : Array (Trainer.Probe [inDim]) := #[
+    Trainer.Probe.ofFloatTensor "center" (tensor! (ty := Float) [0.0, 0.0])
       "x=(0.0,0.0)" (some (toString (target 0.0 0.0))),
-    Trainer.Probe.ofFloatTensor "heldout" (Tensor.vector (α := Float) [0.25, -0.75])
+    Trainer.Probe.ofFloatTensor "heldout" (tensor! (ty := Float) [0.25, -0.75])
       "x=(0.25,-0.75)" (some (toString (target 0.25 (-0.75))))
   ]
   let trained ← trainer.train buildDataset parsed.trainOptions probes
   trained.printSummary
-  let heldout : Tensor Float (.dim inDim .scalar) := tensorOfList! [2] [0.25, -0.75]
+  let heldout : Tensor Float [inDim] := tensor! [0.25, -0.75]
   trained.printPrediction "predict(heldout)" heldout
 
 end NN.Examples.Quickstart.SimpleMLPTrain

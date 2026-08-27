@@ -15,8 +15,7 @@ easier to review than one large branch that touches every layer at once.
 
 A good TorchLean PR usually has one clear purpose. It might add one operator with its spec and
 tests, one theorem with supporting lemmas, one example with a documented command, or one
-trust-boundary clarification. Small changes are much easier to review than branches that touch the
-API, runtime, proofs, and website at once.
+trust-boundary clarification.
 
 ## First Build
 
@@ -33,7 +32,7 @@ Common targets:
 ```bash
 lake build NN
 lake build NNExamples
-lake build NNCI
+lake build NNCI NNSlowProofs
 DISABLE_EQUATIONS=1 lake build TorchLeanDocs:docs
 lake exe verify -- list
 ```
@@ -52,9 +51,9 @@ lake exe nn_tests_suite
 Run a few small examples:
 
 ```bash
-lake env lean --run NN/Examples/Quickstart/TensorBasics.lean
+lake exe torchlean quickstart_tensors
 lake exe torchlean quickstart_autograd
-lake exe torchlean mlp --device cpu --steps 10 --scalar float32
+lake exe torchlean quickstart_mlp --device cpu --steps 10 --scalar float32 --execution eager
 ```
 
 Run verifier commands:
@@ -150,7 +149,8 @@ executable `main`. Use the matching Lake target when working on those areas:
 | `NN` | reusable specifications, runtimes, APIs, proofs, and checkers |
 | `NNExamples` | runnable examples, model-zoo commands, and narrative demonstrations |
 | `NNTests` / `lake test` | test modules and the curated test executable |
-| `NNCI` | broad import checks that are useful in CI but unsuitable as downstream imports |
+| `NNCI` | ordinary maintained modules omitted from the downstream umbrella |
+| `NNSlowProofs` | the proof-heavy end-to-end IR semantic-equivalence target |
 | `TorchLeanDocs:docs` | the complete maintained documentation import |
 
 Reusable modules must not import an example, test, CI aggregate, or executable wrapper. Put reusable

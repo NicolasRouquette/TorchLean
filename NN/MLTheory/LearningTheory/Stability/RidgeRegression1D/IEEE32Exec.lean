@@ -58,7 +58,7 @@ algorithm in finite precision. This file is the first piece of the numerics brid
 
 This file reuses the stability dataset type from `Stability.Core`:
 
-`Dataset N Z := Spec.Vec N Z`
+`Dataset N Z := Spec.Tensor Z [N]`
 
 so our executable ridge regression runs on the same tensor-based dataset representation as the rest
 of the learning-theory layer.

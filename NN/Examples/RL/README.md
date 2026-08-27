@@ -24,8 +24,6 @@ The Python boundary helpers live under `scripts/rl/` so runtime code does not de
   environments behind a checked boundary contract.
 - `scripts/rl/export_gymnasium_rollout.py`: exporter for offline rollout JSON accepted by the Lean
   RL boundary loader.
-- `scripts/rl/train_ppo_cartpole_sb3.py`: Stable Baselines3 baseline for checking target
-  performance.
 
 ## Recommended Workflow
 
@@ -53,12 +51,6 @@ Optional ALE/Pong RAM path:
 
 ```bash
 python3 -m pip install --user 'gymnasium>=1.0' ale-py
-```
-
-For the Python SB3 baseline:
-
-```bash
-python3 -m pip install --user 'gymnasium>=1.0' stable-baselines3
 ```
 
 References:

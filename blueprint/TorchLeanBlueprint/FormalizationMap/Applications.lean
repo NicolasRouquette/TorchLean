@@ -159,15 +159,14 @@ The {uses "causal_mask_blocks_future"}[causal-mask theorem] selects the blocked 
 is definitionally zero.
 :::
 
-:::theorem "mamba_prefix_causality" (parent := "model_theorems") (lean := "NN.MLTheory.StateSpace.compactMamba_runList_append_outputs_prefix")
+:::theorem "mamba_prefix_causality" (parent := "model_theorems") (lean := "NN.MLTheory.StateSpace.compactMamba_runArray_append_outputs_prefix")
 For compact Mamba runs over {uses "shape_indexed_tensors"}[shape-indexed tensors], appending later
 inputs does not change the earlier output prefix.
 :::
 
 :::proof "mamba_prefix_causality"
-Induction over the input list unfolds the recurrence on
-{uses "shape_indexed_tensors"}[shape-indexed states and tokens], showing that the original scan
-steps and states are unchanged before the appended suffix begins.
+The generic array-scan prefix theorem shows that appending later inputs leaves every earlier step
+and state unchanged.
 :::
 
 :::definition "vicreg_variance_term" (parent := "model_theorems") (lean := "NN.MLTheory.SelfSupervised.varianceTerm")

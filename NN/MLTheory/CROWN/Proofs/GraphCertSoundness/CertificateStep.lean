@@ -59,12 +59,12 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
       | none => none
       | some v => some { dim := v.n, lo := v.v, hi := v.v }
   | .detach =>
-      match node.parents with
-      | p1 :: _ => getBox? cert p1
-      | _ => none
+      match NN.IR.unaryParent? node.parents with
+      | some p1 => getBox? cert p1
+      | none => none
   | .add =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getBox? cert p1, getBox? cert p2 with
           | some B1, some B2 =>
               if _h : B1.dim = B2.dim then
@@ -72,10 +72,10 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
               else
                 none
           | _, _ => none
-      | _ => none
+      | none => none
   | .sub =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getBox? cert p1, getBox? cert p2 with
           | some B1, some B2 =>
               if _h : B1.dim = B2.dim then
@@ -83,75 +83,75 @@ def certStepNode? (nodes : Array Node) (ps : ParamStore ℝ) (cert : Array (Opti
               else
                 none
           | _, _ => none
-      | _ => none
+      | none => none
   | .mul_elem =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getBox? cert p1, getBox? cert p2 with
           | some B1, some B2 => boxMulElem (α := ℝ) B1 B2
           | _, _ => none
-      | _ => none
+      | none => none
   | .relu =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some B => some (boxRelu (α := ℝ) B)
           | none => none
-      | _ => none
+      | none => none
   | .tanh =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some Xin =>
               let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.tanh (α := ℝ) (n := Xin.dim) (ofFlatBox (α
                 := ℝ) Xin)
               some (toFlatBox (α := ℝ) Xin.dim yB)
           | none => none
-      | _ => none
+      | none => none
   | .sigmoid =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some Xin =>
               let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.sigmoid (α := ℝ) (n := Xin.dim) (ofFlatBox
                 (α := ℝ) Xin)
               some (toFlatBox (α := ℝ) Xin.dim yB)
           | none => none
-      | _ => none
+      | none => none
   | .sin =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some Xin =>
               let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.sin (α := ℝ) (n := Xin.dim) (ofFlatBox (α
                 := ℝ) Xin)
               some (toFlatBox (α := ℝ) Xin.dim yB)
           | none => none
-      | _ => none
+      | none => none
   | .cos =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some Xin =>
               let yB := NN.MLTheory.CROWN.Runtime.Ops.IBP.cos (α := ℝ) (n := Xin.dim) (ofFlatBox (α
                 := ℝ) Xin)
               some (toFlatBox (α := ℝ) Xin.dim yB)
           | none => none
-      | _ => none
+      | none => none
   | .linear =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some Xin => ibpLinear (α := ℝ) id ps Xin
           | none => none
-      | _ => none
+      | none => none
   | .matmul =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getBox? cert p1 with
           | some Xin => ibpMatmul (α := ℝ) id ps Xin
           | none => none
-      | _ => none
+      | none => none
   | _ =>
       none
 

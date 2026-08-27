@@ -5,10 +5,7 @@ layout: default
 
 # Getting Started
 
-Start with a model small enough that every part can be seen. The first run should feel like ordinary
-ML: build the project, train a tiny model, and run a compact verifier. The classifier is
-deliberately small, so the structure is visible: the same project contains the executable model, the
-graph representation, and the checker that reasons about the graph.
+Build the project, train a small model, and run interval bound propagation over a second model:
 
 ```bash
 lake build
@@ -16,10 +13,9 @@ lake exe torchlean quickstart_mlp --device cpu --steps 10 --scalar ieee32-exec -
 lake exe verify -- torchlean-ibp
 ```
 
-The first command checks the Lean project. The second command runs a compact supervised model through
-the trainer: it initializes parameters, executes a Float32 forward pass, computes a loss, runs
-reverse mode, and applies optimizer updates. The third command lowers a small TorchLean model into
-the graph used by the verifier and runs interval bound propagation over an input box.
+The quickstart initializes parameters, executes a binary32 forward pass, computes a loss, runs
+reverse mode, and updates the parameters. The verifier command lowers a TorchLean model to its
+operation graph and propagates an input interval through that graph.
 
 To see the command-line entry points:
 
@@ -60,10 +56,7 @@ certificates, and two-stage Lyapunov experiments.
 - Train a model: `lake exe torchlean mlp --device cpu --steps 100 --scalar ieee32-exec`.
 - Inspect a scientific ML run: [Scientific ML]({{ '/examples/scientific-ml/' | relative_url }}).
 - Check a certificate or bound pass: [Verification Bounds]({{ '/examples/verification/' | relative_url }}).
-- Start from the main import: `import NN; open TorchLean`.
+- Start application code with `import NN.API; open TorchLean`.
 - Follow declaration and proof dependencies: [Formalization graph]({{ '/blueprint/Dependency-Graph/' | relative_url }}).
 - Explore module dependencies: [Import graphs]({{ '/graphs/' | relative_url }}).
 - Understand CUDA assumptions: [GPU and CUDA Boundaries]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}).
-
-When changing code, keep the edit loop small at first: run one example, inspect the file it writes,
-then run the matching checker when the example has one.

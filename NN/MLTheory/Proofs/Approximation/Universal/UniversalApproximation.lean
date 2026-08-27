@@ -10,7 +10,7 @@ public import Mathlib.Algebra.Order.Floor.Semiring
 public import Mathlib.Data.Real.Basic
 public import NN.Proofs.Utils.List
 public import NN.Spec.Core.Tensor
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Spec.Layers.Activation
 public import NN.Spec.Layers.Linear
 public import NN.Spec.Models.Mlp
@@ -64,12 +64,12 @@ namespace NN.MLTheory.Proofs.UniversalApproximation
     simp [relu, Activation.Math.reluSpec, max_eq_right this]
 
 /-- Extract scalar from a length-1 tensor. -/
-def extractScalarOutput (t : Tensor ℝ (.dim 1 .scalar)) : ℝ :=
+def extractScalarOutput (t : Tensor ℝ [1]) : ℝ :=
   match t with
   | .dim f => item (f ⟨0, by norm_num⟩)
 
 /-- Evaluate a 2-layer ReLU MLP on a scalar input. -/
-noncomputable def mlpEval1d (hidDim : ℕ)
+noncomputable def mlpEvalScalar (hidDim : ℕ)
     (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1) (x : ℝ) : ℝ :=
   extractScalarOutput (Examples.mlpForward l1 l2 (Tensor.singleton x))
 
@@ -78,7 +78,7 @@ TorchLean's MLP forward pass is exactly
 $\operatorname{linear}\circ\operatorname{ReLU}\circ\operatorname{linear}$.
 -/
 lemma mlp_forward_eq_linear_relu_linear {hidDim : ℕ}
-    (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1) (x : Tensor ℝ (.dim 1 .scalar)) :
+    (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1) (x : Tensor ℝ [1]) :
     Examples.mlpForward l1 l2 x =
       let z1 := Spec.linearSpec (α := ℝ) l1 x
       let a1 := Activation.reluSpec z1
@@ -88,12 +88,12 @@ lemma mlp_forward_eq_linear_relu_linear {hidDim : ℕ}
 /-- First real hinge layer: hidden unit $i$ computes $x-t_i$ before ReLU. -/
 noncomputable def hingeLayer1 (n : ℕ) (t : Fin n → ℝ) : LinearSpec ℝ 1 n :=
   { weights := Tensor.matrix (m := n) (n := 1) (fun _ _ => (1 : ℝ))
-    bias := Tensor.vector (n := n) (fun i => -t i) }
+    bias := Tensor.ofFn (n := n) (fun i => -t i) }
 
 /-- Second real hinge layer: sum hidden activations with coefficients $c_i$ and bias $b$. -/
 noncomputable def hingeLayer2 (n : ℕ) (c : Fin n → ℝ) (b : ℝ) : LinearSpec ℝ n 1 :=
   { weights := Tensor.matrix (m := 1) (n := n) (fun _ j => c j)
-    bias := Tensor.vector (n := 1) (fun _ => b) }
+    bias := Tensor.ofFn (n := 1) (fun _ => b) }
 
 /-- Real hinge network $b+\sum_i c_i\operatorname{ReLU}(x-t_i)$. -/
 noncomputable def hingeFun (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x : ℝ) : ℝ :=
@@ -180,7 +180,7 @@ lemma mat_vec_mul_spec_matrix_singleton (n : ℕ) (x : ℝ) :
   apply congrArg Tensor.dim
   funext i
   -- Unfold and compute the unique dot product over `Fin 1`.
-  simp [Tensor.vector, List.finRange_succ, List.foldl]
+  simp [Tensor.ofFn, List.finRange_succ, List.foldl]
 
 /--
 The explicit two-layer network built from `hingeLayer1` and `hingeLayer2` computes `hingeFun`.
@@ -188,11 +188,11 @@ The explicit two-layer network built from `hingeLayer1` and `hingeLayer2` comput
 This is the main semantic bridge from the approximation-theory hinge representation to TorchLean's
 spec-level MLP model.
 -/
-lemma mlp_eval_1d_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x : ℝ) :
-    mlpEval1d n (hingeLayer1 n t) (hingeLayer2 n c b) x = hingeFun n t c b x := by
+lemma mlp_eval_scalar_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x : ℝ) :
+    mlpEvalScalar n (hingeLayer1 n t) (hingeLayer2 n c b) x = hingeFun n t c b x := by
   classical
-  -- Unfold the definition of `mlp_eval_1d` and rewrite `mlp_forward`.
-  unfold mlpEval1d hingeFun extractScalarOutput
+  -- Unfold the definition of `mlp_eval_scalar` and rewrite `mlp_forward`.
+  unfold mlpEvalScalar hingeFun extractScalarOutput
   -- Avoid `simp` here (it unfolds too much under matchers); rewrite `mlp_forward` explicitly.
   rw [mlp_forward_eq_linear_relu_linear (l1 := hingeLayer1 n t) (l2 := hingeLayer2 n c b) (x :=
     Tensor.singleton x)]
@@ -205,7 +205,7 @@ lemma mlp_eval_1d_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x :
     unfold hingeLayer1 Spec.linearSpec
     -- `mat_vec_mul_spec` yields the constant vector `x`; then add the bias `-t`.
     rw [mat_vec_mul_spec_matrix_singleton]
-    simp [Tensor.vector, addSpec, Tensor.map2Spec, sub_eq_add_neg]
+    simp [Tensor.ofFn, addSpec, Tensor.map2Spec, sub_eq_add_neg]
   -- Apply ReLU pointwise.
   have ha1 :
       Activation.reluSpec (α := ℝ) (s := .dim n .scalar)
@@ -229,7 +229,7 @@ lemma mlp_eval_1d_hinge (n : ℕ) (t : Fin n → ℝ) (c : Fin n → ℝ) (b x :
           Tensor.dim (fun _ : Fin 1 => Tensor.scalar (∑ j : Fin n, c j * relu (x - t j))) := by
       simpa using mat_vec_mul_spec_matrix_vector n c (fun j => relu (x - t j))
     rw [hmv]
-    simp [Tensor.vector, addSpec, Tensor.map2Spec, add_comm]
+    simp [Tensor.ofFn, addSpec, Tensor.map2Spec, add_comm]
   -- Extract the scalar output (the unique element of `Fin 1`) and reorder `b + sum`.
   -- `Fin 1` has a unique element, so `fin_cases` reduces the extracted component.
   simp [hy, Tensor.item, add_comm]
@@ -612,7 +612,7 @@ theorem relu_universal_approximation_Icc {f : ℝ → ℝ} {a b L : ℝ}
     (h_ab : a < b) (hL : 0 < L)
     (h_lip : ∀ x ∈ Set.Icc a b, ∀ y ∈ Set.Icc a b, |f x - f y| ≤ L * |x - y|) :
     ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1),
-      ∀ x ∈ Set.Icc a b, |f x - mlpEval1d hidDim l1 l2 x| < ε := by
+      ∀ x ∈ Set.Icc a b, |f x - mlpEvalScalar hidDim l1 l2 x| < ε := by
   intro ε hε
   classical
   rcases
@@ -622,9 +622,9 @@ theorem relu_universal_approximation_Icc {f : ℝ → ℝ} {a b L : ℝ}
   refine ⟨hidDim, hingeLayer1 hidDim t, hingeLayer2 hidDim c (f a), ?_⟩
   intro x hx
   have hnet :
-      mlpEval1d hidDim (hingeLayer1 hidDim t) (hingeLayer2 hidDim c (f a)) x =
+      mlpEvalScalar hidDim (hingeLayer1 hidDim t) (hingeLayer2 hidDim c (f a)) x =
         hingeFun hidDim t c (f a) x := by
-    simpa using (mlp_eval_1d_hinge hidDim t c (f a) x)
+    simpa using (mlp_eval_scalar_hinge hidDim t c (f a) x)
   simpa [hnet] using happx x hx
 
   end NN.MLTheory.Proofs.UniversalApproximation

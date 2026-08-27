@@ -137,7 +137,7 @@ def leanMlp : IO (Array Float) := do
   let j ← TorchLean.Json.parseFile mlpJson
   let some sd := Import.MLPPyTorch.loadMlpStateDict 2 3 1 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load MLP state dict")
-  let x : Tensor Float (.dim 2 .scalar) := tensor! [0.5, 0.8]
+  let x : Tensor Float [2] := tensor! [0.5, 0.8]
   let y := Import.MLPPyTorch.forward sd x
   pure #[vecVal y ⟨0, by decide⟩]
 
@@ -145,22 +145,54 @@ def leanCnn : IO (Array Float) := do
   let j ← TorchLean.Json.parseFile cnnJson
   let some sd := Import.CNNPyTorch.loadCnnStateDict 1 2 3 3 8 j
     | throw (IO.userError "pytorch_roundtrip_parity: failed to load CNN state dict")
-  let conv1 : Conv2dSpec 1 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
-    { kernel := sd.convW1, bias := sd.convB1 }
-  let conv2 : Conv2dSpec 2 2 3 3 1 1 Float (by decide) (by decide) (by decide) :=
-    { kernel := sd.convW2, bias := sd.convB2 }
-  let pool1 : MaxPool2dSpec 2 2 2 (by decide) (by decide) (by decide) :=
+  let spatial : Tensor Nat [2] := tensor! [8, 8]
+  let kernel : Tensor Nat [2] := tensor! [3, 3]
+  let unit : Tensor Nat [2] := tensor! [1, 1]
+  let poolKernel : Tensor Nat [2] := tensor! [2, 2]
+  let poolStride : Tensor Nat [2] := tensor! [2, 2]
+  let noPadding : Tensor Nat [2] := tensor! [0, 0]
+  have hPoolKernel : ∀ i : Fin 2, poolKernel.getScalar i ≠ 0 := by
+    intro i
+    fin_cases i <;> simp [poolKernel]
+  have hPoolStride : ∀ i : Fin 2, poolStride.getScalar i ≠ 0 := by
+    intro i
+    fin_cases i <;> simp [poolStride]
+  let conv1 : ConvSpec 2 1 2 kernel unit unit Float :=
+    { kernel := by simpa [kernel] using sd.convW1, bias := sd.convB1 }
+  let conv2 : ConvSpec 2 2 2 kernel unit unit Float :=
+    { kernel := by simpa [kernel] using sd.convW2, bias := sd.convB2 }
+  let pool1 : MaxPoolSpec 2 poolKernel poolStride noPadding
+      hPoolKernel hPoolStride :=
     {}
-  let pool2 : MaxPool2dSpec 2 2 2 (by decide) (by decide) (by decide) :=
+  let pool2 : MaxPoolSpec 2 poolKernel poolStride noPadding
+      hPoolKernel hPoolStride :=
     {}
-  let linear : LinearSpec Float 8 2 := { weights := sd.linearW, bias := sd.linearB }
+  let flatSize := Models.Cnn.featureSize 2 spatial kernel unit unit unit unit
+    poolKernel poolStride noPadding poolStride noPadding
+  have hOutputSpatial :
+      Models.Cnn.outputSpatial spatial kernel unit unit unit unit
+        poolKernel poolStride noPadding poolStride noPadding = poolKernel := by
+    apply Spec.Tensor.ext_vector
+    intro i
+    have hi' : i = 0 ∨ i = 1 := by grind
+    rcases hi' with rfl | rfl <;>
+      norm_num [spatial, kernel, unit, poolKernel, poolStride, noPadding,
+        Models.Cnn.outputSpatial, Models.Cnn.blockOutSpatial, Spec.convOutSpatial,
+        Spec.poolOutSpatialPad, Spec.poolOutDim, Shape.slidingWindowOutDim]
+  have hFlatSize : flatSize = 8 := by
+    simp [flatSize, Models.Cnn.featureSize, Models.Cnn.featureShape, hOutputSpatial,
+      poolKernel, Shape.size, Shape.ofList]
+  let linear : LinearSpec Float flatSize 2 :=
+    { weights := hFlatSize.symm ▸ sd.linearW, bias := sd.linearB }
   let net := Models.Cnn.withReluSpec (α := Float)
-    (inH := 8) (inW := 8) conv1 conv2 pool1 pool2 linear
-  let x : Tensor Float (.dim 1 (.dim 8 (.dim 8 .scalar))) :=
-    Tensor.dim (fun _ =>
-      Tensor.dim (fun i =>
-        Tensor.dim (fun k =>
-          Tensor.scalar (Float.ofNat (i.val * 8 + k.val + 1)))))
+    (spatial := spatial) conv1 conv2 pool1 pool2 linear
+  let xRaw : Tensor Float [1, 8, 8] :=
+    TorchLean.Tensor.generate [1, 8, 8] fun coordinate =>
+      Float.ofNat (coordinate.getD 1 0 * 8 + coordinate.getD 2 0 + 1)
+  have hSpatialList : spatial.toList = [8, 8] := by simp [spatial]
+  let x : Tensor Float (Shape.ofList (1 :: spatial.toList)) := by
+    rw [hSpatialList]
+    exact xRaw
   let y := Spec.Module.Chain.forward (α := Float) net x
   pure #[vecVal y ⟨0, by decide⟩, vecVal y ⟨1, by decide⟩]
 
@@ -183,8 +215,8 @@ def leanTransformer : IO (Array Float) := do
       norm1Bias := sd.norm1Bias
       norm2Scale := sd.norm2Scale
       norm2Bias := sd.norm2Bias }
-  let encoder : TransformerEncoder 1 1 2 2 Float := { layers := #v[layer] }
-  let x : Tensor Float (.dim 1 (.dim 2 .scalar)) := tensor! [[1.5, 1.5]]
+  let encoder : TransformerEncoder 1 1 2 2 Float := { layers := tensor! [layer] }
+  let x : Tensor Float [1, 2] := tensor! [[1.5, 1.5]]
   let y := TransformerEncoder.forward (seqLen := 1) (embedDim := 2)
     encoder x (by decide) (by decide)
   pure #[matVal y ⟨0, by decide⟩ ⟨0, by decide⟩,
@@ -201,7 +233,7 @@ def checkImporterBoundaries : IO Unit := do
   let collision ← parseJson! "{\"params\":{\"weight\":[1.0]},\"weight\":[9.0]}"
   let some weights := Import.PyTorch.loadWeights? collision
     | throw <| IO.userError "pytorch_roundtrip_parity: rejected valid wrapped weights"
-  let some weight := Import.PyTorch.getTensor? weights "weight" (.dim 1 .scalar)
+  let some weight := Import.PyTorch.getTensor? weights "weight" [1]
     | throw <| IO.userError "pytorch_roundtrip_parity: failed to parse wrapped weight"
   unless vecVal weight ⟨0, by decide⟩ == 1.0 do
     throw <| IO.userError "pytorch_roundtrip_parity: wrapper field shadowed a parameter"

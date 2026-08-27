@@ -22,7 +22,7 @@ For computation, instantiate `α := ℚ` (or `Rat`) and evaluate `seqStates` / `
 in an example file.
 
 Note: we also provide Tensor-shaped wrappers (`TensorState`, `TensorParams`) so users can work with
-`Tensor _ (.dim n .scalar)` instead of raw `Fin n → _`.
+`Tensor _ [n]` instead of raw `Fin n → _`.
 
 ## References
 
@@ -75,19 +75,19 @@ def act {α : Type} [One α] [Neg α] : Bool → α
 /-- Hopfield state as a Boolean activation vector. -/
 abbrev State (n : Nat) : Type := Fin n → Bool
 
-/-- Hopfield state as a vector tensor `Tensor Bool (.dim n .scalar)`.
+/-- Hopfield state as a vector `Tensor Bool [n]`.
 
 This representation connects the functional Hopfield state with TorchLean's tensor-shaped spec APIs.
 -/
-abbrev TensorState (n : Nat) : Type := Tensor Bool (.dim n .scalar)
+abbrev TensorState (n : Nat) : Type := Tensor Bool [n]
 
 /-- Convert a tensor state to the underlying function representation. -/
 def TensorState.toFun {n : Nat} (s : TensorState n) : State n :=
-  (Tensor.dimScalarEquiv (α := Bool) n).toFun s
+  (Tensor.vectorEquiv (α := Bool) n).toFun s
 
 /-- Convert a function state to a tensor state. -/
 def TensorState.ofFun {n : Nat} (s : State n) : TensorState n :=
-  (Tensor.dimScalarEquiv (α := Bool) n).invFun s
+  (Tensor.vectorEquiv (α := Bool) n).invFun s
 
 @[simp] lemma TensorState.toFun_ofFun {n : Nat} (s : State n) :
     TensorState.toFun (TensorState.ofFun (n := n) s) = s := by
@@ -130,14 +130,14 @@ structure Params (α : Type) (n : Nat) where
 /-- Hopfield parameters as tensor-shaped weights and thresholds. -/
 structure TensorParams (α : Type) (n : Nat) where
   /-- Weight matrix, with destination units on the first axis and source units on the second. -/
-  W : Tensor α (.dim n (.dim n .scalar))
-  /-- Vector of per-unit activation thresholds. -/
-  θ : Tensor α (.dim n .scalar)
+  W : Tensor α [n, n]
+  /-- Rank-one tensor of per-unit activation thresholds. -/
+  θ : Tensor α [n]
 
 /-- Convert tensor-shaped parameters to the function representation. -/
 def TensorParams.toFun {α : Type} {n : Nat} (p : TensorParams α n) : Params α n where
   W := fun i j => Spec.get2 p.W i j
-  θ := fun i => Tensor.vecGet p.θ i
+  θ := fun i => Tensor.getScalar p.θ i
 
 /-! ## Hopfield update dynamics -/
 
@@ -263,7 +263,7 @@ variable {α : Type} [Context α] [DecidableRel ((· ≤ ·) : α → α → Pro
 @[inline] def act : Bool → α := Hopfield.act (α := α)
 
 @[inline] def theta {n : Nat} (p : TensorParams α n) (i : Fin n) : α :=
-  Tensor.vecGet p.θ i
+  Tensor.getScalar p.θ i
 
 @[inline] def weight {n : Nat} (p : TensorParams α n) (i j : Fin n) : α :=
   Spec.get2 p.W i j

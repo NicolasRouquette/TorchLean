@@ -51,17 +51,17 @@ to `inDim`.
 -/
 structure PCASpec (α : Type) (inDim outDim : Nat) where
   /-- Principal directions, one row for each output coordinate. -/
-  components : Tensor α (.dim outDim (.dim inDim .scalar))
+  components : Tensor α [outDim, inDim]
   /-- Coordinate-wise sample mean subtracted before projection. -/
-  mean : Tensor α (.dim inDim .scalar)
+  mean : Tensor α [inDim]
   /-- Covariance eigenvalue associated with each selected component. -/
-  explainedVariance : Tensor α (.dim outDim .scalar)
+  explainedVariance : Tensor α [outDim]
 
 /-- Forward pass: center and project: `y = components · (x - mean)`. -/
 def pcaForwardSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (input : Tensor α (.dim inDim .scalar)) :
-  Tensor α (.dim outDim .scalar) :=
+  (input : Tensor α [inDim]) :
+  Tensor α [outDim] :=
   -- Center the data: x_centered = x - mean
   let centered := subSpec input m.mean
   -- Project onto principal components: y = components * x_centered
@@ -70,8 +70,8 @@ def pcaForwardSpec {inDim outDim : Nat}
 /-- Inverse transform: reconstruct `x ≈ componentsᵀ · y + mean`. -/
 def pcaInverseSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (reduced : Tensor α (.dim outDim .scalar)) :
-  Tensor α (.dim inDim .scalar) :=
+  (reduced : Tensor α [outDim]) :
+  Tensor α [inDim] :=
   -- Reconstruct: x_reconstructed = components^T * reduced + mean
   let reconstructed := vecMatMulSpec reduced m.components
   addSpec reconstructed m.mean
@@ -79,9 +79,9 @@ def pcaInverseSpec {inDim outDim : Nat}
 /-- VJP contribution for `components`: outer product `dL/dy ⊗ (x - mean)`. -/
 def pcaComponentsDerivSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (input : Tensor α (.dim inDim .scalar))
-  (gradOutput : Tensor α (.dim outDim .scalar)) :
-  Tensor α (.dim outDim (.dim inDim .scalar)) :=
+  (input : Tensor α [inDim])
+  (gradOutput : Tensor α [outDim]) :
+  Tensor α [outDim, inDim] :=
   let centered := subSpec input m.mean
   Tensor.dim (fun i =>
     Tensor.dim (fun j =>
@@ -94,25 +94,25 @@ def pcaComponentsDerivSpec {inDim outDim : Nat}
 /-- VJP contribution for `mean`: `dL/dmean = -componentsᵀ · dL/dy`. -/
 def pcaMeanDerivSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (gradOutput : Tensor α (.dim outDim .scalar)) :
-  Tensor α (.dim inDim .scalar) :=
+  (gradOutput : Tensor α [outDim]) :
+  Tensor α [inDim] :=
   negSpec (vecMatMulSpec gradOutput m.components)
 
 /-- VJP contribution for `input`: `dL/dx = componentsᵀ · dL/dy`. -/
 def pcaInputDerivSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (gradOutput : Tensor α (.dim outDim .scalar)) :
-  Tensor α (.dim inDim .scalar) :=
+  (gradOutput : Tensor α [outDim]) :
+  Tensor α [inDim] :=
   vecMatMulSpec gradOutput m.components
 
 /-- Full backward pass returning `(dComponents, dMean, dInput)`. -/
 def pcaBackwardSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (input : Tensor α (.dim inDim .scalar))
-  (gradOutput : Tensor α (.dim outDim .scalar)) :
-  (Tensor α (.dim outDim (.dim inDim .scalar)) ×
-   Tensor α (.dim inDim .scalar) ×
-   Tensor α (.dim inDim .scalar)) :=
+  (input : Tensor α [inDim])
+  (gradOutput : Tensor α [outDim]) :
+  (Tensor α [outDim, inDim] ×
+   Tensor α [inDim] ×
+   Tensor α [inDim]) :=
   let dComponents := pcaComponentsDerivSpec m input gradOutput
   let dMean := pcaMeanDerivSpec m gradOutput
   let dInput := pcaInputDerivSpec m gradOutput
@@ -132,7 +132,7 @@ returned vector is the dominant eigenvector. Such a theorem would require spectr
 an error analysis. Numerical libraries generally use SVD or a convergent eigensolver for fitting.
 -/
 def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
-  (data : Tensor α (.dim nSamples (.dim inDim .scalar)))
+  (data : Tensor α [nSamples, inDim])
   (iterations : Nat)
   (hSamples : 1 < nSamples) (hDim : 0 < inDim) :
   PCASpec α inDim 1 :=
@@ -149,7 +149,7 @@ def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
 
   -- Compute covariance matrix: C = (1/(n-1)) * X^T * X
   -- Using n-1 for unbiased estimator (Bessel's correction)
-  let covariance := matMulSpec (matrixTransposeSpec centeredData) centeredData
+  let covariance := matMulSpec (swapAdjacentAxes centeredData 0) centeredData
   let covarianceScaled := scaleSpec covariance (1 / (nSamples - 1 : α))
 
   let (eigenvalue, eigenvector) :=
@@ -167,8 +167,8 @@ def pcaFitLeadingComponentApproxSpec {nSamples inDim : Nat}
 /-- Apply a fitted PCA transform to a batch of samples. -/
 def pcaTransformSpec {nSamples inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (data : Tensor α (.dim nSamples (.dim inDim .scalar))) :
-  Tensor α (.dim nSamples (.dim outDim .scalar)) :=
+  (data : Tensor α [nSamples, inDim]) :
+  Tensor α [nSamples, outDim] :=
   match data with
   | Tensor.dim batch_fn =>
     Tensor.dim (fun i => pcaForwardSpec m (batch_fn i))
@@ -179,7 +179,7 @@ PyTorch analogy: `torch.sum((x - x_hat) ** 2)`.
 -/
 def pcaReconstructionErrorSpec {inDim outDim : Nat}
   (m : PCASpec α inDim outDim)
-  (input : Tensor α (.dim inDim .scalar)) (h : inDim ≠ 0) :
+  (input : Tensor α [inDim]) (h : inDim ≠ 0) :
   α :=
   let reduced := pcaForwardSpec m input
   let reconstructed := pcaInverseSpec m reduced
@@ -192,7 +192,7 @@ def pcaReconstructionErrorSpec {inDim outDim : Nat}
 /-- Cumulative explained variance, obtained by prefix-summing `explainedVariance`. -/
 def pcaCumulativeExplainedVarianceSpec {α : Type} [Add α] [Zero α]
     {inDim outDim : Nat} (m : PCASpec α inDim outDim) :
-    Tensor α (.dim outDim .scalar) :=
+    Tensor α [outDim] :=
   match m.explainedVariance with
   | Tensor.dim f =>
     Tensor.dim (fun i =>

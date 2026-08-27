@@ -43,9 +43,9 @@ def mlpSpec
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim) :
-  Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  Spec.Module.Chain α ([inDim]) ([outDim]) :=
   let linear1 := Spec.Module.linear (α:=α) l1
-  let relu    := Spec.Module.relu (α:=α) (.dim hidDim .scalar)
+  let relu    := Spec.Module.relu (α:=α) ([hidDim])
   let linear2 := Spec.Module.linear (α:=α) l2
   Spec.Module.Chain.single linear1
     |>.append relu
@@ -63,11 +63,11 @@ def mlpWithSoftmaxSpec
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim) :
-  Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  Spec.Module.Chain α ([inDim]) ([outDim]) :=
   let linear1 := Spec.Module.linear (α:=α) l1
-  let relu    := Spec.Module.relu (α:=α) (.dim hidDim .scalar)
+  let relu    := Spec.Module.relu (α:=α) ([hidDim])
   let linear2 := Spec.Module.linear (α:=α) l2
-  let softmax := Spec.Module.softmax (α := α) (.dim outDim .scalar) 0
+  let softmax := Spec.Module.softmax (α := α) ([outDim]) 0
   Spec.Module.Chain.single linear1
     |>.append relu
     |>.append linear2
@@ -79,8 +79,8 @@ def mlpForward
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim)
-  (x : Tensor α (.dim inDim .scalar)) :
-  Tensor α (.dim outDim .scalar) :=
+  (x : Tensor α [inDim]) :
+  Tensor α [outDim] :=
   let net := mlpSpec (α:=α) l1 l2
   Spec.Module.Chain.forward (α:=α) net x
 
@@ -92,13 +92,13 @@ def mlpBackward
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim)
-  (x : Tensor α (.dim inDim .scalar))
-  (dLdy : Tensor α (.dim outDim .scalar)) :
-  ( Tensor α (.dim hidDim (.dim inDim .scalar))
-  × Tensor α (.dim hidDim .scalar)
-  × Tensor α (.dim outDim (.dim hidDim .scalar))
-  × Tensor α (.dim outDim .scalar)
-  × Tensor α (.dim inDim .scalar) ) :=
+  (x : Tensor α [inDim])
+  (dLdy : Tensor α [outDim]) :
+  ( Tensor α [hidDim, inDim]
+  × Tensor α [hidDim]
+  × Tensor α [outDim, hidDim]
+  × Tensor α [outDim]
+  × Tensor α [inDim] ) :=
 
   -- Forward intermediates
   let z1 := Spec.linearSpec (α:=α) l1 x
@@ -132,7 +132,7 @@ theorem mlp_spec_forward_eq
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim)
-  (x : Tensor α (.dim inDim .scalar)) :
+  (x : Tensor α [inDim]) :
   Spec.Module.Chain.forward (α:=α)
     (mlpSpec (α:=α) l1 l2) x
   =
@@ -156,9 +156,9 @@ def mlpOpspec
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim) :
-  Spec.OpSpec α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  Spec.OpSpec α ([inDim]) ([outDim]) :=
   let lin1 := Spec.linearOp (α:=α) l1
-  let relu := Spec.reluOp (α:=α) (s:=.dim hidDim .scalar)
+  let relu := Spec.reluOp (α:=α) (s:=[hidDim])
   let lin2 := Spec.linearOp (α:=α) l2
   Spec.OpSpec.compose (α:=α)
     (Spec.OpSpec.compose (α:=α) lin1 relu)
@@ -170,9 +170,9 @@ def mlpOpspecBackward
   {inDim hidDim outDim : Nat}
   (l1 : Spec.LinearSpec α inDim hidDim)
   (l2 : Spec.LinearSpec α hidDim outDim)
-  (x : Tensor α (.dim inDim .scalar))
-  (dLdy : Tensor α (.dim outDim .scalar)) :
-  Tensor α (.dim inDim .scalar) :=
+  (x : Tensor α [inDim])
+  (dLdy : Tensor α [outDim]) :
+  Tensor α [inDim] :=
   let op := mlpOpspec (α:=α) l1 l2
   op.backward x dLdy
 

@@ -49,19 +49,28 @@ def width : Nat := 8
 /-- Channel width of the residual trunk. -/
 def hiddenChannels : Nat := 4
 
+/-- A three-point stencil along each spatial axis, with unit stride and same padding. -/
+def blockGeometry : nn.ConvGeometry 2 :=
+  nn.ConvGeometry.samePadding tensor! [1, 1]
+
 /-- Configuration shared by the model constructor and its typed input/output shapes. -/
 def cfg : nn.models.ResNetConfig 2 :=
   { inChannels := inChannels
-    spatial := #v[height, width]
+    spatial := tensor! [height, width]
     spatialNonzero := by intro i; fin_cases i <;> decide
     hiddenChannels := hiddenChannels
+    block := blockGeometry
+    blockPreservesSpatial := by
+      simpa [nn.ConvGeometry.outSpatial, blockGeometry] using
+        nn.ConvGeometry.outSpatial_samePadding tensor! [height, width] tensor! [1, 1]
+          (by intro i; fin_cases i <;> decide)
     numClasses := RealData.cifarClasses }
 
 /-- Batched channel-first input shape. -/
-abbrev σ : Shape := .dim batch (.dim inChannels (.dim height (.dim width .scalar)))
+abbrev σ : List Nat := [batch, inChannels, height, width]
 
 /-- One row of class logits per input sample. -/
-abbrev τ : Shape := .dim batch (.dim RealData.cifarClasses .scalar)
+abbrev τ : List Nat := [batch, RealData.cifarClasses]
 
 /-- Residual classifier from the public model API. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
@@ -69,7 +78,7 @@ def model : nn.Builder (nn.Sequential σ τ) :=
     simpa [σ, τ, cfg, nn.models.ResNetConfig.inputShape,
       nn.models.ResNetConfig.outputShape, Spec.Shape.ofList, Spec.Shape.concat,
       Spec.Shape.appendDim] using
-      nn.models.resnet cfg (.dim batch .scalar)
+      nn.models.resnet cfg [batch]
         (hInChannels := by decide) (hHiddenChannels := by decide)
 
 /-- Train the residual classifier with the public classification trainer. -/

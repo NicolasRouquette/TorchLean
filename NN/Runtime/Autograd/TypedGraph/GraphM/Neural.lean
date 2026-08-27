@@ -73,41 +73,33 @@ def layerNorm {α : Type} {Δ : Type} [Context α] [DecidableRel ((· > ·) : α
             (h_seq_pos := h_seq_pos) (h_embed_pos := h_embed_pos)
             (x := xv) (gamma := gv) (_beta := bv) (grad_output := dLdy)
         let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim seqLen (.dim embedDim .scalar)) ix dx)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim embedDim .scalar) ig dgamma)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim embedDim .scalar) ib dbeta) }
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim seqLen (.dim embedDim .scalar)) ix dx)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim embedDim .scalar) ig dgamma)
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z0
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim embedDim .scalar) ib dbeta) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim seqLen (.dim embedDim .scalar))) g node
 
-/--
-Batch normalization in channel-first layout (no running statistics; spec-level functional form).
-
-PyTorch comparison: `torch.nn.BatchNorm2d` in NCHW layout (modulo exact semantics/parameters).
-
-Forward-mode status: implemented by `Spec.batchNorm2dJvp`, including parameter tangents for
-`gamma` and `beta`.
--/
-def batchNormChannelFirst {α : Type} {Δ : Type} [Context α] [DecidableRel ((· > ·) : α → α →
-  Prop)] [DecidableEq Shape]
-  {Γ : List Shape} {channels height width : Nat}
-  (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
-  (x : Var (.dim channels (.dim height (.dim width .scalar))))
+/-- Batch normalization over every spatial axis of a channel-first tensor. -/
+def batchNorm {α : Type} {Δ : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+  [DecidableEq Shape] {Γ : List Shape} {channels : Nat} {sSpatial : Shape}
+  (hWellFormed : (Shape.dim channels sSpatial).wellFormed)
+  (x : Var (.dim channels sSpatial))
   (gamma : Var (.dim channels .scalar))
   (beta : Var (.dim channels .scalar)) :
-  MWith α Δ Γ (Var (.dim channels (.dim height (.dim width .scalar)))) := do
+  MWith α Δ Γ (Var (.dim channels sSpatial)) := do
+  let _ : Shape.WellFormed (.dim channels sSpatial) := ⟨hWellFormed⟩
   let ⟨ss, g⟩ ← get
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let ig ← liftM (mkIdx (_α := α) (Γ := Γ) ss gamma)
   let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss beta)
-  let outS : Shape := .dim channels (.dim height (.dim width .scalar))
+  let outS : Shape := .dim channels sSpatial
   let node : NodeData α Δ (Γ ++ ss) outS :=
     { forward := fun ctx _d =>
-        Spec.batchNorm2d (α := α) (channels := channels) (height := height) (width := width)
+        Spec.batchNorm (α := α) (channels := channels) (sSpatial := sSpatial)
           (x := getIdx (α := α) (xs := ctx) ix)
           (gamma := getIdx (α := α) (xs := ctx) ig)
           (beta := getIdx (α := α) (xs := ctx) ib)
-          (h_c := h_c) (h_h := h_h) (h_w := h_w)
       jvp := fun ctx dctx _d =>
         let xv := getIdx (α := α) (xs := ctx) ix
         let gv := getIdx (α := α) (xs := ctx) ig
@@ -115,22 +107,20 @@ def batchNormChannelFirst {α : Type} {Δ : Type} [Context α] [DecidableRel ((�
         let dx := getIdx (α := α) (xs := dctx) ix
         let dg := getIdx (α := α) (xs := dctx) ig
         let db := getIdx (α := α) (xs := dctx) ib
-        Spec.batchNorm2dJvp (α := α) (channels := channels) (height := height) (width := width)
+        Spec.batchNormJvp (α := α) (channels := channels) (sSpatial := sSpatial)
           (x := xv) (tangent := dx) (gamma := gv) (dgamma := dg) (_beta := bv) (dbeta := db)
-          (_h_c := h_c) (_h_h := h_h) (_h_w := h_w)
       vjp := fun ctx _d dLdy =>
         let xv := getIdx (α := α) (xs := ctx) ix
         let gv := getIdx (α := α) (xs := ctx) ig
         let (dx, dgamma, dbeta) :=
-          Spec.batchNorm2dBackward (α := α) (channels := channels) (height := height) (width := width)
-            (x := xv) (gamma := gv) (grad_output := dLdy)
-            (_h_c := h_c) (_h_h := h_h) (_h_w := h_w)
+          Spec.batchNormBackward (α := α) (channels := channels) (sSpatial := sSpatial)
+            (x := xv) (gamma := gv) (gradOutput := dLdy)
         let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := outS) ix dx)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim channels .scalar) ig dgamma)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim channels .scalar) ib dbeta) }
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := outS) ix dx)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim channels .scalar) ig dgamma)
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z0
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim channels .scalar) ib dbeta) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
 
 /--
@@ -149,7 +139,7 @@ def multiHeadAttention {α : Type} {Δ : Type} [Context α]
   (wv : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
   (wo : Var (.dim (numHeads * headDim) (.dim dModel .scalar)))
   (x : Var (.dim n (.dim dModel .scalar)))
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
+  (mask : Option (Tensor Bool [n, n]) := none) :
   MWith α Δ Γ (Var (.dim n (.dim dModel .scalar))) := do
   let ⟨ss, g⟩ ← get
   let iwq ← liftM (mkIdx (_α := α) (Γ := Γ) ss wq)
@@ -196,21 +186,21 @@ def multiHeadAttention {α : Type} {Δ : Type} [Context α]
             (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
             (mha := mha) (x := xv) (mask := mask) (grad_output := dLdy)
         let z0 :=
-          TList.add (α := α) (ss := Γ ++ ss)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim dModel (.dim (numHeads * headDim)
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim dModel (.dim (numHeads * headDim)
               .scalar)) iwq dWq)
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim dModel (.dim (numHeads * headDim)
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim dModel (.dim (numHeads * headDim)
               .scalar)) iwk dWk)
         let z1 :=
-          TList.add (α := α) (ss := Γ ++ ss) z0
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim dModel (.dim (numHeads * headDim)
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z0
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim dModel (.dim (numHeads * headDim)
               .scalar)) iwv dWv)
         let z2 :=
-          TList.add (α := α) (ss := Γ ++ ss) z1
-            (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim (numHeads * headDim) (.dim dModel
+          _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z1
+            (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim (numHeads * headDim) (.dim dModel
               .scalar)) iwo dWo)
-        TList.add (α := α) (ss := Γ ++ ss) z2
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim n (.dim dModel .scalar)) ix dx) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z2
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim n (.dim dModel .scalar)) ix dx) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim n (.dim dModel .scalar))) g node
 
 /--
@@ -228,9 +218,9 @@ def batchedMultiHeadAttention {α : Type} {Δ : Type} [Context α]
   (wv : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
   (wo : Var (.dim (numHeads * headDim) (.dim dModel .scalar)))
   (x : Var (.dim batch (.dim n (.dim dModel .scalar))))
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
+  (mask : Option (Tensor Bool [n, n]) := none) :
   MWith α Δ Γ (Var (.dim batch (.dim n (.dim dModel .scalar)))) :=
-  _root_.Runtime.Autograd.mapLeadingAxisWith
+  _root_.Runtime.Autograd.mapOuterAxisWith
     (const (α := α) (Δ := Δ) (Γ := Γ) <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i))
     (fun x start len h =>
       sliceLeadingAxisRange (α := α) (Δ := Δ) (Γ := Γ) x start len h)

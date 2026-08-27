@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.Tensor
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 
 /-!
 # Flattened interval bounds (`FlatBox`)
@@ -39,18 +39,11 @@ structure FlatBox (α : Type) [Context α] where
   /-- Flattened output dimension. -/
   dim : Nat
   /-- Lower bound vector (shape `.dim dim .scalar`). -/
-  lo  : Tensor α (.dim dim .scalar)
+  lo  : Tensor α [dim]
   /-- Upper bound vector (shape `.dim dim .scalar`). -/
-  hi  : Tensor α (.dim dim .scalar)
+  hi  : Tensor α [dim]
 
 namespace FlatBox
-
-/-- Extract the scalar entry at index `i` from a flat vector tensor. -/
-def getScalar {n : Nat} (t : Tensor α (.dim n .scalar)) (i : Fin n) : α :=
-  match t with
-  | .dim f =>
-    match f i with
-    | .scalar v => v
 
 /--
 Componentwise validity of a flat interval box: `lo ≤ hi` for every coordinate.
@@ -60,17 +53,17 @@ box predicates in the same scalar universe as the executable operators.
 -/
 def Valid (B : FlatBox α) : Prop :=
   ∀ i : Fin B.dim,
-    getScalar (α := α) B.lo i ≤ getScalar (α := α) B.hi i
+    Spec.Tensor.getScalar (α := α) B.lo i ≤ Spec.Tensor.getScalar (α := α) B.hi i
 
 /--
 Build a singleton `FlatBox` from an exact vector tensor `t` (set `lo = hi = t`).
 -/
-def ofTensor {n : Nat} (t : Tensor α (.dim n .scalar)) : FlatBox α :=
+def ofTensor {n : Nat} (t : Tensor α [n]) : FlatBox α :=
   { dim := n, lo := t, hi := t }
 
 /-- A singleton flat box is always valid (over any preorder). -/
 theorem valid_ofTensor (le_refl : ∀ a : α, a ≤ a) {n : Nat}
-    (t : Tensor α (.dim n .scalar)) :
+    (t : Tensor α [n]) :
     (ofTensor (α := α) t).Valid := by
   intro i
   -- After unfolding `Valid`/`ofTensor`, both endpoints are the same scalar entry.

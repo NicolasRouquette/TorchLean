@@ -50,7 +50,7 @@ namespace TorchLean
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 /-!
 ## `Linear → ReLU → Linear`
@@ -66,7 +66,7 @@ def mlp
     (inDim hidDim outDim : Nat)
     (seedW1 seedB1 seedW2 seedB2 : Nat := 0) :
     _root_.Runtime.Autograd.TorchLean.NN.Seq
-      (.dim inDim .scalar) (.dim outDim .scalar) :=
+      [inDim] [outDim] :=
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer
       (_root_.Runtime.Autograd.TorchLean.NN.linear inDim hidDim
         (seedW := seedW1) (seedB := seedB1)) >>>
@@ -87,7 +87,7 @@ def mlpClassifier
     (inDim hidDim numClasses : Nat)
     (seedW1 seedB1 seedW2 seedB2 : Nat := 0) :
     _root_.Runtime.Autograd.TorchLean.NN.Seq
-      (.dim inDim .scalar) (.dim numClasses .scalar) :=
+      [inDim] [numClasses] :=
   mlp inDim hidDim numClasses
     (seedW1 := seedW1) (seedB1 := seedB1) (seedW2 := seedW2) (seedB2 := seedB2)
 
@@ -96,7 +96,7 @@ def softmaxRegression
     (inDim numClasses : Nat)
     (seedW seedB : Nat := 0) :
     _root_.Runtime.Autograd.TorchLean.NN.Seq
-      (.dim inDim .scalar) (.dim numClasses .scalar) :=
+      [inDim] [numClasses] :=
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer
     (_root_.Runtime.Autograd.TorchLean.NN.linear inDim numClasses (seedW := seedW) (seedB := seedB))
 

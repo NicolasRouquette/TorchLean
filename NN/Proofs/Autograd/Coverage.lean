@@ -16,7 +16,7 @@ public import NN.Proofs.Autograd.Tape.Ops.Attention.MaskedMultiHeadSelfAttention
 public import NN.Proofs.Autograd.Tape.Ops.Attention.ScaledDotProduct
 public import NN.Proofs.Autograd.Tape.Ops.Conv.FDeriv
 public import NN.Proofs.Autograd.Tape.Ops.Embedding.GatherRows
-public import NN.Proofs.Autograd.Tape.Ops.Norm.BatchNormChannelFirst
+public import NN.Proofs.Autograd.Tape.Ops.Norm.BatchNorm
 public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNorm
 public import NN.Proofs.Autograd.Tape.Ops.Recurrent.ElmanCell
 public import NN.Proofs.Autograd.Tape.Ops.Transformer.FeedForward
@@ -110,8 +110,10 @@ The larger block proofs are built by composing the tape-node theorems:
   $r\mapsto\operatorname{LayerNorm}(r,\gamma,\beta)$;
 * a chain-rule bridge `residualThenPostNorm_hasFDerivAt` showing that any differentiable
   residual-producing map composes correctly with the post-norm LayerNorm graph;
-* conv2d FDeriv/backward-dot infrastructure;
-* LayerNorm and channel-first BatchNorm-like graphs;
+* rank-general convolution, including the exact Fréchet derivative and the adjoint input, kernel,
+  and bias reverse rules;
+* LayerNorm and arbitrary-spatial-rank BatchNorm, including an adjointness theorem for the
+  executable input, scale, and bias reverse rules;
 * one-step tanh/Elman RNN cell
   $h'=\tanh\!\left(W[x;h]+b\right)$, a two-step composition bridge, and an
   arbitrary-length BPTT chain-rule induction over differentiable recurrent transition builders;

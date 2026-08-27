@@ -26,8 +26,7 @@ spec-focused and should avoid importing the full public API.
   - `Tensor/Core.lean`: the `Spec.Tensor` datatype.
   - `TensorOps.lean`, `TensorReductionShape.lean`: elementwise ops, reductions, reshapes,
     broadcasts, concat/slice, and axis manipulation.
-  - `Complex.lean`, `TensorBridge.lean`, `TensorGrad.lean`: FFT/FNO support, runtime bridges, and
-    gradient helper specs.
+  - `Complex.lean` and `TensorGrad.lean`: FFT/FNO support and gradient helper specs.
 - `Layers/`: forward and backward specs for common layers: linear, convolution, attention,
   FlashAttention-style fused attention, normalization, pooling, embeddings, recurrent layers,
   selective scan, dropout, and losses.

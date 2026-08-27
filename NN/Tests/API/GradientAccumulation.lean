@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.API.Trainer.Manual.Core
 public import NN.API.Trainer.Manual.Loops
 
 /-!
@@ -22,22 +23,22 @@ namespace NN.Tests.API.GradientAccumulation
 
 open TorchLean.Trainer.Manual
 
-def vector1 (x : Float) : Spec.Tensor Float (.dim 1 .scalar) :=
-  .dim (fun _ => .scalar x)
+def vector1 (x : Float) : Spec.Tensor Float [1] :=
+  Spec.Tensor.ofFn fun _ => x
 
 def model :=
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer <|
     _root_.Runtime.Autograd.TorchLean.NN.linear 1 1 17 29
 
-def task : SeqTask (.dim 1 .scalar) (.dim 1 .scalar) :=
+def task : SeqTask [1] [1] :=
   SeqTask.mse model
 
 def sample (x y : Float) :
-    _root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar] :=
+    TorchLean.TensorPack Float [[1], [1]] :=
   .cons (vector1 x) (.cons (vector1 y) .nil)
 
 def readLinearParams
-    (ps : _root_.Runtime.Autograd.Torch.TList Float (stateShapes task)) :
+    (ps : TorchLean.TensorPack Float (SeqTask.stateShapes task)) :
     Float × Float :=
   match ps with
   | .cons weight (.cons bias .nil) =>
@@ -49,29 +50,28 @@ def close (x y : Float) : Bool :=
 
 /-- One-channel image used by the BatchNorm buffer regression. -/
 def constantImage (value : Float) :
-    Spec.Tensor Float (.dim 1 (.dim 1 (.dim 2 .scalar))) :=
-  .dim fun _ => .dim fun _ => .dim fun _ => .scalar value
+    Spec.Tensor Float [1, 1, 2] :=
+  Spec.Tensor.generate [1, 1, 2] fun _ => value
 
 def batchNormModel :
     _root_.Runtime.Autograd.TorchLean.NN.Seq
-      (.dim 1 (.dim 1 (.dim 2 .scalar)))
-      (.dim 1 (.dim 1 (.dim 2 .scalar))) :=
+      [1, 1, 2]
+      [1, 1, 2] :=
   _root_.Runtime.Autograd.TorchLean.NN.singleLayer <|
-    _root_.Runtime.Autograd.TorchLean.NN.batchNormChannelFirstMode 1 1 2
-      (h_c := by decide) (h_h := by decide) (h_w := by decide) (momentum := 0.5)
+    _root_.Runtime.Autograd.TorchLean.NN.batchNorm 1 1 [2]
+      (by decide) (momentum := 0.5)
 
 def batchNormTask :
-    SeqTask (.dim 1 (.dim 1 (.dim 2 .scalar)))
-      (.dim 1 (.dim 1 (.dim 2 .scalar))) :=
+    SeqTask [1, 1, 2] [1, 1, 2] :=
   SeqTask.mse batchNormModel
 
 def batchNormSample (value : Float) :
-    _root_.Runtime.Autograd.Torch.TList Float
-      [.dim 1 (.dim 1 (.dim 2 .scalar)), .dim 1 (.dim 1 (.dim 2 .scalar))] :=
+    TorchLean.TensorPack Float
+      [[1, 1, 2], [1, 1, 2]] :=
   .cons (constantImage value) (.cons (constantImage 0.0) .nil)
 
 def readBatchNormBuffers
-    (ps : _root_.Runtime.Autograd.Torch.TList Float (stateShapes batchNormTask)) :
+    (ps : TorchLean.TensorPack Float (SeqTask.stateShapes batchNormTask)) :
     Float × Float :=
   match ps with
   | .cons _gamma (.cons _beta (.cons mean (.cons variance (.cons _momentum .nil)))) =>
@@ -89,7 +89,7 @@ structure ProbeCounters where
   nativeSteps : IO.Ref Nat
   lossSteps : IO.Ref Nat
   genericSteps : IO.Ref Nat
-  scheduledValues : IO.Ref (List Nat)
+  scheduledValues : IO.Ref (Array Nat)
 
 /-- Optimizer state used to verify that a schedule value remains fixed across an epoch. -/
 structure ProbeState where
@@ -101,12 +101,12 @@ def newProbeCounters : IO ProbeCounters := do
     nativeSteps := ← IO.mkRef 0
     lossSteps := ← IO.mkRef 0
     genericSteps := ← IO.mkRef 0
-    scheduledValues := ← IO.mkRef []
+    scheduledValues := ← IO.mkRef #[]
   }
 
 def recordProbeStep (state : ProbeState) (counter : IO.Ref Nat) : IO Unit := do
   counter.modify (· + 1)
-  state.counters.scheduledValues.modify (· ++ [state.scheduleValue])
+  state.counters.scheduledValues.modify (·.push state.scheduleValue)
 
 /--
 Optimizer that records native, loss-returning, and generic dispatch separately.
@@ -115,7 +115,7 @@ The no-loss hook completes the update itself. The loss hook returns `none` after
 attempt, allowing the normal same-tape fallback to produce the scalar when a test enables logging.
 -/
 def probeOptimizer (counters : ProbeCounters) :
-    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float (stateShapes task) where
+    _root_.Runtime.Autograd.TorchLean.Optim.Optimizer Float (SeqTask.stateShapes task) where
   State := ProbeState
   init := fun _ => pure { scheduleValue := 0, counters }
   step := fun state _ _ => do
@@ -149,7 +149,7 @@ def checkClosedFormMeanGradient : IO Unit := do
       batchSize := 2
       optimizer := .sgd lr
       logEvery := 0 }
-    [sample x₁ y₁, sample x₂ y₂]
+    #[sample x₁ y₁, sample x₂ y₂]
   let (weight', bias') := readLinearParams (← Runner.state runner)
   unless close weight' (weight - lr * gradWeight) && close bias' (bias - lr * gradBias) do
     throw <| IO.userError <|
@@ -190,14 +190,14 @@ def checkNoLossFastPath : IO Unit := do
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
   let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
-  let batches ← IO.mkRef [[sample 1.0 0.0]]
+  let batches ← IO.mkRef #[#[sample 1.0 0.0]]
   let nextBatch := do
     let remaining ← batches.get
-    match remaining with
-    | batch :: rest =>
-        batches.set rest
+    match remaining[0]? with
+    | some batch =>
+        batches.set (remaining.drop 1)
         pure batch
-    | [] =>
+    | none =>
         throw <| IO.userError "no-loss probe exhausted"
   Internal.runSampleSteps runner
     { steps := 1, batchSize := 1, logEvery := 0 }
@@ -215,12 +215,11 @@ def checkPartialBatchStateRoute : IO Unit := do
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
   let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
-  let loader : _root_.Runtime.Autograd.Train.DataLoader
-      (_root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar]) := {
-    dataset := _root_.Runtime.Autograd.Train.Dataset.ofList
-      [sample 1.0 0.0, sample 2.0 0.0, sample 3.0 0.0]
-    batchSize := 2
-  }
+  let loader : _root_.TorchLean.Data.EpochLoader
+      (TorchLean.TensorPack Float [[1], [1]]) :=
+    _root_.TorchLean.Data.EpochLoader.create
+      (_root_.TorchLean.Data.SampleStream.ofArray
+        #[sample 1.0 0.0, sample 2.0 0.0, sample 3.0 0.0]) 2
   let _ ← Internal.runLoaderEpochs runner
     { epochs := 1, logEvery := 0 }
     loader opt state (fun _ current => current)
@@ -233,17 +232,16 @@ def checkEpochSchedulerCadence : IO Unit := do
   let counters ← newProbeCounters
   let opt := probeOptimizer counters
   let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
-  let loader : _root_.Runtime.Autograd.Train.DataLoader
-      (_root_.Runtime.Autograd.Torch.TList Float [.dim 1 .scalar, .dim 1 .scalar]) := {
-    dataset := _root_.Runtime.Autograd.Train.Dataset.ofList
-      [sample 1.0 0.0, sample 2.0 0.0, sample 3.0 0.0, sample 4.0 0.0]
-    batchSize := 2
-  }
+  let loader : _root_.TorchLean.Data.EpochLoader
+      (TorchLean.TensorPack Float [[1], [1]]) :=
+    _root_.TorchLean.Data.EpochLoader.create
+      (_root_.TorchLean.Data.SampleStream.ofArray
+        #[sample 1.0 0.0, sample 2.0 0.0, sample 3.0 0.0, sample 4.0 0.0]) 2
   let _ ← Internal.runLoaderEpochs runner
     { epochs := 2, logEvery := 0 }
-    loader opt state (fun epoch current => { current with scheduleValue := epoch })
+    loader opt state (fun epoch (current : ProbeState) => { current with scheduleValue := epoch })
   let observed ← counters.scheduledValues.get
-  unless observed == [0, 0, 1, 1] do
+  unless observed == #[0, 0, 1, 1] do
     throw <| IO.userError
       s!"loader scheduler cadence: got {observed}, expected [0, 0, 1, 1]"
 
@@ -252,10 +250,10 @@ BatchNorm buffers advance once per accumulated item, and requesting a logged los
 second buffer update.
 -/
 def checkBatchNormBuffers : IO Unit := do
-  let batch := [batchNormSample 2.0, batchNormSample 4.0]
+  let batch := #[batchNormSample 2.0, batchNormSample 4.0]
   let runner ← Runner.instantiateFloat64 batchNormTask { execution := .typedGraph }
   Runner.train runner
-  let opt := noOpOptimizer (stateShapes batchNormTask)
+  let opt := noOpOptimizer (SeqTask.stateShapes batchNormTask)
   let state ← _root_.Runtime.Autograd.TorchLean.Module.Objective.initOptimizer runner.module opt
   let _ ← Internal.stepBatch runner opt state false batch
   let noLossBuffers := readBatchNormBuffers

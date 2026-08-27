@@ -133,7 +133,7 @@ def libTorchSDPAForward : KernelCapsule :=
         (.layoutCompatibility .scaledDotProductAttention .libTorchCudaView)
         "TorchLean CUDA buffers are wrapped by LibTorch from_blob and copied back contiguous."
         "contiguous CUDA tensor views"
-        [.nativeSymbol
+        #[.nativeSymbol
           { path := "csrc/cuda/kernels/torchlean_libtorch_sdpa.cpp"
             symbol := "torchlean_libtorch_sdpa_fwd"
             buildTarget? := some "torchlean_libtorch_sdpa_so" }]
@@ -158,8 +158,8 @@ def libTorchSDPAForward : KernelCapsule :=
 
 /-- Built-in attention capsules in default planner order. Optional external providers register
 their own capsules in their provider modules. -/
-def capsules : List KernelCapsule :=
-  [nativeDirectAttention, torchLeanComposed]
+def capsules : Array KernelCapsule :=
+  #[nativeDirectAttention, torchLeanComposed]
 
 end Attention
 end Backend

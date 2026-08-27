@@ -9,7 +9,7 @@ module
 public meta import NN.IR.Check
 public meta import NN.IR.Pretty
 public meta import NN.IR.Semantics
-public meta import NN.Runtime.Context
+public meta import NN.Spec.Core.Tensor.SomeTensor
 public meta import NN.Widgets.Core.Tensor
 public meta import NN.Widgets.Core.UI
 public meta import ProofWidgets.Component.HtmlDisplay
@@ -30,7 +30,7 @@ When debugging, it is often more helpful to see:
 - and the exact node id where evaluation stopped.
 
 Main commands:
-- `#ir_exec_trace_view g, input` where `input : Spec.PackedTensor α` (payload defaults to empty)
+- `#ir_exec_trace_view g, input` where `input : Spec.SomeTensor α` (payload defaults to empty)
 - `#ir_exec_trace_view g, payload, input` where `payload : NN.IR.Payload α`
 
 ## Main definitions
@@ -74,15 +74,15 @@ private def checkBadge (name : String) (r : Except String Unit) : ProofWidgets.H
     msg}</span></span>
 
 private structure Trace (α : Type) [Context α] where
-  vals : Array (Spec.PackedTensor α)
+  vals : Array (Spec.SomeTensor α)
   failedAt? : Option (Nat × String)
 
 /-- Execute a graph step-by-step, recording values until the first error. -/
 private def execTrace
     {α : Type} [Context α] [DecidableEq Shape]
-    (g : Graph) (payload : Payload α) (input : Spec.PackedTensor α) : Trace α :=
-  let inputD : Spec.PackedTensor α := input
-  let rec go (i : Nat) (vals : Array (Spec.PackedTensor α)) : Trace α :=
+    (g : Graph) (payload : Payload α) (input : Spec.SomeTensor α) : Trace α :=
+  let inputD : Spec.SomeTensor α := input
+  let rec go (i : Nat) (vals : Array (Spec.SomeTensor α)) : Trace α :=
     if i < g.nodes.size then
       match Graph.evalAt (α := α) (g := g) (payload := payload) (input := inputD) (vals := vals) (i
         := i) with
@@ -93,14 +93,14 @@ private def execTrace
   go 0 #[]
 
 /-- Convert a semantic-domain value into a runtime shape-erased tensor wrapper. -/
-private def dvToAny {α : Type} [Context α] (v : Spec.PackedTensor α) : Spec.PackedTensor α :=
+private def dvToAny {α : Type} [Context α] (v : Spec.SomeTensor α) : Spec.SomeTensor α :=
   { shape := v.1, tensor := v.2 }
 
 private def nodeRowHtml {α : Type} [Context α] [ToString α]
-    (g : Graph) (i : Nat) (v? : Option (Spec.PackedTensor α)) : ProofWidgets.Html :=
+    (g : Graph) (i : Nat) (v? : Option (Spec.SomeTensor α)) : ProofWidgets.Html :=
   let n? := g.nodes[i]?
   let op := match n? with | none => "<missing>" | some n => n.kind.tag
-  let parents := match n? with | none => [] | some n => n.parents
+  let parents := match n? with | none => #[] | some n => n.parents
   let declared := match n? with | none => "?" | some n => Shape.pretty n.outShape
   let status : ProofWidgets.Html :=
     match v? with
@@ -128,11 +128,11 @@ private def nodeRowHtml {α : Type} [Context α] [ToString α]
 /-- Render an "execute and show intermediates" panel for an IR graph and a single input. -/
 def irExecTraceHtml
     {α : Type} [Context α] [DecidableEq Shape] [ToString α]
-    (g : Graph) (payload : Payload α) (input : Spec.PackedTensor α) : ProofWidgets.Html :=
+    (g : Graph) (payload : Payload α) (input : Spec.SomeTensor α) : ProofWidgets.Html :=
   let wf := g.checkWellFormed
   let sh := g.checkShapes
   let tr := execTrace (α := α) (g := g) (payload := payload) (input := input)
-  let values : Array (Option (Spec.PackedTensor α)) :=
+  let values : Array (Option (Spec.SomeTensor α)) :=
     (Array.range g.nodes.size).map (fun i => tr.vals[i]?)
   ;
   <div style={json% {

@@ -20,7 +20,6 @@ Notes:
   - pooling output: (inC, outSpatial...)
 - The "ND" entrypoints (`torchlean_cuda_conv_fwd`, etc.) take per-axis shape/stride/padding
   as `Array Nat`, with `rank ≤ 8`.
-- The `*2d*` entrypoints specialize the ND kernels to rank-2 scalar stride/padding.
 -/
 
 module
@@ -44,30 +43,6 @@ explicitly through the FFI boundary.
 namespace Runtime
 namespace Autograd
 namespace Cuda
-
-/-- Float32 conv2d forward (device `Buffer` inputs/outputs). -/
-@[never_extract, extern "torchlean_cuda_conv2d_fwd"]
-opaque torchleanConv2dFwdCuda
-    (input kernel bias : @& Buffer)
-    (inC inH inW outC kH kW stride padding : UInt32) : Buffer
-
-/-- Float32 conv2d backward: returns `(dKernel, dBias, dInput)` device buffers. -/
-@[never_extract, extern "torchlean_cuda_conv2d_bwd"]
-opaque torchleanConv2dBwdCuda
-    (input kernel gradOutput : @& Buffer)
-    (inC inH inW outC kH kW stride padding : UInt32) : Buffer × Buffer × Buffer
-
-/-- Float32 conv-transpose2d forward (device `Buffer` inputs/outputs). -/
-@[never_extract, extern "torchlean_cuda_convtranspose2d_fwd"]
-opaque torchleanConvTranspose2dFwdCuda
-    (input kernel bias : @& Buffer)
-    (inC inH inW outC kH kW stride padding : UInt32) : Buffer
-
-/-- Float32 conv-transpose2d backward: returns `(dKernel, dBias, dInput)` device buffers. -/
-@[never_extract, extern "torchlean_cuda_convtranspose2d_bwd"]
-opaque torchleanConvTranspose2dBwdCuda
-    (input kernel gradOutput : @& Buffer)
-    (inC inH inW outC kH kW stride padding : UInt32) : Buffer × Buffer × Buffer
 
 /--
 Float32 N-D transposed convolution forward (channels-first, no batch).
@@ -134,18 +109,6 @@ opaque torchleanConvBwdCuda
     (inSpatial kernelSpatial stride padding : @& Array Nat)
     (inC outC : UInt32) : Buffer × Buffer × Buffer
 
-/-- Float32 max-pool2d forward (channels preserved). -/
-@[never_extract, extern "torchlean_cuda_maxpool2d_fwd"]
-opaque torchleanMaxPool2dFwdCuda
-    (input : @& Buffer)
-    (inC inH inW kH kW stride padding : UInt32) : Buffer
-
-/-- Float32 max-pool2d backward: returns `dInput`. -/
-@[never_extract, extern "torchlean_cuda_maxpool2d_bwd"]
-opaque torchleanMaxPool2dBwdCuda
-    (input gradOutput : @& Buffer)
-    (inC inH inW kH kW stride padding : UInt32) : Buffer
-
 /-- Float32 N-D max-pooling forward (channels preserved). -/
 @[never_extract, extern "torchlean_cuda_maxpool_fwd"]
 opaque torchleanMaxPoolFwdCuda
@@ -160,18 +123,6 @@ opaque torchleanMaxPoolBwdCuda
     (inSpatial kernel stride padding : @& Array Nat)
     (inC : UInt32) : Buffer
 
-/-- Float32 avg-pool2d forward (channels preserved). -/
-@[never_extract, extern "torchlean_cuda_avgpool2d_fwd"]
-opaque torchleanAvgPool2dFwdCuda
-    (input : @& Buffer)
-    (inC inH inW kH kW stride padding : UInt32) : Buffer
-
-/-- Float32 avg-pool2d backward: returns `dInput`. -/
-@[never_extract, extern "torchlean_cuda_avgpool2d_bwd"]
-opaque torchleanAvgPool2dBwdCuda
-    (gradOutput : @& Buffer)
-    (inC inH inW kH kW stride padding : UInt32) : Buffer
-
 /-- Float32 N-D avg-pooling forward (channels preserved). -/
 @[never_extract, extern "torchlean_cuda_avgpool_fwd"]
 opaque torchleanAvgPoolFwdCuda
@@ -185,30 +136,6 @@ opaque torchleanAvgPoolBwdCuda
     (gradOutput : @& Buffer)
     (inSpatial kernel stride padding : @& Array Nat)
     (inC : UInt32) : Buffer
-
-/--
-Float32 smooth max-pool2d (log-sum-exp surrogate) forward.
-
-This matches `Spec.smoothMaxPool2dSpec` for `Float`:
-`y = pivot + log(sum(exp(beta*(x-pivot)))) / beta` computed per window, with finite
-`beta ≠ 0`. The pivot maximizes `beta*x` without first forming that potentially overflowing
-product.
--/
-@[never_extract, extern "torchlean_cuda_smooth_maxpool2d_fwd"]
-opaque torchleanSmoothMaxPool2dFwdCuda
-    (input : @& Buffer) (beta : Float)
-    (inC inH inW kH kW stride padding : UInt32) : Buffer
-
-/--
-Float32 smooth max-pool2d backward: returns `dInput`.
-
-VJP matches `Spec.smoothMaxPool2dBackwardSpec` for `Float`, using the same shifted softmax weights
-within each window.
--/
-@[never_extract, extern "torchlean_cuda_smooth_maxpool2d_bwd"]
-opaque torchleanSmoothMaxPool2dBwdCuda
-    (input gradOutput : @& Buffer) (beta : Float)
-    (inC inH inW kH kW stride padding : UInt32) : Buffer
 
 /--
 Float32 N-D smooth max-pooling forward with channels preserved.

@@ -129,9 +129,9 @@ TorchLean's runtime FFT uses $\sqrt{-1}$ as its scalar-polymorphic imaginary uni
 When we instantiate the runtime definitions at mathlib `ℂ`, that value is the usual
 `Complex.I`.
 -/
-private lemma FFT1D_I_eq :
-    Runtime.Autograd.TorchLean.NN.FFT1D.I (α := ℂ) = (Complex.I : ℂ) := by
-  -- `FFT1D.I` is defined as `sqrt(-1)`.
+private lemma FFT_I_eq :
+    Runtime.Autograd.TorchLean.NN.FFT.I (α := ℂ) = (Complex.I : ℂ) := by
+  -- `FFT.I` is defined as `sqrt(-1)`.
   change Complex.sqrt (-1 : ℂ) = (Complex.I : ℂ)
   exact Complex.sqrt_neg_one
 
@@ -150,7 +150,7 @@ $\omega_n^{jk}=\exp(-2\pi ijk/n)$.
 The proof is just Euler's formula plus scalar normalization of the exponent.
 -/
 theorem twiddle_eq_omega_pow (n j k : Nat) (hn : n ≠ 0) :
-    Runtime.Autograd.TorchLean.NN.FFT1D.twiddle (α := ℂ) n j k =
+    Runtime.Autograd.TorchLean.NN.FFT.twiddle (α := ℂ) n j k =
       Proofs.Fft.ω n ^ (j * k) := by
   have hn0 : (n : ℂ) ≠ 0 := by exact_mod_cast hn
   set θ : ℂ := (Numbers.two : ℂ) * MathFunctions.pi * (j : ℂ) * (k : ℂ) / (n : ℂ)
@@ -171,10 +171,10 @@ theorem twiddle_eq_omega_pow (n j k : Nat) (hn : n ≠ 0) :
             rfl
 
   have htw :
-      Runtime.Autograd.TorchLean.NN.FFT1D.twiddle (α := ℂ) n j k =
+      Runtime.Autograd.TorchLean.NN.FFT.twiddle (α := ℂ) n j k =
         Complex.exp (-(θ * Complex.I)) := by
     -- Unfold `twiddle` and rewrite `I` as `Complex.I`.
-    simp [Runtime.Autograd.TorchLean.NN.FFT1D.twiddle, θ, FFT1D_I_eq, hEuler]
+    simp [Runtime.Autograd.TorchLean.NN.FFT.twiddle, θ, FFT_I_eq, hEuler]
 
   have hω : Proofs.Fft.ω n = Complex.exp (-(2 * Real.pi * Complex.I / (n : ℂ))) := by
     simp [Proofs.Fft.ω, Proofs.Fft.ζ, Complex.exp_neg]
@@ -203,7 +203,7 @@ theorem twiddle_eq_omega_pow (n j k : Nat) (hn : n ≠ 0) :
       _ = (j * k : ℕ) * (-(2 * Real.pi * Complex.I / (n : ℂ))) := by rfl
 
   calc
-    Runtime.Autograd.TorchLean.NN.FFT1D.twiddle (α := ℂ) n j k
+    Runtime.Autograd.TorchLean.NN.FFT.twiddle (α := ℂ) n j k
         = Complex.exp (-(θ * Complex.I)) := htw
     _ = Complex.exp (-θ * Complex.I) := by
           simp [neg_mul]
@@ -220,7 +220,7 @@ This is the inverse-direction analogue of `twiddle_eq_omega_pow`: the runtime
 $\cos\theta+i\sin\theta$ term is $\zeta_n^{jk}$.
 -/
 theorem twiddleInv_eq_zeta_pow (n j k : Nat) (hn : n ≠ 0) :
-    Runtime.Autograd.TorchLean.NN.FFT1D.twiddleInv (α := ℂ) n j k =
+    Runtime.Autograd.TorchLean.NN.FFT.twiddleInv (α := ℂ) n j k =
       Proofs.Fft.ζ n ^ (j * k) := by
   have hn0 : (n : ℂ) ≠ 0 := by exact_mod_cast hn
   set θ : ℂ := (Numbers.two : ℂ) * MathFunctions.pi * (j : ℂ) * (k : ℂ) / (n : ℂ)
@@ -237,9 +237,9 @@ theorem twiddleInv_eq_zeta_pow (n j k : Nat) (hn : n ≠ 0) :
         rfl
 
   have htw :
-      Runtime.Autograd.TorchLean.NN.FFT1D.twiddleInv (α := ℂ) n j k =
+      Runtime.Autograd.TorchLean.NN.FFT.twiddleInv (α := ℂ) n j k =
         Complex.exp (θ * Complex.I) := by
-    simp [Runtime.Autograd.TorchLean.NN.FFT1D.twiddleInv, θ, FFT1D_I_eq, hEuler]
+    simp [Runtime.Autograd.TorchLean.NN.FFT.twiddleInv, θ, FFT_I_eq, hEuler]
 
   have hζ : Proofs.Fft.ζ n = Complex.exp (2 * Real.pi * Complex.I / (n : ℂ)) := by
     simp [Proofs.Fft.ζ]
@@ -266,7 +266,7 @@ theorem twiddleInv_eq_zeta_pow (n j k : Nat) (hn : n ≠ 0) :
       _ = (j * k : ℕ) * (2 * Real.pi * Complex.I / (n : ℂ)) := by rfl
 
   calc
-    Runtime.Autograd.TorchLean.NN.FFT1D.twiddleInv (α := ℂ) n j k
+    Runtime.Autograd.TorchLean.NN.FFT.twiddleInv (α := ℂ) n j k
         = Complex.exp (θ * Complex.I) := htw
     _ = Complex.exp ((j * k : ℕ) * (2 * Real.pi * Complex.I / (n : ℂ))) := by
           simp [hexp]
@@ -284,11 +284,11 @@ This is the first point where we leave pure root-of-unity algebra and connect to
 shape-indexed tensor representation.
 -/
 theorem dftMatrix_entry_eq (n : Nat) (hn : n ≠ 0) (k j : Fin n) :
-    Spec.get2 (Runtime.Autograd.TorchLean.NN.FFT1D.dftMatrix (α := ℂ) n) k j =
+    Spec.get2 (Runtime.Autograd.TorchLean.NN.FFT.dftMatrix (α := ℂ) n) k j =
       Proofs.Fft.dftMatrix n k j := by
   -- `get2` reduces the tensor constructor and exposes `twiddle`.
-  simp [Spec.get2, Spec.get, Spec.getAtSpec,
-    Runtime.Autograd.TorchLean.NN.FFT1D.dftMatrix, Proofs.Fft.dftMatrix,
+  simp [Spec.get2, Spec.get,
+    Runtime.Autograd.TorchLean.NN.FFT.dftMatrix, Proofs.Fft.dftMatrix,
     twiddle_eq_omega_pow (n := n) (j := j.val) (k := k.val) hn]
 
 /--
@@ -298,11 +298,11 @@ Together with `dftMatrix_entry_eq`, this is the transport layer needed to reuse 
 inversion theorem for runtime FFT matrix definitions.
 -/
 theorem idftMatrix_entry_eq (n : Nat) (hn : n ≠ 0) (j k : Fin n) :
-    Spec.get2 (Runtime.Autograd.TorchLean.NN.FFT1D.idftMatrix (α := ℂ) n) j k =
+    Spec.get2 (Runtime.Autograd.TorchLean.NN.FFT.idftMatrix (α := ℂ) n) j k =
       Proofs.Fft.idftMatrix n j k := by
   -- `get2` reduces the tensor constructor and exposes `twiddleInv`.
-  simp [Spec.get2, Spec.get, Spec.getAtSpec,
-    Runtime.Autograd.TorchLean.NN.FFT1D.idftMatrix, Proofs.Fft.idftMatrix,
+  simp [Spec.get2, Spec.get,
+    Runtime.Autograd.TorchLean.NN.FFT.idftMatrix, Proofs.Fft.idftMatrix,
     twiddleInv_eq_zeta_pow (n := n) (j := j.val) (k := k.val) hn]
 
 end ComplexContext

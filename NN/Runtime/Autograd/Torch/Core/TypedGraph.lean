@@ -73,20 +73,20 @@ namespace TypedGraphWithData
 
 /-- Evaluate the output tensor for leaf values `x` and auxiliary input `d`. -/
 def forward {α Δ : Type} {Γ : List Shape} {τ : Shape}
-    (c : TypedGraphWithData α Δ Γ τ) (x : TList α Γ) (d : Δ) : Tensor α τ :=
+    (c : TypedGraphWithData α Δ Γ τ) (x : _root_.TorchLean.TensorPack α Γ) (d : Δ) : Tensor α τ :=
   getIdx (Proofs.Autograd.Algebra.GraphData.eval (g := c.data) x d) c.output
 
 /-- Forward-mode Jacobian-vector product at `x`, with `d` held fixed. -/
 def jvp {α Δ : Type} {Γ : List Shape} {τ : Shape}
-    (c : TypedGraphWithData α Δ Γ τ) (x dx : TList α Γ) (d : Δ) : Tensor α τ :=
+    (c : TypedGraphWithData α Δ Γ τ) (x dx : _root_.TorchLean.TensorPack α Γ) (d : Δ) : Tensor α τ :=
   getIdx (Proofs.Autograd.Algebra.GraphData.jvpCtx (g := c.data) x dx d) c.output
 
 /-- Reverse-mode vector-Jacobian product with an explicit output cotangent seed. -/
 def vjpWithSeed {α Δ : Type} [Add α] [Zero α]
     {Γ : List Shape} {τ : Shape} (c : TypedGraphWithData α Δ Γ τ)
-    (x : TList α Γ) (d : Δ) (seedOut : Tensor α τ) : TList α Γ :=
+    (x : _root_.TorchLean.TensorPack α Γ) (d : Δ) (seedOut : Tensor α τ) : _root_.TorchLean.TensorPack α Γ :=
   Proofs.Autograd.Algebra.GraphData.backpropCtx
-    (α := α) (Δ := Δ) (Γ := Γ) (g := c.data) x d (TList.single c.output seedOut)
+    (α := α) (Δ := Δ) (Γ := Γ) (g := c.data) x d (TensorPack.single c.output seedOut)
 
 end TypedGraphWithData
 
@@ -102,12 +102,12 @@ namespace TypedGraph
 
 /-- Evaluate the output tensor for leaf values `x`. -/
 def forward {α : Type} {Γ : List Shape} {τ : Shape}
-  (c : TypedGraph α Γ τ) (x : TList α Γ) : Tensor α τ :=
+  (c : TypedGraph α Γ τ) (x : _root_.TorchLean.TensorPack α Γ) : Tensor α τ :=
   TypedGraphWithData.forward c x ()
 
 /-- Forward-mode Jacobian-vector product (JVP) at `x` with tangent `dx`. -/
 def jvp {α : Type} {Γ : List Shape} {τ : Shape}
-  (c : TypedGraph α Γ τ) (x dx : TList α Γ) : Tensor α τ :=
+  (c : TypedGraph α Γ τ) (x dx : _root_.TorchLean.TensorPack α Γ) : Tensor α τ :=
   TypedGraphWithData.jvp c x dx ()
 
 /--
@@ -118,7 +118,7 @@ PyTorch comparison: `out.backward(gradient=seedOut)` (for a tensor output).
 -/
 def vjpWithSeed {α : Type} [Add α] [Zero α]
     {Γ : List Shape} {τ : Shape}
-    (c : TypedGraph α Γ τ) (x : TList α Γ) (seedOut : Tensor α τ) : TList α Γ :=
+    (c : TypedGraph α Γ τ) (x : _root_.TorchLean.TensorPack α Γ) (seedOut : Tensor α τ) : _root_.TorchLean.TensorPack α Γ :=
   TypedGraphWithData.vjpWithSeed c x () seedOut
 
 end TypedGraph
@@ -127,22 +127,22 @@ namespace TypedScalarGraph
 
 /-- Evaluate the scalar output for leaf values `x`. -/
 def forward {α : Type} {Γ : List Shape}
-    (c : TypedScalarGraph α Γ) (x : TList α Γ) : Tensor α Shape.scalar :=
+    (c : TypedScalarGraph α Γ) (x : _root_.TorchLean.TensorPack α Γ) : Tensor α .scalar :=
   TypedGraph.forward c x
 
 /-- Forward-mode Jacobian-vector product at `x` with tangent `dx`. -/
 def jvp {α : Type} {Γ : List Shape}
-    (c : TypedScalarGraph α Γ) (x dx : TList α Γ) : Tensor α Shape.scalar :=
+    (c : TypedScalarGraph α Γ) (x dx : _root_.TorchLean.TensorPack α Γ) : Tensor α .scalar :=
   TypedGraph.jvp c x dx
 
 /-- Reverse-mode backpropagation for a scalar output with implicit cotangent seed `1`. -/
 def backward {α : Type} [Add α] [Zero α] [One α]
-    {Γ : List Shape} (c : TypedScalarGraph α Γ) (x : TList α Γ) : TList α Γ :=
+    {Γ : List Shape} (c : TypedScalarGraph α Γ) (x : _root_.TorchLean.TensorPack α Γ) : _root_.TorchLean.TensorPack α Γ :=
   TypedGraph.vjpWithSeed c x (Tensor.scalar (1 : α))
 
 /-- Reverse-mode backpropagation for a scalar output with an explicit scalar seed. -/
 def backwardWithSeed {α : Type} [Add α] [Zero α]
-    {Γ : List Shape} (c : TypedScalarGraph α Γ) (x : TList α Γ) (seedOut : α) : TList α Γ :=
+    {Γ : List Shape} (c : TypedScalarGraph α Γ) (x : _root_.TorchLean.TensorPack α Γ) (seedOut : α) : _root_.TorchLean.TensorPack α Γ :=
   TypedGraph.vjpWithSeed c x (Tensor.scalar seedOut)
 
 end TypedScalarGraph

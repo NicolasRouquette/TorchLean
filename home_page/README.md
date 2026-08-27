@@ -59,8 +59,7 @@ The public website expects a few generated directories under `home_page/`:
 
 - `home_page/docs/` (DocGen4 HTML API reference)
 - `home_page/blueprint/` (Verso guide HTML)
-- `home_page/graphs/dependency-audit.json` (module/import graph audit for the
-  interactive dependency explorer)
+- the generated `dependency-audit.json` data used by the interactive graph explorer
 
 CI populates these via `.github/workflows/blueprint.yml`. To reproduce that locally:
 

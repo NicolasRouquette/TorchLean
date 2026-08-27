@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Floats.NeuralFloat.Scalar.Conversion
-public import NN.Floats.NeuralFloat.Scalar.NF
 public import NN.Floats.NeuralFloat.Scalar.NNOps
 public import NN.Floats.NeuralFloat.Scalar.Representable
 

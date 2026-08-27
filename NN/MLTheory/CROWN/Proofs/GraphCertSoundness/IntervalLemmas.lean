@@ -142,7 +142,7 @@ lemma max2_eq_max (a b : ℝ) : NN.MLTheory.CROWN.BoundOps.max2 a b = max a b :=
     simp [NN.MLTheory.CROWN.BoundOps.max2, h, max_eq_right hab]
 
 theorem box_mul_elem_sound_real (n : Nat)
-    (lo1 hi1 lo2 hi2 x y : Tensor ℝ (.dim n .scalar))
+    (lo1 hi1 lo2 hi2 x y : Tensor ℝ [n])
     (hx : encloses { dim := n, lo := lo1, hi := hi1 } x)
     (hy : encloses { dim := n, lo := lo2, hi := hi2 } y) :
     ∀ {B : FlatBox ℝ},
@@ -205,7 +205,7 @@ theorem box_mul_elem_sound_real (n : Nat)
 /-!
 ### Casting lemmas (avoid `cases` on `B.dim = v.n`)
 
-`FlatBox` and `FlatVec` carry their dimensions in dependent types, so it is tempting to
+`FlatBox` and `FlatTensor` carry their dimensions in dependent types, so it is tempting to
 `cases` equalities like `h : B.dim = v.n` to “align” types. In Lean this can easily trigger
 dependent elimination failures when the equality mentions fields of dependent records.
 
@@ -216,7 +216,7 @@ Instead, we keep such equalities as *data* and move tensors/boxes across them us
  -/
 
 lemma castDimScalar_trans {n n' n'' : Nat}
-    (h₁ : n = n') (h₂ : n' = n'') (t : Tensor ℝ (.dim n .scalar)) :
+    (h₁ : n = n') (h₂ : n' = n'') (t : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) (Eq.trans h₁ h₂) t
       = castDimScalar (α := ℝ) h₂ (castDimScalar (α := ℝ) h₁ t) := by
   cases h₁
@@ -224,42 +224,42 @@ lemma castDimScalar_trans {n n' n'' : Nat}
   rfl
 
 lemma castDimScalar_map_spec {n n' : Nat}
-    (h : n = n') (f : ℝ → ℝ) (t : Tensor ℝ (.dim n .scalar)) :
+    (h : n = n') (f : ℝ → ℝ) (t : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) h (Tensor.mapSpec (α := ℝ) f t)
       = Tensor.mapSpec (α := ℝ) f (castDimScalar (α := ℝ) h t) := by
   cases h
   rfl
 
 lemma castDimScalar_add_spec {n n' : Nat}
-    (h : n = n') (x y : Tensor ℝ (.dim n .scalar)) :
+    (h : n = n') (x y : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) h (Tensor.addSpec (α := ℝ) x y)
       = Tensor.addSpec (α := ℝ) (castDimScalar (α := ℝ) h x) (castDimScalar (α := ℝ) h y) := by
   cases h
   rfl
 
 lemma castDimScalar_sub_spec {n n' : Nat}
-    (h : n = n') (x y : Tensor ℝ (.dim n .scalar)) :
+    (h : n = n') (x y : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) h (Tensor.subSpec (α := ℝ) x y)
       = Tensor.subSpec (α := ℝ) (castDimScalar (α := ℝ) h x) (castDimScalar (α := ℝ) h y) := by
   cases h
   rfl
 
 lemma castDimScalar_mul_spec {n n' : Nat}
-    (h : n = n') (x y : Tensor ℝ (.dim n .scalar)) :
+    (h : n = n') (x y : Tensor ℝ [n]) :
     castDimScalar (α := ℝ) h (Tensor.mulSpec (α := ℝ) x y)
       = Tensor.mulSpec (α := ℝ) (castDimScalar (α := ℝ) h x) (castDimScalar (α := ℝ) h y) := by
   cases h
   rfl
 
 lemma contains_castBoxDim_iff {n n' : Nat}
-    (h : n = n') (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n .scalar)) :
+    (h : n = n') (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ [n]) :
     Box.contains (α := ℝ) (castBoxDim (α := ℝ) h B) (castDimScalar (α := ℝ) h x)
       ↔ Box.contains (α := ℝ) B x := by
   cases h
   simp [castBoxDim, castDimScalar]
 
 lemma encloses_castDim {B : FlatBox ℝ} {n' : Nat}
-    (h : B.dim = n') (x : Tensor ℝ (.dim B.dim .scalar)) :
+    (h : B.dim = n') (x : Tensor ℝ [B.dim]) :
     encloses B x →
       encloses { dim := n'
                  lo := castDimScalar (α := ℝ) h B.lo
@@ -271,7 +271,7 @@ lemma encloses_castDim {B : FlatBox ℝ} {n' : Nat}
     simp only [NN.MLTheory.CROWN.Graph.castDimScalar_self]
 
 theorem encloses_of_contains {n : Nat}
-    (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ (.dim n .scalar)) :
+    (B : Box ℝ (.dim n .scalar)) (x : Tensor ℝ [n]) :
     Box.contains (α := ℝ) B x → encloses (toFlatBox (α := ℝ) n B) x := by
   intro hx
   cases B with
@@ -295,7 +295,7 @@ theorem encloses_of_contains {n : Nat}
                 simpa [toFlatBox, getDimScalarFn, Box.contains, hL, hU, hX] using hx_i
 
 theorem contains_of_encloses
-    (B : FlatBox ℝ) (x : Tensor ℝ (.dim B.dim .scalar)) :
+    (B : FlatBox ℝ) (x : Tensor ℝ [B.dim]) :
     encloses B x → Box.contains (α := ℝ) (ofFlatBox (α := ℝ) B) x := by
   intro hx
   cases B with
@@ -325,7 +325,7 @@ This is used in the `.const` case, where a constant node certifies a point box
 `[v,v]` and the semantics returns exactly the same `v`.
 -/
 
-theorem encloses_point_self_real {n : Nat} (x : Tensor ℝ (.dim n .scalar)) :
+theorem encloses_point_self_real {n : Nat} (x : Tensor ℝ [n]) :
     NN.MLTheory.CROWN.Graph.Theorems.Semantics.encloses (α := ℝ) { dim := n, lo := x, hi := x } x :=
       by
   cases x with

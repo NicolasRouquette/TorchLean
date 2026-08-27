@@ -52,14 +52,14 @@ def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : em
     { name := some "layer_norm"
       value := { s := outShape, buf := y }
       requiresGrad := true
-      parents := [xId, gammaId, betaId]
-      cleanup := [xHat, invStd]
+      parents := #[xId, gammaId, betaId]
+      cleanup := #[xHat, invStd]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny outShape
         let (dx, dGamma, dBeta) :=
           Buffer.layerNormBwd dLdy.buf xHat invStd gamma rows32 cols32
             (Float.ofNat embedDim) invCols
-        pure [
+        pure #[
           (xId, { s := outShape, buf := dx }),
           (gammaId, { s := .dim embedDim .scalar, buf := dGamma }),
           (betaId, { s := .dim embedDim .scalar, buf := dBeta })
@@ -67,23 +67,21 @@ def layerNorm {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : em
   pure (t.addNode node)
 
 /--
-BatchNorm for a single channel-first image `(C,H,W)` (no batch axis).
+Batch normalization over every axis after the channel axis.
 
-We normalize per-channel across the spatial dimension `H*W`, reusing the same math as layer-norm
-by treating the buffer as a `(channels, height*width)` matrix.
+The spatial shape is folded to one contiguous dimension for the CUDA reduction. This is a view of
+the storage layout, not a rank-specific implementation.
 -/
-def batchNormChannelFirst
-  {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
-  (t : Tape) (xId gammaId betaId : Nat) : Result (Tape × Nat) := do
-  have _ := h_c
-  have _ := h_h
-  have _ := h_w
+def batchNorm {channels : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim channels spatial).wellFormed)
+    (t : Tape) (xId gammaId betaId : Nat) : Result (Tape × Nat) := do
+  have _hChannels : channels > 0 := hWellFormed.1
+  have _hSpatial : Shape.size spatial > 0 :=
+    Shape.size_pos_of_well_formed hWellFormed.2
   let rows32 ← AnyBuffer.natToU32Checked channels
-  let cols : Nat := height * width
-  if cols = 0 then
-    throw "autograd: batchnorm_channel_first: height*width = 0"
+  let cols : Nat := Shape.size spatial
   let cols32 ← AnyBuffer.natToU32Checked cols
-  let xShape : Shape := .dim channels (.dim height (.dim width .scalar))
+  let xShape : Shape := .dim channels spatial
   let x ← requireValue (t := t) xId xShape
   let gamma ← requireValue (t := t) gammaId (.dim channels .scalar)
   let beta ← requireValue (t := t) betaId (.dim channels .scalar)
@@ -107,12 +105,12 @@ def batchNormChannelFirst
   let xHatGamma := Buffer.mul xHat gammaB
   let y := Buffer.add xHatGamma betaB
   let node : Node :=
-    { name := some "batchnorm_channel_first"
+    { name := some "batch_norm"
       value := { s := xShape, buf := y }
       requiresGrad := true
-      parents := [xId, gammaId, betaId]
+      parents := #[xId, gammaId, betaId]
       cleanup :=
-        [ sum1, mean, meanB, centered, centered2, varSum, var, epsVec, varEps
+        #[ sum1, mean, meanB, centered, centered2, varSum, var, epsVec, varEps
         , std, stdB, xHat, gammaB, betaB, xHatGamma ]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny xShape
@@ -144,7 +142,7 @@ def batchNormChannelFirst
                 Buffer.releaseThen centeredDXhat <| Buffer.releaseThen xHatSum2 <|
                   Buffer.releaseThen term <| Buffer.releaseThen invStd <|
                     Buffer.releaseThen invStdB <| Buffer.releaseThen termInv dxRaw
-        pure [
+        pure #[
           (xId, { s := xShape, buf := dx }),
           (gammaId, { s := .dim channels .scalar, buf := dGamma }),
           (betaId, { s := .dim channels .scalar, buf := dBeta })
@@ -170,11 +168,11 @@ def softmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
         { name := some "softmax"
           value := { s := Shape.scalar, buf := one }
           requiresGrad := true
-          parents := [xId]
+          parents := #[xId]
           backward := fun dLdyAny => do
             let _ ← requireGrad dLdyAny Shape.scalar
             let dx := Buffer.zeros one32
-            pure [(xId, { s := Shape.scalar, buf := dx })] }
+            pure #[(xId, { s := Shape.scalar, buf := dx })] }
       pure (t.addNode node)
   | _ =>
       let (rows32, cols32) ← foldRowsColsLastAxis s
@@ -184,12 +182,12 @@ def softmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
         { name := some "softmax"
           value := { s := s, buf := yOwned.value }
           requiresGrad := true
-          parents := [xId]
+          parents := #[xId]
           cleanup := yOwned.workspace
           backward := fun dLdyAny => do
             let dLdy ← requireGrad dLdyAny s
             let dx := rowSoftmaxBwd yOwned.value dLdy.buf rows32 cols32
-            pure [(xId, { s := s, buf := dx })] }
+            pure #[(xId, { s := s, buf := dx })] }
       pure (t.addNode node)
 
 /-- Stable log-softmax along the last axis, implemented directly on CUDA buffers. -/
@@ -203,11 +201,11 @@ def logSoftmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := 
         { name := some "log_softmax"
           value := { s := Shape.scalar, buf := zero }
           requiresGrad := true
-          parents := [xId]
+          parents := #[xId]
           backward := fun dLdyAny => do
             let _ ← requireGrad dLdyAny Shape.scalar
             let dx := Buffer.zeros one32
-            pure [(xId, { s := Shape.scalar, buf := dx })] }
+            pure #[(xId, { s := Shape.scalar, buf := dx })] }
       pure (t.addNode node)
   | _ =>
       let (rows32, cols32) ← foldRowsColsLastAxis s
@@ -217,12 +215,12 @@ def logSoftmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := 
         { name := some "log_softmax"
           value := { s := s, buf := yOwned.value }
           requiresGrad := true
-          parents := [xId]
+          parents := #[xId]
           cleanup := yOwned.workspace
           backward := fun dLdyAny => do
             let dLdy ← requireGrad dLdyAny s
             let dx := rowLogSoftmaxBwd yOwned.value dLdy.buf rows32 cols32
-            pure [(xId, { s := s, buf := dx })] }
+            pure #[(xId, { s := s, buf := dx })] }
       pure (t.addNode node)
 end Tape
 

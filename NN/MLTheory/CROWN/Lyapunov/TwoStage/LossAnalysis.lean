@@ -7,10 +7,10 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec
-public import NN.API.TensorPack
+public import NN.API.Sample
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Core
-public import NN.MLTheory.CROWN.Lyapunov.TwoStage.ExecUtils
+public import NN.MLTheory.CROWN.Lyapunov.TwoStage.Execution
 public import NN.Runtime.Autograd.TorchLean.Autodiff
 public import NN.Verification.TorchLean.Lowering
 
@@ -52,17 +52,17 @@ def projectedGradientStep
     (state : Tensor Scalar Core.xShape)
     (stepSize radius : Scalar) : Tensor Scalar Core.xShape :=
   let arguments : _root_.TorchLean.TensorPack Scalar (LossInputs width) :=
-    _root_.Proofs.Autograd.Algebra.TList.append (α := Scalar)
+    TorchLean.TensorPack.append (α := Scalar)
       (ss₁ := Core.paramShapes width) (ss₂ := [Core.xShape]) parameters (.cons state .nil)
   let allGradients : _root_.TorchLean.TensorPack Scalar (LossInputs width) :=
     _root_.Runtime.Autograd.Torch.TypedScalarGraph.backward
       (α := Scalar) (Γ := LossInputs width) lossGraph arguments
   let stateGradients : _root_.TorchLean.TensorPack Scalar [Core.xShape] :=
-    (_root_.Proofs.Autograd.Algebra.TList.splitAppend (α := Scalar)
+    (TorchLean.TensorPack.split (α := Scalar)
       (ss₁ := Core.paramShapes width) (ss₂ := [Core.xShape]) allGradients).2
   let .cons gradient .nil := stateGradients
   let updated := Tensor.addSpec state (Tensor.scaleSpec gradient stepSize)
-  ExecUtils.clampStateVector (-radius) radius updated
+  Execution.clampStateTensor (-radius) radius updated
 
 /-- Lower the Lyapunov loss while keeping its large polymorphic program out of callers' code. -/
 @[noinline] def lowerLossToIR

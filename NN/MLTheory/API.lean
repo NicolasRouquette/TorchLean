@@ -21,7 +21,6 @@ public import NN.MLTheory.Proofs
 
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Extras.AlphaConfig
-public import NN.MLTheory.CROWN.Extras.FloatIntegration
 public import NN.MLTheory.CROWN.Extras.IntervalLemmas
 public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Models.Mlp

@@ -32,7 +32,7 @@ abbrev exInDim  := 2
 abbrev exHidDim := 3
 abbrev exOutDim := 1
 
-def exampleHiddenWeight : Spec.Tensor ℚ (.dim exHidDim (.dim exInDim .scalar)) :=
+def exampleHiddenWeight : Spec.Tensor ℚ [exHidDim, exInDim] :=
   Spec.Tensor.matrix (fun i j =>
     match i.val, j.val with
     | 0, 0 => 1 / 10
@@ -43,15 +43,15 @@ def exampleHiddenWeight : Spec.Tensor ℚ (.dim exHidDim (.dim exInDim .scalar))
     | 2, 1 => 3 / 5
     | _, _ => 0)
 
-def exampleHiddenBias : Spec.Tensor ℚ (.dim exHidDim .scalar) :=
-  Spec.Tensor.vector (fun i =>
+def exampleHiddenBias : Spec.Tensor ℚ [exHidDim] :=
+  Spec.Tensor.ofFn (fun i =>
     match i.val with
     | 0 => 1 / 10
     | 1 => 1 / 5
     | 2 => 3 / 10
     | _ => 0)
 
-def exampleOutputWeight : Spec.Tensor ℚ (.dim exOutDim (.dim exHidDim .scalar)) :=
+def exampleOutputWeight : Spec.Tensor ℚ [exOutDim, exHidDim] :=
   Spec.Tensor.matrix (fun _ j =>
     match j.val with
     | 0 => 7 / 10
@@ -59,8 +59,8 @@ def exampleOutputWeight : Spec.Tensor ℚ (.dim exOutDim (.dim exHidDim .scalar)
     | 2 => 9 / 10
     | _ => 0)
 
-def exampleOutputBias : Spec.Tensor ℚ (.dim exOutDim .scalar) :=
-  Spec.Tensor.vector (fun _ => 2 / 5)
+def exampleOutputBias : Spec.Tensor ℚ [exOutDim] :=
+  Spec.Tensor.ofFn (fun _ => 2 / 5)
 
 def exampleHiddenLayer : Spec.LinearSpec ℚ exInDim exHidDim :=
   { weights := exampleHiddenWeight, bias := exampleHiddenBias }
@@ -68,8 +68,8 @@ def exampleHiddenLayer : Spec.LinearSpec ℚ exInDim exHidDim :=
 def exampleOutputLayer : Spec.LinearSpec ℚ exHidDim exOutDim :=
   { weights := exampleOutputWeight, bias := exampleOutputBias }
 
-def exInput : Spec.Tensor ℚ (.dim exInDim .scalar) :=
-  Spec.Tensor.vector (fun i =>
+def exInput : Spec.Tensor ℚ [exInDim] :=
+  Spec.Tensor.ofFn (fun i =>
     match i.val with
     | 0 => 1 / 2
     | 1 => 4 / 5
@@ -78,16 +78,16 @@ def exInput : Spec.Tensor ℚ (.dim exInDim .scalar) :=
 def exNet : Spec.Module.Chain ℚ (.dim exInDim .scalar) (.dim exOutDim .scalar) :=
   Examples.mlpSpec (α := ℚ) exampleHiddenLayer exampleOutputLayer
 
-def exOutput : Spec.Tensor ℚ (.dim exOutDim .scalar) :=
+def exOutput : Spec.Tensor ℚ [exOutDim] :=
   Spec.Module.Chain.forward (α := ℚ) exNet exInput
 
-def exExpected : Spec.Tensor ℚ (.dim exOutDim .scalar) :=
+def exExpected : Spec.Tensor ℚ [exOutDim] :=
   let z1 := Spec.linearSpec (α := ℚ) exampleHiddenLayer exInput
   let a1 := Activation.reluSpec z1
   Spec.linearSpec (α := ℚ) exampleOutputLayer a1
 
-def exDLdy : Spec.Tensor ℚ (.dim exOutDim .scalar) :=
-  Spec.Tensor.vector (fun _ => 1)
+def exDLdy : Spec.Tensor ℚ [exOutDim] :=
+  Spec.Tensor.ofFn (fun _ => 1)
 
 def exGrad :=
   Examples.mlpBackward (α := ℚ) exampleHiddenLayer exampleOutputLayer exInput exDLdy
@@ -95,7 +95,7 @@ def exGrad :=
 def exDXOpspec :=
   Examples.mlpOpspecBackward (α := ℚ) exampleHiddenLayer exampleOutputLayer exInput exDLdy
 
-def dXHand : Spec.Tensor ℚ (.dim exInDim .scalar) :=
+def dXHand : Spec.Tensor ℚ [exInDim] :=
   match exGrad with
   | (_, _, _, _, dX) => dX
 

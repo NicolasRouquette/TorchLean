@@ -99,8 +99,8 @@ def fixedInvLn2 : Int := 406082553034800  -- round((1/ln2) * 2^48)
 -- Each coefficient is rounded to scale `2^48`.
 /-- Fixed-point Taylor coefficients (highest degree first) for $2^x$ on
 $[-\tfrac12,\tfrac12]$. -/
-def exp2PolyCoeffsDesc : List Int :=
-  [ 1985781
+def exp2PolyCoeffsDesc : Array Int :=
+  #[1985781
   , 28648765
   , 371982884
   , 4293262892
@@ -115,11 +115,12 @@ def exp2PolyCoeffsDesc : List Int :=
 
 /-- Evaluate the fixed-point $2^x$ polynomial approximation using Horner’s method. -/
 def evalExp2Poly (xFixed : Int) : Int :=
-  match exp2PolyCoeffsDesc with
-  | [] => fixedOne
-  | c0 :: cs =>
+  match exp2PolyCoeffsDesc[0]? with
+  | none => fixedOne
+  | some c0 =>
       -- Horner: p = cN; p = c + x*p
-      cs.foldl (fun p c => c + fixedMul xFixed p) c0
+      (exp2PolyCoeffsDesc.extract 1 exp2PolyCoeffsDesc.size).foldl
+        (fun p c => c + fixedMul xFixed p) c0
 
 end Transcendentals
 

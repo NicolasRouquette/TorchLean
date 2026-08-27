@@ -121,15 +121,15 @@ variable {α : Type} [Context α] [BoundOps α]
 /-- Evaluate a flattened affine form on a flattened input box after checking the input dimension. -/
 def evalOnFlatBox (aff : FlatAffine α) (xB : FlatBox α) (hIn : xB.dim = aff.inDim) :
     Box α (.dim aff.outDim .scalar) :=
-  AffineVec.evalOnBox (α := α) aff.aff (xB.toVecBox hIn)
+  AffineVec.evalOnBox (α := α) aff.aff (xB.getScalarBox hIn)
 
 /-- Evaluate and view the output at a checked vector dimension. -/
 def evalOnFlatBoxAsDim (aff : FlatAffine α) (xB : FlatBox α)
     (hIn : xB.dim = aff.inDim) {m : Nat} (hOut : aff.outDim = m) :
     Box α (.dim m .scalar) :=
   let out := aff.evalOnFlatBox xB hIn
-  { lo := Tensor.castVecDim (α := α) (n := aff.outDim) (m := m) hOut out.lo
-    hi := Tensor.castVecDim (α := α) (n := aff.outDim) (m := m) hOut out.hi }
+  { lo := Tensor.castShape out.lo (congrArg (fun extent => Shape.dim extent .scalar) hOut)
+    hi := Tensor.castShape out.hi (congrArg (fun extent => Shape.dim extent .scalar) hOut) }
 
 end FlatAffine
 
@@ -145,7 +145,7 @@ endpoint. This is the common CROWN workflow shape.
 -/
 def evalOnFlatBox (bounds : FlatAffineBounds α) (xB : FlatBox α)
     (hIn : xB.dim = bounds.inDim) : Box α (.dim bounds.outDim .scalar) :=
-  let xBox := xB.toVecBox hIn
+  let xBox := xB.getScalarBox hIn
   let loB := AffineVec.evalOnBox (α := α) bounds.loAff xBox
   let hiB := AffineVec.evalOnBox (α := α) bounds.hiAff xBox
   { lo := loB.lo
@@ -156,8 +156,8 @@ def evalOnFlatBoxAsDim (bounds : FlatAffineBounds α) (xB : FlatBox α)
     (hIn : xB.dim = bounds.inDim) {m : Nat} (hOut : bounds.outDim = m) :
     Box α (.dim m .scalar) :=
   let out := bounds.evalOnFlatBox xB hIn
-  { lo := Tensor.castVecDim (α := α) (n := bounds.outDim) (m := m) hOut out.lo
-    hi := Tensor.castVecDim (α := α) (n := bounds.outDim) (m := m) hOut out.hi }
+  { lo := Tensor.castShape out.lo (congrArg (fun extent => Shape.dim extent .scalar) hOut)
+    hi := Tensor.castShape out.hi (congrArg (fun extent => Shape.dim extent .scalar) hOut) }
 
 end FlatAffineBounds
 
@@ -190,13 +190,13 @@ Coverage map for propagation rules:
 Forward (IBP):
 - add/sub: interval add/sub componentwise
 - mul_elem: McCormick envelopes for elementwise product
-- matmul/linear/conv2d: interval matrix multiplication as in `IBP.linear`/conv IBP
+- matmul/linear/convolution: interval matrix multiplication as in `IBP.linear` and convolution IBP
 - relu/tanh/sigmoid/exp/log: elementwise monotone bounds (use activation-specific rules)
 - softmax/layernorm: conservative last-axis interval bounds
 
 Backward (CROWN):
 - relu/tanh/sigmoid: per-neuron linear relaxations (like ReLU; tanh/sigmoid need convex hull)
-- matmul/linear/conv2d: compose affine forms via matrix multiplication
+- matmul/linear/convolution: compose affine forms via matrix multiplication
 - mul_elem: bilinear relaxation via McCormick (introduces additional linear terms)
 - softmax/layernorm/mul_elem: conservative affine enclosures in the executable engine
 

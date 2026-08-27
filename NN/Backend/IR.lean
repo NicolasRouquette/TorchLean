@@ -55,11 +55,9 @@ def op? : NN.IR.OpKind → Option BackendOp
   | .mseLoss => some .mseLoss
   | .matmul => some .matmul
   | .linear => some .linear
-  | .conv2d .. => some .conv
-  | .maxPool2d .. => some .maxPool
-  | .maxPool2dPad .. => some .maxPool
-  | .avgPool2d .. => some .avgPool
-  | .avgPool2dPad .. => some .avgPool
+  | .conv .. => some .conv
+  | .maxPool .. => some .maxPool
+  | .avgPool .. => some .avgPool
   | .broadcastTo .. => some .broadcast
   | .reduceSum .. => some .reduceSum
   | .reduceMean .. => some .reduceMean
@@ -70,10 +68,9 @@ def op? : NN.IR.OpKind → Option BackendOp
   | .reshape .. => some .reshape
   | .flatten .. => some .reshape
   | .concat .. => some .concat
-  | .swap_first_two => some .permute
-  | .transpose3dLastTwo => some .permute
+  | .transpose .. => some .permute
   | .permute .. => some .permute
-  | .batchNorm2dNchwEval .. => some .batchNorm
+  | .batchNormEval .. => some .batchNorm
 
 /-- Backend operation requested by a graph node, if the node needs runtime work. -/
 def nodeOp? (n : NN.IR.Node) : Option BackendOp :=
@@ -89,24 +86,24 @@ structure PlannedNodeKernel where
 
 /-- Selected kernel capsules with the source IR node identity preserved. -/
 structure GraphKernelPlan where
-  kernels : List PlannedNodeKernel
+  kernels : Array PlannedNodeKernel
   deriving Repr
 
 namespace GraphKernelPlan
 
 /-- Node ids covered by backend kernels, in graph order. -/
-def nodeIds (p : GraphKernelPlan) : List Nat :=
+def nodeIds (p : GraphKernelPlan) : Array Nat :=
   p.kernels.map (·.nodeId)
 
 /-- Selected capsule names, in graph order. -/
-def capsuleNames (p : GraphKernelPlan) : List String :=
+def capsuleNames (p : GraphKernelPlan) : Array String :=
   p.kernels.map fun k => k.capsule.name
 
 end GraphKernelPlan
 
 /-- Plan a single IR node when it corresponds to runtime work. -/
 def planNode? (policy : KernelPolicy) (availability : Availability)
-    (registry : List KernelCapsule) (n : NN.IR.Node) :
+    (registry : Array KernelCapsule) (n : NN.IR.Node) :
     Except String (Option PlannedNodeKernel) := do
   match nodeOp? n with
   | none => pure none
@@ -120,17 +117,17 @@ def planNode? (policy : KernelPolicy) (availability : Availability)
 
 /-- Plan every runtime-relevant node in graph order. -/
 def planGraph (policy : KernelPolicy) (availability : Availability)
-    (registry : List KernelCapsule) (g : NN.IR.Graph) : Except String GraphKernelPlan := do
-  let mut kernels : List PlannedNodeKernel := []
+    (registry : Array KernelCapsule) (g : NN.IR.Graph) : Except String GraphKernelPlan := do
+  let mut kernels : Array PlannedNodeKernel := #[]
   for n in g.nodes do
     match (← planNode? policy availability registry n) with
     | none => pure ()
-    | some k => kernels := k :: kernels
-  pure { kernels := kernels.reverse }
+    | some k => kernels := kernels.push k
+  pure { kernels }
 
 /-- Check graph well-formedness, then plan every runtime-relevant node. -/
 def checkedPlanGraph (policy : KernelPolicy) (availability : Availability)
-    (registry : List KernelCapsule) (g : NN.IR.Graph) : Except String GraphKernelPlan := do
+    (registry : Array KernelCapsule) (g : NN.IR.Graph) : Except String GraphKernelPlan := do
   g.checkWellFormed
   planGraph policy availability registry g
 

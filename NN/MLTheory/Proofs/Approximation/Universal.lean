@@ -11,7 +11,7 @@ public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximation
 public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationFP32
 public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationIEEE32Exec
 public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationIEEE32ExecTwoLayerMlp
-public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationND
+public import NN.MLTheory.Proofs.Approximation.Universal.StoneWeierstrass
 public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationRate
 
 /-!

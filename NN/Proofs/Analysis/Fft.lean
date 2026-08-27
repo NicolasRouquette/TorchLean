@@ -303,7 +303,7 @@ theorem dft_mul_idft (n : Nat) (hn : n ≠ 0) :
   -- left-inverse.
   simpa using mul_eq_one_symm (idft_mul_dft (n := n) hn)
 
-/-! ## Vector form -/
+/-! ## Rank-one tensor form -/
 
 /-- DFT as a linear operator on `Fin n → ℂ`. -/
 def dft (n : Nat) (x : Fin n → ℂ) : Fin n → ℂ :=
@@ -314,7 +314,7 @@ def idft (n : Nat) (x : Fin n → ℂ) : Fin n → ℂ :=
   Matrix.mulVec (idftMatrix n) x
 
 /--
-Vector inversion theorem: $\operatorname{idft}(\operatorname{dft}(x))=x$, for $n\ne0$.
+Rank-one tensor inversion theorem: $\operatorname{idft}(\operatorname{dft}(x))=x$, for $n\ne0$.
 -/
 theorem idft_dft (n : Nat) (hn : n ≠ 0) (x : Fin n → ℂ) :
     idft n (dft n x) = x := by
@@ -331,7 +331,7 @@ theorem idft_dft (n : Nat) (hn : n ≠ 0) (x : Fin n → ℂ) :
     _ = x := by simp [Matrix.one_mulVec]
 
 /--
-Vector inversion theorem (other direction): $\operatorname{dft}(\operatorname{idft}(x))=x$, for
+Rank-one tensor inversion theorem (other direction): $\operatorname{dft}(\operatorname{idft}(x))=x$, for
 $n\ne0$.
 -/
 theorem dft_idft (n : Nat) (hn : n ≠ 0) (x : Fin n → ℂ) :

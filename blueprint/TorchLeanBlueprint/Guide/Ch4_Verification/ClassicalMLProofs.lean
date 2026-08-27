@@ -215,13 +215,13 @@ proves this statement for three increasingly rich specifications:
 The selective theorem is:
 
 ```
-theorem selectiveMamba_runList_append_outputs_prefix
+theorem selectiveMamba_runArray_append_outputs_prefix
     (m : SelectiveMambaBlockSpec α
       inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (xs ys : List (Tensor α (.dim inputDim .scalar))) :
-  (m.runList h0 (xs ++ ys)).2.take xs.length =
-    (m.runList h0 xs).2
+    (h0 : Tensor α [innerDim, stateDim])
+    (xs ys : Array (Tensor α [inputDim])) :
+  (m.runArray h0 (xs ++ ys)).2.take xs.size =
+    (m.runArray h0 xs).2
 ```
 
 The theorem is polymorphic over any scalar `α` with a TorchLean `Context`. Its proof is structural:
@@ -229,7 +229,7 @@ induct on `xs`, unfold one recurrent step, and apply the induction hypothesis to
 and history. It does not require commutative or exact arithmetic because causality depends on
 evaluation order, not algebraic rearrangement.
 
-The reusable list argument is factored through
+The reusable array argument is factored through
 [`Scan`](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/Proofs/StateSpace/Scan.lean),
 which proves append and prefix laws for state-threading scans. `MambaCausality` instantiates that
 structure with the S4/Mamba state and convolution history; it does not assert that an optimized
@@ -242,12 +242,12 @@ import NN.MLTheory.Proofs.StateSpace.MambaCausality
 
 open NN.MLTheory.StateSpace
 
-#check diagonalS4_runList_append_outputs_prefix
-#check compactMamba_runList_append_outputs_prefix
-#check selectiveMamba_runList_append_outputs_prefix
+#check diagonalS4_runArray_append_outputs_prefix
+#check compactMamba_runArray_append_outputs_prefix
+#check selectiveMamba_runArray_append_outputs_prefix
 ```
 
-A useful failed variation is to replace `.take xs.length` by `.take (xs.length + 1)`. The extra
+A useful failed variation is to replace `.take xs.size` by `.take (xs.size + 1)`. The extra
 output is the first one allowed to depend on the suffix, so the theorem is false in general. The
 prefix length in the checked statement is exactly the causal boundary.
 

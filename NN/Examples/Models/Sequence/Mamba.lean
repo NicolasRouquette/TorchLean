@@ -38,6 +38,24 @@ def exeName : String := "torchlean mamba"
 /-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "mamba"
 
+/-- Complete command help, including the text and training flags parsed after runtime selection. -/
+def usage : String :=
+  Module.Command.usage exeName ++ "\n" ++ String.intercalate "\n"
+    [ "Text data:"
+    , "  --data-file PATH | --tiny-shakespeare | --tinystories-valid"
+    , ""
+    , "Training:"
+    , "  --steps N          optimizer updates (default: 1)"
+    , "  --batch-size N     corpus windows accumulated per update (default: 1)"
+    , "  --windows N        corpus windows available to training (default: 1)"
+    , "  --lr X             Adam learning rate (default: 0.002)"
+    , "  --log PATH|false   write a TrainLog JSON, or disable logging"
+    , "  --cuda-mem-watch N sample CUDA allocator state every N updates"
+    , ""
+    , "Generation:"
+    , "  --prompt TEXT --generate N --temperature X --top-k N --sample-seed N"
+    ]
+
 /-- Training and generation context length for the Mamba text example. -/
 def seqLen : Nat := 2
 
@@ -47,15 +65,17 @@ def tokenizer : text.Tokenizer := text.Tokenizer.byte
 /-- Mamba text-model configuration shared by shapes and the constructor. -/
 def cfg : nn.models.Mamba.Config :=
   { vocab := 32
-    stateDim := 4
-    ssmStateDim := 2
-    convWidth := 3 }
+    stateDim := 4 }
+
+/-- Toy byte bucketing: encode byte id `b` as `b % 32`; collisions are intentional. -/
+def byteBucket (id : Nat) : Fin cfg.vocab :=
+  ⟨id % cfg.vocab, Nat.mod_lt _ (by decide)⟩
 
 /-- Input shape: one sequence of one-hot byte tokens. -/
-abbrev σ : Shape := nn.models.Mamba.inputShape cfg seqLen .scalar
+abbrev σ : List Nat := [seqLen, cfg.vocab]
 
 /-- Output shape: one vocabulary-logit row per input position. -/
-abbrev τ : Shape := nn.models.Mamba.outputShape cfg seqLen .scalar
+abbrev τ : List Nat := [seqLen, cfg.vocab]
 
 /-- Public Mamba language-model constructor specialized to the example config. -/
 def model : nn.Builder (nn.Sequential σ τ) :=
@@ -89,9 +109,9 @@ def parse (args : List String) : Except String (TrainOptions × List String) := 
 end TrainOptions
 
 /-- Convert a token window into the one-hot next-token sample consumed by the Mamba model. -/
-def sampleFromTokenIds (ids : List Nat) : Sample.Supervised Float σ τ :=
-  let (xF, yF) := Data.CausalLM.oneHotPair (α := Float)
-    (seqLen := seqLen) (vocab := cfg.vocab) (ids.map (· % cfg.vocab))
+def sampleFromTokenIds (ids : Tensor Nat [seqLen + 1]) : Sample.Supervised Float σ τ :=
+  let (xF, yF) := Data.CausalLM.oneHotPair (α := Float) []
+    (seqLen := seqLen) (vocab := cfg.vocab) (ids.map byteBucket)
   Sample.mk xF yF
 
 /-- Build a finite cyclic training set from corpus text, biased toward the prompt when present. -/
@@ -99,12 +119,12 @@ def samplesFromCorpus (input _prompt : String) (windows : Nat) :
     Array (Sample.Supervised Float σ τ) :=
   let toks := tokenizer.encode input
   let offsets :=
-    text.Corpus.evenlySpacedOffsets toks.length seqLen windows
-  offsets.toArray.map (fun off =>
+    text.Corpus.evenlySpacedOffsets toks.size seqLen windows
+  offsets.map (fun off =>
     -- Slice real corpus text into a tiny next-token window. Larger `--windows` values give a more
     -- interesting training run, but the default stays small so the command is a reliable quick check.
     let ids := text.tokenWindow tokenizer (seqLen + 1) input (offset := off) (padId := 32)
-    sampleFromTokenIds ids.toList)
+    sampleFromTokenIds ids)
 
 /-- Print the current argmax prediction beside the prompt and shifted target text. -/
 def printPredictionReport (label prompt : String) (logits : Tensor Float τ) : IO Unit := do
@@ -113,10 +133,8 @@ def printPredictionReport (label prompt : String) (logits : Tensor Float τ) : I
   IO.println s!"  target={text.escapeForDisplay (text.decodeWindow tokenizer seqLen prompt (offset := 1) (padId := 32))}"
 
 /-- Convert a prompt window into the typed one-hot input tensor used during generation. -/
-def inputTensorFromIds (ids : List Nat) : Tensor Float σ :=
-  let (xF, _) := Data.CausalLM.oneHotPair (α := Float)
-    (seqLen := seqLen) (vocab := cfg.vocab) (ids.map (· % cfg.vocab))
-  xF
+def inputTensorFromIds (ids : Tensor Nat [seqLen]) : Tensor Float σ :=
+  TorchLean.Tensor.oneHotIndices (α := Float) cfg.vocab (ids.map byteBucket)
 
 /-- Autoregressively extend a prompt using the trained Mamba parameters. -/
 partial def generateSampled
@@ -134,7 +152,7 @@ partial def generateSampled
   let ids ←
     text.autoregressiveTokenIds seqLen 32 (tokenizer.encode prompt) gen
       (fun padded predPos => do
-        let logits ← predict (inputTensorFromIds padded.toList)
+        let logits ← predict (inputTensorFromIds padded)
         pure (text.logitScoresAt logits predPos))
   pure (tokenizer.decode ids)
 
@@ -144,13 +162,13 @@ def trainOnText (opts : Options) (input : String)
     IO (Float × Float) := do
   let samples := samplesFromCorpus input train.prompt train.windows
   let reportSample := sampleFromTokenIds (text.tokenWindow tokenizer (seqLen + 1) train.prompt
-    (padId := 32)).toList
+    (padId := 32))
   let run := Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := train.lr } }
   let trainer := Trainer.new model <|
     Trainer.Config.fromRunConfig run (.oneHotCrossEntropy 1)
   let cudaMemWatch := Trainer.Manual.CUDAMemory.cadence opts train.steps train.cudaMemWatch
   let trained ← trainer.train
-    (Data.floatSampleArray samples)
+    (Data.floatSamples samples)
     (CLI.Training.OptimizerOptions.toTrainerOptions train.toOptimizerOptions
       (title := "Mamba text training")
       (notes := #[ModelZoo.deviceNote opts, s!"windows={train.windows}",
@@ -171,6 +189,7 @@ def trainOnText (opts : Options) (input : String)
 def main (args : List String) : IO UInt32 := do
   Module.Command.runFloat32 exeName args
     (banner := ModelZoo.bannerWithDevice exeName "Mamba text training")
+    (usage? := some usage)
     (k := fun opts rest => do
       let (corpus, rest) ← ModelZoo.orThrow exeName <| RealData.TextCorpusFlags.parse rest
       let (train, rest) ← ModelZoo.orThrow exeName <|

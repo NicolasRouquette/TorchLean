@@ -24,7 +24,7 @@ open _root_.Spec
 open NN.MLTheory.CROWN
 
 /-- Convert a float array into a length-`n` vector tensor, returning `none` on length mismatch. -/
-def vecOfArray (n : Nat) (xs : Array Float) : Option (Tensor Float (.dim n .scalar)) :=
+def vecOfArray (n : Nat) (xs : Array Float) : Option (Tensor Float [n]) :=
   if hSize : xs.size = n then
     some <| Tensor.dim (fun i =>
       let h : i.val < xs.size := by
@@ -40,7 +40,7 @@ This is the common JSON-artifact shape: external tools often serialize matrices 
 array plus schema-level dimensions.
 -/
 def matOfFlatArray (rows cols : Nat) (xs : Array Float) :
-    Option (Tensor Float (.dim rows (.dim cols .scalar))) :=
+    Option (Tensor Float [rows, cols]) :=
   if hSize : xs.size = rows * cols then
     some <|
       Tensor.dim (fun i =>
@@ -62,7 +62,7 @@ Convert a `rows × cols` float matrix payload into a matrix tensor.
 Both the row count and every row length are checked before the tensor is built.
 -/
 def matOfArray (rows cols : Nat) (xs : Array (Array Float)) :
-    Option (Tensor Float (.dim rows (.dim cols .scalar))) :=
+    Option (Tensor Float [rows, cols]) :=
   if hRows : xs.size = rows then
     if hCols : ∀ i : Fin rows,
         (xs[i.val]'(by simp [hRows, i.isLt])).size = cols then
@@ -79,7 +79,7 @@ def matOfArray (rows cols : Nat) (xs : Array (Array Float)) :
     none
 
 /-- Convert a vector tensor to a float array. -/
-def vecToArray {n : Nat} (x : Tensor Float (.dim n .scalar)) : Array Float :=
+def vecToArray {n : Nat} (x : Tensor Float [n]) : Array Float :=
   match x with
   | .dim xs =>
       (List.finRange n).map (fun i =>
@@ -87,7 +87,7 @@ def vecToArray {n : Nat} (x : Tensor Float (.dim n .scalar)) : Array Float :=
         | .scalar v => v) |>.toArray
 
 /-- Convert lower/upper vector tensors into arrays for artifact checkers. -/
-def boundsToArrays {n : Nat} (lo hi : Tensor Float (.dim n .scalar)) :
+def boundsToArrays {n : Nat} (lo hi : Tensor Float [n]) :
     Array Float × Array Float :=
   (vecToArray lo, vecToArray hi)
 
@@ -101,7 +101,7 @@ def boxBoundsToArrays {n : Nat} (B : Box Float (.dim n .scalar)) : Array Float �
 
 /-- Load a length-checked vector tensor from a JSON float array, or raise a schema error. -/
 def requireVecOfArray (ctx : String) (n : Nat) (xs : Array Float) :
-    IO (Tensor Float (.dim n .scalar)) := do
+    IO (Tensor Float [n]) := do
   match vecOfArray n xs with
   | some x => pure x
   | none =>
@@ -109,7 +109,7 @@ def requireVecOfArray (ctx : String) (n : Nat) (xs : Array Float) :
 
 /-- Load a row-major matrix tensor from a JSON float array, or raise a schema error. -/
 def requireMatOfFlatArray (ctx : String) (rows cols : Nat) (xs : Array Float) :
-    IO (Tensor Float (.dim rows (.dim cols .scalar))) := do
+    IO (Tensor Float [rows, cols]) := do
   match matOfFlatArray rows cols xs with
   | some x => pure x
   | none =>

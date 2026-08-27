@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.Tensor.Constructors
-public import NN.Spec.Core.Tensor.Vec
 public import NN.Spec.Generative.Diffusion.Core
 
 /-!
@@ -53,7 +52,7 @@ variable {α : Type} [Context α]
 /-- Discrete VP schedule with `T` diffusion steps. -/
 structure VPSchedule (α : Type) (T : Nat) [Context α] where
   /-- Per-step variances $\beta_t$ for $t=0,\ldots,T-1$. -/
-  betas : Spec.Vec T α
+  betas : Spec.Tensor α [T]
 
 namespace VPSchedule
 
@@ -61,7 +60,7 @@ variable {T : Nat}
 
 /-- Fetch $\beta_t$ as a scalar. -/
 def beta (sched : VPSchedule α T) (t : Fin T) : α :=
-  Tensor.vecGet sched.betas t
+  Tensor.getScalar sched.betas t
 
 /-- $\alpha_t:=1-\beta_t$. -/
 def alpha (sched : VPSchedule α T) (t : Fin T) : α :=
@@ -85,9 +84,9 @@ def alphaBar (sched : VPSchedule α T) (t : Fin (T + 1)) : α :=
         go k hk' * sched.alpha i
   go t.1 t.2
 
-/-- Vector form of `alphaBar` (length $T+1$). -/
-def alphaBarVec (sched : VPSchedule α T) : Spec.Vec (T + 1) α :=
-  Spec.Tensor.vector (fun t => sched.alphaBar t)
+/-- The $T+1$ accumulated coefficients as a vector. -/
+def alphaBarTensor (sched : VPSchedule α T) : Spec.Tensor α [T + 1] :=
+  Spec.Tensor.ofFn (fun t => sched.alphaBar t)
 
 /--
 Convert a discrete time index `t : Fin (T+1)` into a scalar time $t/T\in[0,1]$ (when $T>0$).
@@ -115,18 +114,18 @@ Note: this is a small spec helper. Popular schedules in the diffusion literature
 variants such as cosine schedules or continuous VP schedules; add those as separate named specs
 when a model or theorem needs them.
 -/
-def linearBetas (T : Nat) (β_start β_end : α) : Spec.Vec T α :=
+def linearBetas (T : Nat) (β_start β_end : α) : Spec.Tensor α [T] :=
   match T with
-  | 0 => Spec.Tensor.vector (fun i : Fin 0 => (False.elim (by simpa using i.2)))
+  | 0 => Spec.Tensor.ofFn (fun i : Fin 0 => (False.elim (by simpa using i.2)))
   | Nat.succ T' =>
       match T' with
       | 0 =>
           -- `T = 1`: by convention, return the endpoint.
-          Spec.Tensor.vector (fun _i : Fin 1 => β_end)
+          Spec.Tensor.ofFn (fun _i : Fin 1 => β_end)
       | Nat.succ T'' =>
           -- `T = T'' + 2`: interpolate using denominator `(T-1) = T'' + 1`, so the last beta is
           -- exactly `β_end`.
-          Spec.Tensor.vector (fun i : Fin (Nat.succ (Nat.succ T'')) =>
+          Spec.Tensor.ofFn (fun i : Fin (Nat.succ (Nat.succ T'')) =>
             let denom : α := (Nat.succ T'' : α) -- = T - 1
             let frac : α := (i.1 : α) / denom
             β_start + frac * (β_end - β_start))

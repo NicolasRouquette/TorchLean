@@ -55,9 +55,9 @@ def add {α : Type} {Δ : Type} [Add α] [Zero α] [DecidableEq Shape] {Γ : Lis
       jvp := fun _ctx dctx _d =>
         addSpec (getIdx (α := α) (xs := dctx) ia) (getIdx (α := α) (xs := dctx) ib)
       vjp := fun _ctx _d δ =>
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ia δ)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ib δ) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ia δ)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ib δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -78,9 +78,9 @@ def sub {α : Type} {Δ : Type} [Sub α] [Add α] [Zero α] [DecidableEq Shape] 
         subSpec (getIdx (α := α) (xs := dctx) ia) (getIdx (α := α) (xs := dctx) ib)
       vjp := fun _ctx _d δ =>
         let negδ : Tensor α s := subSpec (fill (0 : α) s) δ
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ia δ)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ib negδ) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ia δ)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ib negδ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -106,9 +106,9 @@ def mul {α : Type} {Δ : Type} [Mul α] [Add α] [Zero α] [DecidableEq Shape] 
       vjp := fun ctx _d δ =>
         let av := getIdx (α := α) (xs := ctx) ia
         let bv := getIdx (α := α) (xs := ctx) ib
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ia (mulSpec δ bv))
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ib (mulSpec δ av)) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ia (mulSpec δ bv))
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ib (mulSpec δ av)) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Square `x ↦ x ⊙ x`. -/
@@ -133,7 +133,7 @@ def scale {α : Type} {Δ : Type} [Mul α] [Add α] [Zero α] [DecidableEq Shape
       jvp := fun _ctx dctx _d =>
         scaleSpec (α := α) (s := s) (getIdx (α := α) (xs := dctx) ix) c
       vjp := fun _ctx _d δ =>
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (scaleSpec (α := α) (s := s) δ c) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (scaleSpec (α := α) (s := s) δ c) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -157,7 +157,7 @@ def abs {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dabs := signSpec (α := α) (s := s) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dabs δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dabs δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -191,7 +191,7 @@ def sqrt {α : Type} [Context α] [DecidableEq Shape]
               (1 : α) / (((2 : Nat) : α) * MathFunctions.sqrt v)
             else
               (0 : α)) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dsqrt δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dsqrt δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -220,7 +220,7 @@ def clamp {α : Type} [Context α] [DecidableEq Shape]
         let dclamp : Tensor α s :=
           mapSpec (α := α) (s := s) (fun v =>
             if v > minVal ∧ maxVal > v then (1 : α) else (0 : α)) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dclamp δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dclamp δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -263,9 +263,9 @@ def max {α : Type} [Context α] [DecidableEq Shape]
         let maskB : Tensor α s :=
           map2Spec (α := α) (β := α) (γ := α) (s := s) (fun x y =>
             if y > x then (1 : α) else if x > y then (0 : α) else half) av bv
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ia (mulSpec maskA δ))
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ib (mulSpec maskB δ)) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ia (mulSpec maskA δ))
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ib (mulSpec maskB δ)) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -307,9 +307,9 @@ def min {α : Type} [Context α] [DecidableEq Shape]
         let maskB : Tensor α s :=
           map2Spec (α := α) (β := α) (γ := α) (s := s) (fun x y =>
             if x > y then (1 : α) else if y > x then (0 : α) else half) av bv
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ia (mulSpec maskA δ))
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) ib (mulSpec maskB δ)) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ia (mulSpec maskA δ))
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ib (mulSpec maskB δ)) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -334,7 +334,7 @@ def relu {α : Type}
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let drelu := Activation.reluDerivSpec (α := α) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec drelu δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec drelu δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise sigmoid. PyTorch comparison: `torch.sigmoid(x)`. -/
@@ -353,7 +353,7 @@ def sigmoid {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dsig := Activation.sigmoidDerivSpec (α := α) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dsig δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dsig δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise tanh. PyTorch comparison: `torch.tanh(x)`. -/
@@ -372,7 +372,7 @@ def tanh {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dtanh := Activation.tanhDerivSpec (α := α) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dtanh δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dtanh δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -397,7 +397,7 @@ def gelu {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dgelu := Activation.geluDerivSpec (α := α) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dgelu δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dgelu δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -411,16 +411,17 @@ def softmaxLast {α : Type} [Context α] [DecidableEq Shape]
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun ctx _d =>
-        Activation.softmaxLastSpec (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
+        Activation.Internal.softmaxInnermostSpec
+          (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
       jvp := fun ctx dctx _d =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dx := getIdx (α := α) (xs := dctx) ix
         -- Softmax Jacobian is symmetric, so we can reuse the same JVP/VJP implementation.
-        Activation.softmaxLastBackwardSpec (α := α) (s := s) xval dx
+        Activation.Internal.softmaxInnermostBackwardSpec (α := α) (s := s) xval dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        let dx := Activation.softmaxLastBackwardSpec (α := α) (s := s) xval δ
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+        let dx := Activation.Internal.softmaxInnermostBackwardSpec (α := α) (s := s) xval δ
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Softmax along an explicitly selected tensor dimension. -/
@@ -440,7 +441,7 @@ def softmax {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dx := Activation.softmaxBackwardSpec (α := α) (s := s) axis xval δ
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -455,17 +456,19 @@ def logSoftmaxLast {α : Type} [Context α] [DecidableEq Shape]
   let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun ctx _d =>
-        Activation.logSoftmaxLastSpec (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
+        Activation.Internal.logSoftmaxInnermostSpec
+          (α := α) (s := s) (getIdx (α := α) (xs := ctx) ix)
       jvp := fun ctx dctx _d =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        let yval := Activation.logSoftmaxLastSpec (α := α) (s := s) xval
+        let yval := Activation.Internal.logSoftmaxInnermostSpec (α := α) (s := s) xval
         let dx := getIdx (α := α) (xs := dctx) ix
-        Activation.logSoftmaxLastJvpSpec (α := α) (s := s) yval dx
+        Activation.Internal.logSoftmaxInnermostJvpSpec (α := α) (s := s) yval dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        let yval := Activation.logSoftmaxLastSpec (α := α) (s := s) xval
-        let dx := Activation.logSoftmaxLastBackwardSpec (α := α) (s := s) yval δ
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+        let yval := Activation.Internal.logSoftmaxInnermostSpec (α := α) (s := s) xval
+        let dx := Activation.Internal.logSoftmaxInnermostBackwardSpec
+          (α := α) (s := s) yval δ
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Stable log-softmax along an explicitly selected tensor dimension. -/
@@ -487,7 +490,7 @@ def logSoftmax {α : Type} [Context α] [DecidableEq Shape]
         let xval := getIdx (α := α) (xs := ctx) ix
         let yval := Activation.logSoftmaxSpec (α := α) (s := s) axis xval
         let dx := Activation.logSoftmaxBackwardSpec (α := α) (s := s) axis yval δ
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise softplus. PyTorch comparison: `torch.nn.functional.softplus(x)`. -/
@@ -506,7 +509,7 @@ def softplus {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dsoft := Activation.softplusDerivSpec (α := α) (s := s) xval
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dsoft δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dsoft δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise exponential. PyTorch comparison: `torch.exp(x)`. -/
@@ -523,7 +526,7 @@ def exp {α : Type} [Context α] [DecidableEq Shape]
         mulSpec (expSpec (α := α) xval) dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec (expSpec (α := α) xval) δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec (expSpec (α := α) xval) δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise natural logarithm. PyTorch comparison: `torch.log(x)`. -/
@@ -547,7 +550,7 @@ def log {α : Type} [Context α] [DecidableEq Shape]
         mulSpec (invSpec (α := α) xval) dx
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec (invSpec (α := α) xval) δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec (invSpec (α := α) xval) δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise reciprocal `x ↦ 1/x`. PyTorch comparison: `torch.reciprocal(x)`. -/
@@ -569,7 +572,7 @@ def inv {α : Type} [Context α] [DecidableEq Shape]
         let invx := invSpec (α := α) xval
         let invx2 := mulSpec invx invx
         let dx := scaleSpec (α := α) (s := s) (mulSpec δ invx2) (-1 : α)
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix dx }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -594,7 +597,7 @@ def safeLog {α : Type} [Context α] [DecidableEq Shape]
       vjp := fun ctx _d δ =>
         let xval := getIdx (α := α) (xs := ctx) ix
         let dlog := Activation.safeLogDerivSpec (α := α) (s := s) xval ε
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dlog δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (mulSpec dlog δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -612,7 +615,7 @@ def sum {α : Type} [Add α] [Zero α] [DecidableEq Shape]
       jvp := fun _ctx dctx _d =>
         Tensor.scalar (sumSpec (α := α) (s := s) (getIdx (α := α) (xs := dctx) ix))
       vjp := fun _ctx _d dLdy =>
-        TList.single (α := α) (Γ := Γ ++ ss) (s := s) ix (replicate (α := α) (s := s) dLdy) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) ix (replicate (α := α) (s := s) dLdy) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := Shape.scalar) g node
 
 /--
@@ -657,9 +660,9 @@ def mseLoss {α : Type}
         let gscalar : α := Tensor.item dLdy
         let dYhat : Tensor α s := scaleSpec (α := α) (s := s) baseGrad gscalar
         let dTarget : Tensor α s := subSpec (fill (0 : α) s) dYhat
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) iyhat dYhat)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := s) itarget dTarget) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) iyhat dYhat)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := s) itarget dTarget) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := Shape.scalar) g node
 
 /--
@@ -703,89 +706,57 @@ def mseLoss {α : Type}
         let db := Spec.linearBiasDerivSpec (α := α) (inDim := inDim) (outDim := outDim) dW dLdy
           xv
         let dx := Spec.linearInputDerivSpec (α := α) (inDim := inDim) (outDim := outDim) W dLdy
-        let z0 := TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outDim (.dim inDim .scalar)) iW dW)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim outDim .scalar) ib db)
-        TList.add (α := α) (ss := Γ ++ ss) z0
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim inDim .scalar) ix dx) }
+        let z0 := _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim outDim (.dim inDim .scalar)) iW dW)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim outDim .scalar) ib db)
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss) z0
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := .dim inDim .scalar) ix dx) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim outDim .scalar)) g node
 
 /--
-  Matrix multiplication (`(m×n) @ (n×p) → (m×p)`).
+Matrix multiplication with broadcasted batch prefixes.
 
-  PyTorch comparison: `torch.mm`.
+The operands have shapes `batchA ++ [m, n]` and `batchB ++ [n, p]`. Both batch prefixes
+broadcast to `batch`, and the result has shape `batch ++ [m, p]`. The JVP is the bilinear
+product rule `d(A @ B) = dA @ B + A @ dB`.
 
-  The JVP is the bilinear product rule `d(A @ B) = dA @ B + A @ dB`.
-  -/
-  def matmul {α : Type} {Δ : Type} [Context α]
+PyTorch comparison: `torch.matmul` for operands of rank at least two.
+-/
+def matmul {α : Type} {Δ : Type} [Context α]
     [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-    {Γ : List Shape} {m n p : Nat}
-    (a : Var (.dim m (.dim n .scalar))) (b : Var (.dim n (.dim p .scalar))) :
-    MWith α Δ Γ (Var (.dim m (.dim p .scalar))) := do
+    {Γ : List Shape} {batchA batchB batch : Shape} {m n p : Nat}
+    [broadcastA : Shape.BroadcastTo batchA batch]
+    [broadcastB : Shape.BroadcastTo batchB batch]
+    (a : Var (batchA.concat [m, n])) (b : Var (batchB.concat [n, p])) :
+    MWith α Δ Γ (Var (batch.concat [m, p])) := do
   let ⟨ss, g⟩ ← get
   let ia ← liftM (mkIdx (_α := α) (Γ := Γ) ss a)
   let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss b)
-  let node : NodeData α Δ (Γ ++ ss) (.dim m (.dim p .scalar)) :=
+  let aShape := batchA.concat [m, n]
+  let bShape := batchB.concat [n, p]
+  let outShape := batch.concat [m, p]
+  let node : NodeData α Δ (Γ ++ ss) outShape :=
     { forward := fun ctx _d =>
         let av := getIdx (α := α) (xs := ctx) ia
         let bv := getIdx (α := α) (xs := ctx) ib
-        Spec.matMulSpec av bv
-      jvp := fun ctx dctx _d =>
-        let av := getIdx (α := α) (xs := ctx) ia
-        let bv := getIdx (α := α) (xs := ctx) ib
-        let da := getIdx (α := α) (xs := dctx) ia
-        let db := getIdx (α := α) (xs := dctx) ib
-        addSpec (Spec.matMulSpec da bv) (Spec.matMulSpec av db)
-      vjp := fun ctx _d dLdy =>
-        let av := getIdx (α := α) (xs := ctx) ia
-        let bv := getIdx (α := α) (xs := ctx) ib
-        let (dA, dB) := Spec.Tensor.matMulBackwardSpec av bv dLdy
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim m (.dim n .scalar)) ia dA)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := .dim n (.dim p .scalar)) ib dB) }
-  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim m (.dim p .scalar))) g node
-
-/--
-  Batched matrix multiplication (`batch×m×n` with `batch×n×p`).
-
-  PyTorch comparison: `torch.bmm`.
-
-  The JVP is the batched bilinear product rule `d(A @ B) = dA @ B + A @ dB`.
-  -/
-  def bmm {α : Type} {Δ : Type} [Add α] [Mul α] [Zero α] [DecidableEq Shape]
-    {Γ : List Shape} {batch m n p : Nat}
-    (a : Var (.dim batch (.dim m (.dim n .scalar))))
-    (b : Var (.dim batch (.dim n (.dim p .scalar)))) :
-    MWith α Δ Γ (Var (.dim batch (.dim m (.dim p .scalar)))) := do
-  let ⟨ss, g⟩ ← get
-  let ia ← liftM (mkIdx (_α := α) (Γ := Γ) ss a)
-  let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss b)
-  let outS : Shape := .dim batch (.dim m (.dim p .scalar))
-  let aS : Shape := .dim batch (.dim m (.dim n .scalar))
-  let bS : Shape := .dim batch (.dim n (.dim p .scalar))
-  let node : NodeData α Δ (Γ ++ ss) outS :=
-    { forward := fun ctx _d =>
-        let av := getIdx (α := α) (xs := ctx) ia
-        let bv := getIdx (α := α) (xs := ctx) ib
-        Spec.Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) av bv
+        Spec.Tensor.matmulSpec broadcastA.proof broadcastB.proof av bv
       jvp := fun ctx dctx _d =>
         let av := getIdx (α := α) (xs := ctx) ia
         let bv := getIdx (α := α) (xs := ctx) ib
         let da := getIdx (α := α) (xs := dctx) ia
         let db := getIdx (α := α) (xs := dctx) ib
         addSpec
-          (Spec.Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) da bv)
-          (Spec.Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) av db)
+          (Spec.Tensor.matmulSpec broadcastA.proof broadcastB.proof da bv)
+          (Spec.Tensor.matmulSpec broadcastA.proof broadcastB.proof av db)
       vjp := fun ctx _d dLdy =>
         let av := getIdx (α := α) (xs := ctx) ia
         let bv := getIdx (α := α) (xs := ctx) ib
         let (dA, dB) :=
-          Spec.Tensor.bmmBackwardSpec (α := α) (batch := batch) (m := m) (n := n) (p := p) av bv
-            dLdy
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := aS) ia dA)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := bS) ib dB) }
-  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
+          Spec.Tensor.matmulBackwardSpec broadcastA.proof broadcastB.proof av bv dLdy
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := aShape) ia dA)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := bShape) ib dB) }
+  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outShape) g node
 
 /--
   Concatenate along the leading dimension (`dim=0`) for tensors of shape `.dim n s`.
@@ -806,19 +777,19 @@ def mseLoss {α : Type}
     { forward := fun ctx _d =>
         let av := getIdx (α := α) (xs := ctx) ia
         let bv := getIdx (α := α) (xs := ctx) ib
-        Spec.Tensor.concatLeadingAxisSpec (α := α) (n := n) (m := m) (s := s) av bv
+        Spec.Tensor.concatAxisSpec .scalar (α := α) (n := n) (m := m) (suffix := s) av bv
       jvp := fun _ctx dctx _d =>
         let da := getIdx (α := α) (xs := dctx) ia
         let db := getIdx (α := α) (xs := dctx) ib
-        Spec.Tensor.concatLeadingAxisSpec (α := α) (n := n) (m := m) (s := s) da db
+        Spec.Tensor.concatAxisSpec .scalar (α := α) (n := n) (m := m) (suffix := s) da db
       vjp := fun _ctx _d dLdy =>
         let dA := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy 0 n
           (by simp)
         let dB := Spec.sliceRangeSpec (α := α) (n := n + m) (s := s) dLdy n m
           (by simp)
-        TList.add (α := α) (ss := Γ ++ ss)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := aS) ia dA)
-          (TList.single (α := α) (Γ := Γ ++ ss) (s := bS) ib dB) }
+        _root_.TorchLean.TensorPack.add (α := α) (ss := Γ ++ ss)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := aS) ia dA)
+          (TensorPack.single (α := α) (Γ := Γ ++ ss) (s := bS) ib dB) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
 
 /--
@@ -842,8 +813,8 @@ def mseLoss {α : Type}
         let dx := getIdx (α := α) (xs := dctx) ix
         Spec.sliceRangeSpec (α := α) (n := n) (s := s) dx start len h
       vjp := fun _ctx _d δ =>
-        TList.single (α := α) (Γ := Γ ++ ss) (s := inS) ix
-          (Spec.Tensor.sliceLeadingAxisRangeBackwardSpec (α := α) (n := n) (s := s) start len h δ) }
+        TensorPack.single (α := α) (Γ := Γ ++ ss) (s := inS) ix
+          (Spec.Tensor.sliceAxisRangeBackwardSpec (α := α) (s := .dim n s) 0 start len h δ) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
 
 end GraphM

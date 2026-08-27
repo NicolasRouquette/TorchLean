@@ -47,22 +47,22 @@ Extract the only scalar from a one-output `IEEE32Exec` tensor.
 Most approximation statements end with scalar-valued targets.  Keeping this as a named helper makes
 the shape boundary explicit instead of hiding the `Fin 1` index proof at every call site.
 -/
-def extractScalarOutputIeee32exec (t : Tensor IEEE32Exec (.dim 1 .scalar)) : IEEE32Exec :=
+def extractScalarOutputIEEE32Exec (t : Tensor IEEE32Exec [1]) : IEEE32Exec :=
   match t with
   | .dim f => Tensor.item (f ⟨0, by decide⟩)
 
 /--
 Evaluate a two-layer ReLU MLP over executable IEEE binary32 semantics.
 
-The corresponding real-valued evaluator is `mlpEvalNd` from `ReLUMlpBridge`.  Approximation
-theorems compare `IEEE32Exec.toReal (mlpEvalNd xI)` against that real evaluator applied to
+The corresponding real-valued evaluator is `mlpEval` from `ReLUMlpBridge`. Approximation
+theorems compare `IEEE32Exec.toReal (mlpEvalIEEE32Exec xI)` against that real evaluator applied to
 `tensorToReal xI`, thereby isolating the floating-point execution error from the approximation
 and quantization errors.
 -/
-noncomputable def mlpEvalNdIeee32exec {n hidDim : Nat}
+noncomputable def mlpEvalIEEE32Exec {n hidDim : Nat}
     (l1 : LinearSpec IEEE32Exec n hidDim) (l2 : LinearSpec IEEE32Exec hidDim 1)
-    (x : Tensor IEEE32Exec (.dim n .scalar)) : IEEE32Exec :=
-  extractScalarOutputIeee32exec (Examples.mlpForward l1 l2 x)
+    (x : Tensor IEEE32Exec [n]) : IEEE32Exec :=
+  extractScalarOutputIEEE32Exec (Examples.mlpForward l1 l2 x)
 
 /--
 Shape-preserving map over TorchLean specification tensors.

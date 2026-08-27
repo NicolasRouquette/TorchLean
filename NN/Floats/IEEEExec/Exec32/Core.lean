@@ -15,8 +15,9 @@ TorchLean uses two complementary ways to talk about "float32":
 
 - `NN/Floats/NeuralFloat/*` and `NN/Floats/FP32/*` model rounding-on-`ℝ`. This is suited to proofs
   and for compositional "real computation + rounding error" arguments.
-- `IEEE32Exec` (in this file) models **bit-level IEEE-754** behavior. This is what you want when you
-  care about corner cases like NaN/Inf payload propagation, signed zero, and exact tie-breaking.
+- `IEEE32Exec` (in this file) models bit-level binary32 values and the IEEE-754 operations exposed
+  by this subsystem. This is what you want for corner cases such as NaN/Inf payload propagation,
+  signed zero, and exact tie-breaking.
 
 We implement `IEEE32Exec` as raw `UInt32` bits and provide:
 

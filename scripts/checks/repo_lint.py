@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
-import sys
 import urllib.parse
 from dataclasses import dataclass
 from typing import Iterable
@@ -40,13 +39,15 @@ ALLOWED_AXIOMS: dict[str, set[str]] = {}
 # Narrow allowlist for linter suppressions that are noisy in API entrypoint files but do
 # not weaken proofs. Keep this list small and review each addition.
 ALLOWED_LINTER_SUPPRESSION_FILES = {
-    "NN/Tensor/API.lean",
+    "NN/Tensor.lean",
 }
 
 # These modules were pure compatibility routes or duplicate import surfaces. New code must use the
 # canonical subsystem umbrellas and namespaces instead of recreating them.
 REMOVED_COMPATIBILITY_PATHS = {
     "NN/API/TorchLean/Optimizers.lean",
+    "NN/API/TensorPack.lean",
+    "NN/Spec/Core/Tensor/API.lean",
     "NN/Examples/Verification/LiRPA.lean",
     "NN/GraphSpec/Models/TorchLean/Fno1d.lean",
     "NN/Library.lean",
@@ -67,11 +68,38 @@ REMOVED_COMPATIBILITY_PATHS = {
     "NN/MLTheory/CROWN/Lyapunov/Oracle.lean",
     "NN/MLTheory/CROWN/Tactics/CrownOracle.lean",
     "NN/Spec/Layers/Pooling/Aliases.lean",
+    "NN/Spec/Layers/Pooling/PaddedTwoD.lean",
+    "NN/Spec/Layers/Pooling/TwoD.lean",
+    "NN/Spec/Layers/Conv/TwoD/Padding.lean",
+    "NN/Spec/Core/Tensor/Vec.lean",
+    "NN/Spec/Core/TensorArray.lean",
+    "NN/Spec/Core/TensorBridge.lean",
+    "NN/GraphSpec/Models/TorchLean/Cnn.lean",
+    "NN/Proofs/Autograd/Tape/Ops/Norm/BatchNormChannelFirst.lean",
+    "NN/Proofs/RuntimeApprox/NF/Conv.lean",
+    "NN/Proofs/RuntimeApprox/NF/ConvBackward.lean",
+    "NN/Proofs/RuntimeApprox/NF/ConvForward.lean",
+    "NN/Spec/Models/Unet.lean",
+    "NN/Spec/Models/Vit.lean",
+    "NN/Runtime/Autograd/Train/TensorLoader.lean",
+    "NN/Runtime/Autograd/Train/Dataset.lean",
+    "NN/Runtime/Autograd/Train/IoLoader.lean",
+    "NN/Runtime/Autograd/Train/IoLoader/Parsing.lean",
+    "NN/Runtime/Autograd/Train/IoLoader/Csv.lean",
+    "NN/Runtime/Autograd/Train/IoLoader/Npy.lean",
     "NN/Verification/TorchLean/Verified.lean",
+    "NN/Verification/TorchLean/Proved/Correctness/Eval/Pooling.lean",
+    "NN/Runtime/Context.lean",
+    "NN/Widgets/Runtime/Context.lean",
+    "NN/Runtime/Optim/GradientUtils.lean",
+    "NN/Spec/Core/Tensor/Packed.lean",
+    "NN/Proofs/Autograd/Runtime/PackedTensor.lean",
+    "NN/API/Data/PackedDataset.lean",
 }
 
 REMOVED_COMPATIBILITY_PREFIXES = (
     "NN/Entrypoint/",
+    "NN/API/Public/",
 )
 
 # Documentation may mention producer-side environment variables only when the implementation hook
@@ -185,6 +213,59 @@ DOC_FACT_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
 ]
 
+PUBLIC_DOC_API_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\bRuntime\.(?:mm|bmm)\b"),
+        "public docs should use generic `Runtime.matmul`; the rank-specific `mm` and `bmm` APIs "
+        "were removed.",
+    ),
+    (
+        re.compile(r"(?<![A-Za-z0-9_])\.dim\b"),
+        "public docs should write concrete tensor shapes with dimension-list syntax.",
+    ),
+    (
+        re.compile(
+            r"\b(?:ProgramWithNatInputs|natInputShapes|validateNatInputs|"
+            r"NatVecRef|inputNatVec|getNatVec|setNatVec)\b"
+        ),
+        "public docs should describe discrete data through typed data references, not "
+        "implementation-specific input packs.",
+    ),
+    (
+        re.compile(r"\bNN\.API\.[a-z][A-Za-z0-9_]*\b"),
+        "public docs should use the exported `TorchLean.*` namespace, not a lower-case "
+        "`NN.API.*` implementation namespace.",
+    ),
+    (
+        re.compile(r"\bTensor\b[^\n]*(?:leading\s*\+\+|spatial\.toList)"),
+        "public docs should describe tensor dimensions with list-shaped types or named shape "
+        "accessors, not expanded internal shape expressions.",
+    ),
+]
+
+DOC_PROSE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(
+            r"\b(?:In )?[Tt]his (?:chapter|section|page|guide) "
+            r"(?:covers|discusses|examines|explores|provides|will cover|will discuss|"
+            r"will examine|will explore)\b"
+        ),
+        "start with the subject instead of meta prose about what the document will cover.",
+    ),
+    (
+        re.compile(r"\b(?:It is|It's) (?:important|worth) to note\b", flags=re.IGNORECASE),
+        "state the relevant fact directly instead of announcing that it is important.",
+    ),
+]
+
+PUBLIC_WEBSITE_API_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\{[A-Za-z][A-Za-z0-9_']*\s*:\s*Spec\.Shape\}"),
+        "website examples should use inferred or list-shaped tensor dimensions, not an explicit "
+        "internal `Spec.Shape` binder.",
+    ),
+]
+
 TORCHLEAN_SOURCE_LINK_RE = re.compile(
     r"https://github\.com/lean-dojo/TorchLean/blob/main/([^\s\)\]`]+)"
 )
@@ -225,17 +306,30 @@ PUBLIC_TUTORIAL_PREFIXES = (
     "NN/Examples/Data/",
 )
 
-PUBLIC_GUIDE_PREFIXES = (
-    "README.md",
-    "NN/Examples/README.md",
-    "NN/Examples/Quickstart/README.md",
-    "NN/Examples/Models/README.md",
-    "blueprint/TorchLeanBlueprint/Guide/Ch1_Introduction/",
-    "blueprint/TorchLeanBlueprint/Guide/Ch2_Frontend/",
-    "blueprint/TorchLeanBlueprint/Guide/Ch5_Applications/",
+# Root-driven Lake targets that collectively typecheck maintained modules outside the dedicated
+# example and test libraries. Keep this list aligned with `lakefile.lean`.
+LEAN_TYPECHECK_ROOTS = {
+    "NN",
+    "NN.CI.All",
+    "NN.CI.SlowProofs",
+    "NN.Docs",
+    "NN.Verification.Main",
+}
+
+LEAN_TYPECHECK_GLOB_PREFIXES = (
+    "NN/Examples/",
+    "NN/Tests/",
 )
 
 PUBLIC_GUIDE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\bScalarShape\b|shape!|\bTensor\.T\b"),
+        "public guides should write `Tensor α [dims]` and list-shaped model/dataset types.",
+    ),
+    (
+        re.compile(r"\bSpec\.Tensor\.(?:dim|scalar|vecGet|vector|matrix)\b"),
+        "public guides should use `Tensor` constructors and general indexing, not the recursive spec representation.",
+    ),
     (
         re.compile(r"\bTrainer\.NewConfig\b|\bNewConfig\b"),
         "public guides should use `Trainer.Config`; `Trainer.NewConfig` was removed during the unified Trainer cleanup.",
@@ -304,6 +398,19 @@ PUBLIC_GUIDE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
+        re.compile(r"\bScalarShape\b|shape!|\bTensor\.T\b"),
+        "public examples should write `Tensor α [dims]` and list-shaped model/dataset types.",
+    ),
+    (
+        re.compile(r"\bSpec\.Tensor\.(?:dim|scalar|vecGet|vector|matrix)\b"),
+        "public examples should use `Tensor` constructors and general indexing, not the recursive spec representation.",
+    ),
+    (
+        re.compile(r"(?<![A-Za-z0-9_])\.dim\b"),
+        "public fixed-shape examples should write `Tensor α [dims]`; `.dim` is reserved "
+        "for recursive shape implementations.",
+    ),
+    (
         re.compile(r"\bNN\.API\.nn\b"),
         "public examples should use the canonical `TorchLean.nn` namespace.",
     ),
@@ -337,7 +444,7 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         re.compile(r"\bShape\.(?:Vec|Mat|Image|Images|NCHW|vec|mat|image|images|nchw)\b"),
-        "public examples should express dimensions with `shape![...]` or `Shape.ofList`, not domain- or layout-specific shape aliases.",
+        "public examples should express fixed dimensions as lists or use `Shape.ofList` for computed dimensions, not domain- or layout-specific shape aliases.",
     ),
     (
         re.compile(r"\bSemantics\.Scalar\b"),
@@ -358,14 +465,6 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r"\bfitWithParams\b"),
         "public examples should prefer the public trainer/verifier bridges instead of reopening raw post-training parameter callbacks.",
-    ),
-    (
-        re.compile(r"\bTList\b"),
-        "public examples should not expose `TList`; use model/trainer/checkpoint helpers instead.",
-    ),
-    (
-        re.compile(r"\btlist\.TList\b|\btlist!\b"),
-        "public examples should not expose raw `tlist` packs; use public tensor/model helpers instead.",
     ),
     (
         re.compile(r"\bModule\.instantiateConfigured\b"),
@@ -479,7 +578,10 @@ PUBLIC_EXAMPLE_BANNED_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "public examples should import the focused `NN.API`, not the complete `NN` umbrella.",
     ),
     (
-        re.compile(r"\bNN\.API\."),
+        re.compile(
+            r"^(?!\s*(?:public\s+)?import\s+NN\.API\.).*\bNN\.API\.",
+            flags=re.MULTILINE,
+        ),
         "public examples should go through the `TorchLean` API, not fully-qualified `NN.API.*` implementation paths.",
     ),
     (
@@ -541,16 +643,38 @@ TOP_LEVEL_API_DECL_RE = re.compile(
 )
 
 PUBLIC_DECL_RE = re.compile(
-    r"^\s*(?:public\s+)?(?:def|structure|inductive|class|abbrev)\s+"
+    r"^\s*(?:public\s+)?(?:def|opaque|structure|inductive|class|abbrev|theorem|lemma)\s+"
     r"(?P<name>[A-Za-z0-9_'.]+)\b",
     flags=re.MULTILINE,
 )
 
-# Public tensor and model APIs describe axes through shapes and vectors. Layout spellings and fixed
+# Public tensor and model APIs describe axes through shapes and rank-one tensors. Layout spellings and fixed
 # spatial ranks belong in low-level kernels or domain examples, not in user-facing declaration names.
 PUBLIC_LAYOUT_NAME_RE = re.compile(
-    r"(?:chw|nchw|(?:^|_)[123]d(?:_|$)|[a-z][123]d$)",
-    flags=re.IGNORECASE,
+    r"(?:[123][dD](?=[A-Z_]|$)|(?:One|Two|Three)D(?=[A-Z_]|$)|"
+    r"(?:^|_)(?:chw|nchw|nhwc|hwc)(?:_|$))"
+)
+
+PUBLIC_IMPORT_RE = re.compile(
+    r"^\s*public\s+import\s+(?P<module>[A-Za-z0-9_.]+)\s*$",
+    flags=re.MULTILINE,
+)
+
+# Import-only API umbrellas should compose focused public modules. Re-exporting these implementation
+# roots makes runtime internals part of the user API by accident.
+BROAD_LOW_LEVEL_IMPORTS = {
+    "NN",
+    "NN.Proofs",
+    "NN.Runtime",
+    "NN.Spec",
+    "NN.Verification",
+    "NN.Runtime.Autograd.TorchLean",
+}
+
+BROAD_LOW_LEVEL_IMPORT_PREFIXES = (
+    "NN.Runtime.Autograd.Engine.",
+    "NN.Runtime.Autograd.Torch.Core.",
+    "NN.Spec.Core.Tensor.Internal.",
 )
 
 CONTRACT_SOURCE_FILE_RE = re.compile(
@@ -598,6 +722,80 @@ def _iter_lean_files() -> Iterable[pathlib.Path]:
         if "_out" in p.parts:
             continue
         yield p
+
+
+def _check_lean_target_coverage(findings: list[Finding]) -> None:
+    """Require every maintained `NN` module to belong to a typecheck target."""
+
+    nn_files = {
+        path.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", "."): path
+        for path in _iter_lean_files()
+        if path == REPO_ROOT / "NN.lean" or path.is_relative_to(REPO_ROOT / "NN")
+    }
+    import_re = re.compile(
+        r"^\s*(?:public\s+)?import\s+([A-Za-z0-9_.]+)",
+        flags=re.MULTILINE,
+    )
+    imports: dict[str, list[str]] = {}
+    for module, path in nn_files.items():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        imports[module] = [name for name in import_re.findall(text) if name in nn_files]
+
+    covered: set[str] = set()
+    pending = list(LEAN_TYPECHECK_ROOTS)
+    while pending:
+        module = pending.pop()
+        if module in covered or module not in nn_files:
+            continue
+        covered.add(module)
+        pending.extend(imports.get(module, []))
+
+    for module, path in sorted(nn_files.items()):
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        if module in covered or rel.startswith(LEAN_TYPECHECK_GLOB_PREFIXES):
+            continue
+        findings.append(
+            Finding(
+                "ERROR",
+                path,
+                None,
+                None,
+                "maintained Lean module is not reachable from `NN`, `NNCI`, `NNSlowProofs`, "
+                "`TorchLeanDocs`, or an executable root, and is not covered by the `NNExamples` "
+                "or `NNTests` globs.",
+            )
+        )
+
+
+def _iter_authored_public_docs() -> Iterable[pathlib.Path]:
+    """Yield maintained guide and website sources, excluding generated and vendored trees."""
+
+    yield REPO_ROOT / "README.md"
+    yield from (REPO_ROOT / "blueprint/TorchLeanBlueprint").rglob("*.lean")
+    for path in (REPO_ROOT / "home_page").rglob("*.md"):
+        if any(part in {"blueprint", "_site", "docs", "vendor"} for part in path.parts):
+            continue
+        yield path
+
+
+def _normalized_prose_paragraphs(text: str) -> Iterable[tuple[str, int]]:
+    """Yield long prose paragraphs suitable for exact-duplication checks."""
+
+    offset = 0
+    for paragraph in re.split(r"\n\s*\n", text):
+        start = text.find(paragraph, offset)
+        offset = start + len(paragraph)
+        normalized = " ".join(line.strip() for line in paragraph.splitlines())
+        if len(normalized) < 240:
+            continue
+        if any(marker in paragraph for marker in ("```", ":::", "https://", ":=")):
+            continue
+        if normalized.startswith(("import ", "public import ", "#", "<")):
+            continue
+        yield normalized, start
 
 
 def _iter_generated_script_artifacts() -> Iterable[pathlib.Path]:
@@ -780,6 +978,46 @@ def _mask_lean_comments_and_strings(text: str) -> str:
         i += 1
 
     return "".join(out)
+
+
+def _internal_namespace_lines(masked: str) -> set[int]:
+    """Return lines nested under a namespace with an `Internal` component.
+
+    This lightweight namespace scan is deliberately narrower than a Lean parser. It only supports
+    the ordinary one-line `namespace`, `section`, and `end` forms used by TorchLean source files.
+    """
+
+    frames: list[tuple[str, tuple[str, ...]]] = []
+    internal_lines: set[int] = set()
+    namespace_re = re.compile(r"^\s*namespace\s+([A-Za-z0-9_.]+)\s*$")
+    section_re = re.compile(r"^\s*(?:@\[[^]]+\]\s*)?(?:public\s+)?section(?:\s+([A-Za-z0-9_]+))?\s*$")
+    end_re = re.compile(r"^\s*end(?:\s+([A-Za-z0-9_.]+))?\s*$")
+
+    for line_number, line in enumerate(masked.splitlines(), start=1):
+        if any(kind == "namespace" and "Internal" in components
+               for kind, components in frames):
+            internal_lines.add(line_number)
+
+        if match := namespace_re.match(line):
+            frames.append(("namespace", tuple(match.group(1).split("."))))
+            continue
+        if match := section_re.match(line):
+            name = (match.group(1),) if match.group(1) else ()
+            frames.append(("section", name))
+            continue
+        if match := end_re.match(line):
+            name = match.group(1)
+            if name is None:
+                if frames:
+                    frames.pop()
+                continue
+            final_component = name.rsplit(".", 1)[-1]
+            for index in range(len(frames) - 1, -1, -1):
+                if frames[index][1] and frames[index][1][-1] == final_component:
+                    del frames[index:]
+                    break
+
+    return internal_lines
 
 
 def _check_local_source_refs(path: pathlib.Path, text: str, findings: list[Finding]) -> None:
@@ -1007,6 +1245,8 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             )
         )
 
+    _check_lean_target_coverage(findings)
+
     for path in _iter_generated_script_artifacts():
         findings.append(
             Finding(
@@ -1028,7 +1268,10 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
     for env_var, rel_impl in DOCUMENTED_ENV_VAR_IMPLEMENTATIONS.items():
         docs_mention = False
         for path in list(REPO_ROOT.glob("README.md")) + list((REPO_ROOT / "blueprint").rglob("*.lean")) + list((REPO_ROOT / "home_page").rglob("*.md")):
-            if any(part in {"_site", "docs", "vendor"} for part in path.relative_to(REPO_ROOT).parts):
+            if any(
+                part in {".lake", "_site", "docs", "vendor"}
+                for part in path.relative_to(REPO_ROOT).parts
+            ):
                 continue
             try:
                 if env_var in path.read_text(encoding="utf-8"):
@@ -1098,8 +1341,13 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         + list((REPO_ROOT / "NN").rglob("*.md"))
         + list((REPO_ROOT / "scripts").rglob("*.md"))
     )
+    authored_public_docs = set(_iter_authored_public_docs())
+    seen_prose: dict[str, tuple[pathlib.Path, int]] = {}
     for path in doc_fact_paths:
-        if any(part in {"_site", "docs", "vendor"} for part in path.relative_to(REPO_ROOT).parts):
+        if any(
+            part in {".lake", "_site", "docs", "vendor"}
+            for part in path.relative_to(REPO_ROOT).parts
+        ):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -1114,6 +1362,41 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             for m in rx.finditer(text):
                 line, col = _line_col(text, m.start())
                 findings.append(Finding("ERROR", path, line, col, msg))
+        for rx, msg in PUBLIC_DOC_API_BANNED_PATTERNS:
+            for m in rx.finditer(text):
+                line, col = _line_col(text, m.start())
+                findings.append(Finding("ERROR", path, line, col, msg))
+        if path in authored_public_docs:
+            for rx, msg in PUBLIC_GUIDE_BANNED_PATTERNS + DOC_PROSE_BANNED_PATTERNS:
+                for m in rx.finditer(text):
+                    line, col = _line_col(text, m.start())
+                    findings.append(Finding("ERROR", path, line, col, msg))
+            for paragraph, start in _normalized_prose_paragraphs(text):
+                previous = seen_prose.get(paragraph)
+                if previous is None:
+                    seen_prose[paragraph] = (path, start)
+                    continue
+                previous_path, previous_start = previous
+                line, col = _line_col(text, start)
+                previous_line, _ = _line_col(
+                    previous_path.read_text(encoding="utf-8"), previous_start
+                )
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "repeats a long prose paragraph from "
+                        f"`{previous_path.relative_to(REPO_ROOT)}:{previous_line}`; keep one "
+                        "account and link or summarize it here.",
+                    )
+                )
+            if path == REPO_ROOT / "README.md" or path.is_relative_to(REPO_ROOT / "home_page"):
+                for rx, msg in PUBLIC_WEBSITE_API_BANNED_PATTERNS:
+                    for m in rx.finditer(text):
+                        line, col = _line_col(text, m.start())
+                        findings.append(Finding("ERROR", path, line, col, msg))
         for m in TORCHLEAN_SOURCE_LINK_RE.finditer(text):
             raw_target = m.group(1).split("#", 1)[0]
             target = urllib.parse.unquote(raw_target)
@@ -1189,6 +1472,15 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             )
 
     banned_regexes: list[tuple[re.Pattern[str], str]] = [
+        (
+            re.compile(r"\b(?:rowSoftmaxFwd|rowLogSoftmaxFwd)\b"),
+            "obsolete value-only CUDA softmax adapters were removed; retain the workspace from "
+            "`rowSoftmaxForward` or `rowLogSoftmaxForward` for explicit buffer ownership.",
+        ),
+        (
+            re.compile(r"\b[A-Za-z0-9_]*TList[A-Za-z0-9_]*\b|\btlist!\b"),
+            "the old tensor-list API was removed; use the canonical `TorchLean.TensorPack` API.",
+        ),
         (re.compile(r"\bnative_decide\b"), "`native_decide` is banned in TorchLean."),
         (re.compile(r"\bsorry\b"), "`sorry` is banned in TorchLean sources."),
         (re.compile(r"\badmit\b"), "`admit` is banned in TorchLean sources."),
@@ -1201,6 +1493,26 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             "old lower training names are removed; use `TrainConfig`, `LoaderTrainConfig`, and `TrainReport`.",
         ),
         (
+            re.compile(r"\bRuntime\.Autograd\.Train\.(?:Dataset|DataLoader)\b"),
+            "generic data containers live in `TorchLean.Data`; do not place them under the autograd runtime.",
+        ),
+        (
+            re.compile(
+                r"\b(?:ProgramWithNatInputs|natInputShapes|validateNatInputs|"
+                r"NatVecRef|inputNatVec|getNatVec|setNatVec)\b"
+            ),
+            "Nat-specific program input plumbing was removed; use generic typed data inputs.",
+        ),
+        (
+            re.compile(r"\b(?:castRankOneDim|relaxRankOne|relaxRankOneLower)\b"),
+            "removed rank-specific helper name found; use `Tensor.castShape`, `relaxVector`, or "
+            "`relaxVectorLower`.",
+        ),
+        (
+            re.compile(r"\b(?:PackedDataset|PackedTensorErrorLe|RealPackedTensorEnclosed)\b"),
+            "old packed-tensor names were removed; use `TensorDataset` and the `SomeTensor` predicates.",
+        ),
+        (
             re.compile(r"\beffectiveFitBatchSize\b"),
             "old lower training helper names are removed; use `effectiveTrainBatchSize`.",
         ),
@@ -1211,6 +1523,15 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         (
             re.compile(r"\bverifyLInfIBP\b|\b(Trainer\.)?Verify\.robustLInf\b"),
             "duplicate verification helper names are removed; use `verifyRobustLInf` on trained results or `Trainer.Verify.lInfIBP` for requests.",
+        ),
+        (
+            re.compile(
+                r"\b(?:RuntimeSettings|argmaxRankOne|rankOneTensorToArray|rankOneTensorToPy|"
+                r"matrixTensorToPy|rankFourTensorToPy)\b|"
+                r"\b(?:argmaxRankOne|correctOneHotRankOne)\?"
+            ),
+            "removed compatibility name found; use `Trainer.RunConfig`, the axis-general metric "
+            "operations, `Tensor.toArray`, or arbitrary-rank `tensorToPyString`.",
         ),
         (
             re.compile(
@@ -1247,7 +1568,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                 r"\b(?:DVal|FlatDVal|flatDValShape|flatDValTensor|permuteDVal|"
                 r"mseLossDVal|getDVal|toDVal|dValOfAny|dValsOfCtx)\b"
             ),
-            "removed shape-tagged-value alias found; use `Spec.PackedTensor` and its canonical operations.",
+            "removed shape-tagged-value alias found; use `Spec.SomeTensor` and its canonical operations.",
         ),
         (
             re.compile(r"\bautograd\.func\.Fn\b|\babbrev\s+Fn\b"),
@@ -1273,15 +1594,19 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             "removed misleading API name found; use the canonical name that states its fallback or scalar semantics.",
         ),
         (
-            re.compile(r"\b(?:Runtime\.Autograd\.Torch|TorchLean)\.matmul\b"),
-            "the rank-two public operation is `mm`; reserve `matmul` for rank-polymorphic broadcasting semantics.",
+            re.compile(
+                r"\b(?:Runtime\.Autograd\.(?:Torch|TorchLean)|TorchLean\.Runtime)\."
+                r"(?:mm|bmm)\b"
+            ),
+            "rank-specific public matrix products were removed; use generic `matmul`.",
         ),
         (
             re.compile(
-                r"\b(?:flattenBatch|flattenBatchPrefix|classifierBatch|regressorBatch|"
+                r"\b(?:flattenBatch|flattenBatchPrefix|flattenLeading|mapLeading|zipWithLeading|"
+                r"classifierBatch|regressorBatch|"
                 r"uniformND|maskND|randND|loadCsvTensorND)\b"
             ),
-            "removed dimension-specific API name found; use `flattenLeading`, a head with an explicit leading shape, or the `*Dims` random constructor.",
+            "removed dimension-specific API name found; use `flattenAfter`, a head with an explicit leading shape, or shape-indexed `rand.uniform`/`rand.mask`.",
         ),
         (
             re.compile(
@@ -1355,7 +1680,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                 r"simpleLSTMToModuleSpec|lstmClassifierToModuleSpec|biLSTMToModuleSpec|"
                 r"ModSpec|NNModuleSpec|SpecChain|ExportFunctions|export_func|SpecModule|"
                 r"Proofs\.RuntimeApprox\.TList|"
-                r"[A-Za-z0-9_]*ModuleSpec|composeRight|mapEach|extractLayerInfo|"
+                r"[A-Za-z0-9_]*ModuleSpec|composeRight|extractLayerInfo|"
                 r"exportSpecChain|exportMLPFromSpecChain|toModuleSpec|"
                 r"flatIndexAux|flatIndexAux_lt|andThenAux|eval_andThenAux|"
                 r"TypedGraphWithAux|lowerToTypedGraphWithAux|"
@@ -1381,6 +1706,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                 r"gatherScalarRef|gatherRowRef|gatherVecRef|gatherRowsRef|"
                 r"nllNat|crossEntropyNat|"
                 r"rowTargetFlatIndices|"
+                r"text\.causalMask|"
                 r"Data\.(?:fromList|toList|size|isEmpty))\b"
             ),
             "removed specialized or inconsistently named helper found; use the canonical shape-general API.",
@@ -1404,8 +1730,22 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             ),
             "removed checkpoint or definitional-theorem name found; use the shared optimizer-state checkpoint API.",
         ),
-        (re.compile(r"\bby\s+omega\b"), "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas."),
-        (re.compile(r"^\s*omega\b", flags=re.MULTILINE), "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas."),
+        (
+            re.compile(
+                r"\b(?:conv2d|convTranspose2d|maxPool2d|maxPool2dPad|smoothMaxPool2d|"
+                r"smoothMaxPool2dPad|avgPool2d|avgPool2dPad|batchNormChannelFirst|"
+                r"batchNorm2d|batchNorm2dNchw|batchNorm2dChwEval|instanceNorm2dNchw|"
+                r"groupNorm2dNchw|transpose2d|transpose3dFirstToLast|"
+                r"transpose3dLastToFirst|transpose3dLastTwo|nchwToNhwc|nhwcToNchw|"
+                r"padChannelsFirst2d|Conv2dSpec|ConvTranspose2dSpec|MaxPool2dSpec|"
+                r"AvgPool2dSpec|AdaptiveAvgPool2dSpec|AdaptiveMaxPool2dSpec)\b"
+            ),
+            "fixed-rank spatial API name found; use the rank-polymorphic convolution, pooling, normalization, permutation, or adaptive-pooling API.",
+        ),
+        (
+            re.compile(r"\bomega\b"),
+            "`omega` is banned in TorchLean; prefer `linarith`/`nlinarith`/`grind` or small arithmetic lemmas.",
+        ),
         (re.compile(r"\bsimp\s*\[\s*\*(\s*[,\]])"), "`simp [*]` is banned; prefer `simp [h₁, h₂]` or `simp (config := ...)` with explicit hypotheses."),
         (
             re.compile(r"\bset_option\s+maxHeartbeats\b"),
@@ -1446,11 +1786,80 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
 
         text = raw.decode("utf-8", errors="replace")
         masked = _mask_lean_comments_and_strings(text)
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        internal_namespace_lines = _internal_namespace_lines(masked)
         _check_local_source_refs(path, text, findings)
         _check_lean_doc_math(path, text, findings)
         _check_backend_contract_refs(path, text, lake_text, findings)
 
-        rel = path.relative_to(REPO_ROOT).as_posix()
+        import_directives: dict[str, int] = {}
+        import_re = re.compile(
+            r"^\s*((?:(?:public|private)\s+)?(?:meta\s+)?import\s+([A-Za-z0-9_.]+))\s*$",
+            flags=re.MULTILINE,
+        )
+        # Lean module imports form one contiguous block at the start of a file. Restrict the
+        # check to that block so `import ...` lines in Verso code examples are not mistaken for
+        # dependencies of the documentation module itself.
+        import_header_lines: list[str] = []
+        saw_import = False
+        for header_line in masked.splitlines(keepends=True):
+            if import_re.fullmatch(header_line.rstrip("\r\n")):
+                saw_import = True
+                import_header_lines.append(header_line)
+            elif not saw_import or not header_line.strip():
+                import_header_lines.append(header_line)
+            else:
+                break
+        import_header = "".join(import_header_lines)
+        for match in import_re.finditer(import_header):
+            directive = " ".join(match.group(1).split())
+            module_name = match.group(2)
+            line, col = _line_col(text, match.start())
+            if rel.startswith("NN/CI/") and directive.startswith("public import"):
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "CI import targets compile dependencies but must not re-export them; "
+                        "use a private `import`.",
+                    )
+                )
+            previous_line = import_directives.get(directive)
+            if previous_line is None:
+                import_directives[directive] = line
+            else:
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        f"duplicate import `{module_name}`; it was already imported on line "
+                        f"{previous_line}.",
+                    )
+                )
+
+        if rel.startswith("NN/API") and TOP_LEVEL_API_DECL_RE.search(masked) is None:
+            for match in PUBLIC_IMPORT_RE.finditer(import_header):
+                module_name = match.group("module")
+                if (
+                    module_name in BROAD_LOW_LEVEL_IMPORTS
+                    or module_name.startswith(BROAD_LOW_LEVEL_IMPORT_PREFIXES)
+                ):
+                    line, col = _line_col(text, match.start("module"))
+                    findings.append(
+                        Finding(
+                            "ERROR",
+                            path,
+                            line,
+                            col,
+                            f"import-only API umbrella re-exports low-level module `{module_name}`; "
+                            "export a focused API module instead.",
+                        )
+                    )
+
         ownership_sensitive_cuda_modules = {
             "NN/Runtime/Autograd/Engine/Cuda/Buffer.lean",
             "NN/Runtime/Autograd/Engine/Cuda/Kernels.lean",
@@ -1501,6 +1910,90 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
             if line.endswith(" "):
                 findings.append(Finding("ERROR", path, i, len(line), "trailing whitespace."))
 
+        if rel.startswith("NN/"):
+            fixed_vector_re = re.compile(r"\b(?:List\.)?Vector\b|#v\[")
+            for m in fixed_vector_re.finditer(masked):
+                line, col = _line_col(text, m.start())
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "fixed-shape numerical data must use `Spec.Tensor`; use `Array` for "
+                        "dynamic homogeneous storage.",
+                    )
+                )
+
+            removed_numeric_container_re = re.compile(
+                r"\b(?:Tensor\.ofList|NN\.Tensor\.ofList|someTensorOfArray|"
+                r"ofArrayDynamic|"
+                r"someTensorOfList|fromFloatList|"
+                r"Dataset\.ofList|Dataset\.toList|cycleList(?:OrError)?|floatSampleArray|"
+                r"vectorTensorTo(?:List|Py)|tensorOfFlatListExact)\b"
+            )
+            for m in removed_numeric_container_re.finditer(masked):
+                line, col = _line_col(text, m.start())
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "removed numerical-container API: use a shaped `Tensor` or an `Array` "
+                        "boundary instead.",
+                    )
+                )
+
+            removed_public_ops_re = re.compile(r"(?<!\.)\bTorchLean\.Ops\b")
+            for m in removed_public_ops_re.finditer(masked):
+                line, col = _line_col(text, m.start())
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "removed public runtime namespace: use `TorchLean.Runtime` operations.",
+                    )
+                )
+
+            removed_public_ref_re = re.compile(r"\b(?:TorchLean\.)?Runtime\.RefTy\b")
+            for m in removed_public_ref_re.finditer(masked):
+                line, col = _line_col(text, m.start())
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "removed public runtime handle: use `TorchLean.Runtime.ValueRef`.",
+                    )
+                )
+
+            dynamic_numeric_list_re = re.compile(
+                r"\bList\s+(?:Float|Rat|Int|Bool|UInt8|UInt16|UInt32|UInt64)\b|"
+                r"\bList\s*\(\s*(?:Probe|Sample\.Supervised|LinParams)\b|"
+                r"\bList\s*\(\s*FlatAffine\b|"
+                r"\bList\s+PinnLayer\b|"
+                r"\bIO\.Ref\s*\(\s*List\s+Nat\s*\)|"
+                r"\bList\s+NN\.Backend\.(?:AcceptedKernel|Provider)\b|"
+                r"\bList\s*\(\s*NN\.Backend\.KernelHandler\b|"
+                r"\bhiddenDims\s*:\s*List\s+Nat\b"
+            )
+            for m in dynamic_numeric_list_re.finditer(masked):
+                line, col = _line_col(text, m.start())
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        path,
+                        line,
+                        col,
+                        "dynamic homogeneous numerical collections must use `Array`; reserve "
+                        "`List` for type-level or proof-recursive structure.",
+                    )
+                )
+
         for rx, msg in banned_regexes:
             for m in rx.finditer(masked):
                 line, col = _line_col(text, m.start())
@@ -1538,8 +2031,8 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
         if is_shape_generic_public_api:
             for declaration in PUBLIC_DECL_RE.finditer(masked):
                 name = declaration.group("name")
-                if PUBLIC_LAYOUT_NAME_RE.search(name):
-                    line, col = _line_col(text, declaration.start("name"))
+                line, col = _line_col(text, declaration.start("name"))
+                if line not in internal_namespace_lines and PUBLIC_LAYOUT_NAME_RE.search(name):
                     findings.append(
                         Finding(
                             "ERROR",
@@ -1547,7 +2040,7 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                             line,
                             col,
                             f"public declaration `{name}` encodes a fixed rank or memory layout; "
-                            "express axes through `Spec.Shape`, `Vector Nat d`, or a domain-specific "
+                            "express axes through `Spec.Shape`, `Spec.Tensor Nat [d]`, or a domain-specific "
                             "example outside the public tensor/model API.",
                         )
                     )
@@ -1577,12 +2070,6 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                             "`NN.API.Trainer.Train` must stay an import-only aggregator; put training implementation in `NN.API.Trainer.Train.*` modules.",
                     )
                 )
-
-        if any(rel == prefix or rel.startswith(prefix) for prefix in PUBLIC_GUIDE_PREFIXES):
-            for rx, msg in PUBLIC_GUIDE_BANNED_PATTERNS:
-                for m in rx.finditer(text):
-                    line, col = _line_col(text, m.start())
-                    findings.append(Finding("ERROR", path, line, col, msg))
 
         if rel == "NN/API/Neural.lean" and re.search(
             r"^\s*public\s+import\s+NN\.API\.Trainer\s*$", masked, flags=re.MULTILINE

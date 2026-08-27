@@ -27,7 +27,7 @@ namespace GraphSpec
 namespace Models
 namespace TorchLean
 
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 /-- Attention + normalization block (no residuals yet). -/
 def transformerBlock
@@ -35,14 +35,13 @@ def transformerBlock
     {h_n : n ≠ 0} {h_dModel : dModel > 0}
     (seedW : Nat := 0)
     (seedGamma seedBeta : Nat := 0) :
-    _root_.Runtime.Autograd.TorchLean.NN.Seq (.dim batch (.dim n (.dim dModel .scalar)))
-      (.dim batch (.dim n (.dim dModel .scalar))) :=
+    _root_.Runtime.Autograd.TorchLean.NN.Seq [batch, n, dModel] [batch, n, dModel] :=
   tlseq[
     _root_.Runtime.Autograd.TorchLean.NN.multiHeadAttention
       (batch := batch) (n := n) (dModel := dModel) (numHeads := numHeads) (headDim := headDim)
       (h1 := h_n) (seedW := seedW),
     _root_.Runtime.Autograd.TorchLean.NN.layerNorm
-      (.dim batch (.dim n .scalar)) dModel
+      [batch, n] dModel
       (hWidth := h_dModel)
       (seedGamma := seedGamma) (seedBeta := seedBeta)
   ]

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Tensor
+public import NN.Tensor
 
 import Mathlib.Algebra.Order.Algebra
 
@@ -39,15 +39,15 @@ Ordering is row-major: for each `x` in `xs` (outer loop), we sweep all `y` in `y
 PyTorch analogue: `torch.cartesian_prod(xs, ys)` (up to shape).
 -/
 def cartesianGrid {α : Type} [Zero α] {m n : Nat}
-    (xs : Spec.Tensor α (.dim m .scalar)) (ys : Spec.Tensor α (.dim n .scalar)) :
-    Spec.Tensor α (.dim (m * n) (.dim 2 .scalar)) :=
-  Spec.Tensor.dim (fun ij =>
+    (xs : Tensor α [m]) (ys : Tensor α [n]) :
+    Tensor α [m * n, 2] :=
+  Tensor.stack 0 (fun ij =>
     let i : Fin m := ij.divNat (m := m) (n := n)
     let j : Fin n := ij.modNat (m := m) (n := n)
-    let x : α := _root_.Spec.Tensor.item (_root_.Spec.get xs i)
-    let y : α := _root_.Spec.Tensor.item (_root_.Spec.get ys j)
-    Spec.Tensor.dim (fun k =>
-      Spec.Tensor.scalar <|
+    let x : α := Tensor.item (Tensor.get xs i)
+    let y : α := Tensor.item (Tensor.get ys j)
+    Tensor.stack 0 (fun k =>
+      Tensor.full [] <|
         match k.val with
         | 0 => x
         | 1 => y
@@ -64,25 +64,23 @@ Linearly spaced points including endpoints.
 PyTorch analogue: `torch.linspace`.
 -/
 def linspace {α : Type} [Context α] (lo hi : α) (count : Nat) :
-    Spec.Tensor α (.dim count .scalar) :=
+    Tensor α [count] :=
   match count with
-  | 0 => Spec.Tensor.dim (fun i => nomatch i)
-  | 1 => Spec.Tensor.dim (fun _ => Spec.Tensor.scalar lo)
+  | 0 => by
+      simpa [Shape.insertAxis] using
+        Tensor.stack (α := α) (count := 0) (shape := Spec.Shape.scalar) 0 Fin.elim0
+  | 1 => Tensor.repeatAxis 0 1 (Tensor.full [] lo)
   | n + 2 =>
       let denom : α := (n + 1 : Nat)
-      Spec.Tensor.dim (fun i =>
+      Tensor.stack 0 (fun i =>
         let t : α := (i.1 : Nat) / denom
-        Spec.Tensor.scalar (lo + t * (hi - lo)))
-
-/-- Rectangular grid over `[xLo, xHi] x [yLo, yHi]`. -/
-def rectangularGrid {α : Type} [Context α] (xLo xHi yLo yHi : α) (xCount yCount : Nat) :
-    Spec.Tensor α (.dim (xCount * yCount) (.dim 2 .scalar)) :=
-  cartesianGrid (linspace xLo xHi xCount) (linspace yLo yHi yCount)
+        Tensor.full [] (lo + t * (hi - lo)))
 
 /-- Square grid over `[lo, hi] x [lo, hi]`. -/
 def squareGrid {α : Type} [Context α] (lo hi : α) (count : Nat) :
-    Spec.Tensor α (.dim (count * count) (.dim 2 .scalar)) :=
-  rectangularGrid lo hi lo hi count count
+    Tensor α [count * count, 2] :=
+  let axis := linspace lo hi count
+  cartesianGrid axis axis
 
 end Synthetic
 end TorchLean.Data

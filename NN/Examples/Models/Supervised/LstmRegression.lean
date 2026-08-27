@@ -88,20 +88,20 @@ def cfg : nn.models.RecurrentConfig :=
     outputSize := 1 }
 
 /-- Input shape: one scalar observation at each of `seqLen` timesteps. -/
-abbrev σ : Shape :=
-  cfg.inputShape
+abbrev σ : List Nat :=
+  [seqLen, inputSize]
 
 /-- Target/prediction shape: one next-step scalar at each of `seqLen` timesteps. -/
-abbrev τ : Shape :=
-  cfg.outputShape
+abbrev τ : List Nat :=
+  [seqLen, cfg.outputSize]
 
 /-- Raw input shape stored by the prepared household-power `.npy` files. -/
-abbrev rawσ : Shape :=
-  .dim rawSeqLen (.dim inputSize .scalar)
+abbrev rawσ : List Nat :=
+  [rawSeqLen, inputSize]
 
 /-- Raw target shape stored by the prepared household-power `.npy` files. -/
-abbrev rawτ : Shape :=
-  .dim rawSeqLen (.dim inputSize .scalar)
+abbrev rawτ : List Nat :=
+  [rawSeqLen, inputSize]
 
 /--
 The actual forecaster.
@@ -124,7 +124,8 @@ def dataTags (xPath yPath : System.FilePath) : Array String :=
 /-- Validate the prepared input file and return its available window count. -/
 def availableWindows (xPath : System.FilePath) :
     IO (Except String Nat) :=
-  Data.availableNpyRows xPath [rawSeqLen, inputSize] s!"X.npy shape (N,{rawSeqLen},{inputSize})"
+  Data.availableNpyRows xPath [rawSeqLen, inputSize]
+    s!"X.npy shape (N,{rawSeqLen},{inputSize})"
 
 /-- Load the Float version once for reporting probes and short training. -/
 def loadReportSamples (xPath yPath : System.FilePath) (windows : Nat) :
@@ -134,10 +135,7 @@ def loadReportSamples (xPath yPath : System.FilePath) (windows : Nat) :
 
 /-- Keep the first `seqLen` rows of a prepared `rawSeqLen × 1` tensor. -/
 def takePrefix (t : Tensor Float rawσ) : Tensor Float σ :=
-  match t with
-  | Spec.Tensor.dim rows =>
-      Spec.Tensor.dim fun i =>
-        rows ⟨i.val, Nat.lt_of_lt_of_le i.isLt (by decide : seqLen ≤ rawSeqLen)⟩
+  Tensor.take t 0 seqLen (by decide : seqLen ≤ rawSeqLen)
 
 /-- Convert one real 24-hour prepared window into the tiny recurrent training sample. -/
 def prefixSample (sample : Sample.Supervised Float rawσ rawτ) : Sample.Supervised Float σ τ :=
@@ -150,15 +148,7 @@ The row is clamped so the reporting loop remains valid if `seqLen` is changed wi
 the number of displayed rows.
 -/
 def readSeriesAt (t : Tensor Float τ) (i : Nat) : Float :=
-  let i : Fin seqLen :=
-    ⟨Nat.min i (seqLen - 1),
-      Nat.lt_of_le_of_lt (Nat.min_le_right i (seqLen - 1)) (by decide)⟩
-  match t with
-  | Spec.Tensor.dim rows =>
-      match rows i with
-      | Spec.Tensor.dim cols =>
-          match cols ⟨0, by decide⟩ with
-          | Spec.Tensor.scalar x => x
+  (Tensor.at? t #[Nat.min i (seqLen - 1), 0]).getD 0.0
 
 /--
 Render the first few target values for one forecast window.
@@ -209,13 +199,13 @@ def trainForecast (opts : Options) (train : RealData.HouseholdPowerModelTrainFla
         .regression
         (seed := train.seed)
   trainer.train
-    (Data.floatSampleArray samples)
+    (Data.floatSamples samples)
     (CLI.Training.OptimizerOptions.toTrainerOptions train.toOptimizerOptions
       (title := "LSTM seasonal regression")
       (notes := ModelZoo.ForecastWindowDataFlags.trainLogNotes train.toForecastWindowDataFlags ++
         #[s!"lr={train.lr}", s!"cuda_mem_watch={train.cudaMemWatch}",
           "task=next-step household power forecasting"] ++ dataTags train.xPath train.yPath))
-    [probe]
+    #[probe]
 
 /-- Executable entrypoint for CPU/CUDA Float training. -/
 def main (args : List String) : IO UInt32 :=

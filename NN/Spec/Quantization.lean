@@ -28,12 +28,12 @@ namespace AffineQuantizer
 /-- Apply the affine quantizer independently at every coordinate of an arbitrary-rank tensor. -/
 noncomputable def quantizeTensor (q : AffineQuantizer) (rnd : ℝ → ℤ) {s : Shape}
     (x : Tensor ℝ s) : Tensor ℤ s :=
-  mapTensor (q.quantize rnd) x
+  Tensor.map (q.quantize rnd) x
 
 /-- Reconstruct every code in an arbitrary-rank tensor on the quantizer's real grid. -/
 noncomputable def dequantizeTensor (q : AffineQuantizer) {s : Shape}
     (codes : Tensor ℤ s) : Tensor ℝ s :=
-  mapTensor q.dequantize codes
+  Tensor.map q.dequantize codes
 
 /-- Pointwise condition saying that quantization does not clip any coordinate of `x`. -/
 def SaturationInactive (q : AffineQuantizer) (rnd : ℝ → ℤ) {s : Shape}
@@ -48,7 +48,7 @@ def CodesInRange (q : AffineQuantizer) {s : Shape} (codes : Tensor ℤ s) : Prop
 theorem quantizeTensor_inRange (q : AffineQuantizer) (rnd : ℝ → ℤ)
     {s : Shape} (x : Tensor ℝ s) :
     q.CodesInRange (q.quantizeTensor rnd x) := by
-  apply Tensor.forall_mapTensor (Tensor.forall_true x)
+  apply Tensor.forall_map (Tensor.forall_true x)
   intro a _
   exact q.quantize_mem rnd a
 
@@ -79,12 +79,12 @@ theorem quantizeTensor_dequantizeTensor (q : AffineQuantizer) (rnd : ℝ → ℤ
   | scalar =>
       cases codes with
       | scalar code =>
-          simp only [quantizeTensor, dequantizeTensor, mapTensor]
+          simp only [quantizeTensor, dequantizeTensor, Tensor.map]
           rw [q.quantize_dequantize rnd hcodes.1 hcodes.2]
   | dim n inner ih =>
       cases codes with
       | dim values =>
-          simp only [quantizeTensor, dequantizeTensor, mapTensor]
+          simp only [quantizeTensor, dequantizeTensor, Tensor.map]
           congr 1
           funext i
           exact ih (hcodes i)

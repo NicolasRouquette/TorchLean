@@ -365,7 +365,7 @@ Context-wise addition bound (NF runtime vs spec).
 This produces an `EList` of `linf_norm` bounds for adding two contexts elementwise, and is used when
 reverse-mode accumulation must combine contributions from multiple consumers.
 -/
-def ctxAddBound : {Δ : List Shape} → EList Δ → EList Δ → TList R Δ → TList R Δ → EList Δ
+def ctxAddBound : {Δ : List Shape} → EList Δ → EList Δ → _root_.TorchLean.TensorPack R Δ → _root_.TorchLean.TensorPack R Δ → EList Δ
   | [], .nil, .nil, .nil, .nil => .nil
   | _ :: ss, .cons ex exs, .cons ey eys, .cons x xs, .cons y ys =>
       .cons (linfNorm (addBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := _) ex ey x y))
@@ -378,12 +378,12 @@ If `xS ~ xR ± epsx` and `yS ~ yR ± epsy`, then `(xS + yS) ~ (xR + yR)` with er
 `ctxAddBound epsx epsy xR yR`.
 -/
 theorem approxCtx_add {Δ : List Shape} :
-    ∀ (xS yS : TList SpecScalar Δ) (xR yR : TList R Δ) (epsx epsy : EList Δ),
+    ∀ (xS yS : _root_.TorchLean.TensorPack SpecScalar Δ) (xR yR : _root_.TorchLean.TensorPack R Δ) (epsx epsy : EList Δ),
       approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR epsx →
       approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) yS yR epsy →
         approxCtx (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
-          (TList.add (α := SpecScalar) xS yS)
-          (TList.add (α := R) xR yR)
+          (_root_.TorchLean.TensorPack.add (α := SpecScalar) xS yS)
+          (_root_.TorchLean.TensorPack.add (α := R) xR yR)
           (ctxAddBound (β := β) (fexp := fexp) (rnd := rnd) epsx epsy xR yR) := by
   intro xS yS xR yR epsx epsy hx hy
   induction Δ with
@@ -394,7 +394,7 @@ theorem approxCtx_add {Δ : List Shape} :
       cases yR
       cases epsx
       cases epsy
-      simp [TList.add, ctxAddBound, approxCtx]
+      simp [_root_.TorchLean.TensorPack.add, ctxAddBound, approxCtx]
   | cons s ss ih =>
       cases xS with
       | cons xSh xSt =>
@@ -416,7 +416,7 @@ theorem approxCtx_add {Δ : List Shape} :
                                 have hy0 : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp :=
                                   fexp) (rnd := rnd)) ySh yRh ey :=
                                   hy.1
-                                simpa [TList.add, ctxAddBound] using
+                                simpa [_root_.TorchLean.TensorPack.add, ctxAddBound] using
                                   (approxTensor_add_spec (β := β) (fexp := fexp) (rnd := rnd)
                                     (s := s) (xS := xSh) (yS := ySh) (xR := xRh) (yR := yRh)
                                     (epsx := ex) (epsy := ey) hx0 hy0)
@@ -427,7 +427,7 @@ theorem approxCtx_add {Δ : List Shape} :
                                 have hyT : approxCtx (α := R) (toSpec := toSpec (β := β) (fexp :=
                                   fexp) (rnd := rnd)) ySt yRt eys :=
                                   hy.2
-                                simpa [TList.add, ctxAddBound] using
+                                simpa [_root_.TorchLean.TensorPack.add, ctxAddBound] using
                                   ih (xS := xSt) (yS := ySt) (xR := xRt) (yR := yRt) (epsx := exs)
                                     (epsy := eys) hxT hyT
 

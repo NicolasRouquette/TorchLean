@@ -15,9 +15,8 @@ KAN layers replace each scalar edge by a small trainable one-dimensional functio
 that structure visible: an edge family first expands every scalar input into basis features, and the
 KAN layer learns one coefficient per `(output, input, basis)` edge.
 
-The first built-in family uses triangular piecewise-linear hats. Users can add another family by
-constructing `KanEdgeFamily`: provide a basis dimension and a TorchLean model that maps
-`Vec inDim` to `Vec (inDim * basisDim)`.
+The built-in family uses triangular piecewise-linear hats. Another family consists of a basis
+dimension and a TorchLean model from `[inDim]` to `[inDim * basisDim]`.
 
 References:
 
@@ -49,14 +48,14 @@ structure KanEdgeFamily where
   /-- Number of basis features produced per scalar input coordinate. -/
   basisDim : Nat
   /-- Basis expansion for an unbatched vector of length `inDim`. -/
-  basis : (inDim : Nat) → nn.Sequential (.dim inDim .scalar)
-    (.dim (inDim * basisDim) .scalar)
+  basis : (inDim : Nat) → nn.Sequential [inDim] [inDim * basisDim]
 
 /--
 Configuration for triangular piecewise-linear KAN edge bases.
 
-The basis functions are hats centered at the integer knots $0,\ldots,\mathrm{gridSize}-1$. The input is
-multiplied by `inputScale` before the hats are evaluated. For normalized data in $[0,1]$, setting
+The basis functions are hats centered at the integer knots
+$0,\ldots,\mathrm{gridSize}-1$. The input is multiplied by `inputScale` before the hats are
+evaluated. For normalized data in $[0,1]$, setting
 $\mathrm{inputScale}=\mathrm{gridSize}-1$ spreads the grid across the full interval.
 -/
 structure KanPiecewiseLinear where
@@ -70,7 +69,7 @@ deriving Repr
 namespace KanPiecewiseLinear
 
 /--
-Expand `x : Vec inDim` to all triangular basis features.
+Expand a tensor of shape `[inDim]` to all triangular basis features.
 
 The output is flattened row-major from a `(gridSize × inDim)` table:
 $[\operatorname{basis}_0(x_0),\ldots,\operatorname{basis}_0(x_n),
@@ -81,48 +80,51 @@ $\operatorname{ReLU}(1-|\mathrm{inputScale}\,x_i-k|)$, expressed directly in the
 TorchLean op language rather than through an opaque spline evaluator.
 -/
 def basisLayer (cfg : KanPiecewiseLinear) (inDim : Nat) :
-    nn.Sequential (.dim inDim .scalar) (.dim (inDim * cfg.gridSize) .scalar) :=
+    nn.Sequential [inDim] [inDim * cfg.gridSize] :=
   nn.of
     { kind := s!"KANPiecewiseLinear(grid={cfg.gridSize},scale={cfg.inputScale})"
       stateShapes := []
       initState := .nil
-      requiresGrad := []
+      requiresGrad := #[]
       forward := fun _ {α} _ _ =>
         fun {m} _ _ =>
           fun x =>
             ((do
-              let zeros : Spec.Tensor α (.dim cfg.gridSize (.dim inDim .scalar)) :=
-                Spec.Tensor.dim (fun _ =>
-                  Spec.Tensor.dim (fun _ =>
-                    Spec.Tensor.scalar (0 : α)))
+              let zeros : Tensor α [cfg.gridSize, inDim] :=
+                Spec.fill (0 : α) [cfg.gridSize, inDim]
               let xBasis ← _root_.Runtime.Autograd.Torch.scale (m := m) (α := α) x
                 ((cfg.inputScale : Nat) : α)
               let out0 ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) zeros
               let out ← (List.finRange cfg.gridSize).foldlM (init := out0) (fun acc k => do
-                let centerT : Spec.Tensor α (.dim inDim .scalar) :=
-                  Spec.Tensor.dim (fun _ => Spec.Tensor.scalar ((k.val : Nat) : α))
-                let oneT : Spec.Tensor α (.dim inDim .scalar) :=
-                  Spec.Tensor.dim (fun _ => Spec.Tensor.scalar (1 : α))
+                let centerT : Tensor α [inDim] :=
+                  Spec.fill ((k.val : Nat) : α) [inDim]
+                let oneT : Tensor α [inDim] :=
+                  Spec.fill (1 : α) [inDim]
                 let c ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) centerT
                 let ones ← _root_.Runtime.Autograd.Torch.const (m := m) (α := α) oneT
                 let shifted ← _root_.Runtime.Autograd.Torch.sub (m := m) (α := α) xBasis c
                 let dist ← _root_.Runtime.Autograd.Torch.abs (m := m) (α := α) shifted
                 let raw ← _root_.Runtime.Autograd.Torch.sub (m := m) (α := α) ones dist
                 let basis ← _root_.Runtime.Autograd.Torch.relu (m := m) (α := α) raw
-                _root_.Runtime.Autograd.Torch.scatterAddRow (m := m) (α := α)
-                  (rows := cfg.gridSize) (cols := inDim) acc basis k)
+                let basisRow ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
+                  (s₁ := [inDim]) (s₂ := [1, inDim]) basis (by simp [Spec.Shape.size])
+                let index : Tensor (Fin cfg.gridSize) [1] :=
+                  Spec.Tensor.ofFn (fun _ : Fin 1 => k)
+                _root_.Runtime.Autograd.Torch.scatterAdd (m := m) (α := α)
+                  (s := [cfg.gridSize, inDim]) 0 1 acc basisRow
+                  (_root_.Runtime.Autograd.Torch.dataConst (m := m) (α := α) index))
               let flat ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-                (s₁ := .dim cfg.gridSize (.dim inDim .scalar))
-                (s₂ := .dim (cfg.gridSize * inDim) .scalar)
+                (s₁ := [cfg.gridSize, inDim])
+                (s₂ := [cfg.gridSize * inDim])
                 out (by
                   simp [Spec.Shape.size, Nat.mul_comm])
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-                (s₁ := .dim (cfg.gridSize * inDim) .scalar)
-                (s₂ := .dim (inDim * cfg.gridSize) .scalar)
+                (s₁ := [cfg.gridSize * inDim])
+                (s₂ := [inDim * cfg.gridSize])
                 flat (by
                   simp [Spec.Shape.size, Nat.mul_comm])
             ) : m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
-              (.dim (inDim * cfg.gridSize) .scalar)))
+              [inDim * cfg.gridSize]))
     }
 
 /-- Turn piecewise-linear triangular bases into a general KAN edge family. -/
@@ -147,12 +149,12 @@ structure KanConfig where
 namespace KanConfig
 
 /-- Input shape with arbitrary leading dimensions. -/
-abbrev inputShape (cfg : KanConfig) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (.dim cfg.inDim .scalar)
+abbrev inputShape (cfg : KanConfig) (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.inDim]
 
 /-- Output shape with the same leading dimensions as the input. -/
-abbrev outputShape (cfg : KanConfig) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (.dim cfg.outDim .scalar)
+abbrev outputShape (cfg : KanConfig) (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.outDim]
 
 end KanConfig
 
@@ -163,9 +165,9 @@ The layer first applies the selected edge basis to every input coordinate, then 
 with an ordinary linear map from the expanded features to `outDim`.
 -/
 def kanLayer (inDim outDim : Nat) (edge : KanEdgeFamily) :
-    nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
+  nn.Builder (nn.Sequential [inDim] [outDim]) :=
   nn.Sequential![
-    nn.lift (edge.basis inDim),
+    pure (edge.basis inDim),
     nn.linear (inDim * edge.basisDim) outDim
   ]
 
@@ -174,7 +176,7 @@ namespace Internal
 /-- Recursive KAN stack over one feature vector. Hidden layers use `tanh`. -/
 def kanStack (edge : KanEdgeFamily) :
     (inDim : Nat) → (hidden : List Nat) → (outDim : Nat) →
-      nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar))
+      nn.Builder (nn.Sequential [inDim] [outDim])
   | inDim, [], outDim => kanLayer inDim outDim edge
   | inDim, h :: hs, outDim =>
       nn.Sequential![kanLayer inDim h edge, nn.tanh, kanStack edge h hs outDim]
@@ -188,11 +190,11 @@ Task semantics are deliberately not baked into the model name: use `Trainer.new`
 `task := .regression`, `.oneHotCrossEntropy axis`, or `.custom ...` with the same KAN
 constructor.
 -/
-def kan (cfg : KanConfig) (leading : Spec.Shape := .scalar) :
+def kan (cfg : KanConfig) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   do
     let sample ← Internal.kanStack cfg.edge cfg.inDim cfg.hidden cfg.outDim
-    nn.mapLeading leading sample
+    nn.mapEach leading sample
 
 end models
 end nn

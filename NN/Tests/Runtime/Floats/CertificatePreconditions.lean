@@ -11,7 +11,10 @@ public import NN.Verification.Cert.NodeReplay
 public import NN.Verification.Cert.CROWNNodeCert
 public import NN.Verification.Cert.IBPNodeCert
 public import NN.Verification.ODE.Parse
+public import NN.Verification.PINN.Core
 public import NN.Verification.PINN.PdeParse
+public import NN.Verification.Robustness.MarginCert
+public import NN.Verification.VNNComp.Spec
 public import Lean.Data.Json
 
 /-!
@@ -74,6 +77,12 @@ def parseInputRegion! (source : String) : IO NN.Verification.Json.BoxRegion := d
   | .ok region => pure region
   | .error e => throw <| IO.userError s!"input-region parser rejected a valid fixture: {e}"
 
+/-- Whether a JSON value passes the complete PINN certificate schema checks. -/
+def pinnCertificateAccepted (json : Json) : Bool :=
+  match NN.Verification.PINN.parseCert json with
+  | .ok _ => true
+  | .error _ => false
+
 /-- Compare a computed scalar interval pair with its exact expected endpoints. -/
 def expectFloatPair (msg : String) (actual : Option (Float × Float))
     (expected : Float × Float) : IO Unit := do
@@ -98,28 +107,28 @@ def evalPDEAtTwo (source : String) : Option (Float × Float) := do
 
 def flatBox (lo hi : Fin 2 → Float) : FlatBox IEEE32Exec :=
   { dim := 2
-    lo := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector lo)
-    hi := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector hi) }
+    lo := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn lo)
+    hi := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn hi) }
 
 def flatBox3 : FlatBox IEEE32Exec :=
   { dim := 3
-    lo := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector (fun _ : Fin 3 => 0.0))
-    hi := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector (fun _ : Fin 3 => 1.0)) }
+    lo := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn (fun _ : Fin 3 => 0.0))
+    hi := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn (fun _ : Fin 3 => 1.0)) }
 
 def inputNode (id dim : Nat) : _root_.NN.IR.Node :=
-  { id := id, parents := [], kind := .input, outShape := .dim dim .scalar }
+  { id := id, parents := #[], kind := .input, outShape := [dim] }
 
 def addGraph : _root_.NN.IR.Graph :=
   { nodes := #[
       inputNode 0 2,
       inputNode 1 3,
-      { id := 2, parents := [0, 1], kind := .add, outShape := .dim 2 .scalar }
+      { id := 2, parents := #[0, 1], kind := .add, outShape := [2] }
     ] }
 
 def logGraph : _root_.NN.IR.Graph :=
   { nodes := #[
       inputNode 0 2,
-      { id := 1, parents := [0], kind := .log, outShape := .dim 2 .scalar }
+      { id := 1, parents := #[0], kind := .log, outShape := [2] }
     ] }
 
 def run : IO Unit := do
@@ -147,6 +156,50 @@ def run : IO Unit := do
       "{\"input\":{\"lo\":[0.0],\"hi\":[1.0],\"center\":[0.5],\"eps\":0.5}}"
   expectRejected "endpoint input region accepted an unrelated radius" <|
     parseInputRegion! "{\"input\":{\"lo\":[0.0],\"hi\":[1.0],\"eps\":0.5}}"
+
+  expect "VNN-COMP accepted a reversed input box" <|
+    !NN.Verification.VNNComp.VNNLib.inputBoxValid #[1.0, 0.0] #[0.0, 1.0]
+  expect "VNN-COMP rejected a well-formed input box" <|
+    NN.Verification.VNNComp.VNNLib.inputBoxValid #[-1.0, 0.0] #[1.0, 2.0]
+
+  let reversedMarginEntry ← parseJson! <|
+    "{\"label\":0,\"logits_lo\":[2.0,0.0],\"logits_hi\":[1.0,0.5]}"
+  expectRejected "margin report accepted reversed logit bounds" <|
+    NN.Verification.Robustness.MarginCert.checkOneExample 2 reversedMarginEntry
+
+  let validPinnCert ← parseJson! <|
+    "{\"pinn\":{\"pde\":\"u\",\"h\":0.1,\"eps\":0.0,\"points\":[0.0]}," ++
+    "\"residual_bounds\":{\"lo\":[0.0],\"hi\":[0.0]}," ++
+    "\"residual_bounds_deriv\":{\"lo\":[0.0],\"hi\":[0.0]}," ++
+    "\"u_bounds\":[{\"x\":0.0," ++
+    "\"u_minus\":{\"lo\":0.0,\"hi\":0.0}," ++
+    "\"u\":{\"lo\":0.0,\"hi\":0.0}," ++
+    "\"u_plus\":{\"lo\":0.0,\"hi\":0.0}}]}"
+  expect "a well-formed PINN certificate was rejected" (pinnCertificateAccepted validPinnCert)
+  let negativeSpacing ← parseJson! <|
+    "{\"pinn\":{\"pde\":\"u\",\"h\":-0.1,\"eps\":0.0,\"points\":[0.0]}," ++
+    "\"residual_bounds\":{\"lo\":[0.0],\"hi\":[0.0]}," ++
+    "\"residual_bounds_deriv\":{\"lo\":[0.0],\"hi\":[0.0]},\"u_bounds\":[]}"
+  expect "a PINN certificate with nonpositive spacing was accepted"
+    (!pinnCertificateAccepted negativeSpacing)
+  let negativeRadius ← parseJson! <|
+    "{\"pinn\":{\"pde\":\"u\",\"h\":0.1,\"eps\":-0.1,\"points\":[0.0]}," ++
+    "\"residual_bounds\":{\"lo\":[0.0],\"hi\":[0.0]}," ++
+    "\"residual_bounds_deriv\":{\"lo\":[0.0],\"hi\":[0.0]},\"u_bounds\":[]}"
+  expect "a PINN certificate with a negative perturbation radius was accepted"
+    (!pinnCertificateAccepted negativeRadius)
+  let missingUBounds ← parseJson! <|
+    "{\"pinn\":{\"pde\":\"u\",\"h\":0.1,\"eps\":0.0,\"points\":[0.0]}," ++
+    "\"residual_bounds\":{\"lo\":[0.0],\"hi\":[0.0]}," ++
+    "\"residual_bounds_deriv\":{\"lo\":[0.0],\"hi\":[0.0]},\"u_bounds\":[]}"
+  expect "a PINN certificate with incomplete u_bounds was accepted"
+    (!pinnCertificateAccepted missingUBounds)
+  let reversedPinnInterval ← parseJson! <|
+    "{\"pinn\":{\"pde\":\"u\",\"h\":0.1,\"eps\":0.0,\"points\":[0.0]}," ++
+    "\"residual_bounds\":{\"lo\":[1.0],\"hi\":[0.0]}," ++
+    "\"residual_bounds_deriv\":{\"lo\":[0.0],\"hi\":[0.0]},\"u_bounds\":[]}"
+  expect "a PINN certificate with a reversed residual interval was accepted"
+    (!pinnCertificateAccepted reversedPinnInterval)
 
   IO.println "certificate_preconditions: begin"
 

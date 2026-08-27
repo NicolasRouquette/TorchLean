@@ -6,7 +6,6 @@ can write JSON artifacts and then invoke `lake exe verify` for the selected
 workflow.
 """
 import argparse
-import os
 import subprocess
 import sys
 from pathlib import Path

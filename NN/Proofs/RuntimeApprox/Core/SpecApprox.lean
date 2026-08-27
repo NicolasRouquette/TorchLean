@@ -12,7 +12,6 @@ public import NN.Proofs.RuntimeApprox.Core.Tolerance
 public import NN.Spec.Core.Scalar
 public import NN.Spec.Core.Shape
 public import NN.Spec.Core.Tensor
-public import NN.Spec.Core.Tensor.API
 
 /-!
 # SpecApprox
@@ -54,7 +53,7 @@ noncomputable section
 /-- Convert a runtime tensor into the spec scalar by mapping a scalar function. -/
 def tensorToSpec {α : Type} {s : Shape} (toSpec : α → SpecScalar) (t : Tensor α s) :
     SpecTensor s :=
-  Spec.mapTensor toSpec t
+  Spec.Tensor.map toSpec t
 
 /-- Linf norm on spec tensors. -/
 def linfNorm : ∀ {s : Shape}, SpecTensor s → SpecScalar :=
@@ -178,12 +177,12 @@ structure Witness (α : Type) (s : Shape) where
 /-- Map annotated NeuralFloat tensors to spec scalars. -/
 def neuralTensorToReal {β : NeuralRadix} {s : Shape} (t : Tensor (AnnotatedNeuralFloat β) s) :
     SpecTensor s :=
-  Spec.mapTensor AnnotatedNeuralFloat.toReal t
+  Spec.Tensor.map AnnotatedNeuralFloat.toReal t
 
 /-- Linf bound over annotated NeuralFloat error markers. -/
 def neuralTensorErrorBound {β : NeuralRadix} {s : Shape} (t : Tensor (AnnotatedNeuralFloat β) s) :
     SpecScalar :=
-  linfNorm (Spec.mapTensor (fun x => x.metadata.errorBound) t)
+  linfNorm (Spec.Tensor.map (fun x => x.metadata.errorBound) t)
 
 /-- Annotated NeuralFloat runtime approximation to the spec with explicit epsilon bound. -/
 def neuralRuntimeApprox {β : NeuralRadix} {s : Shape}

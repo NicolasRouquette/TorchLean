@@ -13,7 +13,7 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval.LinearAlgebra
 
 Local semantics for IR concat.  The evaluator keeps the generic-axis implementation in the shared
 `Graph.evalConcat` helper, which moves the requested axis to the front, folds
-`Tensor.concatLeadingAxisSpec`, and moves the result back. `LeadingAxisConcat.Input` packages an
+`Tensor.concatAxisSpec`, and moves the result back. `LeadingAxisConcat.Input` packages an
 input with its leading dimension, `LeadingAxisConcat.fold` specifies nonempty list concatenation,
 and `evalAt_concat_leadingAxis_eq` proves end-to-end graph evaluation correct for every arity of at
 least two.
@@ -39,14 +39,14 @@ theorem evalAt_concat_binary_eq
     Graph.evalAt (α := α)
         (g := binaryGraphOut (.concat axis) s₁ s₂ out)
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s₁ lhs)
+        (input := Spec.SomeTensor.mk (α := α) s₁ lhs)
         (vals := #[
-          Spec.PackedTensor.mk (α := α) s₁ lhs,
-          Spec.PackedTensor.mk (α := α) s₂ rhs
+          Spec.SomeTensor.mk (α := α) s₁ lhs,
+          Spec.SomeTensor.mk (α := α) s₂ rhs
         ]) (i := 2)
       =
       (Graph.evalConcat (α := α) 2 (binaryNodeOut (.concat axis) out) axis
-          [Spec.PackedTensor.mk (α := α) s₁ lhs, Spec.PackedTensor.mk (α := α) s₂ rhs]).bind
+          #[Spec.SomeTensor.mk (α := α) s₁ lhs, Spec.SomeTensor.mk (α := α) s₂ rhs]).bind
         (Graph.normalizeNodeOutput (α := α) 2 (binaryNodeOut (.concat axis) out)) := by
   simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, binaryGraphOut, binaryNodeOut, Graph.getNode, Graph.getNode?,
     Graph.normalizeNodeOutput, Bind.bind, Except.bind, Pure.pure, Except.pure]
@@ -61,18 +61,18 @@ theorem evalAt_concat_binary_ok
     (lhs : Tensor α s₁) (rhs : Tensor α s₂) (y : Tensor α out)
     (hConcat :
       Graph.evalConcat (α := α) 2 (binaryNodeOut (.concat axis) out) axis
-          [Spec.PackedTensor.mk (α := α) s₁ lhs, Spec.PackedTensor.mk (α := α) s₂ rhs] =
-        .ok (Spec.PackedTensor.mk (α := α) out y)) :
+          #[Spec.SomeTensor.mk (α := α) s₁ lhs, Spec.SomeTensor.mk (α := α) s₂ rhs] =
+        .ok (Spec.SomeTensor.mk (α := α) out y)) :
     Graph.evalAt (α := α)
         (g := binaryGraphOut (.concat axis) s₁ s₂ out)
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s₁ lhs)
+        (input := Spec.SomeTensor.mk (α := α) s₁ lhs)
         (vals := #[
-          Spec.PackedTensor.mk (α := α) s₁ lhs,
-          Spec.PackedTensor.mk (α := α) s₂ rhs
+          Spec.SomeTensor.mk (α := α) s₁ lhs,
+          Spec.SomeTensor.mk (α := α) s₂ rhs
         ]) (i := 2)
       =
-      .ok (Spec.PackedTensor.mk (α := α) out y) := by
+      .ok (Spec.SomeTensor.mk (α := α) out y) := by
   rw [evalAt_concat_binary_eq]
   rw [hConcat]
   simp [Graph.normalizeNodeOutput, binaryNodeOut, Except.bind, Pure.pure, Except.pure]
@@ -84,15 +84,15 @@ theorem evalAt_concat_binary_error
     (lhs : Tensor α s₁) (rhs : Tensor α s₂) (msg : String)
     (hConcat :
       Graph.evalConcat (α := α) 2 (binaryNodeOut (.concat axis) out) axis
-          [Spec.PackedTensor.mk (α := α) s₁ lhs, Spec.PackedTensor.mk (α := α) s₂ rhs] =
+          #[Spec.SomeTensor.mk (α := α) s₁ lhs, Spec.SomeTensor.mk (α := α) s₂ rhs] =
         .error msg) :
     Graph.evalAt (α := α)
         (g := binaryGraphOut (.concat axis) s₁ s₂ out)
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s₁ lhs)
+        (input := Spec.SomeTensor.mk (α := α) s₁ lhs)
         (vals := #[
-          Spec.PackedTensor.mk (α := α) s₁ lhs,
-          Spec.PackedTensor.mk (α := α) s₂ rhs
+          Spec.SomeTensor.mk (α := α) s₁ lhs,
+          Spec.SomeTensor.mk (α := α) s₂ rhs
         ]) (i := 2)
       =
       .error msg := by
@@ -110,13 +110,13 @@ def shapes (rest : Shape) (sizes : List Nat) : List Shape :=
 def totalSize (head : Nat) (tail : List Nat) : Nat :=
   tail.foldl (· + ·) head
 
-/-- A tensor whose leading dimension is existentially packed while its tail shape stays fixed. -/
+/-- A tensor whose leading dimension is existentially quantified while its tail shape stays fixed. -/
 abbrev Input (α : Type) [Context α] (rest : Shape) :=
   Sigma fun size => Tensor α (.dim size rest)
 
-/-- Erase a packed leading-axis input to the dynamic value consumed by the IR evaluator. -/
-def Input.toPackedTensor {α : Type} [Context α] {rest : Shape} (input : Input α rest) : Spec.PackedTensor α :=
-  Spec.PackedTensor.mk (α := α) (.dim input.1 rest) input.2
+/-- Erase the leading-axis witness to the dynamic value consumed by the IR evaluator. -/
+def Input.toSomeTensor {α : Type} [Context α] {rest : Shape} (input : Input α rest) : Spec.SomeTensor α :=
+  Spec.SomeTensor.mk (α := α) (.dim input.1 rest) input.2
 
 /-- Concatenate a nonempty sequence of compatible leading-axis inputs from left to right. -/
 def fold {α : Type} [Context α] {rest : Shape}
@@ -124,8 +124,7 @@ def fold {α : Type} [Context α] {rest : Shape}
   tail.foldl
     (fun acc next =>
       ⟨acc.1 + next.1,
-        Tensor.concatLeadingAxisSpec (α := α) (n := acc.1) (m := next.1) (s := rest)
-          acc.2 next.2⟩)
+        Tensor.concatAxisSpec (α := α) .scalar acc.2 next.2⟩)
     head
 
 /-- The leading dimension of a concat fold is the left-associated sum of its input dimensions. -/
@@ -140,30 +139,29 @@ theorem fold_size {α : Type} [Context α] {rest : Shape}
       simpa only [fold] using
         (ih (head :=
           ⟨head.1 + next.1,
-            Tensor.concatLeadingAxisSpec (α := α) (n := head.1) (m := next.1) (s := rest)
-              head.2 next.2⟩))
+            Tensor.concatAxisSpec (α := α) .scalar head.2 next.2⟩))
 
 end LeadingAxisConcat
 
 /-- Packaging and then decoding a typed leading-axis input preserves it exactly. -/
-@[simp] theorem expectLeadingAxisInput_toPackedTensor
+@[simp] theorem expectLeadingAxisInput_toSomeTensor
     {α : Type} [Context α] [DecidableEq Shape]
     {rest : Shape} (i : Nat) (input : LeadingAxisConcat.Input α rest) :
-    Graph.expectLeadingAxisInput (α := α) i rest input.toPackedTensor = .ok input := by
+    Graph.expectLeadingAxisInput (α := α) i rest input.toSomeTensor = .ok input := by
   rcases input with ⟨size, tensor⟩
-  simp [Graph.expectLeadingAxisInput, LeadingAxisConcat.Input.toPackedTensor, Pure.pure, Except.pure]
+  simp [Graph.expectLeadingAxisInput, LeadingAxisConcat.Input.toSomeTensor, Pure.pure, Except.pure]
 
 /-- Decoding a list of typed leading-axis inputs after packaging preserves the whole list. -/
-@[simp] theorem mapM_expectLeadingAxisInput_toPackedTensor
+@[simp] theorem mapM_expectLeadingAxisInput_toSomeTensor
     {α : Type} [Context α] [DecidableEq Shape]
     {rest : Shape} (i : Nat) (inputs : List (LeadingAxisConcat.Input α rest)) :
-    (inputs.map LeadingAxisConcat.Input.toPackedTensor).mapM
+    (inputs.map LeadingAxisConcat.Input.toSomeTensor).mapM
         (Graph.expectLeadingAxisInput (α := α) i rest) =
       .ok inputs := by
   induction inputs with
   | nil => rfl
   | cons input inputs ih =>
-      rw [List.map_cons, List.mapM_cons, expectLeadingAxisInput_toPackedTensor, ih]
+      rw [List.map_cons, List.mapM_cons, expectLeadingAxisInput_toSomeTensor, ih]
       rfl
 
 /--
@@ -177,11 +175,19 @@ theorem evalConcatLeadingAxisFold_eq
     (tail : List (LeadingAxisConcat.Input α rest)) :
     let result := LeadingAxisConcat.fold head tail
     Graph.evalConcatLeadingAxisFold (α := α) i result.1 rest
-        ((head :: tail).map LeadingAxisConcat.Input.toPackedTensor)
-      = .ok (LeadingAxisConcat.Input.toPackedTensor result) := by
+        ((head :: tail).map LeadingAxisConcat.Input.toSomeTensor).toArray
+      = .ok (LeadingAxisConcat.Input.toSomeTensor result) := by
   unfold Graph.evalConcatLeadingAxisFold
-  rw [mapM_expectLeadingAxisInput_toPackedTensor (α := α) i (head :: tail)]
-  simp [LeadingAxisConcat.fold, LeadingAxisConcat.Input.toPackedTensor, Bind.bind, Except.bind,
+  rw [List.mapM_toArray,
+    mapM_expectLeadingAxisInput_toSomeTensor (α := α) i (head :: tail)]
+  simp only [Functor.map, Except.map]
+  simp only [Bind.bind, Except.bind]
+  have hExtract : (head :: tail).toArray.extract 1 = tail.toArray := by
+    simp
+  rw [hExtract]
+  simp only [List.getElem?_toArray, List.getElem?_cons_zero]
+  rw [List.foldl_toArray]
+  simp [LeadingAxisConcat.fold, LeadingAxisConcat.Input.toSomeTensor,
     Pure.pure, Except.pure]
   congr
 
@@ -189,44 +195,45 @@ theorem evalConcatLeadingAxisFold_eq
 theorem inferConcatOutShape_leadingAxis_eq
     {rest : Shape} (first second : Nat) (tail : List Nat) :
     OpContracts.inferConcatOutShape 0
-        (LeadingAxisConcat.shapes rest (first :: second :: tail)) =
+        (LeadingAxisConcat.shapes rest (first :: second :: tail)).toArray =
       .ok (.dim (LeadingAxisConcat.totalSize first (second :: tail)) rest) := by
-  have hAxis : OpContracts.checkAxisValid 0 (.dim first rest) = .ok () := by
-    unfold OpContracts.checkAxisValid
-    change (if 0 < 1 + Spec.Shape.rank rest then Except.ok () else
-      Except.error s!"invalid axis {0} for rank {Spec.Shape.rank (.dim first rest)}") = Except.ok ()
-    simp
-  have hTail : (rest != rest) = false := shapeBNe_refl rest
-  have hRanks (sizes : List Nat) :
-      OpContracts.checkConcatRanks (Spec.Shape.rank (.dim first rest))
-          (LeadingAxisConcat.shapes rest sizes) = .ok () := by
-    induction sizes with
+  have hSame (dimensions : List Nat) (index : Nat) (hindex : index ≠ 0) :
+      OpContracts.mergeConcatDims 0 index dimensions dimensions = .ok dimensions := by
+    induction dimensions generalizing index with
     | nil => rfl
-    | cons size sizes ih =>
-        have hRank :
-            Spec.Shape.rank (.dim size rest) = Spec.Shape.rank (.dim first rest) := rfl
-        change OpContracts.checkConcatRanks (Spec.Shape.rank (.dim first rest))
-          (sizes.map (fun size => .dim size rest)) = .ok () at ih
-        simpa [LeadingAxisConcat.shapes, OpContracts.checkConcatRanks, hRank] using ih
-  have hLeading (sizes : List Nat) (acc : Nat) :
-      OpContracts.inferConcatLeadingAxis rest acc
+    | cons dimension dimensions ih =>
+        simp [OpContracts.mergeConcatDims, hindex, ih (index := index + 1) (by simp)]
+  have hMerge (left right : Nat) :
+      OpContracts.mergeConcatDims 0 0 (left :: rest.toList) (right :: rest.toList) =
+        .ok ((left + right) :: rest.toList) := by
+    simp [OpContracts.mergeConcatDims, hSame rest.toList 1 (by simp)]
+  have hFold (sizes : List Nat) (total : Nat) :
+      OpContracts.foldConcatDims 0 (total :: rest.toList)
           (LeadingAxisConcat.shapes rest sizes) =
-        .ok (.dim (sizes.foldl (· + ·) acc) rest) := by
-    induction sizes generalizing acc with
+        .ok (sizes.foldl (· + ·) total :: rest.toList) := by
+    induction sizes generalizing total with
     | nil => rfl
     | cons size sizes ih =>
-        change ∀ acc,
-          OpContracts.inferConcatLeadingAxis rest acc
-              (sizes.map (fun size => .dim size rest)) =
-            .ok (.dim (sizes.foldl (· + ·) acc) rest) at ih
-        simpa [LeadingAxisConcat.shapes, OpContracts.inferConcatLeadingAxis, hTail] using
-          ih (acc + size)
-  have hRanksAll := hRanks (first :: second :: tail)
-  have hLeadingAll := hLeading (second :: tail) first
-  simp only [LeadingAxisConcat.shapes, List.map_cons] at hRanksAll hLeadingAll
-  simp [OpContracts.inferConcatOutShape, OpContracts.inferConcatOutShape.go,
-    LeadingAxisConcat.shapes, LeadingAxisConcat.totalSize, hAxis, hRanksAll, hLeadingAll,
-    Bind.bind, Except.bind, Pure.pure, Except.pure]
+        simp only [LeadingAxisConcat.shapes, List.map_cons, OpContracts.foldConcatDims]
+        change (do
+          let dimensions ← OpContracts.mergeConcatDims 0 0
+            (total :: rest.toList) (size :: rest.toList)
+          OpContracts.foldConcatDims 0 dimensions
+            (sizes.map (fun size => Shape.dim size rest))) = _
+        rw [hMerge total size]
+        simp only [Bind.bind, Except.bind]
+        simpa only [LeadingAxisConcat.shapes, List.foldl_cons] using ih (total + size)
+  have hAxis : OpContracts.checkAxisValid 0 (.dim first rest) = .ok () := by
+    simp [OpContracts.checkAxisValid, Spec.Shape.rank]
+    rfl
+  have hFoldAll := hFold (second :: tail) first
+  simp only [LeadingAxisConcat.shapes, List.map_cons] at hFoldAll
+  simp only [OpContracts.inferConcatOutShape, LeadingAxisConcat.shapes, List.map_cons,
+    hAxis, Bind.bind, Except.bind,
+    Pure.pure, Except.pure]
+  rw [show (Shape.dim first rest).toList = first :: rest.toList from rfl]
+  rw [hFoldAll]
+  simp [LeadingAxisConcat.totalSize, List.foldl_cons]
 
 /-- The shared concat interpreter agrees with the typed fold for every arity of at least two. -/
 theorem evalConcat_leadingAxis_eq
@@ -240,12 +247,12 @@ theorem evalConcat_leadingAxis_eq
       (inputs.map fun input => Shape.dim input.1 rest).toArray
     Graph.evalConcat (α := α) i
         (variadicNodeOut (.concat 0) parentShapes (.dim result.1 rest)) 0
-        (inputs.map LeadingAxisConcat.Input.toPackedTensor) =
-      .ok result.toPackedTensor := by
+        (inputs.map LeadingAxisConcat.Input.toSomeTensor).toArray =
+      .ok result.toSomeTensor := by
   dsimp only
   have hInfer :
       OpContracts.inferConcatOutShape 0
-          ((first :: second :: tail).map fun input => Shape.dim input.1 rest) =
+          ((first :: second :: tail).map fun input => Shape.dim input.1 rest).toArray =
         .ok (.dim (LeadingAxisConcat.fold first (second :: tail)).1 rest) := by
     have hTailShapes :
         tail.map (fun input => Shape.dim input.1 rest) =
@@ -264,11 +271,16 @@ theorem evalConcat_leadingAxis_eq
         Shape.dim (LeadingAxisConcat.fold first (second :: tail)).1 rest) = false :=
     shapeBNe_refl _
   have hShapes :
-      ((first :: second :: tail).map LeadingAxisConcat.Input.toPackedTensor).map Spec.PackedTensor.shape =
+      ((first :: second :: tail).map LeadingAxisConcat.Input.toSomeTensor).map Spec.SomeTensor.shape =
         (first :: second :: tail).map (fun input => Shape.dim input.1 rest) := by
-    simp [LeadingAxisConcat.Input.toPackedTensor]
+    simp [LeadingAxisConcat.Input.toSomeTensor]
+  have hShapesArray :
+      ((first :: second :: tail).map LeadingAxisConcat.Input.toSomeTensor).toArray.map
+          Spec.SomeTensor.shape =
+        ((first :: second :: tail).map (fun input => Shape.dim input.1 rest)).toArray := by
+    simpa using congrArg List.toArray hShapes
   unfold Graph.evalConcat
-  rw [hShapes, hInfer]
+  rw [hShapesArray, hInfer]
   simp only [Bind.bind, Except.bind, Pure.pure, Except.pure, variadicNodeOut]
   rw [hSame]
   simp only [Bool.false_eq_true, ↓reduceIte]
@@ -277,7 +289,7 @@ theorem evalConcat_leadingAxis_eq
 /--
 End-to-end local IR semantics for leading-axis concat with any number of inputs greater than one.
 The graph, parent values, inferred output dimension, and tensor result are all derived from the same
-packed input list.
+shape-erased input list.
 -/
 theorem evalAt_concat_leadingAxis_eq
     {α : Type} [Context α] [DecidableEq Shape]
@@ -288,35 +300,32 @@ theorem evalAt_concat_leadingAxis_eq
     let result := LeadingAxisConcat.fold first (second :: tail)
     let parentShapes :=
       (inputs.map fun input => Shape.dim input.1 rest).toArray
-    let values := (inputs.map LeadingAxisConcat.Input.toPackedTensor).toArray
+    let values := (inputs.map LeadingAxisConcat.Input.toSomeTensor).toArray
     Graph.evalAt (α := α)
         (g := variadicGraphOut (.concat 0) parentShapes (.dim result.1 rest))
-        (payload := {}) (input := first.toPackedTensor) (vals := values)
+        (payload := {}) (input := first.toSomeTensor) (vals := values)
         (i := parentShapes.size) =
-      .ok result.toPackedTensor := by
+      .ok result.toSomeTensor := by
   dsimp only
   let inputs := first :: second :: tail
   let parentShapes := (inputs.map fun input => Shape.dim input.1 rest).toArray
-  let values := (inputs.map LeadingAxisConcat.Input.toPackedTensor).toArray
+  let values := (inputs.map LeadingAxisConcat.Input.toSomeTensor).toArray
   have hSize : values.size = parentShapes.size := by
     simp [values, parentShapes, inputs]
-  have hValuesList :
-      values.toList = inputs.map LeadingAxisConcat.Input.toPackedTensor := by
-    simp [values]
   have hParents :
-      (List.range parentShapes.size).mapM
+      (Array.range parentShapes.size).mapM
           (Graph.getParentValue values parentShapes.size
             (variadicNodeOut (.concat 0) parentShapes
               (.dim (LeadingAxisConcat.fold first (second :: tail)).1 rest))) =
-        .ok (inputs.map LeadingAxisConcat.Input.toPackedTensor) := by
-    rw [← hSize, ← hValuesList]
-    apply range_mapM_eq_toList_of_getElem_eq
+        .ok values := by
+    rw [← hSize]
+    apply rangeArray_mapM_eq_of_getElem_eq
     intro parentId hParentId
     simp [Graph.getParentValue, hParentId, Pure.pure, Except.pure]
   change Graph.evalAt (α := α)
       (g := variadicGraphOut (.concat 0) parentShapes
         (.dim (LeadingAxisConcat.fold first (second :: tail)).1 rest))
-      (payload := {}) (input := first.toPackedTensor) (vals := values)
+      (payload := {}) (input := first.toSomeTensor) (vals := values)
       (i := parentShapes.size) = _
   unfold Graph.evalAt
   rw [variadicGraphOut_getNode]
@@ -328,18 +337,18 @@ theorem evalAt_concat_leadingAxis_eq
   have hConcat :
       Graph.evalConcat (α := α) parentShapes.size
           { id := parentShapes.size
-            parents := List.range parentShapes.size
+            parents := Array.range parentShapes.size
             kind := .concat 0
             outShape := .dim (LeadingAxisConcat.fold first (second :: tail)).1 rest }
-          0 (inputs.map LeadingAxisConcat.Input.toPackedTensor) =
-        .ok (LeadingAxisConcat.fold first (second :: tail)).toPackedTensor := by
+          0 (inputs.map LeadingAxisConcat.Input.toSomeTensor).toArray =
+        .ok (LeadingAxisConcat.fold first (second :: tail)).toSomeTensor := by
     simpa [inputs, parentShapes, variadicNodeOut] using
       (evalConcat_leadingAxis_eq (α := α) parentShapes.size first second tail)
   rw [hConcat]
   change Graph.normalizeNodeOutput (α := α) parentShapes.size
       (variadicNodeOut (.concat 0) parentShapes
         (.dim (LeadingAxisConcat.fold first (second :: tail)).1 rest))
-      (LeadingAxisConcat.fold first (second :: tail)).toPackedTensor = _
+      (LeadingAxisConcat.fold first (second :: tail)).toSomeTensor = _
   exact Graph.normalizeNodeOutput_declared _ _ _
 
 end IRStep

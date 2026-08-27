@@ -46,7 +46,7 @@ def lowerForwardExecutable
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}
     (model : Runtime.Autograd.TorchLean.Program α (paramShapes ++ [inShape]) outShape)
-    (params : Runtime.Autograd.Torch.TList α paramShapes) :
+    (params : TorchLean.TensorPack α paramShapes) :
     Except String (LoweredIR α × Runtime.Autograd.IRExec.ForwardGraph α) := do
   let lowered ← lowerForwardToIR (α := α) (paramShapes := paramShapes) (inShape := inShape)
     (outShape := outShape) model params

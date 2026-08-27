@@ -24,10 +24,10 @@ open NN.IR
 
 /-! ## Lowering to verifier IR -/
 
-/-- Flatten a well-formed tensor into the `FlatVec` payload format used by CROWN/LiRPA IR nodes. -/
+/-- Flatten a well-formed tensor into the `FlatTensor` payload format used by CROWN/LiRPA IR nodes. -/
 def flatOfTensor {α : Type} [Context α] {s : Shape}
     (_wf : Shape.WellFormed s)
-    (t : Tensor α s) : NN.MLTheory.CROWN.Graph.FlatVec α :=
+    (t : Tensor α s) : NN.MLTheory.CROWN.Graph.FlatTensor α :=
   { n := Spec.Shape.size s, v := Tensor.flattenSpec (α := α) (s := s) t }
 
 /--
@@ -41,93 +41,103 @@ def lowerNode
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (id : Nat)
     (node : Node α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) :
     NN.IR.Node × NN.MLTheory.CROWN.Graph.ParamStore α :=
   match node with
   | .const (s := s) wf t =>
-      let n : NN.IR.Node := { id := id, parents := [], kind := .const s, outShape := s }
+      let n : NN.IR.Node := { id := id, parents := #[], kind := .const s, outShape := s }
       let ps' := { ps with constVals := ps.constVals.insert id (flatOfTensor (α := α) (s := s) wf t)
         }
       (n, ps')
   | .paramConst (s := s) wf p =>
       let t := getParam (α := α) (paramShapes := paramShapes) params p
-      let n : NN.IR.Node := { id := id, parents := [], kind := .const s, outShape := s }
+      let n : NN.IR.Node := { id := id, parents := #[], kind := .const s, outShape := s }
       let ps' := { ps with constVals := ps.constVals.insert id (flatOfTensor (α := α) (s := s) wf t)
         }
       (n, ps')
   | .add (s := s) a b =>
-      ({ id := id, parents := [a.id, b.id], kind := .add, outShape := s }, ps)
+      ({ id := id, parents := #[a.id, b.id], kind := .add, outShape := s }, ps)
   | .sub (s := s) a b =>
-      ({ id := id, parents := [a.id, b.id], kind := .sub, outShape := s }, ps)
+      ({ id := id, parents := #[a.id, b.id], kind := .sub, outShape := s }, ps)
   | .mulElem (s := s) a b =>
-      ({ id := id, parents := [a.id, b.id], kind := .mul_elem, outShape := s }, ps)
+      ({ id := id, parents := #[a.id, b.id], kind := .mul_elem, outShape := s }, ps)
   | .relu (s := s) x =>
-      ({ id := id, parents := [x.id], kind := .relu, outShape := s }, ps)
+      ({ id := id, parents := #[x.id], kind := .relu, outShape := s }, ps)
   | .exp (s := s) x =>
-      ({ id := id, parents := [x.id], kind := .exp, outShape := s }, ps)
+      ({ id := id, parents := #[x.id], kind := .exp, outShape := s }, ps)
   | .log (s := s) x =>
-      ({ id := id, parents := [x.id], kind := .log, outShape := s }, ps)
+      ({ id := id, parents := #[x.id], kind := .log, outShape := s }, ps)
   | .inv (s := s) x =>
-      ({ id := id, parents := [x.id], kind := .inv, outShape := s }, ps)
-  | .matmul2d m _n p a b =>
+      ({ id := id, parents := #[x.id], kind := .inv, outShape := s }, ps)
+  | .matmul (outShape := outShape) _op a b =>
       ({ id := id
-         parents := [a.id, b.id]
+         parents := #[a.id, b.id]
          kind := .matmul
-         outShape := .dim m (.dim p .scalar) }, ps)
-  | .bmm batch m _n p a b =>
-      ({ id := id
-         parents := [a.id, b.id]
-         kind := .matmul
-         outShape := .dim batch (.dim m (.dim p .scalar)) }, ps)
+         outShape := outShape }, ps)
   | .reshape inS outS _h x =>
-      ({ id := id, parents := [x.id], kind := .reshape inS outS, outShape := outS }, ps)
-  | .swap_first_two m n rest x =>
-      ({ id := id, parents := [x.id], kind := .swap_first_two, outShape := .dim n (.dim m rest) },
-        ps)
-  | .transpose3dLastTwo _a _b _c x =>
-      ({ id := id, parents := [x.id], kind := .transpose3dLastTwo, outShape := out }, ps)
-  | .softmaxLast (s := s) _hRank x =>
-      let axis := (Spec.Shape.rank s) - 1
-      ({ id := id, parents := [x.id], kind := .softmax axis, outShape := s }, ps)
-  | .layernorm2d seqLen embedDim _hSeq _hEmb x =>
+      ({ id := id, parents := #[x.id], kind := .reshape inS outS, outShape := outS }, ps)
+  | .transpose axis₁ axis₂ _hOut x =>
+      ({ id := id, parents := #[x.id], kind := .transpose axis₁ axis₂, outShape := out }, ps)
+  | .softmax (s := s) axis _hAxis x =>
+      ({ id := id, parents := #[x.id], kind := .softmax axis, outShape := s }, ps)
+  | .layerNorm (s := s) op x =>
+      let ps' := { ps with layerNorm := ps.layerNorm.erase id }
       ({ id := id
-         parents := [x.id]
-         kind := .layernorm (axis := 1)
-         outShape := .dim seqLen (.dim embedDim .scalar) }, ps)
+         parents := #[x.id]
+         kind := .layernorm op.axis
+         outShape := s }, ps')
   | .linear inDim outDim w b x =>
       let wT := getParam (α := α) (paramShapes := paramShapes) params w
       let bT := getParam (α := α) (paramShapes := paramShapes) params b
       let n : NN.IR.Node :=
-        { id := id, parents := [x.id], kind := .linear, outShape := .dim outDim .scalar }
+        { id := id, parents := #[x.id], kind := .linear, outShape := .dim outDim .scalar }
       let ps' :=
         { ps with
             linearWB := ps.linearWB.insert id { m := outDim, n := inDim, w := wT, b := bT } }
       (n, ps')
-  | .conv2d inC outC kH kW stride padding inH inW hIn hKH hKW hStride _hHeight _hWidth kernel bias x =>
+  | .conv (d := d) inC outC kernelShape stride padding inSpatial hIn hKernel hStride _hInfer
+      kernel bias x =>
       let kT := getParam (α := α) (paramShapes := paramShapes) params kernel
       let bT := getParam (α := α) (paramShapes := paramShapes) params bias
-      let outShape : Shape :=
-        .dim outC
-          (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-            (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))
+      let outShape : Shape := Shape.ofList
+        (outC :: (Spec.convOutSpatial inSpatial kernelShape stride padding).toList)
       let n : NN.IR.Node :=
         { id := id
-          parents := [x.id]
-          kind := .conv2d inC outC kH kW stride padding
+          parents := #[x.id]
+          kind := .conv
+            { spatialRank := d
+              kernel := kernelShape
+              stride := stride
+              padding := padding
+              dilation := Spec.fill 1 [d]
+              paddingAfter := padding
+              groups := 1
+              channelAxis := 0
+              inChannels := inC
+              outChannels := outC }
           outShape := outShape }
-      let spec : Spec.Conv2dSpec inC outC kH kW stride padding α hIn hKH hKW :=
+      let spec : Spec.ConvSpec d inC outC kernelShape stride padding α :=
         { kernel := kT, bias := bT }
-      let cfg : NN.IR.Conv2dParams α :=
-        { inC := inC, outC := outC, kH := kH, kW := kW
-          stride := stride, padding := padding
-          inH := inH, inW := inW
-          hIn := hIn, hKH := hKH, hKW := hKW, hStride := hStride,
+      let cfg : NN.IR.ConvParams α :=
+        { spatialRank := d
+          inChannels := inC
+          outChannels := outC
+          kernel := kernelShape
+          stride := stride
+          padding := padding
+          dilation := Spec.fill 1 [d]
+          paddingAfter := padding
+          groups := 1
+          inputSpatial := inSpatial
+          inChannelsNonzero := hIn
+          kernelNonzero := hKernel
+          strideNonzero := hStride
           spec := spec }
-      let ps' := { ps with conv2dCfg := ps.conv2dCfg.insert id cfg }
+      let ps' := { ps with convCfg := ps.convCfg.insert id cfg }
       (n, ps')
   | .mseLoss (s := _s) yhat target =>
-      ({ id := id, parents := [yhat.id, target.id], kind := .mseLoss, outShape := .scalar }, ps)
+      ({ id := id, parents := #[yhat.id, target.id], kind := .mseLoss, outShape := .scalar }, ps)
 
 /--
 Lower a forward let-chain into a `LoweredIR` graph.
@@ -141,7 +151,7 @@ def lowerForwardLetChain
     {α : Type} [Context α]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (g : ForwardLetChain α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α) :
     NN.Verification.TorchLean.LoweredIR α :=
   match g with
@@ -169,9 +179,9 @@ def lowerForwardProgramToIR
     {α : Type} [Context α]
     {paramShapes : List Shape} {inShape outShape : Shape}
     (p : ForwardProgram α paramShapes inShape outShape)
-    (params : Runtime.Autograd.Torch.TList α paramShapes) :
+    (params : TorchLean.TensorPack α paramShapes) :
     NN.Verification.TorchLean.LoweredIR α :=
-  let input : NN.IR.Node := { id := 0, parents := [], kind := .input, outShape := inShape }
+  let input : NN.IR.Node := { id := 0, parents := #[], kind := .input, outShape := inShape }
   let c0 : NN.Verification.TorchLean.LoweredIR α :=
     { graph := { nodes := #[input] }, ps := {}, inputId := 0, outputId := 0 }
   lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out :=

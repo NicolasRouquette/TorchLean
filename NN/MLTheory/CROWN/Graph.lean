@@ -8,7 +8,6 @@ module
 
 public import NN.MLTheory.CROWN.Graph.Core
 public import NN.MLTheory.CROWN.Graph.Engine
-public import NN.MLTheory.CROWN.Graph.Backward
 public import NN.MLTheory.CROWN.Graph.Theorems
 
 /-!

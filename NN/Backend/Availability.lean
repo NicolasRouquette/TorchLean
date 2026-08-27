@@ -25,8 +25,8 @@ namespace Backend
 
 /-- Runtime/build capabilities visible to backend planning. -/
 structure Availability where
-  devices : List Device := [.cpu]
-  providers : List Provider := [.reference, .torchLean]
+  devices : Array Device := #[.cpu]
+  providers : Array Provider := #[.reference, .torchLean]
   deriving Repr
 
 namespace Availability
@@ -44,23 +44,23 @@ def admitsCapsule (a : Availability) (c : KernelCapsule) : Bool :=
   a.hasDevice c.device && a.hasProvider c.provider
 
 /-- Keep only capsules available on this machine/build. -/
-def filterCapsules (a : Availability) (capsules : List KernelCapsule) : List KernelCapsule :=
+def filterCapsules (a : Availability) (capsules : Array KernelCapsule) : Array KernelCapsule :=
   capsules.filter fun c => a.admitsCapsule c
 
 /-- CPU/reference-only availability. -/
 def cpu : Availability :=
-  { devices := [.cpu]
-    providers := [.reference, .torchLean] }
+  { devices := #[.cpu]
+    providers := #[.reference, .torchLean] }
 
 /-- CUDA availability without optional external providers. -/
 def cudaNative : Availability :=
-  { devices := [.cpu, .cuda]
-    providers := [.reference, .torchLean, .nativeCuda, .cuBLAS, .cuFFT] }
+  { devices := #[.cpu, .cuda]
+    providers := #[.reference, .torchLean, .nativeCuda, .cuBLAS, .cuFFT] }
 
 /-- CUDA availability with optional LibTorch enabled and installed. -/
 def cudaWithLibTorch : Availability :=
-  { devices := [.cpu, .cuda]
-    providers := [.reference, .torchLean, .nativeCuda, .cuBLAS, .cuFFT, .libTorch] }
+  { devices := #[.cpu, .cuda]
+    providers := #[.reference, .torchLean, .nativeCuda, .cuBLAS, .cuFFT, .libTorch] }
 
 end Availability
 

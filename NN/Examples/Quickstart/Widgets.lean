@@ -9,7 +9,8 @@ module
 public import NN.Widgets
 public import NN.Floats.IEEEExec.Exec32
 public import NN.IR.Graph
-public import NN.API
+public import NN.Tensor
+public import NN.API.Trainer.Reporting
 
 /-!
 # Quickstart: Widgets
@@ -36,11 +37,11 @@ open TorchLean
 open TorchLean.Floats.IEEE754
 
 /-- A small vector, built with the same typed tensor constructor used in ordinary code. -/
-def vector : Tensor Float (shape![4]) :=
+def vector : Tensor Float [4] :=
   tensor! [1.0, 2.0, 3.0, 4.0]
 
 /-- A small matrix where the shape is visible both in the type and in the widget. -/
-def matrix : Tensor Int (shape![2, 3]) :=
+def matrix : Tensor Int [2, 3] :=
   tensor! [
     [1, 2, 3],
     [4, 5, 6]
@@ -53,9 +54,9 @@ def one32 : IEEE32Exec :=
 /-- A small IR graph: input plus constant, then an add node. -/
 def addGraph : NN.IR.Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := shape![2] },
-      { id := 1, parents := [], kind := .const shape![2], outShape := shape![2] },
-      { id := 2, parents := [0, 1], kind := .add, outShape := shape![2] }
+      { id := 0, parents := #[], kind := .input, outShape := [2] },
+      { id := 1, parents := #[], kind := .const [2], outShape := [2] },
+      { id := 2, parents := #[0, 1], kind := .add, outShape := [2] }
     ] }
 
 /-- A minimal training log; runtime examples can write the same structure as JSON. -/

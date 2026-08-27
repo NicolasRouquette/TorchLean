@@ -47,7 +47,7 @@ def multiHeadAttention
   {n numHeads dModel headDim : Nat} (_hSeq : n ≠ 0)
   (batch : Nat) (_hBatch : batch ≠ 0) (inputShape outputShape : Shape) (nodeName : String)
   (t : Tape) (wqId wkId wvId woId xId : Nat)
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none)
+  (mask : Option (Tensor Bool [n, n]) := none)
   (attentionCapsule : NN.Backend.KernelCapsule := NN.Backend.Attention.torchLeanComposed) :
   IO (Result (Tape × Nat)) := (do
   ExceptT.mk (pure <|
@@ -130,8 +130,8 @@ def multiHeadAttention
     { name := some nodeName
       value := { s := outputShape, buf := y }
       requiresGrad := true
-      parents := [wqId, wkId, wvId, woId, xId]
-      cleanup := [Qh, Kh, Vh, maskB, outHeads, swapped]
+      parents := #[wqId, wkId, wvId, woId, xId]
+      cleanup := #[Qh, Kh, Vh, maskB, outHeads, swapped]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny outputShape
         -- Backprop through output projection: y = concat @ wo
@@ -190,7 +190,7 @@ def multiHeadAttention
         let dWv := Buffer.bmmLeftTranspose x dV one32 dModel32 rows32 proj32
         let dWv := Buffer.releaseThen dConcat <| Buffer.releaseThen dQ <|
           Buffer.releaseThen dK <| Buffer.releaseThen dV dWv
-        pure [
+        pure #[
           (xId,  { s := inputShape, buf := dx }),
           (wqId, { s := .dim dModel (.dim projDim .scalar), buf := dWq }),
           (wkId, { s := .dim dModel (.dim projDim .scalar), buf := dWk }),
@@ -210,7 +210,7 @@ TorchLean forward and VJP code.
 def multiHeadAttention
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (t : Tape) (wqId wkId wvId woId xId : Nat)
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none)
+  (mask : Option (Tensor Bool [n, n]) := none)
   (attentionCapsule : NN.Backend.KernelCapsule := NN.Backend.Attention.torchLeanComposed) :
   IO (Result (Tape × Nat)) :=
   Internal.multiHeadAttention
@@ -228,7 +228,7 @@ including accumulation of the shared projection-weight gradients over every samp
 def batchedMultiHeadAttention
   {batch n numHeads dModel headDim : Nat} (hBatch : batch ≠ 0) (h1 : n ≠ 0)
   (t : Tape) (wqId wkId wvId woId xId : Nat)
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none)
+  (mask : Option (Tensor Bool [n, n]) := none)
   (attentionCapsule : NN.Backend.KernelCapsule := NN.Backend.Attention.torchLeanComposed) :
   IO (Result (Tape × Nat)) := by
   exact Internal.multiHeadAttention

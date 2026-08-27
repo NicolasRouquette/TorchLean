@@ -113,7 +113,12 @@ consequences of the reconstruction theorems about the logical definitions.
 - Native buffer operations are marked `@[never_extract]`. This prevents Lean's compiler from
   commoning or deleting calls that look pure in source but allocate, observe, or mutate native
   resources. Explicit destruction is exposed through `releaseIO`; ownership-sensitive paths
-  sequence it in `IO` instead of pretending that release is a pure function.
+  sequence it in `IO` instead of pretending that release is a pure function. `Buffer` remains a
+  copyable Lean reference, not a linear capability: releasing one alias invalidates all raw aliases,
+  and correct lifetime discipline is enforced by callers rather than by Lean's type system.
+- Parameter CUDA caches use an `IO.Ref` swap to remove the cached alias before releasing its native
+  allocation. This prevents another cache reader from obtaining that released handle after the
+  swap; it does not make independently copied raw `Buffer` aliases safe.
 - CUDA buffer finalizers free device memory through `cudaFree`. This is safe for TorchLean's current
   default-stream runtime, where launches and host copies are ordered through the default stream. If
   future backends introduce user streams or asynchronous graph replay, finalizer/free ordering must

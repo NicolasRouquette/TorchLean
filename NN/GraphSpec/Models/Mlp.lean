@@ -36,27 +36,28 @@ namespace GraphSpec
 namespace Models
 
 open _root_.Spec
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 /--
 2-layer MLP: `Linear(in,hid) → ReLU → Linear(hid,out)`.
 
 Notice how the parameter interface is explicit in the type:
 
-- the first `Linear(in,hid)` contributes `W₁ : Mat hid in` and `b₁ : Vec hid`,
-- the second `Linear(hid,out)` contributes `W₂ : Mat out hid` and `b₂ : Vec out`,
+- the first `Linear(in,hid)` contributes tensors `W₁ : Tensor α [hid, in]` and
+  `b₁ : Tensor α [hid]`,
+- the second `Linear(hid,out)` contributes tensors `W₂ : Tensor α [out, hid]` and
+  `b₂ : Tensor α [out]`,
 - and `ReLU` contributes no parameters.
 
 So the overall parameter list is exactly:
-`[Mat hid in, Vec hid, Mat out hid, Vec out]`.
+`[[hid, in], [hid], [out, hid], [out]]`.
 -/
 def mlp (inDim hidDim outDim : Nat) :
     Chain
-      [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
-      , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
-      (.dim inDim .scalar) (.dim outDim .scalar) :=
+      [[hidDim, inDim], [hidDim], [outDim, hidDim], [outDim]]
+      [inDim] [outDim] :=
   Chain.linear inDim hidDim >>>
-  Chain.relu (.dim hidDim .scalar) >>>
+  Chain.relu [hidDim] >>>
   Chain.linear hidDim outDim
 
 /--
@@ -70,10 +71,9 @@ Initialization: all-zero parameters (see `LowerToDAG.Chain.toDAGModelZeroInit`).
 -/
 def mlpDAGModelZeroInit (inDim hidDim outDim : Nat) :
     DAG.Model
-      [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
-      , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
-      [.dim inDim .scalar]
-      (.dim outDim .scalar) :=
+      [[hidDim, inDim], [hidDim], [outDim, hidDim], [outDim]]
+      [[inDim]]
+      [outDim] :=
   LowerToDAG.Chain.toDAGModelZeroInit (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim))
 
 /-!
@@ -84,15 +84,14 @@ You can build a simple classifier head by appending a softmax:
 ```lean
 def g (inDim hidDim outDim : Nat) :
     Chain
-      [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
-      , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
-      (.dim inDim .scalar) (.dim outDim .scalar) :=
-  Models.mlp inDim hidDim outDim >>> Chain.softmax (.dim outDim .scalar) 0
+      [[hidDim, inDim], [hidDim], [outDim, hidDim], [outDim]]
+      [inDim] [outDim] :=
+  Models.mlp inDim hidDim outDim >>> Chain.softmax [outDim] 0
 ```
 
 Then:
 
-- `Interp.spec (g …)` is a pure function `Params → Spec.Tensor → Spec.Tensor`;
+- `Interp.spec (g …)` maps a parameter pack and input tensor to an output tensor;
 - `Chain.toProgram (g …)` is an executable TorchLean `Program` with arguments
   `params ++ [input]`.
 -/

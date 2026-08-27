@@ -41,10 +41,10 @@ def cfg : nn.models.DenseGenerative.Config :=
 def batch : Nat := 1
 
 /-- Input shape: a batch of flattened CIFAR image vectors. -/
-abbrev σ := cfg.dataShape (.dim batch .scalar)
+abbrev σ := cfg.dataShape [batch]
 
 /-- Target shape: the same flattened image-vector batch, because this is reconstruction. -/
-abbrev τ := cfg.dataShape (.dim batch .scalar)
+abbrev τ := cfg.dataShape [batch]
 
 /--
 Trainable dense autoencoder.
@@ -53,10 +53,10 @@ The architecture is defined in the public model API. The command chooses the dat
 runtime options, and logging path.
 -/
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.DenseGenerative.autoencoder cfg (.dim batch .scalar)
+  nn.models.DenseGenerative.autoencoder cfg [batch]
 
 /-- Public singleton dataset for compact CIFAR reconstruction. -/
-def data (flags : RealData.CifarModelTrainFlags) : Trainer.DataSource σ τ :=
+def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset σ τ :=
   RealData.cifarFeatureDataset batch cfg (by decide) exeName (fun x ↦ Sample.mk x x)
     flags.xPath flags.yPath flags.nRows flags.seed
 

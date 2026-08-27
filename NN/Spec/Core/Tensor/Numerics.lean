@@ -53,9 +53,9 @@ Matrix minor: delete `row` and `col` from an `n × n` matrix, producing an `(n-1
 This is used by `determinantSpec` (Laplace expansion) and the adjugate-based inverse below.
 -/
 def matrixMinorSpec {α : Type} {n : Nat}
-    (matrix : Tensor α (.dim n (.dim n .scalar)))
+    (matrix : Tensor α [n, n])
     (row col : Fin n) :
-    Tensor α (.dim (n - 1) (.dim (n - 1) .scalar)) :=
+    Tensor α [n - 1, n - 1] :=
   Tensor.dim (fun i =>
     Tensor.dim (fun j =>
       let actualI := if i.val < row.val then i.val else i.val + 1
@@ -77,7 +77,7 @@ for `n = 0, 1, 2`. It is mathematically clear but exponentially slow, so it is i
 very small `n` and/or proof-oriented reference code.
 -/
 def determinantSpec {α : Type} [Context α] :
-  ∀ {n : Nat}, Tensor α (.dim n (.dim n .scalar)) → Tensor α .scalar
+  ∀ {n : Nat}, Tensor α [n, n] → Tensor α .scalar
 | 0, _ => Tensor.scalar 1
 | 1, A =>
   match A with
@@ -115,8 +115,8 @@ input would make downstream statistical formulas appear defined when they are no
 PyTorch analogue: `torch.linalg.inv`, with failure represented explicitly by `Option`.
 -/
 def inverseSpec? {n : Nat}
-  (matrix : Tensor α (.dim n (.dim n .scalar))) :
-  Option (Tensor α (.dim n (.dim n .scalar))) :=
+  (matrix : Tensor α [n, n]) :
+  Option (Tensor α [n, n]) :=
   let det := Tensor.item (determinantSpec matrix)
   if det == 0 then
     none
@@ -131,7 +131,7 @@ def inverseSpec? {n : Nat}
           let minor := matrixMinorSpec matrix i j
           let minorDet := Tensor.item (determinantSpec minor)
           Tensor.scalar (cofactor * minorDet)))
-    let adjugate := matrixTransposeSpec cofactors
+    let adjugate := swapAdjacentAxes cofactors 0
     -- Scale by 1/det
     some (scaleSpec adjugate (1 / det))
 
@@ -143,11 +143,11 @@ This definition does not claim to compute a full eigendecomposition. Convergence
 eigenvector requires the usual spectral assumptions on `matrix` and a suitable initial vector.
 -/
 def powerIterationLeadingEigenpairSpec {n : Nat}
-    (matrix : Tensor α (.dim n (.dim n .scalar))) (iterations : Nat) :
-    α × Tensor α (.dim n .scalar) :=
+    (matrix : Tensor α [n, n]) (iterations : Nat) :
+    α × Tensor α [n] :=
   -- Power iteration: returns normalized eigenvector and its Rayleigh quotient
-  let rec powerIteration (v : Tensor α (.dim n .scalar)) (iter : Nat) :
-    (Tensor α (.dim n .scalar) × α) :=
+  let rec powerIteration (v : Tensor α [n]) (iter : Nat) :
+    (Tensor α [n] × α) :=
     if iter = 0 then
       let Av := matVecMulSpec matrix v
       let eigenvalue := dotSpec v Av
@@ -166,11 +166,11 @@ def powerIterationLeadingEigenpairSpec {n : Nat}
   -- Start from a normalized all-ones vector.  Normalizing before the first multiplication matters
   -- for the zero matrix: every direction is then an eigenvector, and the fallback branch below
   -- should still return a unit vector rather than the raw all-ones vector.
-  let initialRaw : Tensor α (.dim n .scalar) := Tensor.dim (fun _ => Tensor.scalar 1)
+  let initialRaw : Tensor α [n] := Tensor.dim (fun _ => Tensor.scalar 1)
   let initialNorm := MathFunctions.sqrt (sumSpec (squareSpec initialRaw))
-  let initialVector :=
+  let initialTensor :=
     if initialNorm > 0 then scaleSpec initialRaw (1 / initialNorm) else initialRaw
-  let (eigenvector, eigenvalue) := powerIteration initialVector iterations
+  let (eigenvector, eigenvalue) := powerIteration initialTensor iterations
   (eigenvalue, eigenvector)
 
 
@@ -182,7 +182,7 @@ Euclidean (L2) distance between two feature vectors.
 PyTorch analogue: `torch.linalg.vector_norm(x - y)` or `torch.cdist` (batched).
 -/
 def euclideanDistanceSpec {nFeatures : Nat}
-  (x y : Tensor α (.dim nFeatures .scalar)) : α :=
+  (x y : Tensor α [nFeatures]) : α :=
   let diff := subSpec x y
   let squaredDiff := squareSpec diff
   let sumSquared := sumSpec squaredDiff
@@ -190,14 +190,14 @@ def euclideanDistanceSpec {nFeatures : Nat}
 
 /-- Squared Euclidean distance (avoids the final square root). -/
 def squaredEuclideanDistanceSpec {nFeatures : Nat}
-  (x y : Tensor α (.dim nFeatures .scalar)) : α :=
+  (x y : Tensor α [nFeatures]) : α :=
   let diff := subSpec x y
   let squaredDiff := squareSpec diff
   sumSpec squaredDiff
 
 /-- Manhattan (L1) distance between two feature vectors. -/
 def manhattanDistanceSpec {nFeatures : Nat}
-  (x y : Tensor α (.dim nFeatures .scalar)) : α :=
+  (x y : Tensor α [nFeatures]) : α :=
   let diff := subSpec x y
   let absDiff := mapSpec MathFunctions.abs diff
   sumSpec absDiff
@@ -208,7 +208,7 @@ Cosine distance `1 - cos(theta)` between two feature vectors.
 If either vector has zero norm, this returns `1`.
 -/
 def cosineDistanceSpec {nFeatures : Nat}
-  (x y : Tensor α (.dim nFeatures .scalar)) : α :=
+  (x y : Tensor α [nFeatures]) : α :=
   let dotProduct := dotSpec x y
   let normX := MathFunctions.sqrt (sumSpec (squareSpec x))
   let normY := MathFunctions.sqrt (sumSpec (squareSpec y))
@@ -222,7 +222,7 @@ This generalizes L1 (Manhattan) and L2 (Euclidean). The explicit positivity hypo
 the undefined order-zero and negative-order cases.
 -/
 def minkowskiDistanceSpec {nFeatures : Nat}
-  (p : α) (_hp : p > 0) (x y : Tensor α (.dim nFeatures .scalar)) : α :=
+  (p : α) (_hp : p > 0) (x y : Tensor α [nFeatures]) : α :=
   let diff := subSpec x y
   let absDiff := mapSpec MathFunctions.abs diff
   let powered := mapSpec (fun a => a ^ p) absDiff
@@ -239,8 +239,8 @@ nonnegative, the positive-sum branch is a probability distribution.
 
 PyTorch analogue: `probs / probs.sum()` (with an explicit zero-sum guard).
 -/
-def normalizeByPositiveSumSpec {n : Nat} (values : Tensor α (.dim n .scalar)) :
-  Tensor α (.dim n .scalar) :=
+def normalizeByPositiveSumSpec {n : Nat} (values : Tensor α [n]) :
+  Tensor α [n] :=
   let total := sumSpec values
   if total > 0 then
     Tensor.dim (fun i =>
@@ -255,8 +255,8 @@ L2-normalize a vector.
 
 If the norm is `0`, this returns the input unchanged.
 -/
-def normalizeL2Spec {n : Nat} (vector : Tensor α (.dim n .scalar)) :
-  Tensor α (.dim n .scalar) :=
+def normalizeL2Spec {n : Nat} (vector : Tensor α [n]) :
+  Tensor α [n] :=
   let norm := MathFunctions.sqrt (sumSpec (squareSpec vector))
   if norm > 0 then
     Tensor.dim (fun i =>
@@ -279,8 +279,8 @@ normalization convention used by several attention and recurrent architectures, 
 regularizer is part of the model specification.
 -/
 def normalizeL2RegularizedSpec {n : Nat}
-    (vector : Tensor α (.dim n .scalar)) (regularizer : α) :
-    Tensor α (.dim n .scalar) :=
+    (vector : Tensor α [n]) (regularizer : α) :
+    Tensor α [n] :=
   let norm := MathFunctions.sqrt (sumSpec (squareSpec vector) + regularizer)
   Tensor.mapSpec (fun value => value / norm) vector
 
@@ -289,8 +289,8 @@ Z-score normalization: subtract mean and divide by standard deviation.
 
 If the standard deviation is `0`, this returns the mean-centered vector.
 -/
-def normalizeZscoreSpec {n : Nat} (vector : Tensor α (.dim n .scalar)) :
-  Tensor α (.dim n .scalar) :=
+def normalizeZscoreSpec {n : Nat} (vector : Tensor α [n]) :
+  Tensor α [n] :=
   let mean := sumSpec vector / n
   let centered := Tensor.dim (fun i =>
     match get vector i with

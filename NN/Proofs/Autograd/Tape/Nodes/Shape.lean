@@ -70,7 +70,7 @@ https://pytorch.org/docs/stable/tensor_view.html
 -/
 def reshape {Γ : List Shape} {s₁ s₂ : Shape}
     (idx : Idx Γ s₁) (h : Spec.Shape.size s₁ = Spec.Shape.size s₂) : Node Γ s₂ :=
-  Node.ofVec (Γ := Γ) (τ := s₂)
+  Node.ofFn (Γ := Γ) (τ := s₂)
     (f := fun xV => castVec h (CtxVec.get (Γ := Γ) (s := s₁) idx xV))
     (jvp := fun _xV dxV => castVec h (CtxVec.get (Γ := Γ) (s := s₁) idx dxV))
     (vjp := fun _xV δV => CtxVec.single (Γ := Γ) (s := s₁) idx (castVec h.symm δV))
@@ -98,11 +98,11 @@ def reshapeFderiv {Γ : List Shape} {s₁ s₂ : Shape}
         (Node.forwardVec (Γ := Γ) (τ := s₂) (reshape (Γ := Γ) (s₁ := s₁) (s₂ := s₂) idx h)) =
           fun x : CtxVec Γ => (Rlin.comp (CtxVec.getCLM (Γ := Γ) (s := s₁) idx)) x := by
       funext x
-      simp [reshape, Node.forwardVec_ofVec, Rlin, ContinuousLinearMap.comp_apply,
+      simp [reshape, Node.forwardVec_ofFn, Rlin, ContinuousLinearMap.comp_apply,
         CtxVec.getCLM_apply, Graph.castCLM]
     exact hCLM.congr_of_eventuallyEq hfun.eventuallyEq
   · intro _xV dxV
-    simp [reshape, Node.jvpVec_ofVec, Rlin, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply,
+    simp [reshape, Node.jvpVec_ofFn, Rlin, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply,
       Graph.castCLM]
 
 /-!
@@ -177,172 +177,75 @@ public lemma inner_reindex_left {n m : Nat} (e : Fin n ≃ Fin m) (x : Vec n) (y
     _ = inner ℝ x (reindexVec (n := m) (m := n) e.symm y) := by
             simp [reindexVec, inner_eq_sum_mul]
 
--- ---------------------------------------------------------------------------
--- 3D swap of the first two axes: `.dim m (.dim n rest)` ↦ `.dim n (.dim m rest)`
--- ---------------------------------------------------------------------------
-
-/-- Underlying coordinate permutation for swapping the first two axes of a 3D tensor. -/
-public def swapFirstTwoEquiv (m n k : Nat) : Fin (m * (n * k)) ≃ Fin (n * (m * k)) :=
-  let e_m_nk : (Fin m × Fin (n * k)) ≃ Fin (m * (n * k)) := finProdFinEquiv
-  let e_n_k : (Fin n × Fin k) ≃ Fin (n * k) := finProdFinEquiv
-  let e_m_k : (Fin m × Fin k) ≃ Fin (m * k) := finProdFinEquiv
-  let e_n_mk : (Fin n × Fin (m * k)) ≃ Fin (n * (m * k)) := finProdFinEquiv
+/-- Coordinate equivalence induced by exchanging two adjacent blocks. -/
+public def swapAdjacentEquiv (outer inner tail : Nat) :
+    Fin (outer * (inner * tail)) ≃ Fin (inner * (outer * tail)) :=
+  let e_m_nk : (Fin outer × Fin (inner * tail)) ≃ Fin (outer * (inner * tail)) :=
+    finProdFinEquiv
+  let e_n_k : (Fin inner × Fin tail) ≃ Fin (inner * tail) := finProdFinEquiv
+  let e_m_k : (Fin outer × Fin tail) ≃ Fin (outer * tail) := finProdFinEquiv
+  let e_n_mk : (Fin inner × Fin (outer * tail)) ≃ Fin (inner * (outer * tail)) :=
+    finProdFinEquiv
   e_m_nk.symm
-    |>.trans (Equiv.prodCongrRight (fun _ : Fin m => e_n_k.symm))
-    |>.trans (Equiv.prodAssoc (Fin m) (Fin n) (Fin k)).symm
-    |>.trans (Equiv.prodCongrLeft (fun _ : Fin k => Equiv.prodComm (Fin m) (Fin n)))
-    |>.trans (Equiv.prodAssoc (Fin n) (Fin m) (Fin k))
-    |>.trans (Equiv.prodCongrRight (fun _ : Fin n => e_m_k))
+    |>.trans (Equiv.prodCongrRight (fun _ : Fin outer => e_n_k.symm))
+    |>.trans (Equiv.prodAssoc (Fin outer) (Fin inner) (Fin tail)).symm
+    |>.trans
+      (Equiv.prodCongrLeft (fun _ : Fin tail => Equiv.prodComm (Fin outer) (Fin inner)))
+    |>.trans (Equiv.prodAssoc (Fin inner) (Fin outer) (Fin tail))
+    |>.trans (Equiv.prodCongrRight (fun _ : Fin inner => e_m_k))
     |>.trans e_n_mk
 
 /--
-Swap the first two axes of a 3D tensor shape: `.dim m (.dim n rest) ↦ .dim n (.dim m rest)`.
-
-This is implemented as a coordinate permutation (a linear isometry).
-
-PyTorch analogue: `transpose(0, 1)` on a 3D tensor.
-https://pytorch.org/docs/stable/generated/torch.transpose.html
+Lift a coordinate equivalence pointwise under a leading axis.
 -/
-def swapFirstTwo3d {Γ : List Shape} {m n : Nat} {rest : Shape}
-    (idx : Idx Γ (.dim m (.dim n rest))) :
-    Node Γ (.dim n (.dim m rest)) :=
-  let sIn : Shape := .dim m (.dim n rest)
-  let sOut : Shape := .dim n (.dim m rest)
-  let k : Nat := Spec.Shape.size rest
-  let e : Fin (Spec.Shape.size sIn) ≃ Fin (Spec.Shape.size sOut) := swapFirstTwoEquiv m n k
-  Node.ofVec (Γ := Γ) (τ := sOut)
-    (f := fun xV =>
-      reindexVec (n := Spec.Shape.size sIn) (m := Spec.Shape.size sOut) e
-        (CtxVec.get (Γ := Γ) (s := sIn) idx xV))
-    (jvp := fun _xV dxV =>
-      reindexVec (n := Spec.Shape.size sIn) (m := Spec.Shape.size sOut) e
-        (CtxVec.get (Γ := Γ) (s := sIn) idx dxV))
-    (vjp := fun _xV δV =>
-      CtxVec.single (Γ := Γ) (s := sIn) idx
-        (reindexVec (n := Spec.Shape.size sOut) (m := Spec.Shape.size sIn) e.symm δV))
-    (correct_inner := by
-      intro _xV dxV δV
-      classical
-      have hctx :=
-        CtxVec.inner_get_single (Γ := Γ) (s := sIn) idx dxV
-          (reindexVec (n := Spec.Shape.size sOut) (m := Spec.Shape.size sIn) e.symm δV)
-      have hperm :=
-        inner_reindex_left (e := e)
-          (x := CtxVec.get (Γ := Γ) (s := sIn) idx dxV)
-          (y := δV)
-      exact hperm.trans hctx.symm)
-
-/-- `NodeFDerivCorrect` for `swap_first_two3d` (linear coordinate permutation). -/
-def swapFirstTwo3dFderiv {Γ : List Shape} {m n : Nat} {rest : Shape}
-    (idx : Idx Γ (.dim m (.dim n rest))) :
-    NodeFDerivCorrect (swapFirstTwo3d (Γ := Γ) (m := m) (n := n) (rest := rest) idx) := by
-  classical
-  let sIn : Shape := .dim m (.dim n rest)
-  let sOut : Shape := .dim n (.dim m rest)
-  let k : Nat := Spec.Shape.size rest
-  let e : Fin (Spec.Shape.size sIn) ≃ Fin (Spec.Shape.size sOut) := swapFirstTwoEquiv m n k
-  let P : Vec (Spec.Shape.size sIn) →L[ℝ] Vec (Spec.Shape.size sOut) :=
-    reindexLin (n := Spec.Shape.size sIn) (m := Spec.Shape.size sOut) e
-  let D : CtxVec Γ →L[ℝ] Vec (Spec.Shape.size sOut) :=
-    P.comp (CtxVec.getCLM (Γ := Γ) (s := sIn) idx)
-  refine
-    { deriv := fun _ => D
-      hasFDerivAt := ?_
-      jvp_eq := ?_ }
-  · intro xV
-    have hD : HasFDerivAt (fun x : CtxVec Γ => D x) D xV := D.hasFDerivAt (x := xV)
-    have hEq :
-        (Node.forwardVec (Γ := Γ) (τ := sOut)
-            (swapFirstTwo3d (Γ := Γ) (m := m) (n := n) (rest := rest) idx))
-          =
-        fun x : CtxVec Γ => D x := by
-      funext x
-      simp only [swapFirstTwo3d, Node.forwardVec_ofVec, D, P,
-        ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
-      exact (reindexLin_apply e _).symm
-    exact hD.congr_of_eventuallyEq hEq.eventuallyEq
-  · intro xV dxV
-    simp only [swapFirstTwo3d, Node.jvpVec_ofVec, D, P,
-      ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
-    exact (reindexLin_apply e _).symm
-
--- ---------------------------------------------------------------------------
--- 3D transpose of the last two axes: `.dim a (.dim b (.dim c .scalar)) ↦ .dim a (.dim c (.dim b
--- .scalar))`
--- ---------------------------------------------------------------------------
-
-/-- Underlying coordinate permutation for transposing the last two axes of a 3D tensor. -/
-public def transposeLastTwoEquiv (a b c : Nat) :
-    Fin (a * (b * (c * 1))) ≃ Fin (a * (c * (b * 1))) :=
-  -- Work with the definitional sizes coming from `Spec.Shape.size`: `c` contributes a `* 1` from the
-  -- trailing `.scalar`.
-  let swapBC : Fin (b * (c * 1)) ≃ Fin (c * (b * 1)) :=
-    let e_b_c1 : (Fin b × Fin (c * 1)) ≃ Fin (b * (c * 1)) := finProdFinEquiv
-    let e_c_1 : (Fin c × Fin 1) ≃ Fin (c * 1) := finProdFinEquiv
-    let e_b_1 : (Fin b × Fin 1) ≃ Fin (b * 1) := finProdFinEquiv
-    let e_c_b1 : (Fin c × Fin (b * 1)) ≃ Fin (c * (b * 1)) := finProdFinEquiv
-    e_b_c1.symm
-      |>.trans (Equiv.prodCongrRight (fun _ : Fin b => e_c_1.symm))
-      |>.trans (Equiv.prodAssoc (Fin b) (Fin c) (Fin 1)).symm
-      |>.trans (Equiv.prodCongr (Equiv.prodComm (Fin b) (Fin c)) (Equiv.refl (Fin 1)))
-      |>.trans (Equiv.prodAssoc (Fin c) (Fin b) (Fin 1))
-      |>.trans (Equiv.prodCongrRight (fun _ : Fin c => e_b_1))
-      |>.trans e_c_b1
-  let e_a_bc1 : (Fin a × Fin (b * (c * 1))) ≃ Fin (a * (b * (c * 1))) := finProdFinEquiv
-  let e_a_cb1 : (Fin a × Fin (c * (b * 1))) ≃ Fin (a * (c * (b * 1))) := finProdFinEquiv
-  e_a_bc1.symm
-    |>.trans (Equiv.prodCongrRight (fun _ : Fin a => swapBC))
-    |>.trans e_a_cb1
+public def mapOuterEquiv (leading : Nat) {source target : Nat}
+    (e : Fin source ≃ Fin target) : Fin (leading * source) ≃ Fin (leading * target) :=
+  let sourceProd : (Fin leading × Fin source) ≃ Fin (leading * source) := finProdFinEquiv
+  let targetProd : (Fin leading × Fin target) ≃ Fin (leading * target) := finProdFinEquiv
+  sourceProd.symm
+    |>.trans (Equiv.prodCongrRight (fun _ : Fin leading => e))
+    |>.trans targetProd
 
 /--
-Transpose the last two axes of a 3D tensor: `.dim a (.dim b (.dim c .scalar)) ↦ .dim a (.dim c (.dim
-  b .scalar))`.
-
-This is another coordinate permutation used in attention (switching `K` to `Kᵀ` while keeping
-  head/batch axes).
+Reindex a tensor node by any coordinate equivalence. This is the proof-level primitive behind
+arbitrary axis permutations; its JVP uses the same permutation and its VJP uses the inverse.
 -/
-def transpose3dLastTwo {Γ : List Shape} {a b c : Nat}
-    (idx : Idx Γ (.dim a (.dim b (.dim c .scalar)))) :
-    Node Γ (.dim a (.dim c (.dim b .scalar))) :=
-  let sIn : Shape := .dim a (.dim b (.dim c .scalar))
-  let sOut : Shape := .dim a (.dim c (.dim b .scalar))
-  let e : Fin (Spec.Shape.size sIn) ≃ Fin (Spec.Shape.size sOut) := transposeLastTwoEquiv a b c
-  Node.ofVec (Γ := Γ) (τ := sOut)
+def reindex {Γ : List Shape} {source target : Shape}
+    (idx : Idx Γ source)
+    (e : Fin (Spec.Shape.size source) ≃ Fin (Spec.Shape.size target)) :
+    Node Γ target :=
+  Node.ofFn (Γ := Γ) (τ := target)
     (f := fun xV =>
-      reindexVec (n := Spec.Shape.size sIn) (m := Spec.Shape.size sOut) e
-        (CtxVec.get (Γ := Γ) (s := sIn) idx xV))
+      reindexVec (n := Spec.Shape.size source) (m := Spec.Shape.size target) e
+        (CtxVec.get (Γ := Γ) (s := source) idx xV))
     (jvp := fun _xV dxV =>
-      reindexVec (n := Spec.Shape.size sIn) (m := Spec.Shape.size sOut) e
-        (CtxVec.get (Γ := Γ) (s := sIn) idx dxV))
+      reindexVec (n := Spec.Shape.size source) (m := Spec.Shape.size target) e
+        (CtxVec.get (Γ := Γ) (s := source) idx dxV))
     (vjp := fun _xV δV =>
-      CtxVec.single (Γ := Γ) (s := sIn) idx
-        (reindexVec (n := Spec.Shape.size sOut) (m := Spec.Shape.size sIn) e.symm δV))
+      CtxVec.single (Γ := Γ) (s := source) idx
+        (reindexVec (n := Spec.Shape.size target) (m := Spec.Shape.size source) e.symm δV))
     (correct_inner := by
       intro _xV dxV δV
       classical
       have hctx :=
-        CtxVec.inner_get_single (Γ := Γ) (s := sIn) idx dxV
-          (reindexVec (n := Spec.Shape.size sOut) (m := Spec.Shape.size sIn) e.symm δV)
-      -- `inner_reindex_left` is exactly the isometry/adjointness property for the permutation.
+        CtxVec.inner_get_single (Γ := Γ) (s := source) idx dxV
+          (reindexVec (n := Spec.Shape.size target) (m := Spec.Shape.size source) e.symm δV)
       have hperm :=
         inner_reindex_left (e := e)
-          (x := CtxVec.get (Γ := Γ) (s := sIn) idx dxV)
+          (x := CtxVec.get (Γ := Γ) (s := source) idx dxV)
           (y := δV)
-      -- Combine with `get/single` adjointness in the context.
       exact hperm.trans hctx.symm)
 
-/-- `NodeFDerivCorrect` for `transpose3d_last_two` (linear coordinate permutation). -/
-def transpose3dLastTwoFderiv {Γ : List Shape} {a b c : Nat}
-    (idx : Idx Γ (.dim a (.dim b (.dim c .scalar)))) :
-    NodeFDerivCorrect (transpose3dLastTwo (Γ := Γ) (a := a) (b := b) (c := c) idx) := by
+/-- `NodeFDerivCorrect` for an arbitrary coordinate reindexing. -/
+def reindexFDeriv {Γ : List Shape} {source target : Shape}
+    (idx : Idx Γ source)
+    (e : Fin (Spec.Shape.size source) ≃ Fin (Spec.Shape.size target)) :
+    NodeFDerivCorrect (reindex (Γ := Γ) (source := source) (target := target) idx e) := by
   classical
-  let sIn : Shape := .dim a (.dim b (.dim c .scalar))
-  let sOut : Shape := .dim a (.dim c (.dim b .scalar))
-  let e : Fin (Spec.Shape.size sIn) ≃ Fin (Spec.Shape.size sOut) := transposeLastTwoEquiv a b c
-  let P : Vec (Spec.Shape.size sIn) →L[ℝ] Vec (Spec.Shape.size sOut) :=
-    reindexLin (n := Spec.Shape.size sIn) (m := Spec.Shape.size sOut) e
-  let D : CtxVec Γ →L[ℝ] Vec (Spec.Shape.size sOut) :=
-    P.comp (CtxVec.getCLM (Γ := Γ) (s := sIn) idx)
+  let P : Vec (Spec.Shape.size source) →L[ℝ] Vec (Spec.Shape.size target) :=
+    reindexLin (n := Spec.Shape.size source) (m := Spec.Shape.size target) e
+  let D : CtxVec Γ →L[ℝ] Vec (Spec.Shape.size target) :=
+    P.comp (CtxVec.getCLM (Γ := Γ) (s := source) idx)
   refine
     { deriv := fun _ => D
       hasFDerivAt := ?_
@@ -350,17 +253,17 @@ def transpose3dLastTwoFderiv {Γ : List Shape} {a b c : Nat}
   · intro xV
     have hD : HasFDerivAt (fun x : CtxVec Γ => D x) D xV := D.hasFDerivAt (x := xV)
     have hEq :
-        (Node.forwardVec (Γ := Γ) (τ := sOut)
-            (transpose3dLastTwo (Γ := Γ) (a := a) (b := b) (c := c) idx))
+        (Node.forwardVec (Γ := Γ) (τ := target)
+            (reindex (Γ := Γ) (source := source) (target := target) idx e))
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp only [transpose3dLastTwo, Node.forwardVec_ofVec, D, P,
+      simp only [reindex, Node.forwardVec_ofFn, D, P,
         ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
       exact (reindexLin_apply e _).symm
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
-    simp only [transpose3dLastTwo, Node.jvpVec_ofVec, D, P,
+    simp only [reindex, Node.jvpVec_ofFn, D, P,
       ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
     exact (reindexLin_apply e _).symm
 

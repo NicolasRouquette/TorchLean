@@ -6,16 +6,13 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.IRExec.Correctness
+import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalence
 
 /-!
 # Slow Proof CI Target
 
-This module collects proof-heavy targets for regular CI coverage while keeping
-the everyday build focused on the main library surface.
-
-The main target here is typed graph IR execution correctness. Keeping it as a named CI import makes
-the expensive proof targets visible without forcing every developer build to elaborate them.
+This target elaborates the end-to-end typed graph IR semantic-equivalence theorem. The documentation
+workflow typechecks it before DocGen; locally, use `lake build NNSlowProofs`.
 -/
 
 @[expose] public section

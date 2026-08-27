@@ -6,10 +6,11 @@ Authors: TorchLean Team
 
 module
 
-public import NN.API.Seeded
 public import NN.Verification.Util.FloatApprox
 public import NN.Verification.Util.Json
 public import NN.Verification.Util.Tensor
+
+import Mathlib.Tactic.Linarith
 
 /-!
 # Tensor-native 3D box camera certificates
@@ -19,8 +20,8 @@ This module is TorchLean's tensor-native camera-box certificate implementation.
 Cube R-CNN, SAM 3D, and related systems can be treated as untrusted producers of tensors. This
 checker verifies the geometric contract of one exported artifact:
 
-* a camera projection matrix `P : Tensor α (shape![3,4])`;
-* eight 3D cuboid corners `corners : Tensor α (shape![8,3])`;
+* a camera projection matrix `P : Tensor α [3,4]`;
+* eight 3D cuboid corners `corners : Tensor α [8,3]`;
 * image dimensions; and
 * a claimed 2D enclosing box.
 
@@ -182,7 +183,7 @@ Pinhole x-coordinate interval from uncertain intrinsics and normalized coordinat
 For $u=f_xx_n+c_x$, with $f_x\ge 0$ and $x_n\ge 0$, interval arithmetic gives
 $u\in f_{x,I}x_{n,I}+c_{x,I}$.
 -/
-def pinholePixelInterval {α : Type} [Add α] [Mul α]
+def pinholePixelIntervalNonnegative {α : Type} [Add α] [Mul α]
     (fI coordI cI : ScalarInterval α) : ScalarInterval α :=
   addInterval (mulNonnegInterval fI coordI) cI
 
@@ -191,9 +192,9 @@ Soundness of the one-axis pinhole interval formula.
 
 This is the camera-parameter uncertainty theorem used by the 3D geometry certificate workflow: if focal length,
 principal point, and normalized coordinate are each inside certified intervals, then the resulting
-pixel coordinate is inside the interval computed by `pinholePixelInterval`.
+pixel coordinate is inside the interval computed by `pinholePixelIntervalNonnegative`.
 -/
-theorem pinholePixelInterval_sound
+theorem pinholePixelIntervalNonnegative_sound
     {α : Type} [Field α] [LinearOrder α] [IsStrictOrderedRing α]
     {fI coordI cI : ScalarInterval α} {f coord c : α}
     (hfNonneg : NonnegativeInterval fI)
@@ -201,7 +202,7 @@ theorem pinholePixelInterval_sound
     (hf : InInterval fI f)
     (hcoord : InInterval coordI coord)
     (hc : InInterval cI c) :
-    InInterval (pinholePixelInterval fI coordI cI) (f * coord + c) :=
+    InInterval (pinholePixelIntervalNonnegative fI coordI cI) (f * coord + c) :=
   addInterval_sound
     (mulNonnegInterval_sound hfNonneg hcoordNonneg hf hcoord)
     hc
@@ -228,7 +229,7 @@ This formulation matches real exported tensors better than a detached `Vec3` API
 3D corners, and interval bounds can all be produced by the same tensor pipeline, and Lean proves the
 final quotient/bbox claim.
 -/
-def homogeneousProjectionInterval {α : Type} [Div α]
+def homogeneousProjectionIntervalNonnegative {α : Type} [Div α]
     (uNumI vNumI zI : ScalarInterval α) : PixelInterval2D α where
   x := divNonnegByPosInterval uNumI zI
   y := divNonnegByPosInterval vNumI zI
@@ -247,13 +248,13 @@ theorem list_all_true_of_mem {α : Type} {p : α → Bool} {xs : List α}
       · exact ht x hx
 
 /-- A 3D point as a tensor of shape `[3]`. -/
-abbrev Point3 (α : Type) := Spec.Tensor α (.dim 3 .scalar)
+abbrev Point3 (α : Type) := Spec.Tensor α [3]
 
 /-- A 2D point as a tensor of shape `[2]`. -/
-abbrev Point2 (α : Type) := Spec.Tensor α (.dim 2 .scalar)
+abbrev Point2 (α : Type) := Spec.Tensor α [2]
 
 /-- Eight cuboid corners, stored as a tensor of shape `[8, 3]`. -/
-abbrev BoxCorners (α : Type) := Spec.Tensor α (.dim 8 (.dim 3 .scalar))
+abbrev BoxCorners (α : Type) := Spec.Tensor α [8, 3]
 
 /--
 A 3×4 camera projection matrix.
@@ -268,23 +269,18 @@ $$
 
 The projected pixel is $(u_{\mathrm{num}}/z,v_{\mathrm{num}}/z)$, checked only when $z>0$.
 -/
-abbrev CameraP (α : Type) := Spec.Tensor α (.dim 3 (.dim 4 .scalar))
+abbrev CameraP (α : Type) := Spec.Tensor α [3, 4]
 
 /-- Projected eight-corner tensor of shape `[8, 2]`. -/
-abbrev ProjectedCorners (α : Type) := Spec.Tensor α (.dim 8 (.dim 2 .scalar))
+abbrev ProjectedCorners (α : Type) := Spec.Tensor α [8, 2]
 
 /-- A 2D box `[xmin, ymin, xmax, ymax]`. -/
-abbrev Box2d (α : Type) := Spec.Tensor α (.dim 4 .scalar)
+abbrev Box2D (α : Type) := Spec.Tensor α [4]
 
 /-- Matrix scalar accessor for tensor-shaped matrices. -/
 def matGet {α : Type} {rows cols : Nat}
-    (x : Spec.Tensor α (.dim rows (.dim cols .scalar))) (i : Fin rows) (j : Fin cols) : α :=
+    (x : Spec.Tensor α [rows, cols]) (i : Fin rows) (j : Fin cols) : α :=
   Spec.Tensor.item (Spec.get (Spec.get x i) j)
-
-/-- Vector scalar accessor for tensor-shaped vectors. -/
-def vecGet {α : Type} {n : Nat}
-    (x : Spec.Tensor α (.dim n .scalar)) (i : Fin n) : α :=
-  Spec.Tensor.item (Spec.get x i)
 
 /-- Extract the `i`-th cuboid corner as a `[3]` tensor. -/
 def corner {α : Type} (corners : BoxCorners α) (i : Fin 8) : Point3 α :=
@@ -293,9 +289,9 @@ def corner {α : Type} (corners : BoxCorners α) (i : Fin 8) : Point3 α :=
 /-- Raw homogeneous camera coordinate `P[row] · [X,Y,Z,1]`. -/
 def cameraCoord {α : Type} [OfNat α 1] [Add α] [Mul α]
     (P : CameraP α) (x : Point3 α) (row : Fin 3) : α :=
-  matGet P row ⟨0, by decide⟩ * vecGet x ⟨0, by decide⟩ +
-  matGet P row ⟨1, by decide⟩ * vecGet x ⟨1, by decide⟩ +
-  matGet P row ⟨2, by decide⟩ * vecGet x ⟨2, by decide⟩ +
+  matGet P row ⟨0, by decide⟩ * Spec.Tensor.getScalar x ⟨0, by decide⟩ +
+  matGet P row ⟨1, by decide⟩ * Spec.Tensor.getScalar x ⟨1, by decide⟩ +
+  matGet P row ⟨2, by decide⟩ * Spec.Tensor.getScalar x ⟨2, by decide⟩ +
   matGet P row ⟨3, by decide⟩ * (1 : α)
 
 /-- Positive-depth denominator used by pinhole projection. -/
@@ -316,7 +312,7 @@ def projectY {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
 /-- Project one 3D point to a 2D tensor. -/
 def projectPoint {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
     (P : CameraP α) (x : Point3 α) : Point2 α :=
-  Spec.Tensor.vector (fun j : Fin 2 =>
+  Spec.Tensor.ofFn (fun j : Fin 2 =>
     if j.val = 0 then
       projectX P x
     else
@@ -325,7 +321,7 @@ def projectPoint {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
 /-- Project all eight cuboid corners. -/
 def projectBox {α : Type} [OfNat α 1] [Add α] [Mul α] [Div α]
     (P : CameraP α) (corners : BoxCorners α) : ProjectedCorners α :=
-  Spec.Tensor.matrix (fun i j => vecGet (projectPoint P (corner corners i)) j)
+  Spec.Tensor.matrix (fun i j => Spec.Tensor.getScalar (projectPoint P (corner corners i)) j)
 
 /-- A compact exported 3D-box/camera certificate. -/
 structure BoxCameraCert (α : Type) where
@@ -340,16 +336,16 @@ structure BoxCameraCert (α : Type) where
   /-- Eight exported 3D cuboid corners. -/
   corners : BoxCorners α
   /-- Claimed 2D box `[xmin,ymin,xmax,ymax]`. -/
-  bbox : Box2d α
+  bbox : Box2D α
 
 /-- Left edge `xmin` of the claimed 2D bounding box. -/
-def xmin {α : Type} (cert : BoxCameraCert α) : α := vecGet cert.bbox ⟨0, by decide⟩
+def xmin {α : Type} (cert : BoxCameraCert α) : α := Spec.Tensor.getScalar cert.bbox ⟨0, by decide⟩
 /-- Top edge `ymin` of the claimed 2D bounding box. -/
-def ymin {α : Type} (cert : BoxCameraCert α) : α := vecGet cert.bbox ⟨1, by decide⟩
+def ymin {α : Type} (cert : BoxCameraCert α) : α := Spec.Tensor.getScalar cert.bbox ⟨1, by decide⟩
 /-- Right edge `xmax` of the claimed 2D bounding box. -/
-def xmax {α : Type} (cert : BoxCameraCert α) : α := vecGet cert.bbox ⟨2, by decide⟩
+def xmax {α : Type} (cert : BoxCameraCert α) : α := Spec.Tensor.getScalar cert.bbox ⟨2, by decide⟩
 /-- Bottom edge `ymax` of the claimed 2D bounding box. -/
-def ymax {α : Type} (cert : BoxCameraCert α) : α := vecGet cert.bbox ⟨3, by decide⟩
+def ymax {α : Type} (cert : BoxCameraCert α) : α := Spec.Tensor.getScalar cert.bbox ⟨3, by decide⟩
 
 /-- The pixel interval is contained in the claimed 2D box. -/
 def PixelIntervalInsideBBox {α : Type} [LE α]
@@ -378,7 +374,7 @@ theorem pixel_inside_bbox_of_interval_inside
   · exact le_trans hpyhi hyhi
 
 /--
-Full pinhole-intrinsics interval-to-bbox theorem.
+Pinhole-intrinsics interval-to-bbox theorem for nonnegative normalized coordinates.
 
 Assume independent intervals for focal lengths (`fx`, `fy`), normalized coordinates
 $x_n=X/Z$ and $y_n=Y/Z$, and principal point (`cx`, `cy`). If the interval arithmetic result
@@ -388,12 +384,12 @@ $u\in f_{x,I}x_{n,I}+c_{x,I}$ and $v\in f_{y,I}y_{n,I}+c_{y,I}$
 is contained in the claimed bbox, then every concrete camera/pixel choice satisfying those input
 intervals projects inside the bbox.
 
-This is the full uncertainty-envelope bridge for the camera-uncertainty workflow: uncertainty begins at camera
+This is a quadrant-restricted uncertainty bridge: uncertainty begins at camera
 intrinsics and normalized camera coordinates, propagates through the pinhole equations, and ends as
 a certified bbox-enclosure statement.  The theorem is phrased over normalized coordinates so callers
 can plug in whichever depth-interval or model-uncertainty method they use to bound `X/Z` and `Y/Z`.
 -/
-theorem pinhole_intrinsics_interval_inside_bbox_sound
+theorem pinhole_intrinsics_nonnegative_interval_inside_bbox_sound
     {α : Type} [Field α] [LinearOrder α] [IsStrictOrderedRing α]
     {cert : BoxCameraCert α}
     {fxI fyI xnI ynI cxI cyI : ScalarInterval α}
@@ -404,8 +400,8 @@ theorem pinhole_intrinsics_interval_inside_bbox_sound
     (hynNonneg : NonnegativeInterval ynI)
     (hinside :
       PixelIntervalInsideBBox cert
-        { x := pinholePixelInterval fxI xnI cxI
-          y := pinholePixelInterval fyI ynI cyI })
+        { x := pinholePixelIntervalNonnegative fxI xnI cxI
+          y := pinholePixelIntervalNonnegative fyI ynI cyI })
     (hfx : InInterval fxI fx)
     (hfy : InInterval fyI fy)
     (hxn : InInterval xnI xn)
@@ -417,22 +413,22 @@ theorem pinhole_intrinsics_interval_inside_bbox_sound
       ymin cert ≤ fy * yn + cy ∧
       fy * yn + cy ≤ ymax cert := by
   have hx :
-      InInterval (pinholePixelInterval fxI xnI cxI) (fx * xn + cx) :=
-    pinholePixelInterval_sound hfxNonneg hxnNonneg hfx hxn hcx
+      InInterval (pinholePixelIntervalNonnegative fxI xnI cxI) (fx * xn + cx) :=
+    pinholePixelIntervalNonnegative_sound hfxNonneg hxnNonneg hfx hxn hcx
   have hy :
-      InInterval (pinholePixelInterval fyI ynI cyI) (fy * yn + cy) :=
-    pinholePixelInterval_sound hfyNonneg hynNonneg hfy hyn hcy
+      InInterval (pinholePixelIntervalNonnegative fyI ynI cyI) (fy * yn + cy) :=
+    pinholePixelIntervalNonnegative_sound hfyNonneg hynNonneg hfy hyn hcy
   exact pixel_inside_bbox_of_interval_inside
     (cert := cert)
-    (pix := { x := pinholePixelInterval fxI xnI cxI
-              y := pinholePixelInterval fyI ynI cyI })
+    (pix := { x := pinholePixelIntervalNonnegative fxI xnI cxI
+              y := pinholePixelIntervalNonnegative fyI ynI cyI })
     hinside
     ⟨hx, hy⟩
 
 /--
-Full homogeneous projection interval-to-bbox theorem.
+Homogeneous projection interval-to-bbox theorem for nonnegative numerators.
 
-This is the stronger robustness theorem. Instead of assuming the projected pixel has
+Instead of assuming the projected pixel has
 already been bounded, it starts from intervals over the homogeneous camera outputs:
 
 * `uNumI` encloses the x numerator $P_0\mathbin{\cdot}[X,Y,Z,1]$;
@@ -448,7 +444,7 @@ uncertain camera intrinsics/extrinsics, bounded corner perturbations, or mixed n
 they may produce ranges for homogeneous coordinates, but Lean checks the perspective divide and
 the final bbox containment.
 -/
-theorem homogeneous_projection_interval_inside_bbox_sound
+theorem homogeneous_projection_nonnegative_interval_inside_bbox_sound
     {α : Type} [Field α] [LinearOrder α] [IsStrictOrderedRing α]
     {cert : BoxCameraCert α}
     {uNumI vNumI zI : ScalarInterval α}
@@ -458,7 +454,7 @@ theorem homogeneous_projection_interval_inside_bbox_sound
     (hzPos : 0 < zI.lo)
     (hinside :
       PixelIntervalInsideBBox cert
-        (homogeneousProjectionInterval uNumI vNumI zI))
+        (homogeneousProjectionIntervalNonnegative uNumI vNumI zI))
     (huNum : InInterval uNumI uNum)
     (hvNum : InInterval vNumI vNum)
     (hz : InInterval zI z) :
@@ -474,7 +470,7 @@ theorem homogeneous_projection_interval_inside_bbox_sound
     divNonnegByPosInterval_sound hvNumNonneg hzPos hvNum hz
   exact pixel_inside_bbox_of_interval_inside
     (cert := cert)
-    (pix := homogeneousProjectionInterval uNumI vNumI zI)
+    (pix := homogeneousProjectionIntervalNonnegative uNumI vNumI zI)
     hinside
     ⟨hx, hy⟩
 
@@ -536,7 +532,7 @@ For real model outputs we also want robustness statements around that point.
 
 There are two complementary robustness layers in this file:
 
-* `homogeneous_projection_interval_inside_bbox_sound` starts from intervals over homogeneous camera
+* `homogeneous_projection_nonnegative_interval_inside_bbox_sound` starts from nonnegative intervals over homogeneous camera
   outputs `(u_num, v_num, z)` and proves the perspective-divided pixels stay inside the claimed box.
 * `bbox_encloses_perturbed_of_margin` starts from a nominal projected pixel and proves that any
   bounded pixel-space perturbation stays inside the claimed box if there is enough slack.

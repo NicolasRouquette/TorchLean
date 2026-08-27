@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.GraphSpec.Primitives.Vision
+public import NN.GraphSpec.Primitives.Spatial
 
 /-!
 # GraphSpec Primitive Packs
@@ -25,8 +25,8 @@ not turn into a catalog of every layer TorchLean supports.
 
 Current extension pack:
 
-- `NN.GraphSpec.Primitives.Vision`: CHW convolution, max-pool, flatten, BatchNorm, and global
-  average pooling adapters.
+- `NN.GraphSpec.Primitives.Spatial`: rank-polymorphic convolution, pooling, flattening,
+  normalization, and global-average-pooling adapters.
 
 Adding a new operation to GraphSpec means giving it both meanings:
 

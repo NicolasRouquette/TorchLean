@@ -28,7 +28,7 @@ structure CnnConfig (d : Nat) where
   /-- Number of channels in each input sample. -/
   inChannels : Nat
   /-- Extent of each spatial axis. -/
-  spatial : Vector Nat d
+  spatial : Tensor Nat [d]
   /-- Number of classifier outputs per sample. -/
   outDim : Nat
   /-- Convolution stage. -/
@@ -37,31 +37,31 @@ structure CnnConfig (d : Nat) where
   pool : Pool d
 
 /-- Spatial extent after convolution. -/
-def CnnConfig.afterConv {d : Nat} (cfg : CnnConfig d) : Vector Nat d :=
+def CnnConfig.afterConv {d : Nat} (cfg : CnnConfig d) : Tensor Nat [d] :=
   Spec.convOutSpatial cfg.spatial cfg.conv.kernel cfg.conv.stride cfg.conv.padding
 
 /-- Spatial extent after pooling. -/
-def CnnConfig.afterPool {d : Nat} (cfg : CnnConfig d) : Vector Nat d :=
+def CnnConfig.afterPool {d : Nat} (cfg : CnnConfig d) : Tensor Nat [d] :=
   Spec.poolOutSpatialPad cfg.afterConv cfg.pool.kernel cfg.pool.stride cfg.pool.padding
 
 /-- Number of features presented to the classifier head. -/
 def CnnConfig.featureCount {d : Nat} (cfg : CnnConfig d) : Nat :=
-  Spec.Shape.size (Spec.Shape.ofList (cfg.conv.outChannels :: cfg.afterPool.toList))
+  (cfg.conv.outChannels :: cfg.afterPool.toList).prod
 
 namespace CnnConfig
 
 /-- Input shape with arbitrary leading dimensions. -/
-def inputShape {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (Spec.Shape.ofList (cfg.inChannels :: cfg.spatial.toList))
+def inputShape {d : Nat} (cfg : CnnConfig d) (leading : List Nat := []) : List Nat :=
+  leading ++ cfg.inChannels :: cfg.spatial.toList
 
 /-- Classifier output shape with the same leading dimensions as the input. -/
-def outputShape {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.outDim
+def outputShape {d : Nat} (cfg : CnnConfig d) (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.outDim]
 
 end CnnConfig
 
 /-- Build `convolution -> activation -> max pool -> flatten -> linear`. -/
-def cnn {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar)
+def cnn {d : Nat} (cfg : CnnConfig d) (leading : List Nat := [])
     (hInChannels : cfg.inChannels ≠ 0 := by decide) :
     Builder (Sequential (cfg.inputShape leading) (cfg.outputShape leading)) :=
   letI : NeZero cfg.inChannels := ⟨hInChannels⟩
@@ -71,7 +71,7 @@ def cnn {d : Nat} (cfg : CnnConfig d) (leading : Spec.Shape := .scalar)
     convolution,
     relu,
     pooling,
-    flattenLeading leading,
+    flattenAfter leading,
     linear cfg.featureCount cfg.outDim (leading := leading)
   ]
 

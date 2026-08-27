@@ -15,17 +15,16 @@ interpretation, and allowed operations are part of the object being specified.
 - `Shape.lean`: the `Shape` datatype, runtime axis validation (`validAxis?`), axis-permutation
   planning (`swapAdjacentAxes`), well-formedness, and broadcasting evidence such as
   `CanBroadcastTo`.
-- `Tensor/`: the core tensor datatype plus constructors, vector helpers, linear algebra, and
+- `Tensor/`: the core tensor datatype plus constructors, rank-one operations, linear algebra, and
   factorizations.
-- `Tensor/Packed.lean`: shape-tagged tensors used when an evaluator must store tensors of different
-  shapes together; it also provides the canonical packed adjacent-axis swap.
+- `Tensor/SomeTensor.lean`: internal runtime shape erasure for evaluators that must store tensors of
+  different shapes together. The stored shape is checked before recovering a typed tensor.
 - `Tensor.lean`: umbrella import for the core tensor API.
 - `TensorOps.lean`: elementwise maps and pointwise tensor operations.
 - `TensorReductionShape.lean` and `TensorReductionShape/`: reductions, reshape/flatten/unflatten,
   concat/slice, broadcasting, and shape-changing helpers.
 - `Sequence.lean`: helpers for common time and sequence-axis patterns.
-- `TensorArray.lean`: array-backed representations and helpers used by runtime/backend code.
-- `TensorBridge.lean`: bridges between spec tensors and runtime layer tensor representations.
+- `Tensor/Constructors.lean`: total builders, including checked flat-list and flat-array boundaries.
 - `TensorGrad.lean`: gradient-related specs, including clipping helpers.
 - `Complex.lean`: small complex-number support used by FFT/FNO-style specifications.
 - `Utils.lean`: glue utilities: casting maps, `*_like` constructors, list/tensor helpers, and

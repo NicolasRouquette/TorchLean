@@ -27,7 +27,7 @@ structure ExecConfig where
   /-- Scalar semantics for this execution. -/
   scalar : _root_.TorchLean.Runtime.ScalarMode := .float32
   /-- Immediate or typed-graph execution. -/
-  execution : ExecutionMode := .eager
+  execution : Runtime.ExecutionMode := .eager
   /-- Requested execution device. -/
   device : NN.Backend.Device := .cpu
   /-- Whether to print each backend capsule when first used. -/
@@ -120,12 +120,12 @@ Parse the shared runtime flags, instantiate `defn`, and pass the resulting scala
 -/
 def withModule
     {stateShapes inputShapes : List Spec.Shape}
-    (defn : ObjectiveDef stateShapes inputShapes)
+    (defn : ObjectiveDef Unit stateShapes inputShapes [])
     (args : List String)
     (k :
       ∀ {α : Type}, [_root_.Context α] → [DecidableEq Spec.Shape] → [ToString α] →
         [_root_.TorchLean.Runtime.FromFloat α] →
-        (cast : Float → α) → Objective α stateShapes inputShapes →
+        (cast : Float → α) → Objective α Unit stateShapes inputShapes [] →
         (rest : List String) → IO Unit) :
     IO Unit := do
   let (cfg, rest) ← match ExecConfig.parseAndStrip args with
@@ -139,8 +139,8 @@ def withModule
   match cfg.scalar with
   | .float32 =>
       let module ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
-        (α := Float32) (stateShapes := stateShapes) (inputShapes := inputShapes)
-        defn Float.toFloat32 opts
+        (α := Float32) (β := Unit) (stateShapes := stateShapes) (inputShapes := inputShapes)
+        (dataInputShapes := []) defn Float.toFloat32 opts
       k (α := Float32) Float.toFloat32 module rest
   | _ =>
       if cfg.device == .cuda then
@@ -148,8 +148,8 @@ def withModule
       match (← _root_.TorchLean.Runtime.ScalarMode.withRuntime cfg.scalar (fun {α} _ _ _ _ => do
           let cast := _root_.TorchLean.Runtime.ofFloat (α := α)
           let module ← _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef.instantiateWith
-            (α := α) (stateShapes := stateShapes) (inputShapes := inputShapes)
-            defn cast opts
+            (α := α) (β := Unit) (stateShapes := stateShapes) (inputShapes := inputShapes)
+            (dataInputShapes := []) defn cast opts
           k (α := α) cast module rest)) with
       | .ok () => pure ()
       | .error message => throw <| IO.userError message
@@ -163,6 +163,8 @@ namespace TorchLean.Module.Command
 structure Config where
   /-- Optional banner to print before executing the program. -/
   banner? : Option (Options → String) := none
+  /-- Command-specific help text; the generic runtime help is used when absent. -/
+  usage? : Option String := none
   /-- Flush stdout after printing the banner, when present. -/
   flush : Bool := true
   /-- Print `"{exeName}: ok"` on success. -/
@@ -217,7 +219,7 @@ def usage (exeName : String) : String :=
     , ""
     , "Verification commands:"
     , "  lake exe verify -- list"
-    , "  lake exe verify -- margin-cert"
+    , "  lake exe verify -- margin-report"
     , "  lake exe verify -- abcrown-leaf"
     , "  lake exe verify -- torchlean-robustness"
     , "  lake exe verify -- torchlean-mlp-workflow"
@@ -239,7 +241,7 @@ def run
     IO UInt32 := do
   let args := TorchLean.CLI.dropDashDash args
   if args.contains "--help" || args.contains "-h" then
-    IO.println (usage exeName)
+    IO.println (config.usage?.getD (usage exeName))
     return 0
   let (seed, args) ←
     match TorchLean.CLI.takeSeed args 0 with
@@ -287,9 +289,10 @@ def runFloat32
     (exeName : String) (args : List String)
     (banner : Options → String)
     (k : (opts : Options) → (rest : List String) → IO Unit)
-    (printOk : Bool := true) : IO UInt32 :=
+    (printOk : Bool := true)
+    (usage? : Option String := none) : IO UInt32 :=
   run exeName args (.float32 k)
-    { banner? := some banner, printOk := printOk }
+    { banner? := some banner, usage?, printOk := printOk }
 
 /-- Run a native-`Float32` command on CUDA, adding `--device cuda` when needed. -/
 def runCudaFloat32
@@ -297,7 +300,8 @@ def runCudaFloat32
     (args : List String)
     (banner : Options → String)
     (k : (opts : Options) → (rest : List String) → IO Unit)
-    (printOk : Bool := true) : IO UInt32 := do
+    (printOk : Bool := true)
+    (usage? : Option String := none) : IO UInt32 := do
   let hasDeviceFlag :=
     args.any fun arg => arg == "--device" || arg.startsWith "--device="
   let cudaArgs : Except String (List String) := do
@@ -313,7 +317,7 @@ def runCudaFloat32
     | .error msg =>
         IO.eprintln s!"{exeName}: {msg}"
         return 1
-  runFloat32 exeName args banner k printOk
+  runFloat32 exeName args banner k printOk usage?
 
 /-- Run a native-`Float32` command on the eager CUDA runtime. -/
 def runCudaEagerFloat32
@@ -321,13 +325,14 @@ def runCudaEagerFloat32
     (args : List String)
     (banner : Options → String)
     (k : (opts : Options) → (rest : List String) → IO Unit)
-    (printOk : Bool := true) : IO UInt32 :=
+    (printOk : Bool := true)
+    (usage? : Option String := none) : IO UInt32 :=
   runCudaFloat32 exeName args banner
     (fun opts rest => do
       unless opts.execution == .eager do
         throw <| IO.userError <|
           s!"{exeName}: --execution eager is required for CUDA execution"
       k opts rest)
-    printOk
+    printOk usage?
 
 end TorchLean.Module.Command

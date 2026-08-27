@@ -35,7 +35,7 @@ and `predict` abstracts the predictor head. The objective theorem is independent
 particular image backbone.
 -/
 def jepaLoss {n : Nat} {Context Target Pred : Type}
-    (targetIdxs : List (Fin n))
+    (targetIdxs : Array (Fin n))
     (context : Context)
     (target : Fin n → Target)
     (predict : Context → Fin n → Pred)
@@ -45,11 +45,11 @@ def jepaLoss {n : Nat} {Context Target Pred : Type}
 @[simp] theorem jepaLoss_nil {n : Nat} {Context Target Pred : Type}
     (context : Context) (target : Fin n → Target) (predict : Context → Fin n → Pred)
     (repLoss : Target → Pred → Nat) :
-    jepaLoss ([] : List (Fin n)) context target predict repLoss = 0 := by
+    jepaLoss (#[] : Array (Fin n)) context target predict repLoss = 0 := by
   simp [jepaLoss]
 
 theorem jepaLoss_append {n : Nat} {Context Target Pred : Type}
-    (xs ys : List (Fin n)) (context : Context) (target : Fin n → Target)
+    (xs ys : Array (Fin n)) (context : Context) (target : Fin n → Target)
     (predict : Context → Fin n → Pred) (repLoss : Target → Pred → Nat) :
     jepaLoss (xs ++ ys) context target predict repLoss =
       jepaLoss xs context target predict repLoss +
@@ -58,7 +58,7 @@ theorem jepaLoss_append {n : Nat} {Context Target Pred : Type}
 
 /-- JEPA target-block prediction is invariant under reversing the target-index order. -/
 theorem jepaLoss_reverse {n : Nat} {Context Target Pred : Type}
-    (idxs : List (Fin n)) (context : Context) (target : Fin n → Target)
+    (idxs : Array (Fin n)) (context : Context) (target : Fin n → Target)
     (predict : Context → Fin n → Pred) (repLoss : Target → Pred → Nat) :
     jepaLoss idxs.reverse context target predict repLoss =
       jepaLoss idxs context target predict repLoss := by
@@ -71,20 +71,16 @@ extensional property: if two target branches agree on the selected indices, the 
 same.
 -/
 theorem jepaLoss_target_ext {n : Nat} {Context Target Pred : Type}
-    (idxs : List (Fin n)) (context : Context)
+    (idxs : Array (Fin n)) (context : Context)
     (target₁ target₂ : Fin n → Target)
     (predict : Context → Fin n → Pred) (repLoss : Target → Pred → Nat)
     (h : ∀ i ∈ idxs, target₁ i = target₂ i) :
     jepaLoss idxs context target₁ predict repLoss =
       jepaLoss idxs context target₂ predict repLoss := by
-  induction idxs with
-  | nil => simp
-  | cons i rest ih =>
-      have hi : target₁ i = target₂ i := h i (by simp)
-      have hrest : ∀ j ∈ rest, target₁ j = target₂ j := by
-        intro j hj
-        exact h j (by simp [hj])
-      simp [jepaLoss, maskedLoss_cons, hi]
-      exact ih hrest
+  apply congrArg Array.sum
+  apply Array.ext <;> simp only [Array.size_map]
+  intro i hi₁ hi₂
+  simp only [Array.getElem_map]
+  rw [h idxs[i] (Array.getElem_mem hi₁)]
 
 end NN.MLTheory.SelfSupervised

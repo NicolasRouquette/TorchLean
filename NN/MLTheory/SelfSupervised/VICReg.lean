@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-import Mathlib.Data.List.Basic
+import Mathlib.Init
 
 /-!
 # VICReg and Barlow-Twins style collapse guards
@@ -47,7 +47,7 @@ def varianceFloorPenalty (gamma variance : Nat) : Nat :=
   gamma - variance
 
 /-- Sum of per-coordinate variance-floor penalties for one embedding branch. -/
-def varianceTerm (gamma : Nat) (variances : List Nat) : Nat :=
+def varianceTerm (gamma : Nat) (variances : Array Nat) : Nat :=
   (variances.map (varianceFloorPenalty gamma)).sum
 
 /--
@@ -64,18 +64,18 @@ def vicregObjective (lambda mu nu invariance variance covariance : Nat) : Nat :=
   simp [varianceFloorPenalty]
 
 @[simp] theorem varianceTerm_nil (gamma : Nat) :
-    varianceTerm gamma [] = 0 := by
+    varianceTerm gamma #[] = 0 := by
   simp [varianceTerm]
 
-@[simp] theorem varianceTerm_cons (gamma v : Nat) (vs : List Nat) :
-    varianceTerm gamma (v :: vs) =
-      varianceFloorPenalty gamma v + varianceTerm gamma vs := by
-  simp [varianceTerm]
+@[simp] theorem varianceTerm_push (gamma v : Nat) (vs : Array Nat) :
+    varianceTerm gamma (vs.push v) =
+      varianceTerm gamma vs + varianceFloorPenalty gamma v := by
+  simp [varianceTerm, Array.map_push]
 
-theorem varianceTerm_append (gamma : Nat) (xs ys : List Nat) :
+theorem varianceTerm_append (gamma : Nat) (xs ys : Array Nat) :
     varianceTerm gamma (xs ++ ys) =
       varianceTerm gamma xs + varianceTerm gamma ys := by
-  simp [varianceTerm, List.map_append, List.sum_append]
+  simp [varianceTerm, Array.map_append, Array.sum_append]
 
 /--
 Collapsed coordinates ($\mathrm{variance}=0$) pay exactly $d\gamma$.
@@ -84,16 +84,15 @@ This is the direct anti-collapse fact: if every coordinate has zero variance, th
 does not silently accept it.
 -/
 theorem varianceTerm_replicate_zero (gamma d : Nat) :
-    varianceTerm gamma (List.replicate d 0) = d * gamma := by
+    varianceTerm gamma (Array.replicate d 0) = d * gamma := by
   induction d with
   | zero => simp [varianceTerm]
   | succ d ih =>
-      rw [List.replicate_succ, varianceTerm_cons, varianceFloorPenalty_zero, ih, Nat.succ_mul]
-      exact Nat.add_comm gamma (d * gamma)
+      rw [Array.replicate_succ, varianceTerm_push, varianceFloorPenalty_zero, ih, Nat.succ_mul]
 
 /-- If $\gamma>0$ and there is at least one collapsed coordinate, the variance term is positive. -/
 theorem varianceTerm_collapsed_positive {gamma d : Nat} (hγ : 0 < gamma) :
-    0 < varianceTerm gamma (List.replicate (d + 1) 0) := by
+    0 < varianceTerm gamma (Array.replicate (d + 1) 0) := by
   rw [varianceTerm_replicate_zero]
   exact Nat.mul_pos (Nat.succ_pos d) hγ
 
@@ -130,7 +129,7 @@ correlation summaries.
 Over `Nat`, the diagonal penalty is zero at $1$; the off-diagonal penalty is zero at $0$. Runtime
 versions can use squared floating-point deviations.
 -/
-def redundancyReductionObjective (lambda : Nat) (diag offDiag : List Nat) : Nat :=
+def redundancyReductionObjective (lambda : Nat) (diag offDiag : Array Nat) : Nat :=
   (diag.map diagonalRedundancyPenalty).sum +
     lambda * (offDiag.map offDiagonalRedundancyPenalty).sum
 
@@ -147,7 +146,7 @@ The ideal Barlow-style correlation summary has zero redundancy loss: all diagona
 and all off-diagonal entries are $0$.
 -/
 @[simp] theorem redundancyReductionObjective_identity (lambda d k : Nat) :
-    redundancyReductionObjective lambda (List.replicate d 1) (List.replicate k 0) = 0 := by
+    redundancyReductionObjective lambda (Array.replicate d 1) (Array.replicate k 0) = 0 := by
   simp [redundancyReductionObjective]
 
 theorem diagonalRedundancyPenalty_zero_positive :
@@ -160,7 +159,8 @@ objective is positive.
 -/
 theorem redundancyReductionObjective_collapsed_diag_positive
     {lambda d k : Nat} :
-    0 < redundancyReductionObjective lambda (0 :: List.replicate d 1) (List.replicate k 0) := by
-  simp [redundancyReductionObjective, diagonalRedundancyPenalty]
+    0 < redundancyReductionObjective lambda
+      ((Array.replicate d 1).push 0) (Array.replicate k 0) := by
+  simp [redundancyReductionObjective, diagonalRedundancyPenalty, Array.map_push]
 
 end NN.MLTheory.SelfSupervised

@@ -88,17 +88,17 @@ def relaxScalarLower (l u : α) : ReLURelax α :=
   else
     { slope := 0, bias := 0 }
 
-/-- Vectorized `relax_scalar`, applied componentwise to `lo`/`hi`. -/
-def relaxVector {n : Nat} (lo hi : Tensor α (.dim n .scalar)) :
-    Tensor (ReLURelax α) (.dim n .scalar) :=
+/-- Apply `relaxScalar` componentwise to vector lower and upper bound tensors. -/
+def relaxVector {n : Nat} (lo hi : Tensor α [n]) :
+    Tensor (ReLURelax α) [n] :=
   match lo, hi with
   | Tensor.dim l, Tensor.dim u =>
     Tensor.dim (fun i => match l i, u i with
       | Tensor.scalar li, Tensor.scalar ui => Tensor.scalar (relaxScalar li ui))
 
-/-- Vectorized `relax_scalar_lower`, applied componentwise to `lo`/`hi`. -/
-def relaxVectorLower {n : Nat} (lo hi : Tensor α (.dim n .scalar)) :
-    Tensor (ReLURelax α) (.dim n .scalar) :=
+/-- Apply `relaxScalarLower` componentwise to vector lower and upper bound tensors. -/
+def relaxVectorLower {n : Nat} (lo hi : Tensor α [n]) :
+    Tensor (ReLURelax α) [n] :=
   match lo, hi with
   | Tensor.dim l, Tensor.dim u =>
     Tensor.dim (fun i => match l i, u i with
@@ -111,7 +111,7 @@ Given `y ≈ A*x + c` and per-output relaxations `(slopeᵢ, biasᵢ)`, produces
 `y' ≈ diag(slope) * (A*x + c) + bias`.
 -/
 def propagateAffine {inDim hidDim : Nat}
-  (relax : Tensor (ReLURelax α) (.dim hidDim .scalar))
+  (relax : Tensor (ReLURelax α) [hidDim])
   (aff : AffineVec α inDim hidDim) : AffineVec α inDim hidDim :=
   match relax, aff.A, aff.c with
   | Tensor.dim r, Tensor.dim rows, Tensor.dim bias =>

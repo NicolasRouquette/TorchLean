@@ -6,15 +6,12 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Train.Overview
 public import NN.Runtime.Autograd.Train.Core
-public import NN.Runtime.Autograd.Train.Dataset
+public import NN.Data.SampleStream
 public import NN.Runtime.Autograd.Train.Trainer
 public import NN.Runtime.Autograd.Train.Logging
 public import NN.Runtime.Autograd.Train.Eval
 public import NN.Runtime.Autograd.Train.TapeM
-public import NN.Runtime.Autograd.Train.TensorLoader
-public import NN.Runtime.Autograd.Train.IoLoader
 public import NN.Runtime.Autograd.Train.Optim
 
 /-!
@@ -29,7 +26,7 @@ This layer is about training-loop infrastructure, not model definitions:
 - `Trainer` and `Logging` give small report/logging abstractions for example loops and tests.
 - `Eval` averages reports over samples or batches while checking metric names.
 - `TapeM` contains ergonomic tape-building helpers for params, constants, and mean losses.
-- `TensorLoader` and `IoLoader` convert small in-memory/CSV/NPY datasets into typed tensors.
+- `NN.Data.IO` parses CSV and NPY payloads used by file-backed datasets.
 - `Optim` connects parameter tables, schedulers, and canonical optimizer equations.
 
 The public model/training API in `NN.API.*` builds on these pieces. This umbrella exists so tests,

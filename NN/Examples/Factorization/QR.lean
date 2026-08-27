@@ -10,65 +10,62 @@ public import NN.Examples.Factorization.Common
 meta import NN.Examples.Factorization.Common
 
 /-!
-# Example: QR factorization
+# QR Factorization
 
 `qrSpec A` returns `(Q, R)` with $A=QR$, where $Q$ has orthonormal columns and $R$ is
-upper-triangular (classical Gram–Schmidt). We check both $A=QR$ and $Q^\mathsf{T}Q=I$.
+upper-triangular. We check both $A=QR$ and $Q^\mathsf{T}Q=I$.
 -/
 
 @[expose] public section
 
-
 namespace NN.Examples.Factorization.QR
 
-/-- A 3×3 test matrix (the classic Householder/QR example). -/
-def A : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) :=
-  mkMat [[12, -51, 4],
-         [6, 167, -68],
-         [-4, 24, -41]]
+/-- A standard $3\times3$ QR example. -/
+def A : Spec.Tensor Float [3, 3] :=
+  mkMat #[#[12, -51, 4], #[6, 167, -68], #[-4, 24, -41]]
 
 /-- Orthonormal `Q` factor. -/
-def Q : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrQSpec A
+def Q : Spec.Tensor Float [3, 3] := Spec.qrQSpec A
+
 /-- Upper-triangular `R` factor. -/
-def R : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrRSpec A
+def R : Spec.Tensor Float [3, 3] := Spec.qrRSpec A
 
 /-- Reconstruction error $\lVert A-QR\rVert_{\max}$. -/
-def reconErr : Float := maxMatErr A (mm Q R)
-/-- Orthonormality error $\lVert Q^\mathsf{T}Q-I\rVert_{\max}$. -/
-def orthoErr : Float := maxMatErr (mm (tr Q) Q) (Spec.identityTensorSpec 3)
+def reconErr : Float := maxMatErr A (matmul Q R)
 
--- Compiled assertions (fail the build otherwise).
+/-- Orthonormality error $\lVert Q^\mathsf{T}Q-I\rVert_{\max}$. -/
+def orthoErr : Float := maxMatErr (matmul (tr Q) Q) (Spec.identityTensorSpec 3)
+
 #guard_msgs (drop info) in
 #eval assertLt "QR A = Q·R" reconErr
+
 #guard_msgs (drop info) in
 #eval assertLt "QR Qᵀ·Q = I" orthoErr
 
-/-! ## Negative control: full column rank is necessary for orthonormality
+/-! ## Negative Control
 
-`qrSpec_orthonormal` ($Q^\mathsf{T}Q=I$) requires full column rank — positive $R$-pivots
-($0<R_{jj}$). The matrix below has a dependent column ($\mathrm{col}_2=2\,\mathrm{col}_1$), so
-Gram–Schmidt produces a **zero** $Q$ column where the pivot vanishes: $A=QR$ still holds, but
-$Q^\mathsf{T}Q$ has a zero on the
-diagonal, so orthonormality fails. This separates the two guarantees and shows the rank hypothesis
-genuinely bites. -/
+The orthonormality theorem requires full column rank. The following matrix has one dependent
+column. Gram-Schmidt still reconstructs it, but the corresponding column of `Q` vanishes and
+$Q^\mathsf{T}Q\ne I$.
+-/
 
-/-- A rank-2 matrix ($\mathrm{col}_2=2\,\mathrm{col}_1$): reconstructs, but $Q$ cannot be
-orthonormal. -/
-def Adef : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) :=
-  mkMat [[1, 2, 0],
-         [2, 4, 1],
-         [1, 2, 0]]
+/-- A matrix whose second column is twice its first. -/
+def Adef : Spec.Tensor Float [3, 3] :=
+  mkMat #[#[1, 2, 0], #[2, 4, 1], #[1, 2, 0]]
 
-def Qdef : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrQSpec Adef
-def Rdef : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.qrRSpec Adef
+def Qdef : Spec.Tensor Float [3, 3] := Spec.qrQSpec Adef
 
-/-- Reconstruction still holds even without full rank. -/
-def reconErrDef : Float := maxMatErr Adef (mm Qdef Rdef)
-/-- Orthonormality fails: $Q^\mathsf{T}Q$ has a zero diagonal entry, so it is far from $I$. -/
-def orthoErrDef : Float := maxMatErr (mm (tr Qdef) Qdef) (Spec.identityTensorSpec 3)
+def Rdef : Spec.Tensor Float [3, 3] := Spec.qrRSpec Adef
+
+/-- Reconstruction still holds without full rank. -/
+def reconErrDef : Float := maxMatErr Adef (matmul Qdef Rdef)
+
+/-- Orthonormality fails because `Q` has a zero column. -/
+def orthoErrDef : Float := maxMatErr (matmul (tr Qdef) Qdef) (Spec.identityTensorSpec 3)
 
 #guard_msgs (drop info) in
 #eval assertLt "QR(rank-deficient) A = Q·R still reconstructs" reconErrDef
+
 #guard_msgs (drop info) in
 #eval assertGe "QR(rank-deficient) Qᵀ·Q = I correctly fails (needs full column rank)" orthoErrDef
 

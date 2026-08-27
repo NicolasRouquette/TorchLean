@@ -52,25 +52,25 @@ open Tensor
 variable {α : Type} [Context α]
 
 /-- Softmax policy induced by a vector of logits. -/
-def actionPolicy {nActions : Nat} (logits : Tensor α (.dim nActions .scalar)) :
-    Tensor α (.dim nActions .scalar) :=
+def actionPolicy {nActions : Nat} (logits : Tensor α [nActions]) :
+    Tensor α [nActions] :=
   Activation.softmaxVecSpec (α := α) (n := nActions) logits
 
 /-- Probability of a selected action under a categorical policy. -/
-def actionProbability {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def actionProbability {nActions : Nat} (logits : Tensor α [nActions])
     (action : Fin nActions) (epsilon : α := Numbers.epsilon) : α :=
   let probs := actionPolicy (α := α) logits
-  let p := Tensor.vecGet probs action
+  let p := Tensor.getScalar probs action
   Min.min ((1 : α) - epsilon) (Max.max epsilon p)
 
 /-- Log-probability of a selected action. -/
-def actionLogProbability {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def actionLogProbability {nActions : Nat} (logits : Tensor α [nActions])
     (action : Fin nActions) (epsilon : α := Numbers.epsilon) : α :=
   MathFunctions.log (actionProbability (α := α) logits action epsilon)
 
 /-- Entropy bonus for a categorical policy:
 `-Σ p(a) log p(a)`. -/
-def entropyBonus {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def entropyBonus {nActions : Nat} (logits : Tensor α [nActions])
     (epsilon : α := Numbers.epsilon) : α :=
   let probs := actionPolicy (α := α) logits
   let clamped := clampSpec probs epsilon ((1 : α) - epsilon)
@@ -79,13 +79,13 @@ def entropyBonus {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
 
 /-- REINFORCE loss for one sampled action:
 `-G_t * log π(a_t | s_t)`. -/
-def reinforceLoss {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def reinforceLoss {nActions : Nat} (logits : Tensor α [nActions])
     (action : Fin nActions) (returnOrAdvantage : α) (epsilon : α := Numbers.epsilon) : α :=
   Neg.neg (returnOrAdvantage * actionLogProbability (α := α) logits action epsilon)
 
 /-- Advantage actor-critic policy loss:
 `-A_t * log π(a_t | s_t)`. -/
-def actorLoss {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def actorLoss {nActions : Nat} (logits : Tensor α [nActions])
     (action : Fin nActions) (advantage : α) (epsilon : α := Numbers.epsilon) : α :=
   reinforceLoss (α := α) logits action advantage epsilon
 
@@ -95,7 +95,7 @@ def criticLoss (valuePrediction valueTarget : α) (valueCoef : α := 1) : α :=
 
 /-- Combined advantage actor-critic loss:
 policy term + value regression - entropy bonus. -/
-def actorCriticLoss {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def actorCriticLoss {nActions : Nat} (logits : Tensor α [nActions])
     (action : Fin nActions) (advantage valuePrediction valueTarget : α)
     (valueCoef : α := 1) (entropyCoef : α := 0)
     (epsilon : α := Numbers.epsilon) : α :=
@@ -108,7 +108,7 @@ def actorCriticLoss {nActions : Nat} (logits : Tensor α (.dim nActions .scalar)
 This is the A2C/A3C-shaped single-sample objective:
 `-A_t log π(a_t|s_t) + c_v value_loss - c_e H(π(.|s_t))`.
 -/
-def a2cLoss {nActions : Nat} (logits : Tensor α (.dim nActions .scalar))
+def a2cLoss {nActions : Nat} (logits : Tensor α [nActions])
     (action : Fin nActions) (advantage valuePrediction valueTarget : α)
     (valueCoef : α := 1) (entropyCoef : α := 0)
     (epsilon : α := Numbers.epsilon) : α :=
@@ -127,7 +127,7 @@ Both distributions are clamped into `[epsilon, 1-epsilon]` before taking logs. T
 penalty used by TRPO-style diagnostics and KL-penalized policy-gradient objectives.
 -/
 def categoricalKL {nActions : Nat}
-    (oldProbs newProbs : Tensor α (.dim nActions .scalar))
+    (oldProbs newProbs : Tensor α [nActions])
     (epsilon : α := Numbers.epsilon) : α :=
   let oldClamped := clampSpec oldProbs epsilon ((1 : α) - epsilon)
   let newClamped := clampSpec newProbs epsilon ((1 : α) - epsilon)
@@ -135,7 +135,7 @@ def categoricalKL {nActions : Nat}
 
 /-- KL divergence `KL(π_old(.|s) || π_new(.|s))` from old/new logits. -/
 def categoricalKLFromLogits {nActions : Nat}
-    (oldLogits newLogits : Tensor α (.dim nActions .scalar))
+    (oldLogits newLogits : Tensor α [nActions])
     (epsilon : α := Numbers.epsilon) : α :=
   categoricalKL (α := α)
     (oldProbs := actionPolicy (α := α) oldLogits)
@@ -170,11 +170,11 @@ For continuous SAC the action is reparameterized; for finite actions this scalar
 form used inside a categorical policy update.
 -/
 def sacCategoricalActorLoss {nActions : Nat}
-    (logits qValues : Tensor α (.dim nActions .scalar))
+    (logits qValues : Tensor α [nActions])
     (action : Fin nActions) (temperature : α)
     (epsilon : α := Numbers.epsilon) : α :=
   temperature * actionLogProbability (α := α) logits action epsilon
-    - Tensor.vecGet qValues action
+    - Tensor.getScalar qValues action
 
 /--
 PPO clipped surrogate objective from a precomputed importance ratio:
@@ -195,7 +195,7 @@ def ppoClippedObjectiveFromRatio (ratio advantage clipEps : α) : α :=
 This is the objective to maximize:
 `min(r_t A_t, clip(r_t, 1-ε, 1+ε) A_t)`.
 -/
-def ppoClippedObjective {nActions : Nat} (newLogits : Tensor α (.dim nActions .scalar))
+def ppoClippedObjective {nActions : Nat} (newLogits : Tensor α [nActions])
     (action : Fin nActions) (oldLogProb advantage clipEps : α)
     (epsilon : α := Numbers.epsilon) : α :=
   let newLogProb := actionLogProbability (α := α) newLogits action epsilon
@@ -204,7 +204,7 @@ def ppoClippedObjective {nActions : Nat} (newLogits : Tensor α (.dim nActions .
 
 /-- PPO loss to minimize:
 `-L_clip + c_v * value_loss - c_e * entropy`. -/
-def ppoLoss {nActions : Nat} (newLogits : Tensor α (.dim nActions .scalar))
+def ppoLoss {nActions : Nat} (newLogits : Tensor α [nActions])
     (action : Fin nActions) (oldLogProb advantage valuePrediction valueTarget clipEps : α)
     (valueCoef : α := 1) (entropyCoef : α := 0)
     (epsilon : α := Numbers.epsilon) : α :=
@@ -221,7 +221,7 @@ counter together with the sampled action index.
 Implementation note: this uses the standard cumulative-sum / inverse-CDF sampler.
 -/
 def sampleCategorical {nActions : Nat} [NeZero nActions]
-    (seed counter : Nat) (probs : Tensor α (.dim nActions .scalar)) :
+    (seed counter : Nat) (probs : Tensor α [nActions]) :
     Nat × Fin nActions :=
   let key := _root_.Runtime.Autograd.TorchLean.Random.keyOf seed counter
   let u : α :=
@@ -242,7 +242,7 @@ def sampleCategorical {nActions : Nat} [NeZero nActions]
 
 /-- Sample an action from logits by applying softmax then `sampleCategorical`. -/
 def sampleActionFromLogits {nActions : Nat} [NeZero nActions]
-    (seed counter : Nat) (logits : Tensor α (.dim nActions .scalar)) :
+    (seed counter : Nat) (logits : Tensor α [nActions]) :
     Nat × Fin nActions :=
   sampleCategorical (α := α) (nActions := nActions) (seed := seed) (counter := counter)
     (probs := actionPolicy (α := α) logits)

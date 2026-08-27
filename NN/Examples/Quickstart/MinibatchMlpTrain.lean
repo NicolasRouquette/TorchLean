@@ -17,7 +17,7 @@ This next-step file shows the intended minibatch path in TorchLean:
 
 1. load a CSV dataset through `Data`,
 2. choose persistent runtime settings with `Trainer.RunConfig`,
-3. write the model over the minibatch shape (`batch × Vec inDim`),
+3. write the model over the minibatch shape `[batch, inDim]`,
 4. call `trainer.train data trainOptions`,
 5. reuse the training result for one follow-up prediction batch.
 
@@ -57,8 +57,8 @@ def hidDim : Nat := 8
 def outDim : Nat := 1
 
 /-- Batched MLP `2 -> 8 -> 1` built from the public model constructor. -/
-def mkModel {batch : Nat} : nn.Builder (nn.Sequential (.dim batch (.dim inDim .scalar)) (.dim batch (.dim outDim .scalar))) :=
-  nn.blocks.mlp inDim outDim { hidden := [hidDim] } (.dim batch .scalar)
+def mkModel {batch : Nat} : nn.Builder (nn.Sequential [batch, inDim] [batch, outDim]) :=
+  nn.blocks.mlp inDim outDim { hidden := [hidDim] } [batch]
 
 /-- Command-line help for the minibatch MLP quickstart. -/
 def usage : String :=
@@ -113,8 +113,8 @@ def main (args : List String) : IO Unit := do
   Data.requireFile "MinibatchMLPTrain" "CSV dataset" csvPath missingCsvHint
   let trained ← trainer.train data parsed.trainOptions
   trained.printSummary
-  let heldout : Tensor Float (.dim batch (.dim inDim .scalar)) :=
-    Tensor.fill 0.25 (.dim batch (.dim inDim .scalar))
+  let heldout : Tensor Float [batch, inDim] :=
+    Tensor.full [batch, inDim] 0.25
   trained.printPrediction "predict(batch=heldout)" heldout
 
 end NN.Examples.Quickstart.MinibatchMLPTrain

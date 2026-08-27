@@ -47,52 +47,54 @@ open Tensor
 variable {α : Type} [Context α]
 
 /-- Extract `Q(s, a)` from a vector of action-values. -/
-def chosenActionValue {nActions : Nat} (qValues : Tensor α (.dim nActions .scalar))
+def chosenActionValue {nActions : Nat} (qValues : Tensor α [nActions])
     (action : Fin nActions) : α :=
-  Tensor.vecGet qValues action
+  Tensor.getScalar qValues action
 
 /-- Maximum Q-value in a vector, defaulting to `0` when `nActions = 0`. -/
-def maxQValue {nActions : Nat} (qValues : Tensor α (.dim nActions .scalar)) : α :=
-  match _root_.TorchLean.Metrics.argmaxVector? (α := α) (n := nActions) qValues with
-  | some action => Tensor.vecGet qValues action
+def maxQValue {nActions : Nat} (qValues : Tensor α [nActions]) : α :=
+  match _root_.TorchLean.Metrics.argmax? (α := α) qValues with
+  | some action => Tensor.getScalar qValues (Fin.cast (by simp [Shape.size]) action)
   | none => 0
 
 /-- DQN bootstrap target `r + γ max_a Q_target(s', a)`. -/
 def dqnTarget {nActions : Nat} (reward gamma : α) (done : Bool)
-    (nextQTarget : Tensor α (.dim nActions .scalar)) : α :=
+    (nextQTarget : Tensor α [nActions]) : α :=
   Core.tdTarget (α := α) reward gamma (maxQValue (α := α) nextQTarget) done
 
 /-- Double DQN target:
 select with the online network, evaluate with the target network. -/
 def doubleDqnTarget {nActions : Nat} (reward gamma : α) (done : Bool)
-    (nextQOnline nextQTarget : Tensor α (.dim nActions .scalar)) : α :=
-  match _root_.TorchLean.Metrics.argmaxVector? (α := α) (n := nActions) nextQOnline with
-  | some action => Core.tdTarget (α := α) reward gamma (Tensor.vecGet nextQTarget action) done
+    (nextQOnline nextQTarget : Tensor α [nActions]) : α :=
+  match _root_.TorchLean.Metrics.argmax? (α := α) nextQOnline with
+  | some action =>
+      Core.tdTarget (α := α) reward gamma
+        (Tensor.getScalar nextQTarget (Fin.cast (by simp [Shape.size]) action)) done
   | none => reward
 
 /-- DQN temporal-difference residual for one sampled action. -/
-def dqnResidual {nActions : Nat} (qPred : Tensor α (.dim nActions .scalar)) (action : Fin nActions)
-    (reward gamma : α) (done : Bool) (nextQTarget : Tensor α (.dim nActions .scalar)) : α :=
+def dqnResidual {nActions : Nat} (qPred : Tensor α [nActions]) (action : Fin nActions)
+    (reward gamma : α) (done : Bool) (nextQTarget : Tensor α [nActions]) : α :=
   let target := dqnTarget (α := α) reward gamma done nextQTarget
   target - chosenActionValue (α := α) qPred action
 
 /-- Mean-square style temporal-difference loss for one DQN transition. -/
-def dqnMSELoss {nActions : Nat} (qPred : Tensor α (.dim nActions .scalar)) (action : Fin nActions)
-    (reward gamma : α) (done : Bool) (nextQTarget : Tensor α (.dim nActions .scalar)) : α :=
+def dqnMSELoss {nActions : Nat} (qPred : Tensor α [nActions]) (action : Fin nActions)
+    (reward gamma : α) (done : Bool) (nextQTarget : Tensor α [nActions]) : α :=
   let target := dqnTarget (α := α) reward gamma done nextQTarget
   Core.squaredError (α := α) (chosenActionValue qPred action) target
 
 /-- Huber temporal-difference loss for one DQN transition, with threshold `delta`. -/
-def dqnHuberLoss {nActions : Nat} (qPred : Tensor α (.dim nActions .scalar)) (action : Fin nActions)
-    (reward gamma : α) (done : Bool) (nextQTarget : Tensor α (.dim nActions .scalar))
+def dqnHuberLoss {nActions : Nat} (qPred : Tensor α [nActions]) (action : Fin nActions)
+    (reward gamma : α) (done : Bool) (nextQTarget : Tensor α [nActions])
     (delta : α := 1) : α :=
   let target := dqnTarget (α := α) reward gamma done nextQTarget
   Core.huberLoss (α := α) (chosenActionValue qPred action) target delta
 
 /-- Double-DQN temporal-difference residual. -/
-def doubleDqnResidual {nActions : Nat} (qPred : Tensor α (.dim nActions .scalar))
+def doubleDqnResidual {nActions : Nat} (qPred : Tensor α [nActions])
     (action : Fin nActions) (reward gamma : α) (done : Bool)
-    (nextQOnline nextQTarget : Tensor α (.dim nActions .scalar)) : α :=
+    (nextQOnline nextQTarget : Tensor α [nActions]) : α :=
   let target := doubleDqnTarget (α := α) reward gamma done nextQOnline nextQTarget
   target - chosenActionValue (α := α) qPred action
 

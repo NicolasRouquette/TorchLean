@@ -26,6 +26,7 @@ namespace GraphM
 
 open Spec
 open Tensor
+open _root_.TorchLean
 open Proofs.Autograd.Algebra
 open Runtime.Autograd.TorchLean
 
@@ -195,7 +196,7 @@ def const {α : Type} {Δ : Type} [Zero α] {Γ : List Shape} {s : Shape} (t : T
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun _ctx _d => t
       jvp := fun _ctx _dctx _d => fill (0 : α) s
-      vjp := fun _ctx _d _δ => TList.zero (α := α) (ss := Γ ++ ss) }
+      vjp := fun _ctx _d _δ => _root_.TorchLean.TensorPack.zero (α := α) (ss := Γ ++ ss) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Deterministic `U[0,1)` tensor generator (seeded, pure). -/
@@ -208,7 +209,7 @@ def randUniform {α : Type} [Context α] {Δ : Type} {Γ : List Shape} {s : Shap
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun _ctx _d => t
       jvp := fun _ctx _dctx _d => fill (0 : α) s
-      vjp := fun _ctx _d _δ => TList.zero (α := α) (ss := Γ ++ ss) }
+      vjp := fun _ctx _d _δ => _root_.TorchLean.TensorPack.zero (α := α) (ss := Γ ++ ss) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -235,7 +236,7 @@ def bernoulliMask {α : Type} [Context α] [DecidableEq Shape]
           | Tensor.scalar v => v
         TorchLean.Random.mask (α := α) key kp (s := s)
       jvp := fun _ctx _dctx _d => fill (0 : α) s
-      vjp := fun _ctx _d _δ => TList.zero (α := α) (ss := Γ ++ ss) }
+      vjp := fun _ctx _d _δ => _root_.TorchLean.TensorPack.zero (α := α) (ss := Γ ++ ss) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /--
@@ -252,7 +253,7 @@ def detach {α : Type} [Context α] [DecidableEq Shape]
   let node : NodeData α Δ (Γ ++ ss) s :=
     { forward := fun ctx _d => getIdx (α := α) (xs := ctx) ix
       jvp := fun _ctx _dctx _d => fill (0 : α) s
-      vjp := fun _ctx _d _δ => TList.zero (α := α) (ss := Γ ++ ss) }
+      vjp := fun _ctx _d _δ => _root_.TorchLean.TensorPack.zero (α := α) (ss := Γ ++ ss) }
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 end GraphM

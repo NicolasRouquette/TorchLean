@@ -6,10 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Examples.Verification.Robustness
-public import NN.Examples.Verification.Splines
-public import NN.Examples.Verification.TorchLean
-public import NN.Examples.Verification.VNNComp
 public import NN.Verification.Cert.AbCrownLeafCert
 public import NN.Verification.ODE.Verify
 public import NN.Verification.PINN.CLI
@@ -20,6 +16,14 @@ public import NN.Verification.PINN.PdeAst
 public import NN.Verification.PINN.PdeParse
 public import NN.Verification.PINN.ResidualAffine
 public import NN.Verification.Robustness.Digits
+public import NN.Verification.Robustness.MarginCertCLI
+public import NN.Verification.Robustness.TorchLean
+public import NN.Verification.Splines.PiecewiseLinearCLI
+public import NN.Verification.TorchLean.CrownOpsWorkflow
+public import NN.Verification.TorchLean.IBPWorkflow
+public import NN.Verification.TorchLean.MlpTrainVerifyWorkflow
+public import NN.Verification.TorchLean.TransformerIBPWorkflow
+public import NN.Verification.VNNComp.MnistFC
 
 /-!
 # Verification Examples

@@ -58,6 +58,10 @@ def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "lstm"
 def seqLen : Nat := 2
 /-- Tiny one-hot token width for the example dataset. -/
 def inputSize : Nat := 4
+
+/-- Toy byte bucketing: encode byte id `b` as `b % 4`; collisions are intentional. -/
+def byteBucket (id : Nat) : Fin inputSize :=
+  ⟨id % inputSize, Nat.mod_lt _ (by decide)⟩
 /-- Hidden state width of the LSTM cell. -/
 def hiddenSize : Nat := 2
 
@@ -83,22 +87,22 @@ def model : nn.Builder (nn.Sequential σ τ) :=
 /-- Build one next-token training sample from the loaded corpus prefix. -/
 def sample (corpus : String) : Sample.Supervised Float σ τ :=
   let s := Data.CausalLM.byteSample
-    (α := Float) seqLen inputSize (corpus.take (seqLen + 1)).toString
+    (α := Float) seqLen inputSize byteBucket (corpus.take (seqLen + 1)).toString
   Sample.mk (Spec.Tensor.materialize (Sample.x s)) (Spec.Tensor.materialize (Sample.y s))
 
 /-- Train the LSTM with the public `Trainer` surface. -/
 def train (opts : Options) (corpusFlags : RealData.TextCorpusFlags)
-    (flags : CLI.Training.RunOptions) : IO Unit := do
+    (flags : CLI.Training.OptimizerOptions) : IO Unit := do
   let corpus ← RealData.TextCorpusFlags.read exeName corpusFlags
   let trainer :=
     Trainer.new model <|
       Trainer.Config.fromRunConfig
-        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := 1e-2 } })
+        (Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.sgd { lr := flags.lr } })
         .regression
-  let trainData := Data.floatSamples [sample corpus]
+  let trainData := Data.floatSamples #[sample corpus]
   let trained ← trainer.train
     trainData
-    (CLI.Training.RunOptions.toTrainerOptions flags
+    (CLI.Training.OptimizerOptions.toTrainerOptions flags
       (title := "LSTM text training")
       (notes := #[s!"corpus={corpusFlags.path}"]))
   trained.printSummary
@@ -109,6 +113,7 @@ def main (args : List String) : IO UInt32 := do
     { exeName := exeName
       defaultLogJson := defaultLogJson
       defaultSteps := 1
+      defaultLr := 1e-2
       description := "LSTM"
       dataOptions := RealData.TextCorpusFlags.help
       parseData := RealData.TextCorpusFlags.parse

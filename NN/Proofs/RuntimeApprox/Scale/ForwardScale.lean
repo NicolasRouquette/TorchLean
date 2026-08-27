@@ -39,8 +39,8 @@ variable {α : Type}
 /-- A forward node augmented with a scale bound function and a soundness lemma. -/
 structure FwdNodeScale (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shape) extends
     FwdNode (α := α) toSpec Γ τ where
-  scaleBound : BList Γ → TList α Γ → ℝ≥0
-  scaleSound : ∀ (ctxS : TList SpecScalar Γ) (ctxR : TList α Γ) (epsCtx : EList Γ) (bCtx : BList Γ),
+  scaleBound : BList Γ → _root_.TorchLean.TensorPack α Γ → ℝ≥0
+  scaleSound : ∀ (ctxS : _root_.TorchLean.TensorPack SpecScalar Γ) (ctxR : _root_.TorchLean.TensorPack α Γ) (epsCtx : EList Γ) (bCtx : BList Γ),
       approxCtx (α := α) toSpec ctxS ctxR epsCtx →
       scaleCtx (α := α) toSpec ctxS ctxR bCtx →
         scaleTensor (α := α) (toSpec := toSpec) (forwardSpec ctxS) (forwardRuntime ctxR) (scaleBound bCtx
@@ -66,23 +66,23 @@ def toFwdGraph {Γ : List Shape} {ss : List Shape} :
 
 /-- Evaluate the forward pass on spec values, returning the extended context `Γ ++ ss`. -/
 def evalSpec {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α := α) toSpec Γ ss)
-    (x : TList SpecScalar Γ) : TList SpecScalar (Γ ++ ss) :=
+    (x : _root_.TorchLean.TensorPack SpecScalar Γ) : _root_.TorchLean.TensorPack SpecScalar (Γ ++ ss) :=
   FwdGraph.evalSpec (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) (toFwdGraph (α := α) g) x
 
 /-- Evaluate the forward pass on runtime values, returning the extended context `Γ ++ ss`. -/
 def evalRuntime {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α := α) toSpec Γ ss)
-    (x : TList α Γ) : TList α (Γ ++ ss) :=
+    (x : _root_.TorchLean.TensorPack α Γ) : _root_.TorchLean.TensorPack α (Γ ++ ss) :=
   FwdGraph.evalRuntime (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) (toFwdGraph (α := α) g) x
 
 /-- Forward-pass error bounds for all intermediate nodes, computed from input bounds `epsIn`. -/
 def evalBounds {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α := α) toSpec Γ ss)
-    (epsIn : EList Γ) (xR : TList α Γ) : EList (Γ ++ ss) :=
+    (epsIn : EList Γ) (xR : _root_.TorchLean.TensorPack α Γ) : EList (Γ ++ ss) :=
   FwdGraph.evalBounds (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) (toFwdGraph (α := α) g) epsIn
     xR
 
 /-- Forward-pass scale bounds for all intermediate nodes, computed from input bounds `bIn`. -/
 def evalScales {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α := α) toSpec Γ ss)
-    (bIn : BList Γ) (xR : TList α Γ) : BList (Γ ++ ss) :=
+    (bIn : BList Γ) (xR : _root_.TorchLean.TensorPack α Γ) : BList (Γ ++ ss) :=
   match g with
   | .nil =>
       let h : Γ = Γ ++ [] := (List.append_nil Γ).symm
@@ -96,7 +96,7 @@ def evalScales {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α := α)
         (BList.snoc (ss := Γ ++ ssPrev) (τ := τ) bPrev b)
 
 theorem eval_scale {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α := α) toSpec Γ ss) :
-    ∀ (xS : TList SpecScalar Γ) (xR : TList α Γ) (epsIn : EList Γ) (bIn : BList Γ),
+    ∀ (xS : _root_.TorchLean.TensorPack SpecScalar Γ) (xR : _root_.TorchLean.TensorPack α Γ) (epsIn : EList Γ) (bIn : BList Γ),
       approxCtx (α := α) toSpec xS xR epsIn →
       scaleCtx (α := α) toSpec xS xR bIn →
         scaleCtx (α := α) toSpec
@@ -142,8 +142,8 @@ theorem eval_scale {Γ : List Shape} {ss : List Shape} (g : FwdGraphScale (α :=
       -- Extend the context scale predicate with the new node output.
       have hSnoc :
           scaleCtx (α := α) toSpec
-            (TList.snoc (α := SpecScalar) (ss := Γ ++ ssPrev) ctxS (node.forwardSpec ctxS))
-            (TList.snoc (α := α) (ss := Γ ++ ssPrev) ctxR (node.forwardRuntime ctxR))
+            (_root_.TorchLean.TensorPack.snoc (α := SpecScalar) (ss := Γ ++ ssPrev) ctxS (node.forwardSpec ctxS))
+            (_root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ssPrev) ctxR (node.forwardRuntime ctxR))
             (BList.snoc (ss := Γ ++ ssPrev) (τ := τ) bPrev (node.scaleBound bPrev ctxR)) :=
         scaleCtx_snoc (α := α) (toSpec := toSpec) (hx := by simpa [ctxS, ctxR, bPrev] using hBPrev)
           hb

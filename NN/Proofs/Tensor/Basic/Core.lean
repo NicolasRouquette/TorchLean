@@ -21,7 +21,6 @@ public import NN.Spec.Core.Shape
 public import NN.Spec.Core.Tensor
 public import NN.Spec.Core.TensorOps
 public import NN.Spec.Core.TensorReductionShape
-public import NN.Spec.Core.Tensor.API
 
 /-!
 # Real Tensor Proof Toolkit
@@ -38,7 +37,7 @@ The tensor proof folder has two layers:
 The statements use PyTorch-shaped names where that helps readers:
 
 - `flattenR` / `unflattenR` give a `Fin (Spec.Shape.size s) → ℝ` view of `Tensor ℝ s`.
-- lemmas relate `toVec` views to `add_spec`, `scale_spec`, etc.
+- lemmas relate `getScalar` views to `add_spec`, `scale_spec`, etc.
 
 We re-export tensor-specific helpers from `NN.Proofs.Tensor.Algebra` into the `Spec` namespace.
 General list-fold lemmas retain their canonical `List` names.
@@ -62,61 +61,43 @@ open Tensor
 open scoped BigOperators
 
 -- Re-export generic helpers (defined once in `Proofs.TensorAlgebra`) into `Spec.*`.
-export Proofs.TensorAlgebra (toVec ofVec toVec_ofVec ofVec_toVec)
 export Proofs.TensorAlgebra
-  (add_finRange_foldl_add_zero foldl_tensorScalar_mulAdd foldl_matvec_scalar)
+  (add_finRange_foldl_add_zero foldl_tensorScalar_mulAdd foldl_matvec_scalar get2_eq get_eq)
 
-/-! ## Algebraic instances for small tensor shapes -/
+/-! ## Algebraic instances -/
 
-/-- Additive commutative monoid structure on scalar-shaped real tensors, transported by equivalence.
--/
-instance : AddCommMonoid (Tensor ℝ .scalar) :=
-  Equiv.addCommMonoid (Tensor.scalarEquiv ℝ)
+/-- Tensor scalar multiplication is pointwise at every rank. -/
+@[instance_reducible] noncomputable def Tensor.moduleReal
+    {α : Type} [AddCommMonoid α] [Module ℝ α] :
+    (s : Shape) → Module ℝ (Tensor α s)
+  | .scalar => Equiv.module ℝ (Tensor.scalarEquiv α)
+  | .dim n s =>
+      letI : Module ℝ (Tensor α s) := Tensor.moduleReal s
+      Equiv.module ℝ (Tensor.dimEquiv n s)
 
-/-- Additive commutative monoid structure on 1D real tensors (transported via an equiv). -/
-instance {n : Nat} : AddCommMonoid (Tensor ℝ (.dim n .scalar)) :=
-  Equiv.addCommMonoid (Tensor.dimScalarEquiv n)
-
-/-- Scalar tensors inherit an `ℝ`-module structure when their entries do, transported by equivalence.
--/
-instance {α : Type} [AddCommMonoid α] [Module ℝ α] : Module ℝ (Tensor α .scalar) :=
-  Equiv.module ℝ (Tensor.scalarEquiv α)
-
-/-- `Tensor α (dim n scalar)` inherits an `ℝ`-module structure when `α` is an `ℝ`-module (via an
-  equiv). -/
-instance {α : Type} [AddCommMonoid α] [Module ℝ α] {n : Nat} : Module ℝ (Tensor α (.dim n .scalar))
-  :=
-  Equiv.module ℝ (Tensor.dimScalarEquiv n)
-
-/-- Noncomputable `ℝ`-module instance on scalar real tensors (for calculus proofs). -/
-noncomputable instance : Module ℝ (Tensor ℝ .scalar) :=
-  Equiv.module ℝ (Tensor.scalarEquiv ℝ)
-
-/-- Noncomputable `ℝ`-module instance on 1D real tensors (for calculus proofs). -/
-noncomputable instance {n : Nat} : Module ℝ (Tensor ℝ (.dim n .scalar)) :=
-  Equiv.module ℝ (Tensor.dimScalarEquiv n)
+/-- Every tensor shape inherits the pointwise real-module structure of its scalar type. -/
+noncomputable instance {α : Type} [AddCommMonoid α] [Module ℝ α] {s : Shape} :
+    Module ℝ (Tensor α s) :=
+  Tensor.moduleReal s
 
 /-! ## 1D helpers -/
 
 /-- Mapping a scalar tensor and then extracting it is the same as mapping its scalar value. -/
 @[simp] lemma toScalar_mapTensor {α β : Type} (f : α -> β) (x : Tensor α .scalar) :
-    Tensor.item (Spec.mapTensor f x) = f (Tensor.item x) := by
+    Tensor.item (Spec.Tensor.map f x) = f (Tensor.item x) := by
   cases x
   rfl
 
 /-- Coordinate extraction commutes with a tensor map on vectors. -/
-@[simp] lemma toVec_mapTensor {α β : Type} {n : Nat}
-    (f : α -> β) (x : Tensor α (.dim n .scalar)) (i : Fin n) :
-    Proofs.TensorAlgebra.toVec (Spec.mapTensor f x) i =
-      f (Proofs.TensorAlgebra.toVec x i) := by
-  cases x with
-  | dim values =>
-      cases hvalue : values i
-      simp [Proofs.TensorAlgebra.toVec, Spec.mapTensor, hvalue]
+@[simp] lemma getScalar_mapTensor {α β : Type} {n : Nat}
+    (f : α -> β) (x : Tensor α [n]) (i : Fin n) :
+    Spec.Tensor.getScalar (Spec.Tensor.map f x) i =
+      f (Spec.Tensor.getScalar x i) := by
+  exact Spec.Tensor.getScalar_map f x i
 
-/-- `toVec` distributes over pointwise addition (`add_spec`). -/
-lemma toVec_add_spec {n : Nat} (x y : Tensor ℝ (.dim n .scalar)) :
-    toVec (addSpec x y) = fun i => toVec x i + toVec y i := by
+/-- `getScalar` distributes over pointwise addition (`add_spec`). -/
+lemma getScalar_add_spec {n : Nat} (x y : Tensor ℝ [n]) :
+    getScalar (addSpec x y) = fun i => getScalar x i + getScalar y i := by
   cases x with
   | dim vx =>
     cases y with
@@ -124,16 +105,16 @@ lemma toVec_add_spec {n : Nat} (x y : Tensor ℝ (.dim n .scalar)) :
       funext i
       cases hx : vx i
       cases hy : vy i
-      simp [toVec, addSpec, map2Spec, hx, hy]
+      simp [getScalar, addSpec, map2Spec, hx, hy]
 
-/-- `toVec` distributes over pointwise scaling (`scale_spec`). -/
-lemma toVec_scale_spec {n : Nat} (x : Tensor ℝ (.dim n .scalar)) (c : ℝ) :
-    toVec (scaleSpec x c) = fun i => toVec x i * c := by
+/-- `getScalar` distributes over pointwise scaling (`scale_spec`). -/
+lemma getScalar_scale_spec {n : Nat} (x : Tensor ℝ [n]) (c : ℝ) :
+    getScalar (scaleSpec x c) = fun i => getScalar x i * c := by
   cases x with
   | dim vx =>
     funext i
     cases hx : vx i
-    simp [toVec, scaleSpec, mapSpec, hx]
+    simp [getScalar, scaleSpec, mapSpec, hx]
 
 /--
 Flatten a tensor of shape `s` into a 1D view `Fin (Spec.Shape.size s) → ℝ`.
@@ -148,7 +129,7 @@ https://pytorch.org/docs/stable/generated/torch.flatten.html
 https://pytorch.org/docs/stable/generated/torch.Tensor.view.html
 -/
 def flattenR {s : Shape} (x : Tensor ℝ s) : Fin (Spec.Shape.size s) → ℝ :=
-  toVec (flattenSpec (α:=ℝ) x)
+  getScalar (flattenSpec (α:=ℝ) x)
 
 /--
 Unflatten a 1D view `Fin (Spec.Shape.size s) → ℝ` back into a tensor of shape `s`.
@@ -158,7 +139,7 @@ intended to round-trip with `flattenR` under the spec lemmas in
 `NN/Spec/Core/TensorReductionShape.lean`.
 -/
 def unflattenR {s : Shape} (v : Fin (Spec.Shape.size s) → ℝ) : Tensor ℝ s :=
-  unflattenSpec (α:=ℝ) s (ofVec v)
+  unflattenSpec (α:=ℝ) s (ofFn v)
 
 /-! ## Pointwise tensor algebra -/
 

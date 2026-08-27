@@ -35,11 +35,11 @@ def sum {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
     { name := some "sum"
       value := { s := Shape.scalar, buf := y }
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny Shape.scalar
         let dx := broadcastScalarToShape dLdy.buf s
-        pure [(xId, { s := s, buf := dx })] }
+        pure #[(xId, { s := s, buf := dx })] }
   pure (t.addNode node)
 
 /-- Flatten `s` into a 1D vector of length `Spec.Shape.size s`. -/
@@ -58,14 +58,6 @@ def reshape {s₁ s₂ : Shape} (t : Tape) (xId : Nat) (_h : Spec.Shape.size s�
   unary (t := t) "reshape" xId s₁ s₂
     (forward := fun x => x)
     (backward := fun _x dLdy => Buffer.copy dLdy)
-
-/-- Transpose an `m × n` CUDA buffer and register the matching transpose rule for backpropagation. -/
-def transpose2d {m n : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let m32 ← AnyBuffer.natToU32Checked m
-  let n32 ← AnyBuffer.natToU32Checked n
-  unary (t := t) "transpose2d" xId (.dim m (.dim n .scalar)) (.dim n (.dim m .scalar))
-    (forward := fun x => Buffer.transpose2d x m32 n32)
-    (backward := fun _x dLdy => Buffer.transpose2d dLdy n32 m32)
 
 /--
 Swap adjacent axes at a given depth in an N-D buffer.
@@ -89,25 +81,6 @@ def swapAdjacentAtDepth {s : Shape} (t : Tape) (depth : Nat) (xId : Nat) : Resul
         Buffer.swapAdjacentAtDepth dLdy dimsOut depth32
       else
         Buffer.copy dLdy)
-
-/-- Permute a 3D tensor `(a,b,c) → (b,c,a)`. -/
-def transpose3dFirstToLast {a b c : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let s₀ : Shape := .dim a (.dim b (.dim c .scalar))
-  let (t1, id1) ← swapAdjacentAtDepth (t := t) (s := s₀) 0 xId
-  let s₁ : Shape := .dim b (.dim a (.dim c .scalar))
-  swapAdjacentAtDepth (t := t1) (s := s₁) 1 id1
-
-/-- Permute a 3D tensor `(a,b,c) → (c,a,b)`. -/
-def transpose3dLastToFirst {a b c : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let s₀ : Shape := .dim a (.dim b (.dim c .scalar))
-  let (t1, id1) ← swapAdjacentAtDepth (t := t) (s := s₀) 1 xId
-  let s₁ : Shape := .dim a (.dim c (.dim b .scalar))
-  swapAdjacentAtDepth (t := t1) (s := s₁) 0 id1
-
-/-- Swap the last two axes of a 3D tensor `(a,b,c) → (a,c,b)`. -/
-def transpose3dLastTwo {a b c : Nat} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let s : Shape := .dim a (.dim b (.dim c .scalar))
-  swapAdjacentAtDepth (t := t) (s := s) 1 xId
 
 /--
 Broadcast `x : s₁` to `s₂`.

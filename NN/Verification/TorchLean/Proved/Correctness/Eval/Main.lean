@@ -35,7 +35,7 @@ open NN.Verification.TorchLean
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape outShape : Shape}
     (p : ForwardProgram α paramShapes inShape outShape)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (x : Tensor α inShape) :
     runForwardIR (α := α) (inShape := inShape) (outShape := outShape)
         (c := lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape
@@ -46,8 +46,8 @@ open NN.Verification.TorchLean
       params x := by
     classical
     -- Evaluate `lowerForwardProgramToIR` via the IR semantics, and rewrite it to the DSL evaluator.
-    let inputVal : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
-    let inputNode : NN.IR.Node := { id := 0, parents := [], kind := .input, outShape := inShape }
+    let inputVal : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
+    let inputNode : NN.IR.Node := { id := 0, parents := #[], kind := .input, outShape := inShape }
     let c0 : NN.Verification.TorchLean.LoweredIR α :=
       { graph := { nodes := #[inputNode] }, ps := {}, inputId := 0, outputId := 0 }
     have hWF :
@@ -73,11 +73,11 @@ open NN.Verification.TorchLean
           outShape) p params #[inputVal] := by
       -- `lowerForwardProgramToIR` is `lowerForwardLetChain` starting from `c0`, so apply the lemma at `c=c0` and
       -- `vals=[inputVal]`.
-      have hSize0 : (#[inputVal] : Array (Spec.PackedTensor α)).size = c0.graph.nodes.size := by
+      have hSize0 : (#[inputVal] : Array (Spec.SomeTensor α)).size = c0.graph.nodes.size := by
         simp [c0]
-      have hShapes0 : shapesOfVals (α := α) (#[inputVal] : Array (Spec.PackedTensor α)) = Ctx inShape [] := by
+      have hShapes0 : shapesOfVals (α := α) (#[inputVal] : Array (Spec.SomeTensor α)) = Ctx inShape [] := by
         simp [shapesOfVals, Ctx, inputVal]
-      simpa [lowerForwardProgramToIR, c0, inputNode, inputVal, Spec.PackedTensor.mk] using
+      simpa [lowerForwardProgramToIR, c0, inputNode, inputVal, Spec.SomeTensor.mk] using
         denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape
           := inShape) (ss := []) (out := outShape)
         (g := p) (params := params) (c := c0) (x := x) (vals := #[inputVal]) hSize0 hShapes0
@@ -163,7 +163,7 @@ open NN.Verification.TorchLean
       rw [NN.IR.Graph.denoteAllFrom.eq_1, dif_pos h0]
       rw [hEval0]
       simp
-      have hPushEq : (#[].push inputVal : Array (Spec.PackedTensor α)) = #[inputVal] := by
+      have hPushEq : (#[].push inputVal : Array (Spec.SomeTensor α)) = #[inputVal] := by
         rfl
       exact congrArg
         (fun vals =>
@@ -188,7 +188,7 @@ open NN.Verification.TorchLean
           let vals' ←
             evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out
               := outShape) p params #[inputVal]
-          let v : Spec.PackedTensor α ← getValue? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
+          let v : Spec.SomeTensor α ← getValue? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
             (inShape := inShape) (ss := []) (out := outShape) p).id)
           if h : v.shape = outShape then
             pure (h ▸ v.tensor)
@@ -211,7 +211,7 @@ open NN.Verification.TorchLean
             (payload := payloadOfParamStore (α := α)
               (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
                 outShape) p params).ps)
-            (input := Spec.PackedTensor.mk (α := α) inShape x)
+            (input := Spec.SomeTensor.mk (α := α) inShape x)
           =
         NN.IR.Graph.denoteAllFrom (α := α)
             (g := (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape)
@@ -219,7 +219,7 @@ open NN.Verification.TorchLean
             (payload := payloadOfParamStore (α := α)
               (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
                 outShape) p params).ps)
-            (input := Spec.PackedTensor.mk (α := α) inShape x) (i := 1) (vals := #[Spec.PackedTensor.mk (α := α) inShape x]) :=
+            (input := Spec.SomeTensor.mk (α := α) inShape x) (i := 1) (vals := #[Spec.SomeTensor.mk (α := α) inShape x]) :=
               by
       simpa [inputVal] using hDenoteAll0
     have hDenote' :
@@ -229,11 +229,11 @@ open NN.Verification.TorchLean
             (payload := payloadOfParamStore (α := α)
               (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
                 outShape) p params).ps)
-            (input := Spec.PackedTensor.mk (α := α) inShape x) (i := 1) (vals := #[Spec.PackedTensor.mk (α := α) inShape x])
+            (input := Spec.SomeTensor.mk (α := α) inShape x) (i := 1) (vals := #[Spec.SomeTensor.mk (α := α) inShape x])
           =
         evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := []) (out :=
           outShape) p params
-          #[Spec.PackedTensor.mk (α := α) inShape x] := by
+          #[Spec.SomeTensor.mk (α := α) inShape x] := by
       simpa [inputVal, Except.bind, Except.pure, Pure.pure] using hDenote
     -- Rewrite `Graph.denoteAll` → `denoteAllFrom` → `evalForwardLetChainVals` on the lowered side.
     rw [hDenoteAll0', hDenote']

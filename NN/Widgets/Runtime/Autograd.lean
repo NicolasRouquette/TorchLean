@@ -75,7 +75,7 @@ private def tapeDot {α : Type} (t : Tape α) : String :=
       s!"  n{i} [label=\"{label}\"];")
   let edges : List String :=
     pairs.foldl (fun acc (i, n) =>
-      acc ++ (n.parents.map (fun p => s!"  n{p} -> n{i};"))) []
+      acc ++ (n.parents.map (fun p => s!"  n{p} -> n{i};")).toList) []
   header ++ String.intercalate "\n" (nodes ++ edges) ++ "\n}\n"
 
 /-- Build a colored DOT view where output/gradient coverage is highlighted. -/
@@ -103,7 +103,7 @@ private def tapeDotColored {α : Type} (t : Tape α) (outId : Nat)
       s!"  n{i} [label=\"{label}\", fillcolor=\"{fill}\"];")
   let edges : List String :=
     pairs.foldl (fun acc (i, n) =>
-      acc ++ (n.parents.map (fun p => s!"  n{p} -> n{i};"))) []
+      acc ++ (n.parents.map (fun p => s!"  n{p} -> n{i};")).toList) []
   header ++ String.intercalate "\n" (nodes ++ edges) ++ "\n}\n"
 
 /-- Render one tape node with metadata and forward tensor preview. -/
@@ -158,15 +158,15 @@ def tapeHtml {α : Type} [ToString α] (t : Tape α) (maxDotChars : Nat := 6000)
 
 /-- Render per-node gradient tensors from a completed backward pass. -/
 private def gradsTableHtml {α : Type} [ToString α] (t : Tape α)
-    (grads : Std.HashMap Nat (Spec.PackedTensor α)) : ProofWidgets.Html :=
-  let entries : List (Nat × Spec.PackedTensor α) := grads.toList;
+    (grads : Std.HashMap Nat (Spec.SomeTensor α)) : ProofWidgets.Html :=
+  let entries : Array (Nat × Spec.SomeTensor α) := grads.toArray;
   <div style={json% {"margin-top": "10px"}}>
     <div style={json% {"display": "flex", "gap": "8px", "flex-wrap": "wrap", "margin-bottom":
       "8px"}}>
-      {pill s!"grads={entries.length}"} {pill "nodeId -> dL/d(node)"}
+      {pill s!"grads={entries.size}"} {pill "nodeId -> dL/d(node)"}
     </div>
     <div>
-      {... (entries.toArray).map (fun (id, g) =>
+      {... entries.map (fun (id, g) =>
         <details style={json% {"margin": "6px 0"}}>
           <summary>
             {monospace s!"node {id}"} {pill s!"shape={dimsString g.shape}"}
@@ -189,7 +189,7 @@ private def listPreviewNat (maxElems : Nat) (xs : List Nat) : String :=
 
 /-- Summarize gradient coverage over nodes that require gradients. -/
 private def gradCoverageHtml {α : Type} (t : Tape α) (outId : Nat)
-    (grads : Std.HashMap Nat (Spec.PackedTensor α)) : ProofWidgets.Html :=
+    (grads : Std.HashMap Nat (Spec.SomeTensor α)) : ProofWidgets.Html :=
   let pairs : List (Nat × Node α) := List.zip (List.range t.nodes.size) t.nodes.toList
   let req : List Nat := pairs.filter (fun (_, n) => n.requiresGrad) |>.map (·.1)
   let leaf : List Nat := pairs.filter (fun (_, n) => n.parents.isEmpty) |>.map (·.1)
@@ -272,7 +272,7 @@ This viewer runs reverse-mode and renders a step-by-step trace in reverse id ord
 /-- Render a reverse-pass trace for a tape, starting from a scalar output node `outId`. -/
 def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape]
     (t : Tape α) (outId : Nat) : ProofWidgets.Html :=
-  let seed : Spec.PackedTensor α := Spec.PackedTensor.ofTensor (Tensor.scalar (1 : α))
+  let seed : Spec.SomeTensor α := Spec.SomeTensor.ofTensor (Tensor.scalar (1 : α))
   match Tape.backwardDense (α := α) (t := t) outId seed with
   | .error msg =>
       <div style={json% {"display": "grid", "grid-template-columns": "1fr", "gap": "10px"}}>
@@ -283,7 +283,7 @@ def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape
         </div>
       </div>
   | .ok dense =>
-      let getGrad (id : Nat) : Option (Spec.PackedTensor α) :=
+      let getGrad (id : Nat) : Option (Spec.SomeTensor α) :=
         match dense[id]? with
         | none => none
         | some g? => g?
@@ -328,7 +328,7 @@ def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape
                             "8px"}}>{monospace msg}</span></div>
                       | .ok contribs =>
                           let contribHtml : Array ProofWidgets.Html :=
-                            contribs.toArray.map (fun (pid, pg) =>
+                            contribs.map (fun (pid, pg) =>
                               <details style={json% {"margin": "6px 0"}}>
                                 <summary>{monospace s!"parent {pid}"} {pill
                                   s!"shape={dimsString pg.shape}"}</summary>
@@ -340,7 +340,7 @@ def tapeTraceHtml {α : Type} [ToString α] [Add α] [One α] [DecidableEq Shape
                           <div>
                             <div style={json% {"display": "flex", "gap": "8px", "flex-wrap": "wrap",
                               "align-items": "center"}}>
-                              {pill s!"contribs={contribs.length}"} {pill "pid -> dL/d(parent)"}
+                              {pill s!"contribs={contribs.size}"} {pill "pid -> dL/d(parent)"}
                             </div>
                             <div style={json% {"margin-top": "8px"}}>
                               {... contribHtml}

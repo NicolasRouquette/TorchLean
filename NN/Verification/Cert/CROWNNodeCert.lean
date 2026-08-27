@@ -8,7 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Cert.AlphaCROWN
 public import NN.MLTheory.CROWN.Graph
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
 public import NN.Verification.Cert.IBPNodeCert
 public import Lean.Data.Json
 
@@ -74,7 +74,7 @@ def readCROWNNodeCertificate (g : Graph) (path : String) : IO CROWNNodeCoreCerti
 /-- Check the local CROWN enclosure condition for one node against a certificate entry. -/
 def checkCROWNNode (g : Graph) (ps : ParamStore IEEE32Exec)
     (authoritativeIbp : Array (Option (FlatBox IEEE32Exec)))
-    (certAlpha : Array (Option (FlatVec IEEE32Exec)))
+    (certAlpha : Array (Option (FlatTensor IEEE32Exec)))
     (authoritativeCrown : Array (Option (FlatAffineBounds IEEE32Exec)))
     (certCrown : Array (Option (FlatAffineBounds IEEE32Exec)))
     (ctx : AffineCtx)
@@ -100,7 +100,8 @@ def replayStep (g : Graph) (ps : ParamStore IEEE32Exec)
 The final in-memory acceptance decision for an α-CROWN artifact.
 
 `diagnosticsOk` records parsing-independent IBP, shape, domain, and incremental-replay checks. The
-second conjunct is the proved complete-certificate replay used by the soundness theorem below.
+second conjunct establishes local replay consistency. Semantic enclosure additionally requires
+coverage of the relevant graph nodes and proved transfer rules for their operations.
 -/
 def certificateAccepts
     (cert : CROWNNodeCoreCertificate) (g : Graph) (ps : ParamStore IEEE32Exec)

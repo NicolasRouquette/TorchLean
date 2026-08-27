@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.API.Verification
 public import NN.Verification.TorchLean.Lowering
 
 /-!
@@ -18,7 +19,6 @@ TorchLean forward model → lower to `NN.IR.Graph` → run Lean IBP (`runIBP`).
 
 Run:
   `lake exe verify -- torchlean-ibp`
-  `lake exe verify -- torchlean-ibp --scalar ieee32-exec`
   `lake exe verify -- torchlean-ibp --scalar ieee32-exec`
 -/
 
@@ -65,16 +65,12 @@ def paramShapes : List Spec.Shape := nn.stateShapes model
 def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
     [Runtime.FromFloat α] [BoundOps α] : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
-  let params : TensorPack α paramShapes :=
-    TensorPack!
-      (NN.Tensor.ofListOfLength (α := α) [3, 2]
-        [cast 0.1, cast 0.2, cast 0.3, cast 0.4, cast 0.5, cast 0.6] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [3]
-        [cast 0.1, cast 0.2, cast 0.3] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [1, 3]
-        [cast 0.7, cast 0.8, cast 0.9] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [1]
-        [cast 0.4] (by rfl))
+  let params : _root_.TorchLean.TensorPack α paramShapes :=
+    _root_.TorchLean.TensorPack!
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3, 2] #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3] #[0.1, 0.2, 0.3])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1, 3] #[0.7, 0.8, 0.9])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1] #[0.4]))
 
   let lowered ←
     match Verification.lowerForwardToIR (α := α) model params with
@@ -84,9 +80,9 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
   let x0 : Spec.Tensor α xShape :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 0.5, cast 0.8] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.5, 0.8])
   let eps : α := Runtime.ofFloat 0.1
-  let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
+  let xB : FlatBox α := NN.Verification.TorchLean.lInfBall (α := α) x0 eps
   let ps : ParamStore α := lowered.seedInputBox xB
 
   let boxes := lowered.runIBP ps

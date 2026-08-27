@@ -195,7 +195,7 @@ theorem approxTensor_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
                         (Tensor.scalar xR)) := by
                 refine le_trans h ?_
                 -- `linf_norm` of a scalar tensor is the `abs` of its entry.
-                simpa [safeLogBoundTensor, tensorToSpec, Spec.mapTensor, mapSpec, linfNorm,
+                simpa [safeLogBoundTensor, tensorToSpec, Spec.Tensor.map, mapSpec, linfNorm,
                   RuntimeApprox.linfNorm, tensorDistance,
                     NN.MLTheory.Robustness.Spec.tensorDistance.tensor_sub,
                   tensorLinfNorm, MathFunctions.abs, safeLog] using le_abs_self _
@@ -240,7 +240,7 @@ theorem approxTensor_safeLog_spec {s : Shape} (ε : ℝ) (hε : 0 < ε) :
                         (safeLogBoundTensor (β := β) (fexp := fexp) (rnd := rnd) (s := s) ε eps
                           (xRf i)) ≤
                       B := by
-                    simpa [B, safeLogBoundTensor, tensorToSpec, Spec.mapTensor, mapSpec] using
+                    simpa [B, safeLogBoundTensor, tensorToSpec, Spec.Tensor.map, mapSpec] using
                       (linf_norm_le_get_dim
                         (t := safeLogBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                           (s := Shape.dim n s) ε eps (Tensor.dim xRf)) i)

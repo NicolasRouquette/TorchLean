@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.TensorReductionShape
+public import NN.Tensor
 
 /-!
 # BugZoo: KV-cache contracts
@@ -34,30 +34,50 @@ under the same mask, RoPE/position encoding, and numeric semantics.
 
 namespace NN.Examples.BugZoo.KVCache
 
+open TorchLean
+
 /-- A key/value cache with an explicit sequence length and head dimension. -/
 structure Cache (α : Type) (seqLen headDim : Nat) where
   /-- Cached key vectors, indexed by time. -/
-  keys : Spec.Tensor α (.dim seqLen (.dim headDim .scalar))
+  keys : Tensor α [seqLen, headDim]
   /-- Cached value vectors, indexed by time. -/
-  values : Spec.Tensor α (.dim seqLen (.dim headDim .scalar))
+  values : Tensor α [seqLen, headDim]
 
 /-- View one token vector as a length-one sequence. -/
 def singletonToken {α : Type} {headDim : Nat}
-    (x : Spec.Tensor α (.dim headDim .scalar)) :
-    Spec.Tensor α (.dim 1 (.dim headDim .scalar)) :=
-  Spec.Tensor.dim fun _ => x
+    (x : Tensor α [headDim]) :
+    Tensor α [1, headDim] := by
+  change Spec.Tensor α (([headDim] : Spec.Shape).insertAxis 0 1)
+  exact TorchLean.Tensor.stack 0 fun _ => x
+
+@[simp] theorem singletonToken_get {α : Type} {headDim : Nat}
+    (x : Tensor α [headDim]) (i : Fin 1) :
+    Spec.get (singletonToken x) i = x := by
+  change Spec.get (TorchLean.Tensor.stack 0 fun _ => x) i = x
+  rfl
 
 /-- Append one token vector to a sequence cache along the time axis. -/
 def appendToken {α : Type} {seqLen headDim : Nat}
-    (past : Spec.Tensor α (.dim seqLen (.dim headDim .scalar)))
-    (newToken : Spec.Tensor α (.dim headDim .scalar)) :
-    Spec.Tensor α (.dim (seqLen + 1) (.dim headDim .scalar)) :=
-  Spec.Tensor.concatLeadingAxisSpec past (singletonToken newToken)
+    (past : Tensor α [seqLen, headDim])
+    (newToken : Tensor α [headDim]) :
+    Tensor α [seqLen + 1, headDim] :=
+  Spec.Tensor.concatAxisSpec .scalar past (singletonToken newToken)
+
+@[simp] theorem appendToken_last {α : Type} {seqLen headDim : Nat}
+    (past : Tensor α [seqLen, headDim])
+    (newToken : Tensor α [headDim]) :
+    Spec.get (appendToken past newToken) ⟨seqLen, Nat.lt_succ_self seqLen⟩ = newToken := by
+  cases past with
+  | dim rows =>
+      cases hSingleton : singletonToken newToken with
+      | dim singletonRows =>
+          simpa [appendToken, hSingleton, Spec.Tensor.concatAxisSpec, Spec.get]
+            using singletonToken_get newToken ⟨0, Nat.zero_lt_succ 0⟩
 
 /-- Append both key and value vectors to the KV cache. -/
 def appendKV {α : Type} {seqLen headDim : Nat}
     (cache : Cache α seqLen headDim)
-    (newKey newValue : Spec.Tensor α (.dim headDim .scalar)) :
+    (newKey newValue : Tensor α [headDim]) :
     Cache α (seqLen + 1) headDim where
   keys := appendToken cache.keys newKey
   values := appendToken cache.values newValue
@@ -65,27 +85,17 @@ def appendKV {α : Type} {seqLen headDim : Nat}
 /-- The newly appended key is exactly the final key in the updated cache. -/
 theorem appendKV_last_key {α : Type} {seqLen headDim : Nat}
     (cache : Cache α seqLen headDim)
-    (newKey newValue : Spec.Tensor α (.dim headDim .scalar)) :
-    Spec.getAtSpec (appendKV cache newKey newValue).keys
+    (newKey newValue : Tensor α [headDim]) :
+    Spec.get (appendKV cache newKey newValue).keys
         ⟨seqLen, Nat.lt_succ_self seqLen⟩ = newKey := by
-  cases cache with
-  | mk keys values =>
-    cases keys with
-    | dim keyRows =>
-      simp [appendKV, appendToken, singletonToken, Spec.Tensor.concatLeadingAxisSpec,
-        Spec.getAtSpec]
+  exact appendToken_last cache.keys newKey
 
 /-- The newly appended value is exactly the final value in the updated cache. -/
 theorem appendKV_last_value {α : Type} {seqLen headDim : Nat}
     (cache : Cache α seqLen headDim)
-    (newKey newValue : Spec.Tensor α (.dim headDim .scalar)) :
-    Spec.getAtSpec (appendKV cache newKey newValue).values
+    (newKey newValue : Tensor α [headDim]) :
+    Spec.get (appendKV cache newKey newValue).values
         ⟨seqLen, Nat.lt_succ_self seqLen⟩ = newValue := by
-  cases cache with
-  | mk keys values =>
-    cases values with
-    | dim valueRows =>
-      simp [appendKV, appendToken, singletonToken, Spec.Tensor.concatLeadingAxisSpec,
-        Spec.getAtSpec]
+  exact appendToken_last cache.values newValue
 
 end NN.Examples.BugZoo.KVCache

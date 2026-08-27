@@ -104,7 +104,7 @@ structure ContractDescriptor where
   claim : ContractClaim
   summary : String
   evidence : ContractEvidence
-  provenance : List ContractProvenance := []
+  provenance : Array ContractProvenance := #[]
   deriving DecidableEq
 
 instance : Repr ContractDescriptor where
@@ -114,22 +114,22 @@ namespace ContractDescriptor
 
 /-- A contract claim enforced by a named runtime guard. -/
 def guarded (claim : ContractClaim) (summary guard : String)
-    (provenance : List ContractProvenance := []) : ContractDescriptor :=
+    (provenance : Array ContractProvenance := #[]) : ContractDescriptor :=
   { claim, summary, evidence := .runtimeGuard guard, provenance }
 
 /-- A contract claim covered by a named regression suite. -/
 def tested (claim : ContractClaim) (summary suite : String)
-    (provenance : List ContractProvenance := []) : ContractDescriptor :=
+    (provenance : Array ContractProvenance := #[]) : ContractDescriptor :=
   { claim, summary, evidence := .testSuite suite, provenance }
 
 /-- A contract claim delegated to an explicitly named trusted boundary. -/
 def trusted (claim : ContractClaim) (summary reason : String)
-    (provenance : List ContractProvenance := []) : ContractDescriptor :=
+    (provenance : Array ContractProvenance := #[]) : ContractDescriptor :=
   { claim, summary, evidence := .trustedBoundary reason, provenance }
 
 /-- Record that a forward-only capsule intentionally has no reverse-mode implementation. -/
 def vjpUnavailable (op : BackendOp) (summary : String)
-    (provenance : List ContractProvenance := []) : ContractDescriptor :=
+    (provenance : Array ContractProvenance := #[]) : ContractDescriptor :=
   { claim := .vjpUnavailable op
     summary
     evidence := .notApplicable
@@ -498,7 +498,7 @@ catalog order. A `.prefer provider` request first searches that provider and the
 ordinary catalog, so preference does not depend on module registration order.
 -/
 def chooseCapsuleFor? (policy : KernelPolicy) (op : BackendOp)
-    (capsules : List KernelCapsule) : Option KernelCapsule :=
+    (capsules : Array KernelCapsule) : Option KernelCapsule :=
   let eligible := fun c => c.op == op && c.admissible policy
   match policy.provider with
   | .prefer provider =>

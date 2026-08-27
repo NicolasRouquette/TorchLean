@@ -118,36 +118,36 @@ def scaleTensor {α : Type} {s : Shape}
 
 /-- Context-level scale predicate aligned with a `BList`. -/
 def scaleCtx {α : Type} (toSpec : α → SpecScalar) : {ss : List Shape} →
-    TList SpecScalar ss → TList α ss → BList ss → Prop
+    _root_.TorchLean.TensorPack SpecScalar ss → _root_.TorchLean.TensorPack α ss → BList ss → Prop
   | [], .nil, .nil, .nil => True
   | _ :: ss, .cons x xs, .cons y ys, .cons b bs =>
       scaleTensor (α := α) (toSpec := toSpec) x y b ∧ scaleCtx (ss := ss) toSpec xs ys bs
 
 lemma scaleCtx_cast {α : Type} {toSpec : α → SpecScalar} {ss₁ ss₂ : List Shape} (h : ss₁ = ss₂)
-    {xS : TList SpecScalar ss₁} {xR : TList α ss₁} {bs : BList ss₁} :
+    {xS : _root_.TorchLean.TensorPack SpecScalar ss₁} {xR : _root_.TorchLean.TensorPack α ss₁} {bs : BList ss₁} :
     scaleCtx (α := α) toSpec xS xR bs →
       scaleCtx (α := α) toSpec
-        (TList.cast (α := SpecScalar) (ss₁ := ss₁) (ss₂ := ss₂) h xS)
-        (TList.cast (α := α) (ss₁ := ss₁) (ss₂ := ss₂) h xR)
+        (_root_.TorchLean.TensorPack.cast (α := SpecScalar) (ss₁ := ss₁) (ss₂ := ss₂) h xS)
+        (_root_.TorchLean.TensorPack.cast (α := α) (ss₁ := ss₁) (ss₂ := ss₂) h xR)
         (BList.cast (ss₁ := ss₁) (ss₂ := ss₂) h bs) := by
   cases h
   simp
 
 lemma scaleCtx_snoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
-    {xS : TList SpecScalar ss} {xR : TList α ss} {bs : BList ss}
+    {xS : _root_.TorchLean.TensorPack SpecScalar ss} {xR : _root_.TorchLean.TensorPack α ss} {bs : BList ss}
     (hx : scaleCtx (α := α) toSpec xS xR bs)
     {yS : SpecTensor τ} {yR : Tensor α τ} {b : ℝ≥0}
     (hy : scaleTensor (α := α) (toSpec := toSpec) yS yR b) :
     scaleCtx (α := α) toSpec
-      (TList.snoc (α := SpecScalar) (ss := ss) xS yS)
-      (TList.snoc (α := α) (ss := ss) xR yR)
+      (_root_.TorchLean.TensorPack.snoc (α := SpecScalar) (ss := ss) xS yS)
+      (_root_.TorchLean.TensorPack.snoc (α := α) (ss := ss) xR yR)
       (BList.snoc (ss := ss) (τ := τ) bs b) := by
   induction ss with
   | nil =>
       cases xS
       cases xR
       cases bs
-      simpa [TList.snoc, BList.snoc, scaleCtx] using And.intro hy True.intro
+      simpa [_root_.TorchLean.TensorPack.snoc, BList.snoc, scaleCtx] using And.intro hy True.intro
   | cons s ss ih =>
       cases xS with
       | cons xSh xSt =>
@@ -160,16 +160,16 @@ lemma scaleCtx_snoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape} {
                   exact And.intro hx.1 ih'
 
 lemma scaleCtx_unsnoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
-    {xS : TList SpecScalar (ss ++ [τ])} {xR : TList α (ss ++ [τ])} {bs : BList (ss ++ [τ])} :
+    {xS : _root_.TorchLean.TensorPack SpecScalar (ss ++ [τ])} {xR : _root_.TorchLean.TensorPack α (ss ++ [τ])} {bs : BList (ss ++ [τ])} :
     scaleCtx (α := α) toSpec xS xR bs →
       scaleCtx (α := α) toSpec
-          (TList.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).1
-          (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).1
+          (_root_.TorchLean.TensorPack.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).1
+          (_root_.TorchLean.TensorPack.unsnoc (α := α) (ss := ss) (τ := τ) xR).1
           (BList.unsnoc (ss := ss) (τ := τ) bs).1
         ∧
       scaleTensor (α := α) (toSpec := toSpec)
-          (TList.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).2
-          (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).2
+          (_root_.TorchLean.TensorPack.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).2
+          (_root_.TorchLean.TensorPack.unsnoc (α := α) (ss := ss) (τ := τ) xR).2
           (BList.unsnoc (ss := ss) (τ := τ) bs).2 := by
   intro h
   induction ss with
@@ -187,8 +187,8 @@ lemma scaleCtx_unsnoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape}
                           cases bs' with
                           | nil =>
                               refine And.intro ?_ ?_
-                              · simp [TList.unsnoc, BList.unsnoc, scaleCtx]
-                              · simpa [TList.unsnoc, BList.unsnoc, scaleCtx, scaleTensor, scaleWith]
+                              · simp [_root_.TorchLean.TensorPack.unsnoc, BList.unsnoc, scaleCtx]
+                              · simpa [_root_.TorchLean.TensorPack.unsnoc, BList.unsnoc, scaleCtx, scaleTensor, scaleWith]
                                 using h.1
   | cons s ss ih =>
       cases xS with
@@ -200,14 +200,14 @@ lemma scaleCtx_unsnoc {α : Type} {toSpec : α → SpecScalar} {ss : List Shape}
                   have ht := ih (xS := xSt) (xR := xRt) (bs := bt) h.2
                   refine And.intro ?_ ht.2
                   -- prepend the head back on the prefix result
-                  simpa [TList.unsnoc, BList.unsnoc, scaleCtx] using And.intro h.1 ht.1
+                  simpa [_root_.TorchLean.TensorPack.unsnoc, BList.unsnoc, scaleCtx] using And.intro h.1 ht.1
 
 lemma scaleCtx_get {α : Type} {toSpec : α → SpecScalar} {Γ : List Shape}
-    {xS : TList SpecScalar Γ} {xR : TList α Γ} {bs : BList Γ}
+    {xS : _root_.TorchLean.TensorPack SpecScalar Γ} {xR : _root_.TorchLean.TensorPack α Γ} {bs : BList Γ}
     (h : scaleCtx (α := α) toSpec xS xR bs) (i : Fin Γ.length) :
     scaleTensor (α := α) (toSpec := toSpec)
-      (TList.get (α := SpecScalar) xS i)
-      (TList.get (α := α) xR i)
+      (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+      (_root_.TorchLean.TensorPack.get (α := α) xR i)
       (BList.get bs i) := by
   induction Γ with
   | nil =>
@@ -230,7 +230,7 @@ lemma scaleCtx_get {α : Type} {toSpec : α → SpecScalar} {Γ : List Shape}
                       | succ j =>
                           have := ih (xS := xSt) (xR := xRt) (bs := bt) h.2
                             ⟨j, Nat.lt_of_succ_lt_succ hiVal⟩
-                          simpa [TList.get, BList.get] using this
+                          simpa [_root_.TorchLean.TensorPack.get, BList.get] using this
 
 -- ---------------------------------------------------------------------------
 -- Derive abs+rel tolerances from (eps, scale)
@@ -274,21 +274,21 @@ lemma approxTensorWithTol_from_scale {α : Type} {s : Shape} {toSpec : α → Sp
     (tol₁ := ApproxTol.absOnly eps) (tol₂ := tolFromEpsScale eps B) habs hrel hslack habsOnly
 
 lemma approxCtx_get_tolFromEpsScale {α : Type} {toSpec : α → SpecScalar} {Γ : List Shape}
-    {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ} {bs : BList Γ}
+    {xS : _root_.TorchLean.TensorPack SpecScalar Γ} {xR : _root_.TorchLean.TensorPack α Γ} {eps : EList Γ} {bs : BList Γ}
     (hε : approxCtx (α := α) toSpec xS xR eps) (_hB : scaleCtx (α := α) toSpec xS xR bs)
     (i : Fin Γ.length) :
     approxTensorWithTol (α := α) (toSpec := toSpec)
-      (TList.get (α := SpecScalar) xS i)
-      (TList.get (α := α) xR i)
+      (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+      (_root_.TorchLean.TensorPack.get (α := α) xR i)
       (tolFromEpsScale (EList.get eps i) (BList.get bs i)) := by
   have hi : approxTensor (α := α) (toSpec := toSpec)
-      (TList.get (α := SpecScalar) xS i)
-      (TList.get (α := α) xR i)
+      (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+      (_root_.TorchLean.TensorPack.get (α := α) xR i)
       (EList.get eps i) :=
     approxCtx_get (α := α) (toSpec := toSpec) (xS := xS) (xR := xR) (eps := eps) hε i
   exact approxTensorWithTol_from_scale (α := α) (toSpec := toSpec)
-    (spec := TList.get (α := SpecScalar) xS i)
-    (runtime := TList.get (α := α) xR i)
+    (spec := _root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+    (runtime := _root_.TorchLean.TensorPack.get (α := α) xR i)
     (eps := EList.get eps i) (B := BList.get bs i) hi
 
 end

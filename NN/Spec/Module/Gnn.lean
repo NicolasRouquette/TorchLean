@@ -32,7 +32,7 @@ variable {α : Type} [Context α]
 /-- GCN layer wrapper: `(n, inDim) -> (n, outDim)`. -/
 def gcn {n inDim outDim : Nat}
   (layer : GCNLayerSpec n inDim outDim α) :
-  Spec.Module α (.dim n (.dim inDim .scalar)) (.dim n (.dim outDim .scalar)) :=
+  Spec.Module α ([n, inDim]) ([n, outDim]) :=
 { forward := fun x => gcnLayerSpec (α := α) layer x
   kind := "GCN"
   pythonExpr := s!"GCNLayer(n={n}, in={inDim}, out={outDim})" }

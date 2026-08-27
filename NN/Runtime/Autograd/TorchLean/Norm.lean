@@ -13,17 +13,9 @@ import Mathlib.Algebra.Order.Algebra
 /-!
 # Norm
 
-TorchLean normalization helpers.
-
-These are execution-generic (eager tape and typed `GraphM`), built from the small `Ops` surface.
-
-PyTorch analogy: these correspond to the functional/core math behind `InstanceNorm2d`, `GroupNorm`,
-`BatchNorm2d`, and common transformer norms (RMSNorm-style), but exposed as plain functions so they
-can run eagerly or be lowered into the verifier IR.
-
-Conventions:
-- CNN operators use PyTorch's `N×C×H×W` axis convention on ordinary rank-four tensors.
-- We keep epsilon explicit where it matters for stability.
+Execution-generic normalization operations built from the small `Ops` surface. Spatial dimensions
+are represented by an arbitrary `Shape`; the same definitions therefore cover vectors, images,
+volumes, and higher-rank data.
 
 Note: we do **not** implement PyTorch-style running-stat updates as a backend-generic op.
 You can still compute batch statistics (mean/var) and update running buffers in the imperative
@@ -44,70 +36,64 @@ namespace Norm
 
 namespace Internal
 
-/--
-Size lemma for flattening spatial dimensions in `N×C×H×W`.
-
-This is used to justify `reshape` from `N×C×H×W` to `N×C×(H*W)` (a common trick in normalization).
--/
-theorem reshape_nchw_flat_size {n c h w : Nat} :
-    Spec.Shape.size (.dim n (.dim c (.dim h (.dim w .scalar)))) =
-      Spec.Shape.size (.dim n (.dim c (.dim (h * w) .scalar))) := by
+/-- Flatten an arbitrary spatial shape while preserving the batch and channel axes. -/
+theorem reshapeBatchChannelFlatSize {batch channels : Nat} {spatial : Shape} :
+    Shape.size (.dim batch (.dim channels spatial)) =
+      Shape.size (.dim batch (.dim channels (.dim (Shape.size spatial) .scalar))) := by
   simp [Spec.Shape.size]
 
-/-- Size lemma for flattening spatial dimensions in `C×H×W` to `C×(H*W)`. -/
-theorem reshape_chw_flat_size {c h w : Nat} :
-    Spec.Shape.size (.dim c (.dim h (.dim w .scalar))) =
-      Spec.Shape.size (.dim c (.dim (h * w) .scalar)) := by
+/-- Flatten an arbitrary spatial shape while preserving the channel axis. -/
+theorem reshapeChannelFlatSize {channels : Nat} {spatial : Shape} :
+    Shape.size (.dim channels spatial) =
+      Shape.size (.dim channels (.dim (Shape.size spatial) .scalar)) := by
   simp [Spec.Shape.size]
 
-/-- Repeat a channel vector over the spatial and batch axes of a flattened NCHW tensor. -/
-def broadcastCToNCHW {α : Type} [Context α] [DecidableEq Shape]
+/-- Repeat a channel vector over the batch and flattened spatial axes. -/
+def broadcastChannelToBatchSpatial {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    (n c hw : Nat) (x : RefTy (m := m) (α := α) (.dim c .scalar)) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim hw .scalar)))) := do
+    (batch channels spatialSize : Nat)
+    (x : RefTy (m := m) (α := α) (.dim channels .scalar)) :
+    m (RefTy (m := m) (α := α)
+      (.dim batch (.dim channels (.dim spatialSize .scalar)))) := do
   let acrossSpatial ← Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) (.dim c (.dim hw .scalar)) 1 x
+    (m := m) (α := α) (.dim channels (.dim spatialSize .scalar)) 1 x
   Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) (.dim n (.dim c (.dim hw .scalar))) 0 acrossSpatial
+    (m := m) (α := α) (.dim batch (.dim channels (.dim spatialSize .scalar))) 0 acrossSpatial
 
-/-- Repeat a channel vector over the spatial axis of a flattened CHW tensor. -/
-def broadcastCToCHW {α : Type} [Context α] [DecidableEq Shape]
+/-- Repeat a channel vector over a flattened spatial axis. -/
+def broadcastChannelToSpatial {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    (c hw : Nat) (x : RefTy (m := m) (α := α) (.dim c .scalar)) :
-    m (RefTy (m := m) (α := α) (.dim c (.dim hw .scalar))) :=
+    (channels spatialSize : Nat)
+    (x : RefTy (m := m) (α := α) (.dim channels .scalar)) :
+    m (RefTy (m := m) (α := α) (.dim channels (.dim spatialSize .scalar))) :=
   Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) (.dim c (.dim hw .scalar)) 1 x
-
-/-- A feature vector broadcasts across the row axis of a matrix. -/
-def broadcastFeatureToRows (rows width : Nat) :
-    Shape.CanBroadcastTo (.dim width .scalar) (.dim rows (.dim width .scalar)) := by
-  apply Shape.CanBroadcastTo.expand_dims
-  apply Shape.CanBroadcastTo.dim_eq
-  exact Shape.CanBroadcastTo.scalar
+    (m := m) (α := α) (.dim channels (.dim spatialSize .scalar)) 1 x
 
 end Internal
 
-/-- RMS normalization over the final axis of a matrix, including an empty row axis. -/
+/-- RMS normalization over the final axis of a tensor, including zero-sized leading axes. -/
 def rmsNorm {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {rows width : Nat} (hWidth : width > 0)
-    (x : RefTy (m := m) (α := α) (.dim rows (.dim width .scalar)))
+    {leading : Shape} {width : Nat} (hWidth : width > 0)
+    (x : RefTy (m := m) (α := α) (leading.appendDim width))
     (gamma : RefTy (m := m) (α := α) (.dim width .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim rows (.dim width .scalar))) :=
-  match rows with
-  | 0 =>
-      const (m := m) (α := α) (s := .dim 0 (.dim width .scalar))
-        (LeadingAxis.Internal.emptyLeadingAxis (α := α) (.dim width .scalar))
-  | rows + 1 => do
-      let s : Shape := .dim (rows + 1) (.dim width .scalar)
-      let _ : Shape.WellFormed s := ⟨⟨Nat.succ_pos rows, ⟨hWidth, trivial⟩⟩⟩
+    m (RefTy (m := m) (α := α) (leading.appendDim width)) := by
+  by_cases hLeading : Shape.size leading = 0
+  · exact const (m := m) (α := α) (s := leading.appendDim width)
+      (Spec.fill (0 : α) (leading.appendDim width))
+  · exact do
+      let s := leading.appendDim width
+      let hSize : 0 < Shape.size s := by
+        simpa [s, Shape.size_appendDim] using
+          Nat.mul_pos (Nat.pos_of_ne_zero hLeading) hWidth
+      let _ : Shape.WellFormed s := ⟨Shape.wellFormed_of_size_pos hSize⟩
       let sq ← F.square (m := m) (α := α) (s := s) x
-      let axis : Nat := Spec.Shape.rank s - 1
-      have hrank : Spec.Shape.rank s > 0 := by simp [s, Spec.Shape.rank]
-      let _ : Shape.HasNonemptyAxis axis s := Shape.inferNonemptyLastAxis hrank
+      let axis := Shape.rank s - 1
+      let _ : Shape.HasNonemptyAxis axis s :=
+        Shape.inferNonemptyAxis (by simp [axis, s])
       let meanSq ← reduceMean (m := m) (α := α) (s := s) axis sq
-      let meanSqShape : Shape := shapeAfterSum s axis
+      let meanSqShape := shapeAfterSum s axis
       let zero ← const (m := m) (α := α) (s := meanSqShape) (Spec.fill (0 : α) meanSqShape)
       let meanSqClamped ← max (m := m) (α := α) (s := meanSqShape) meanSq zero
       let epsT ← const (m := m) (α := α) (s := meanSqShape) (Spec.fill ε meanSqShape)
@@ -118,37 +104,72 @@ def rmsNorm {α : Type} [Context α] [DecidableEq Shape]
         (m := m) (α := α) s axis invDenom
       let normalized ← mul (m := m) (α := α) (s := s) x invDenomB
       let gammaB ← broadcastTo (m := m) (α := α) (s₁ := .dim width .scalar) (s₂ := s)
-        (Internal.broadcastFeatureToRows (rows + 1) width) gamma
+        (by
+          simpa [s, Shape.appendDim_eq_concat] using
+            Shape.CanBroadcastTo.prependTarget leading (.dim width .scalar)) gamma
       mul (m := m) (α := α) (s := s) normalized gammaB
 
-/-- InstanceNorm2d on `N×C×H×W` (per-sample, per-channel stats over `H×W`, affine). -/
-def instanceNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
+/-- Normalize the final axis by `sqrt(sum (x * x) + epsilon)`. -/
+def l2Normalize {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n c h w : Nat}
-    (h_n_pos : n > 0) (h_c_pos : c > 0) (h_h_pos : h > 0) (h_w_pos : w > 0)
-    (x : RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))))
-    (gamma beta : RefTy (m := m) (α := α) (.dim c .scalar))
+    {leading : Shape} {width : Nat} (hWidth : width > 0)
+    (x : RefTy (m := m) (α := α) (leading.appendDim width))
+    (epsilon : RefTy (m := m) (α := α) .scalar) :
+    m (RefTy (m := m) (α := α) (leading.appendDim width)) := by
+  by_cases hLeading : Shape.size leading = 0
+  · exact const (m := m) (α := α) (s := leading.appendDim width)
+      (Spec.fill (0 : α) (leading.appendDim width))
+  · exact do
+      let s := leading.appendDim width
+      let hSize : 0 < Shape.size s := by
+        simpa [s, Shape.size_appendDim] using
+          Nat.mul_pos (Nat.pos_of_ne_zero hLeading) hWidth
+      let _ : Shape.WellFormed s := ⟨Shape.wellFormed_of_size_pos hSize⟩
+      let squared ← mul (m := m) (α := α) (s := s) x x
+      let axis := Shape.rank s - 1
+      let _ : Shape.HasNonemptyAxis axis s :=
+        Shape.inferNonemptyAxis (by simp [axis, s])
+      let normSquared ← reduceSum (m := m) (α := α) (s := s) axis squared
+      let reducedShape := shapeAfterSum s axis
+      let epsilonB ← broadcastTo (m := m) (α := α) (s₁ := .scalar) (s₂ := reducedShape)
+        (Shape.CanBroadcastTo.scalarTo reducedShape) epsilon
+      let denominator ← sqrt (m := m) (α := α) (s := reducedShape)
+        (← add (m := m) (α := α) (s := reducedShape) normSquared epsilonB)
+      let inverse ← inv (m := m) (α := α) (s := reducedShape) denominator
+      let inverseB ← Runtime.Autograd.Torch.broadcastAfterSum
+        (m := m) (α := α) s axis inverse
+      mul (m := m) (α := α) (s := s) x inverseB
+
+/-- Normalize each sample and channel independently over every spatial axis. -/
+def instanceNorm {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {batch channels : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim batch (Shape.dim channels spatial)).wellFormed)
+    (x : RefTy (m := m) (α := α) (.dim batch (.dim channels spatial)))
+    (gamma beta : RefTy (m := m) (α := α) (.dim channels .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))) := do
-  let hw : Nat := h * w
-  let sNCHW : Shape := .dim n (.dim c (.dim h (.dim w .scalar)))
-  let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
-  let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
-  let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (Internal.reshape_nchw_flat_size (n
-    := n) (c := c) (h := h) (w := w))
-  -- mean over last axis (HW)
-  let axisHW : Nat := Spec.Shape.rank sNCHWFlat - 1
-  have hrank : Spec.Shape.rank sNCHWFlat > 0 := by simp [sNCHWFlat, Spec.Shape.rank]
-  let _ : Shape.HasNonemptyAxis axisHW sNCHWFlat := Shape.inferNonemptyLastAxis hrank
-  let mean ← reduceMean (m := m) (α := α) (s := sNCHWFlat) axisHW xFlat
-  let meanShape : Shape := shapeAfterSum sNCHWFlat axisHW  -- `N×C`
+    m (RefTy (m := m) (α := α) (.dim batch (.dim channels spatial))) := do
+  let spatialSize := Shape.size spatial
+  let inputShape : Shape := .dim batch (.dim channels spatial)
+  let flatShape : Shape := .dim batch (.dim channels (.dim spatialSize .scalar))
+  let hBatch := hWellFormed.1
+  let hChannels := hWellFormed.2.1
+  let hSpatial := Shape.size_pos_of_well_formed hWellFormed.2.2
+  let _ : Shape.WellFormed inputShape := ⟨hWellFormed⟩
+  let _ : Shape.WellFormed flatShape := ⟨⟨hBatch, ⟨hChannels, ⟨hSpatial, trivial⟩⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := inputShape) (s₂ := flatShape) x
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial))
+  let axis := Shape.rank flatShape - 1
+  let _ : Shape.HasNonemptyAxis axis flatShape :=
+    Shape.inferNonemptyAxis (by simp [axis, flatShape, Shape.rank])
+  let mean ← reduceMean (m := m) (α := α) (s := flatShape) axis xFlat
+  let meanShape := shapeAfterSum flatShape axis
   let meanB ← Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) sNCHWFlat axisHW mean
-  let centered ← sub (m := m) (α := α) (s := sNCHWFlat) xFlat meanB
-  let sq ← F.square (m := m) (α := α) (s := sNCHWFlat) centered
-  let var ← reduceMean (m := m) (α := α) (s := sNCHWFlat) axisHW sq
+    (m := m) (α := α) flatShape axis mean
+  let centered ← sub (m := m) (α := α) (s := flatShape) xFlat meanB
+  let sq ← F.square (m := m) (α := α) (s := flatShape) centered
+  let var ← reduceMean (m := m) (α := α) (s := flatShape) axis sq
   let zero ← const (m := m) (α := α) (s := meanShape) (Spec.fill (0 : α) meanShape)
   let varClamped ← max (m := m) (α := α) (s := meanShape) var zero
   let epsT ← const (m := m) (α := α) (s := meanShape) (Spec.fill ε meanShape)
@@ -156,82 +177,63 @@ def instanceNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
     varClamped epsT)
   let invDenom ← inv (m := m) (α := α) (s := meanShape) denom
   let invDenomB ← Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) sNCHWFlat axisHW invDenom
-  let normalized ← mul (m := m) (α := α) (s := sNCHWFlat) centered invDenomB
-  let gammaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw gamma
-  let betaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw beta
-  let yFlat ← add (m := m) (α := α) (s := sNCHWFlat)
-    (← mul (m := m) (α := α) (s := sNCHWFlat) normalized gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat
-    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
+    (m := m) (α := α) flatShape axis invDenom
+  let normalized ← mul (m := m) (α := α) (s := flatShape) centered invDenomB
+  let gammaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize gamma
+  let betaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize beta
+  let yFlat ← add (m := m) (α := α) (s := flatShape)
+    (← mul (m := m) (α := α) (s := flatShape) normalized gammaB) betaB
+  reshape (m := m) (α := α) (s₁ := flatShape) (s₂ := inputShape) yFlat
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial)).symm
 
 /--
-GroupNorm on `N×C×H×W` with `groups`, affine.
-
-This is purely functional (no running stats); it matches PyTorch `GroupNorm`.
+Group normalization over an arbitrary spatial shape.
 -/
-def groupNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
+def groupNorm {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n c h w groups : Nat}
-    (h_n_pos : n > 0) (h_c_pos : c > 0) (h_h_pos : h > 0) (h_w_pos : w > 0) (h_g_pos : groups > 0)
-    (h_ge : c ≥ groups) (h_div : c % groups = 0)
-    (x : RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))))
-    (gamma beta : RefTy (m := m) (α := α) (.dim c .scalar))
+    {batch channels groups : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim batch (Shape.dim channels spatial)).wellFormed)
+    (hGroups : groups > 0) (hGroupsLe : channels ≥ groups)
+    (hDiv : channels % groups = 0)
+    (x : RefTy (m := m) (α := α) (.dim batch (.dim channels spatial)))
+    (gamma beta : RefTy (m := m) (α := α) (.dim channels .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))) := do
-  let channelsPerGroup : Nat := c / groups
-  let sNCHW : Shape := .dim n (.dim c (.dim h (.dim w .scalar)))
-  let sG : Shape := .dim n (.dim groups (.dim channelsPerGroup (.dim h (.dim w .scalar))))
-  let chw : Nat := channelsPerGroup * h * w
-  let sGF : Shape := .dim n (.dim groups (.dim chw .scalar))
-  let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
-  let _ : Shape.WellFormed sG := by
-    refine ⟨⟨h_n_pos, ?_⟩⟩
-    refine ⟨h_g_pos, ?_⟩
-    have h_cpg_pos : channelsPerGroup > 0 := by
-      unfold channelsPerGroup
-      apply Nat.div_pos
-      exact h_ge
-      exact h_g_pos
-    exact ⟨h_cpg_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩
-  have hSize : Spec.Shape.size sNCHW = Spec.Shape.size sG := by
-    -- `c = groups * (c/groups)` since `c % groups = 0`
-    have hc : c = groups * channelsPerGroup := by
-      have := (Nat.mod_add_div c groups).symm
-      -- `c = c % groups + groups * (c / groups)`; with `h_div`, reduces to `groups * (c/groups)`
-      -- rewrite and simplify.
-      simp [h_div] at this
-      -- `this` is `c = groups * (c / groups)`, but in a slightly different form; normalize.
-      simpa [channelsPerGroup, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc, Nat.zero_add] using
-        this
-    -- now compare sizes
-    simp [sNCHW, sG, Spec.Shape.size, hc, Nat.mul_left_comm, Nat.mul_comm]
-  have h_chw_pos : chw > 0 := by
-    -- channelsPerGroup, h, w are positive; multiplication preserves positivity.
-    have h_cpg_pos : channelsPerGroup > 0 := by
-      unfold channelsPerGroup
-      apply Nat.div_pos
-      exact h_ge
-      exact h_g_pos
-    have : channelsPerGroup * h > 0 := Nat.mul_pos h_cpg_pos h_h_pos
-    exact Nat.mul_pos this h_w_pos
-  let _ : Shape.WellFormed sGF := ⟨⟨h_n_pos, ⟨h_g_pos, ⟨h_chw_pos, trivial⟩⟩⟩⟩
-  have hSizeG_F : Spec.Shape.size sG = Spec.Shape.size sGF := by
-    simp [sG, sGF, Spec.Shape.size, chw, Nat.mul_left_comm, Nat.mul_comm]
-
-  let xG ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sG) x hSize
-  let xGF ← reshape (m := m) (α := α) (s₁ := sG) (s₂ := sGF) xG hSizeG_F
-  -- mean/var over last axis (`channelsPerGroup * h * w`)
-  let axis : Nat := Spec.Shape.rank sGF - 1
-  have hrank : Spec.Shape.rank sGF > 0 := by simp [sGF, Spec.Shape.rank]
-  let _ : Shape.HasNonemptyAxis axis sGF := Shape.inferNonemptyLastAxis hrank
-  let mean ← reduceMean (m := m) (α := α) (s := sGF) axis xGF
-  let meanShape : Shape := shapeAfterSum sGF axis -- `N×groups`
+    m (RefTy (m := m) (α := α) (.dim batch (.dim channels spatial))) := do
+  let channelsPerGroup := channels / groups
+  let spatialSize := Shape.size spatial
+  let groupSize := channelsPerGroup * spatialSize
+  let inputShape : Shape := .dim batch (.dim channels spatial)
+  let groupedShape : Shape := .dim batch (.dim groups (.dim groupSize .scalar))
+  let hBatch := hWellFormed.1
+  let hSpatial := Shape.size_pos_of_well_formed hWellFormed.2.2
+  have hChannelsPerGroup : channelsPerGroup > 0 := by
+    exact Nat.div_pos hGroupsLe hGroups
+  have hGroupSize : groupSize > 0 := Nat.mul_pos hChannelsPerGroup hSpatial
+  have hChannelsEq : channels = groups * channelsPerGroup := by
+    simpa [channelsPerGroup, hDiv] using (Nat.mod_add_div channels groups).symm
+  let _ : Shape.WellFormed inputShape := ⟨hWellFormed⟩
+  let _ : Shape.WellFormed groupedShape :=
+    ⟨⟨hBatch, ⟨hGroups, ⟨hGroupSize, trivial⟩⟩⟩⟩
+  have hReshape : Shape.size inputShape = Shape.size groupedShape := by
+    rw [show inputShape = .dim batch (.dim channels spatial) by rfl,
+      show groupedShape = .dim batch (.dim groups (.dim groupSize .scalar)) by rfl]
+    simp only [Shape.size]
+    rw [hChannelsEq]
+    simp [groupSize, spatialSize, Nat.mul_assoc]
+  let xGrouped ← reshape (m := m) (α := α) (s₁ := inputShape) (s₂ := groupedShape) x hReshape
+  let axis := Shape.rank groupedShape - 1
+  let _ : Shape.HasNonemptyAxis axis groupedShape :=
+    Shape.inferNonemptyAxis (by simp [axis, groupedShape, Shape.rank])
+  let mean ← reduceMean (m := m) (α := α) (s := groupedShape) axis xGrouped
+  let meanShape := shapeAfterSum groupedShape axis
   let meanB ← Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) sGF axis mean
-  let centered ← sub (m := m) (α := α) (s := sGF) xGF meanB
-  let sq ← F.square (m := m) (α := α) (s := sGF) centered
-  let var ← reduceMean (m := m) (α := α) (s := sGF) axis sq
+    (m := m) (α := α) groupedShape axis mean
+  let centered ← sub (m := m) (α := α) (s := groupedShape) xGrouped meanB
+  let sq ← F.square (m := m) (α := α) (s := groupedShape) centered
+  let var ← reduceMean (m := m) (α := α) (s := groupedShape) axis sq
   let zeroVar ← const (m := m) (α := α) (s := meanShape) (Spec.fill (0 : α) meanShape)
   let varClamped ← max (m := m) (α := α) (s := meanShape) var zeroVar
   let epsT ← const (m := m) (α := α) (s := meanShape) (Spec.fill ε meanShape)
@@ -239,98 +241,103 @@ def groupNorm2dNchw {α : Type} [Context α] [DecidableEq Shape]
     (← add (m := m) (α := α) (s := meanShape) varClamped epsT)
   let invDenom ← inv (m := m) (α := α) (s := meanShape) denom
   let invDenomB ← Runtime.Autograd.Torch.broadcastAfterSum
-    (m := m) (α := α) sGF axis invDenom
-  let normalized ← mul (m := m) (α := α) (s := sGF) centered invDenomB
-  let yG ← reshape (m := m) (α := α) (s₁ := sGF) (s₂ := sG) normalized hSizeG_F.symm
-  let yNCHW ← reshape (m := m) (α := α) (s₁ := sG) (s₂ := sNCHW) yG hSize.symm
-  -- Apply per-channel affine in `N×C×(H*W)` form.
-  let hw : Nat := h * w
-  let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
-  let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let yFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) yNCHW
-    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w))
-  let gammaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw gamma
-  let betaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw beta
-  let yFlat' ← add (m := m) (α := α) (s := sNCHWFlat)
-    (← mul (m := m) (α := α) (s := sNCHWFlat) yFlat gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat'
-    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
+    (m := m) (α := α) groupedShape axis invDenom
+  let normalized ← mul (m := m) (α := α) (s := groupedShape) centered invDenomB
+  let normalizedInput ← reshape (m := m) (α := α)
+    (s₁ := groupedShape) (s₂ := inputShape) normalized hReshape.symm
+  let flatShape : Shape := .dim batch (.dim channels (.dim spatialSize .scalar))
+  let _ : Shape.WellFormed flatShape :=
+    ⟨⟨hBatch, ⟨hWellFormed.2.1, ⟨hSpatial, trivial⟩⟩⟩⟩
+  let yFlat ← reshape (m := m) (α := α) (s₁ := inputShape) (s₂ := flatShape)
+    normalizedInput (Internal.reshapeBatchChannelFlatSize (batch := batch)
+      (channels := channels) (spatial := spatial))
+  let gammaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize gamma
+  let betaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize beta
+  let yFlat ← add (m := m) (α := α) (s := flatShape)
+    (← mul (m := m) (α := α) (s := flatShape) yFlat gammaB) betaB
+  reshape (m := m) (α := α) (s₁ := flatShape) (s₂ := inputShape) yFlat
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial)).symm
 
-/-- BatchNorm2d (training) returning the batch mean/var (per-channel) as additional refs. -/
-def batchNorm2dNchwTrainStats {α : Type} [Context α] [DecidableEq Shape]
+/-- Batch normalization using batch and spatial statistics, returning per-channel statistics. -/
+def batchNormTrainStats {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n c h w : Nat}
-    (h_n_pos : n > 0) (h_c_pos : c > 0) (h_h_pos : h > 0) (h_w_pos : w > 0)
-    (x : RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))))
-    (gamma beta : RefTy (m := m) (α := α) (.dim c .scalar))
+    {batch channels : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim batch (Shape.dim channels spatial)).wellFormed)
+    (x : RefTy (m := m) (α := α) (.dim batch (.dim channels spatial)))
+    (gamma beta : RefTy (m := m) (α := α) (.dim channels .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) ×
-       RefTy (m := m) (α := α) (.dim c .scalar) ×
-       RefTy (m := m) (α := α) (.dim c .scalar)) := do
-  let hw : Nat := h * w
-  let sNCHW : Shape := .dim n (.dim c (.dim h (.dim w .scalar)))
-  let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
-  let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
-  let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (Internal.reshape_nchw_flat_size (n
-    := n) (c := c) (h := h) (w := w))
-  -- mean over HW then mean over batch
-  let axisHW : Nat := Spec.Shape.rank sNCHWFlat - 1
-  have hrank : Spec.Shape.rank sNCHWFlat > 0 := by simp [sNCHWFlat, Spec.Shape.rank]
-  let _ : Shape.HasNonemptyAxis axisHW sNCHWFlat := Shape.inferNonemptyLastAxis hrank
-  let meanHW ← reduceMean (m := m) (α := α) (s := sNCHWFlat) axisHW xFlat -- `N×C`
-  let sNC : Shape := shapeAfterSum sNCHWFlat axisHW
-  have hsNC : sNC = .dim n (.dim c .scalar) := by
-    simp [sNC, sNCHWFlat, axisHW, Spec.Shape.rank, shapeAfterSum]
-  let _ : Shape.WellFormed sNC := by
-    simpa [hsNC] using (show Shape.WellFormed (.dim n (.dim c .scalar)) from ⟨⟨h_n_pos, ⟨h_c_pos,
-      trivial⟩⟩⟩)
-  let axisN : Nat := 0
-  let _ : Shape.HasNonemptyAxis axisN sNC := by
-    simpa [hsNC] using (Shape.hasNonemptyAxisZeroOfPos (n := n) (s := .dim c .scalar) h_n_pos)
-  let mean ← reduceMean (m := m) (α := α) (s := sNC) axisN meanHW -- `C`
-  -- broadcast mean back to `N×C×HW`
-  let meanB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw mean
-  let centered ← sub (m := m) (α := α) (s := sNCHWFlat) xFlat meanB
-  let sq ← F.square (m := m) (α := α) (s := sNCHWFlat) centered
-  let varHW ← reduceMean (m := m) (α := α) (s := sNCHWFlat) axisHW sq -- `N×C`
-  let var ← reduceMean (m := m) (α := α) (s := sNC) axisN varHW -- `C`
-  let zero ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill (0 : α) (.dim c .scalar))
-  let varClamped ← max (m := m) (α := α) (s := .dim c .scalar) var zero
-  let epsT ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill ε (.dim c .scalar))
-  let denom ← sqrt (m := m) (α := α) (s := .dim c .scalar) (← add (m := m) (α := α) (s := .dim c
-    .scalar) varClamped epsT)
-  let invDenom ← inv (m := m) (α := α) (s := .dim c .scalar) denom
-  let invDenomB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw invDenom
-  let normalized ← mul (m := m) (α := α) (s := sNCHWFlat) centered invDenomB
-  let gammaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw gamma
-  let betaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw beta
-  let yFlat ← add (m := m) (α := α) (s := sNCHWFlat) (← mul (m := m) (α := α) (s := sNCHWFlat)
-    normalized gammaB) betaB
-  let y ← reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat
-    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
+    m (RefTy (m := m) (α := α) (.dim batch (.dim channels spatial)) ×
+       RefTy (m := m) (α := α) (.dim channels .scalar) ×
+       RefTy (m := m) (α := α) (.dim channels .scalar)) := do
+  let spatialSize := Shape.size spatial
+  let inputShape : Shape := .dim batch (.dim channels spatial)
+  let flatShape : Shape := .dim batch (.dim channels (.dim spatialSize .scalar))
+  let hBatch := hWellFormed.1
+  let hChannels := hWellFormed.2.1
+  let hSpatial := Shape.size_pos_of_well_formed hWellFormed.2.2
+  let _ : Shape.WellFormed inputShape := ⟨hWellFormed⟩
+  let _ : Shape.WellFormed flatShape := ⟨⟨hBatch, ⟨hChannels, ⟨hSpatial, trivial⟩⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := inputShape) (s₂ := flatShape) x
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial))
+  let spatialAxis := Shape.rank flatShape - 1
+  let _ : Shape.HasNonemptyAxis spatialAxis flatShape :=
+    Shape.inferNonemptyAxis (by simp [spatialAxis, flatShape, Shape.rank])
+  let meanSpatial ← reduceMean (m := m) (α := α) (s := flatShape) spatialAxis xFlat
+  let batchChannelShape := shapeAfterSum flatShape spatialAxis
+  have hBatchChannelShape : batchChannelShape = .dim batch (.dim channels .scalar) := by
+    simp [batchChannelShape, flatShape, spatialAxis, Shape.rank, shapeAfterSum]
+  let _ : Shape.WellFormed batchChannelShape := by
+    simpa [hBatchChannelShape] using
+      (show Shape.WellFormed (.dim batch (.dim channels .scalar)) from
+        ⟨⟨hBatch, ⟨hChannels, trivial⟩⟩⟩)
+  let batchAxis := 0
+  let _ : Shape.HasNonemptyAxis batchAxis batchChannelShape := by
+    simpa [hBatchChannelShape] using
+      Shape.hasNonemptyAxisZeroOfPos (n := batch) (s := .dim channels .scalar) hBatch
+  let mean ← reduceMean (m := m) (α := α) (s := batchChannelShape) batchAxis meanSpatial
+  let meanB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize mean
+  let centered ← sub (m := m) (α := α) (s := flatShape) xFlat meanB
+  let sq ← F.square (m := m) (α := α) (s := flatShape) centered
+  let varSpatial ← reduceMean (m := m) (α := α) (s := flatShape) spatialAxis sq
+  let var ← reduceMean (m := m) (α := α) (s := batchChannelShape) batchAxis varSpatial
+  let channelShape : Shape := .dim channels .scalar
+  let zero ← const (m := m) (α := α) (s := channelShape)
+    (Spec.fill (0 : α) channelShape)
+  let varClamped ← max (m := m) (α := α) (s := channelShape) var zero
+  let epsT ← const (m := m) (α := α) (s := channelShape) (Spec.fill ε channelShape)
+  let denom ← sqrt (m := m) (α := α) (s := channelShape)
+    (← add (m := m) (α := α) (s := channelShape) varClamped epsT)
+  let invDenom ← inv (m := m) (α := α) (s := channelShape) denom
+  let invDenomB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize invDenom
+  let normalized ← mul (m := m) (α := α) (s := flatShape) centered invDenomB
+  let gammaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize gamma
+  let betaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize beta
+  let yFlat ← add (m := m) (α := α) (s := flatShape)
+    (← mul (m := m) (α := α) (s := flatShape) normalized gammaB) betaB
+  let y ← reshape (m := m) (α := α) (s₁ := flatShape) (s₂ := inputShape) yFlat
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial)).symm
   pure (y, mean, varClamped)
 
-/--
-BatchNorm2d (training-style) on `N×C×H×W` (stats over `N×H×W`, affine).
-
-This does *not* update running statistics; use the returned batch stats (see
-  `batch_norm2d_nchw_train_stats`)
-to update buffers in an imperative training loop if desired.
--/
-def batchNorm2dNchwTrain {α : Type} [Context α] [DecidableEq Shape]
+/-- Batch normalization using statistics computed over the batch and every spatial axis. -/
+def batchNormTrain {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n c h w : Nat}
-    (h_n_pos : n > 0) (h_c_pos : c > 0) (h_h_pos : h > 0) (h_w_pos : w > 0)
-    (x : RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))))
-    (gamma beta : RefTy (m := m) (α := α) (.dim c .scalar))
+    {batch channels : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim batch (Shape.dim channels spatial)).wellFormed)
+    (x : RefTy (m := m) (α := α) (.dim batch (.dim channels spatial)))
+    (gamma beta : RefTy (m := m) (α := α) (.dim channels .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))) := do
-  let (y, _mean, _var) ← batchNorm2dNchwTrainStats
-    (α := α) (m := m) (n := n) (c := c) (h := h) (w := w)
-    h_n_pos h_c_pos h_h_pos h_w_pos x gamma beta (ε := ε)
+    m (RefTy (m := m) (α := α) (.dim batch (.dim channels spatial))) := do
+  let (y, _mean, _var) ← batchNormTrainStats
+    (α := α) (m := m) hWellFormed x gamma beta (ε := ε)
   pure y
 
 /--
@@ -360,72 +367,89 @@ def batchNormRunningUpdate {α : Type} [Context α] [DecidableEq Shape]
     (← mul (m := m) (α := α) (s := sC) batchVar momT)
   pure (mean', var')
 
-/-- BatchNorm2d evaluation: use provided per-channel mean/var (e.g. running stats). -/
-def batchNorm2dNchwEval {α : Type} [Context α] [DecidableEq Shape]
+/-- Batch normalization using supplied per-channel statistics. -/
+def batchNormEval {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {n c h w : Nat}
-    (h_n_pos : n > 0) (h_c_pos : c > 0) (h_h_pos : h > 0) (h_w_pos : w > 0)
-    (x : RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))))
-    (gamma beta mean var : RefTy (m := m) (α := α) (.dim c .scalar))
+    {batch channels : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim batch (Shape.dim channels spatial)).wellFormed)
+    (x : RefTy (m := m) (α := α) (.dim batch (.dim channels spatial)))
+    (gamma beta mean var : RefTy (m := m) (α := α) (.dim channels .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))) := do
-  let hw : Nat := h * w
-  let sNCHW : Shape := .dim n (.dim c (.dim h (.dim w .scalar)))
-  let sNCHWFlat : Shape := .dim n (.dim c (.dim hw .scalar))
-  let _ : Shape.WellFormed sNCHW := ⟨⟨h_n_pos, ⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩⟩
-  let _ : Shape.WellFormed sNCHWFlat :=
-    ⟨⟨h_n_pos, ⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sNCHW) (s₂ := sNCHWFlat) x (Internal.reshape_nchw_flat_size (n
-    := n) (c := c) (h := h) (w := w))
-  let meanB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw mean
-  let centered ← sub (m := m) (α := α) (s := sNCHWFlat) xFlat meanB
-  let zero ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill (0 : α) (.dim c .scalar))
-  let varClamped ← max (m := m) (α := α) (s := .dim c .scalar) var zero
-  let epsT ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill ε (.dim c .scalar))
-  let denom ← sqrt (m := m) (α := α) (s := .dim c .scalar) (← add (m := m) (α := α) (s := .dim c
-    .scalar) varClamped epsT)
-  let invDenom ← inv (m := m) (α := α) (s := .dim c .scalar) denom
-  let invDenomB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw invDenom
-  let normalized ← mul (m := m) (α := α) (s := sNCHWFlat) centered invDenomB
-  let gammaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw gamma
-  let betaB ← Internal.broadcastCToNCHW (m := m) (α := α) n c hw beta
-  let yFlat ← add (m := m) (α := α) (s := sNCHWFlat) (← mul (m := m) (α := α) (s := sNCHWFlat)
-    normalized gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sNCHWFlat) (s₂ := sNCHW) yFlat
-    (Internal.reshape_nchw_flat_size (n := n) (c := c) (h := h) (w := w)).symm
+    m (RefTy (m := m) (α := α) (.dim batch (.dim channels spatial))) := do
+  let spatialSize := Shape.size spatial
+  let inputShape : Shape := .dim batch (.dim channels spatial)
+  let flatShape : Shape := .dim batch (.dim channels (.dim spatialSize .scalar))
+  let hSpatial := Shape.size_pos_of_well_formed hWellFormed.2.2
+  let _ : Shape.WellFormed inputShape := ⟨hWellFormed⟩
+  let _ : Shape.WellFormed flatShape :=
+    ⟨⟨hWellFormed.1, ⟨hWellFormed.2.1, ⟨hSpatial, trivial⟩⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := inputShape) (s₂ := flatShape) x
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial))
+  let meanB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize mean
+  let centered ← sub (m := m) (α := α) (s := flatShape) xFlat meanB
+  let channelShape : Shape := .dim channels .scalar
+  let zero ← const (m := m) (α := α) (s := channelShape)
+    (Spec.fill (0 : α) channelShape)
+  let varClamped ← max (m := m) (α := α) (s := channelShape) var zero
+  let epsT ← const (m := m) (α := α) (s := channelShape) (Spec.fill ε channelShape)
+  let denom ← sqrt (m := m) (α := α) (s := channelShape)
+    (← add (m := m) (α := α) (s := channelShape) varClamped epsT)
+  let invDenom ← inv (m := m) (α := α) (s := channelShape) denom
+  let invDenomB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize invDenom
+  let normalized ← mul (m := m) (α := α) (s := flatShape) centered invDenomB
+  let gammaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize gamma
+  let betaB ← Internal.broadcastChannelToBatchSpatial
+    (m := m) (α := α) batch channels spatialSize beta
+  let yFlat ← add (m := m) (α := α) (s := flatShape)
+    (← mul (m := m) (α := α) (s := flatShape) normalized gammaB) betaB
+  reshape (m := m) (α := α) (s₁ := flatShape) (s₂ := inputShape) yFlat
+    (Internal.reshapeBatchChannelFlatSize (batch := batch) (channels := channels)
+      (spatial := spatial)).symm
 
-/-- BatchNorm2d evaluation on `C×H×W`: use provided per-channel mean/var (e.g. running stats). -/
-def batchNorm2dChwEval {α : Type} [Context α] [DecidableEq Shape]
+/-- Batch normalization for one unbatched sample using supplied per-channel statistics. -/
+def batchNormSampleEval {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {c h w : Nat}
-    (h_c_pos : c > 0) (h_h_pos : h > 0) (h_w_pos : w > 0)
-    (x : RefTy (m := m) (α := α) (.dim c (.dim h (.dim w .scalar))))
-    (gamma beta mean var : RefTy (m := m) (α := α) (.dim c .scalar))
+    {channels : Nat} {spatial : Shape}
+    (hWellFormed : (Shape.dim channels spatial).wellFormed)
+    (x : RefTy (m := m) (α := α) (.dim channels spatial))
+    (gamma beta mean var : RefTy (m := m) (α := α) (.dim channels .scalar))
     (ε : α := Numbers.normalizationEpsilon) :
-    m (RefTy (m := m) (α := α) (.dim c (.dim h (.dim w .scalar)))) := do
-  let hw : Nat := h * w
-  let sCHW : Shape := .dim c (.dim h (.dim w .scalar))
-  let sC_HW : Shape := .dim c (.dim hw .scalar)
-  let _ : Shape.WellFormed sCHW := ⟨⟨h_c_pos, ⟨h_h_pos, ⟨h_w_pos, trivial⟩⟩⟩⟩
-  let _ : Shape.WellFormed sC_HW := ⟨⟨h_c_pos, ⟨Nat.mul_pos h_h_pos h_w_pos, trivial⟩⟩⟩
-  let xFlat ← reshape (m := m) (α := α) (s₁ := sCHW) (s₂ := sC_HW) x (Internal.reshape_chw_flat_size (c := c) (h
-    := h) (w := w))
-  let meanB ← Internal.broadcastCToCHW (m := m) (α := α) c hw mean
-  let centered ← sub (m := m) (α := α) (s := sC_HW) xFlat meanB
-  let zero ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill (0 : α) (.dim c .scalar))
-  let varClamped ← max (m := m) (α := α) (s := .dim c .scalar) var zero
-  let epsT ← const (m := m) (α := α) (s := .dim c .scalar) (Spec.fill ε (.dim c .scalar))
-  let denom ← sqrt (m := m) (α := α) (s := .dim c .scalar)
-    (← add (m := m) (α := α) (s := .dim c .scalar) varClamped epsT)
-  let invDenom ← inv (m := m) (α := α) (s := .dim c .scalar) denom
-  let invDenomB ← Internal.broadcastCToCHW (m := m) (α := α) c hw invDenom
-  let normalized ← mul (m := m) (α := α) (s := sC_HW) centered invDenomB
-  let gammaB ← Internal.broadcastCToCHW (m := m) (α := α) c hw gamma
-  let betaB ← Internal.broadcastCToCHW (m := m) (α := α) c hw beta
-  let yFlat ← add (m := m) (α := α) (s := sC_HW)
-    (← mul (m := m) (α := α) (s := sC_HW) normalized gammaB) betaB
-  reshape (m := m) (α := α) (s₁ := sC_HW) (s₂ := sCHW) yFlat
-    (Internal.reshape_chw_flat_size (c := c) (h := h) (w := w)).symm
+    m (RefTy (m := m) (α := α) (.dim channels spatial)) := do
+  let spatialSize := Shape.size spatial
+  let inputShape : Shape := .dim channels spatial
+  let flatShape : Shape := .dim channels (.dim spatialSize .scalar)
+  let hSpatial := Shape.size_pos_of_well_formed hWellFormed.2
+  let _ : Shape.WellFormed inputShape := ⟨hWellFormed⟩
+  let _ : Shape.WellFormed flatShape :=
+    ⟨⟨hWellFormed.1, ⟨hSpatial, trivial⟩⟩⟩
+  let xFlat ← reshape (m := m) (α := α) (s₁ := inputShape) (s₂ := flatShape) x
+    (Internal.reshapeChannelFlatSize (channels := channels) (spatial := spatial))
+  let meanB ← Internal.broadcastChannelToSpatial
+    (m := m) (α := α) channels spatialSize mean
+  let centered ← sub (m := m) (α := α) (s := flatShape) xFlat meanB
+  let channelShape : Shape := .dim channels .scalar
+  let zero ← const (m := m) (α := α) (s := channelShape)
+    (Spec.fill (0 : α) channelShape)
+  let varClamped ← max (m := m) (α := α) (s := channelShape) var zero
+  let epsT ← const (m := m) (α := α) (s := channelShape) (Spec.fill ε channelShape)
+  let denom ← sqrt (m := m) (α := α) (s := channelShape)
+    (← add (m := m) (α := α) (s := channelShape) varClamped epsT)
+  let invDenom ← inv (m := m) (α := α) (s := channelShape) denom
+  let invDenomB ← Internal.broadcastChannelToSpatial
+    (m := m) (α := α) channels spatialSize invDenom
+  let normalized ← mul (m := m) (α := α) (s := flatShape) centered invDenomB
+  let gammaB ← Internal.broadcastChannelToSpatial
+    (m := m) (α := α) channels spatialSize gamma
+  let betaB ← Internal.broadcastChannelToSpatial
+    (m := m) (α := α) channels spatialSize beta
+  let yFlat ← add (m := m) (α := α) (s := flatShape)
+    (← mul (m := m) (α := α) (s := flatShape) normalized gammaB) betaB
+  reshape (m := m) (α := α) (s₁ := flatShape) (s₂ := inputShape) yFlat
+    (Internal.reshapeChannelFlatSize (channels := channels) (spatial := spatial)).symm
 
 end Norm
 

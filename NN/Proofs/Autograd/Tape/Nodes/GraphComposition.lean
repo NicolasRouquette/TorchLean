@@ -129,7 +129,7 @@ from this reused node.
 def weakenNodeMiddle {Γ extra ss : List Shape} {τ : Shape}
     (node : Node (Γ ++ ss) τ) : Node ((Γ ++ extra) ++ ss) τ :=
   let L := dropMiddleCLM Γ extra ss
-  Node.ofVec
+  Node.ofFn
     (Γ := (Γ ++ extra) ++ ss) (τ := τ)
     (f := fun x => node.forwardVec (Γ := Γ ++ ss) (τ := τ) (L x))
     (jvp := fun x dx => node.jvpVec (Γ := Γ ++ ss) (τ := τ) (L x) (L dx))
@@ -162,7 +162,7 @@ def weakenNodeMiddleFDerivCorrect {Γ extra ss : List Shape} {τ : Shape}
           (fun y => node.forwardVec (Γ := Γ ++ ss) (τ := τ) (L y))
           ((hn.deriv (L x)).comp L) x := by
       exact hnode.congr_of_eventuallyEq (Filter.Eventually.of_forall fun _ => rfl)
-    simpa [weakenNodeMiddle, Node.forwardVec_ofVec, L] using hnode'
+    simpa [weakenNodeMiddle, Node.forwardVec_ofFn, L] using hnode'
   · intro x dx
     simpa [weakenNodeMiddle, L, ContinuousLinearMap.comp_apply] using hn.jvp_eq (L x) (L dx)
 

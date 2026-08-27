@@ -1,13 +1,8 @@
 # Examples
 
-The examples are working paths through TorchLean. A small file starts with ordinary model code and
-leaves behind something more precise than "the command ran": a typed tensor, a training log, a
-graph, a certificate, an exported artifact, or a theorem statement that can be inspected afterward.
-
-That is the rhythm to look for while reading this directory. First find the model and the data. Then
-find the boundary: runtime execution, CUDA, PyTorch interop, a verifier artifact, or a proof layer
-definition. The examples keep the artifact small enough to inspect because their purpose is to make
-that boundary visible.
+This directory contains runnable models, tensor and autograd tutorials, PyTorch round trips,
+verification examples, and small proofs. Most commands print their result directly; longer runs can
+also write loss logs, checkpoints, predictions, or certificate artifacts.
 
 Use the curated CLIs first:
 
@@ -20,9 +15,9 @@ lake test
 Runnable model examples are subcommands of `lake exe torchlean <name>`. Verification workflows are
 subcommands of `lake exe verify -- <tool>`.
 
-## First Path
+## Quickstarts
 
-Start here if you want a compact tour from typed tensors to training and verification.
+The following examples cover the main APIs without requiring a long training run.
 
 | Goal | File | Command | What to look for |
 | --- | --- | --- | --- |
@@ -47,23 +42,10 @@ For the larger or newer workflows:
 | PINN residual certificate | `Verification/PINN/pinn_cert.json` | `lake exe verify -- pinn-cert` | A neural PDE residual certificate is parsed into Lean side expressions and checked against the declared grid/bounds. |
 | PINN dataset containment | `Verification/PINN/sample_dataset_1d.json` | `lake exe verify -- pinn-dataset-check` | Dataset metadata and coordinate bounds are checked before a scientific ML artifact is treated as a valid verification input. |
 | Digits train and certify | `Verification/Robustness/*` | `lake exe verify -- digits-train-certify --epochs=5 --max=20` | A small classifier is trained, imported, and certified by a Lean side robustness checker. |
-| VNN-COMP-style MNIST-FC | `Verification/VNNComp/` | `lake exe verify -- vnncomp-mnistfc` | A VNN-COMP-shaped robustness query using TorchLean's native graph and margin-certificate machinery. |
+| VNN-COMP-style MNIST-FC | `Verification/VNNComp/` | `lake exe verify -- vnncomp-mnistfc` | A VNN-COMP-shaped robustness query using TorchLean's native graph and bound-propagation machinery. |
 | 3D projection certificate | `Verification/Geometry3D` and `BugZoo/Geometry3DProjection.lean` | `lake exe verify -- camera-box3d-cert` | Camera and box tensors are replayed in Lean to check positive depth, projection, and 2D enclosure. |
 | Spline certificate | `Verification/Splines` | `lake exe verify -- spline-cert` | Piecewise-polynomial certificate data is parsed and checked against Lean side interval predicates. |
 | Optimizer certificates | `Optimization/MuonCertificates.lean` | `lake build NN.Examples.Optimization` | Muon update rules, QR/Newton-Schulz orthogonalizer contracts, and theorem names for downstream optimizer proofs. |
-
-## What An Example Should Leave Behind
-
-A TorchLean example should leave one of these behind:
-
-| Artifact | Why it matters |
-| --- | --- |
-| Printed tensor or loss trace | Confirms the runtime path is executing the intended model and scalar mode. |
-| Training log JSON | Gives plots, regression checks, and a stable record of a run. |
-| Imported/exported weights | Makes the trust boundary explicit when TorchLean compares against PyTorch or another tool. |
-| Graph or IR object | Gives the verifier and graph semantics a concrete model to inspect. |
-| Certificate JSON | Lets Lean check a claim produced by training, a script, or an external verifier. |
-| Lean theorem target | Turns the example into a machine-checked statement over the named semantics. |
 
 ## Directory Map
 
@@ -113,10 +95,8 @@ The Lean boundary format is `.npy` or simple numeric CSV. Use
 `scripts/datasets/torchlean_data_convert.py` for external formats such as image folders, `.pt`,
 `.npz`, or `.mat` files.
 
-Data examples should keep the boundary explicit. A loader may read a CSV, NPY file, or small
-downloaded fixture, but the Lean side object should have declared dimensions, scalar type, labels,
-and batch structure. That discipline is what lets the same data feed a runtime command, a graph
-export, and a later certificate check.
+CSV and NPY loaders return tensors with declared dimensions and scalar types. Dataset examples also
+record label and batch shapes, so malformed files fail before they enter a training loop.
 
 ## Common Commands
 

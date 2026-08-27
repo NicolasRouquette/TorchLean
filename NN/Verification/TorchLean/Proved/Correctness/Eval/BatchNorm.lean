@@ -11,10 +11,11 @@ public import NN.Verification.TorchLean.Proved.Correctness.Eval.PayloadOps
 /-!
 # BatchNorm IR Evaluation
 
-The TorchLean lowering pass, PyTorch importer, verifier, and PyTorch exporter all meet at the IR
-BatchNorm node.  This file records the small semantic fact that matters at that boundary: once the
-payload is present and the input has matching NCHW channels, IR evaluation is the standard
-eval-mode BatchNorm formula applied independently at each `(N,C,H,W)` coordinate.
+The IR represents inference-time BatchNorm by a channel axis and a channel count. This file states
+the payload contract for that representation without fixing the tensor rank or choosing a layout.
+After shape inference identifies the channel axis, evaluation decomposes the input into leading
+axes, the channel axis, and trailing axes, then applies `Spec.batchNormInference` independently to
+each leading slice.
 -/
 
 @[expose] public section
@@ -22,115 +23,58 @@ eval-mode BatchNorm formula applied independently at each `(N,C,H,W)` coordinate
 namespace NN.Verification.TorchLean.Proved
 
 open _root_.Spec
-open _root_.Spec.Tensor
 open NN.IR
 
-namespace Correctness
-
-namespace IRStep
+namespace Correctness.IRStep
 
 /--
-The scalar formula used by eval-mode NCHW BatchNorm in the IR.
+Evaluation of inference-time BatchNorm at an arbitrary channel axis.
 
-Keeping this formula named gives import/export proofs, regression tests, and documentation a single
-place to point to instead of repeating the normalization expression in several files.
+The conditional on the right is the checked cast from the dynamically shaped IR value to the
+typed tensor expected by `Spec.batchNormInference`. For every shape accepted by
+`inferBatchNormEvalOutShape`, this equality records the complete payload-backed computation.
 -/
-def batchNorm2dNchwEvalScalar {α : Type} [Context α]
-    (x gamma beta mean var eps : α) : α :=
-  let denom := MathFunctions.sqrt (max var (0 : α) + eps)
-  (((x - mean) / denom) * gamma + beta)
-
-/-- Proof-facing wrapper around the canonical IR BatchNorm tensor semantics. -/
-def batchNorm2dNchwEvalTensor {α : Type} [Context α]
-    {n c h w : Nat}
-    (gamma beta mean var : Tensor α (.dim c .scalar))
-    (eps : α)
-    (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    Tensor α (.dim n (.dim c (.dim h (.dim w .scalar)))) :=
-  Graph.batchNorm2dEvalTensor (α := α)
-    { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps } x
-
-/--
-Coordinate-level semantics for `Graph.evalBatchNorm2dNchwEval`.
-
-This is the proof layer version of the BatchNorm parity test: the payload-backed IR evaluator is
-definitionally the channel-wise eval-mode BatchNorm equation over NCHW tensors.
--/
-theorem evalBatchNorm2dNchwEval_eq_nchw_formula
+theorem evalBatchNorm_eq
     {α : Type} [Context α] [DecidableEq Shape]
-    (id n c h w : Nat)
-    (gamma beta mean var : Tensor α (.dim c .scalar))
-    (eps : α)
-    (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    let cfg : BatchNorm2dNchwEvalParams α :=
-      { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps }
-    let payload : Payload α :=
-      singletonBatchNorm2dNchwEvalPayload (α := α) id cfg
-    Graph.evalBatchNorm2dNchwEval (α := α) (payload := payload) (id := id)
-        (x := Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x
-      )
-      =
-      Except.ok
-        (Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
-          (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
-  simp [Graph.evalBatchNorm2dNchwEval, singletonBatchNorm2dNchwEvalPayload, Graph.expectShape,
-    batchNorm2dNchwEvalTensor, Bind.bind, Except.bind, Pure.pure,
-    Except.pure]
+    (id channelAxis channels : Nat)
+    (params : BatchNormEvalParams α)
+    (x : Spec.SomeTensor α)
+    (leading spatial : Shape)
+    (hInfer : OpContracts.inferBatchNormEvalOutShape channelAxis channels x.shape = .ok x.shape)
+    (hChannels : params.c = channels)
+    (hLeading : Shape.ofList (x.shape.toList.take channelAxis) = leading)
+    (hSpatial : Shape.ofList (x.shape.toList.drop (channelAxis + 1)) = spatial)
+    (hInput : x.shape = leading.concat (.dim params.c spatial)) :
+    Graph.evalBatchNorm (α := α)
+        (payload := singletonBatchNormEvalPayload (α := α) id params)
+        id channelAxis channels x =
+      .ok (Spec.SomeTensor.ofTensor <|
+        Tensor.mapEach leading
+          (fun sample => Spec.batchNormInference sample params.mean params.var params.gamma
+            params.beta params.eps)
+          (hInput ▸ x.tensor)) := by
+  unfold Graph.evalBatchNorm
+  rw [hInfer]
+  simp only [Bind.bind, Except.bind]
+  simp only [singletonBatchNormEvalPayload, singletonAt_self]
+  rw [hLeading, hSpatial]
+  simp [hChannels]
+  split
+  · congr
+  · contradiction
 
-/-- Local IR semantics for payload-backed eval-mode NCHW BatchNorm. -/
-theorem evalAt_batchNorm2dNchwEval_eq
+/-- A missing BatchNorm payload is rejected before normalization is evaluated. -/
+theorem evalBatchNorm_missing_payload
     {α : Type} [Context α] [DecidableEq Shape]
-    (n c h w : Nat)
-    (gamma beta mean var : Tensor α (.dim c .scalar))
-    (eps : α)
-    (x : Tensor α (.dim n (.dim c (.dim h (.dim w .scalar))))) :
-    let cfg : BatchNorm2dNchwEvalParams α :=
-      { c := c, gamma := gamma, beta := beta, mean := mean, var := var, eps := eps }
-    Graph.evalAt (α := α)
-        (g := unaryGraphOut (.batchNorm2dNchwEval c)
-          (.dim n (.dim c (.dim h (.dim w .scalar))))
-          (.dim n (.dim c (.dim h (.dim w .scalar)))))
-        (payload := singletonBatchNorm2dNchwEvalPayload (α := α) 1 cfg)
-        (input := Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x)
-        (vals := #[Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar)))) x])
-        (i := 1)
-      =
-      Except.ok
-        (Spec.PackedTensor.mk (α := α) (.dim n (.dim c (.dim h (.dim w .scalar))))
-          (batchNorm2dNchwEvalTensor (α := α) gamma beta mean var eps x)) := by
-  simp [Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput, unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?,
-    Graph.evalBatchNorm2dNchwEval, singletonBatchNorm2dNchwEvalPayload, Graph.expectShape,
-    batchNorm2dNchwEvalTensor, shapeBNe_refl,
-    Bind.bind, Except.bind, Pure.pure, Except.pure]
-
-/-- Missing BatchNorm payloads are rejected before any tensor computation happens. -/
-theorem evalBatchNorm2dNchwEval_missing_payload
-    {α : Type} [Context α] [DecidableEq Shape]
-    (payload : Payload α) (id : Nat)
-    (hMissing : payload.batchNorm2dNchwEval? id = none)
-    (x : Spec.PackedTensor α) :
-    Graph.evalBatchNorm2dNchwEval (α := α) (payload := payload) (id := id) (x := x)
-      =
-      Except.error s!"IR eval: missing batch_norm2d_nchw_eval payload for node {id}" := by
-  simp [Graph.evalBatchNorm2dNchwEval, hMissing]
+    (payload : Payload α) (id channelAxis channels : Nat)
+    (x : Spec.SomeTensor α)
+    (hInfer : OpContracts.inferBatchNormEvalOutShape channelAxis channels x.shape = .ok x.shape)
+    (hMissing : payload.batchNormEval? id = none) :
+    Graph.evalBatchNorm (α := α) (payload := payload) id channelAxis channels x =
+      .error s!"IR eval: missing batch_norm_eval payload for node {id}" := by
+  simp [Graph.evalBatchNorm, hInfer, hMissing]
   rfl
 
-/--
-Shape inference for eval-mode BatchNorm is the identity on well-formed NCHW inputs with matching
-channels.
--/
-theorem inferBatchNorm2dNchwEvalOutShape_eq_self
-    (n c h w : Nat)
-    (hc : c ≠ 0) (hn : n ≠ 0) (hh : h ≠ 0) (hw : w ≠ 0) :
-    OpContracts.inferBatchNorm2dNchwEvalOutShape c
-        (.dim n (.dim c (.dim h (.dim w .scalar))))
-      =
-      Except.ok (.dim n (.dim c (.dim h (.dim w .scalar)))) := by
-  simp [OpContracts.inferBatchNorm2dNchwEvalOutShape, OpContracts.checkPositive,
-    hc, hn, hh, hw, Bind.bind, Except.bind, Pure.pure, Except.pure]
-
-end IRStep
-
-end Correctness
+end Correctness.IRStep
 
 end NN.Verification.TorchLean.Proved

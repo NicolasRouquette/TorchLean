@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
 
 /-!
 # CrownParamstore
@@ -51,26 +51,22 @@ def insertLinearWB
   { ps with linearWB := ps.linearWB.insert nodeId p }
 
 /--
-Build a `ParamStore Float` from a list of linear-layer parameters.
+Build a `ParamStore Float` from an array of linear-layer parameters.
 
-`nodeIdOfIndex` tells us which graph node id corresponds to the i-th layer in the list.
+`nodeIdOfIndex` tells us which graph node id corresponds to the i-th layer in the array.
 This is the only model-specific decision; the remaining steps are model-agnostic parameter assembly.
 -/
-def ofLinearStack (nodeIdOfIndex : Nat → Nat) (layers : List (LinParams Float)) : ParamStore Float
-  :=
-  let rec go : List (LinParams Float) → Nat → ParamStore Float → ParamStore Float
-    | [], _, ps => ps
-    | p :: rest, idx, ps =>
-        go rest (idx + 1) (insertLinearWB (nodeId := nodeIdOfIndex idx) p ps)
-  go layers 0 {}
+def ofLinearStack (nodeIdOfIndex : Nat → Nat) (layers : Array (LinParams Float)) : ParamStore Float :=
+  layers.zipIdx.foldl (fun ps layerAndIndex =>
+    insertLinearWB (nodeId := nodeIdOfIndex layerAndIndex.2) layerAndIndex.1 ps) {}
 
 /-- Cast linear parameters from Float to an arbitrary scalar type. -/
 def castLinParams {α : Type} [Context α] (ofFloat : Float → α) (p : LinParams Float) : LinParams α
   :=
   { m := p.m
     n := p.n
-    w := Spec.mapTensor ofFloat p.w
-    b := Spec.mapTensor ofFloat p.b }
+    w := Spec.Tensor.map ofFloat p.w
+    b := Spec.Tensor.map ofFloat p.b }
 
 /--
 Build a `ParamStore α` from Float parameters by casting each tensor entry with `ofFloat`.
@@ -78,13 +74,10 @@ Build a `ParamStore α` from Float parameters by casting each tensor entry with 
 def ofLinearStackWith {α : Type} [Context α]
   (ofFloat : Float → α)
   (nodeIdOfIndex : Nat → Nat)
-  (layers : List (LinParams Float)) : ParamStore α :=
-  let layers' : List (LinParams α) := layers.map (castLinParams (α := α) ofFloat)
-  let rec go : List (LinParams α) → Nat → ParamStore α → ParamStore α
-    | [], _, ps => ps
-    | p :: rest, idx, ps =>
-        go rest (idx + 1) ({ ps with linearWB := ps.linearWB.insert (nodeIdOfIndex idx) p })
-  go layers' 0 {}
+  (layers : Array (LinParams Float)) : ParamStore α :=
+  layers.zipIdx.foldl (fun ps layerAndIndex =>
+    let p := castLinParams (α := α) ofFloat layerAndIndex.1
+    { ps with linearWB := ps.linearWB.insert (nodeIdOfIndex layerAndIndex.2) p }) {}
 
 end CROWNParamStore
 end Import

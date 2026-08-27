@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.IR.OpContracts
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Spec.Layers.Conv
 public import NN.Spec.Layers.Normalization
 
@@ -38,7 +38,7 @@ structure ConstFlat (α : Type) [Context α] where
   /-- Number of scalar entries stored in the flat constant payload. -/
   n : Nat
   /-- Constant values stored as a vector before evaluation reshapes them to the IR node shape. -/
-  v : Tensor α (.dim n .scalar)
+  v : Tensor α [n]
 
 /--
 Payload record for a `linear` node: weight matrix `W` and bias vector `b`.
@@ -52,57 +52,92 @@ structure LinearWB (α : Type) [Context α] where
   /-- Input dimension. -/
   inDim  : Nat
   /-- Weight matrix in the PyTorch convention `outDim × inDim`. -/
-  W : Tensor α (.dim outDim (.dim inDim .scalar))
+  W : Tensor α [outDim, inDim]
   /-- Bias vector added after matrix-vector multiplication. -/
-  b : Tensor α (.dim outDim .scalar)
+  b : Tensor α [outDim]
 
-/--
-Payload record for a `conv2d` node.
-
-The spec-layer `Conv2dSpec` carries the typed kernel and bias. The cached dimensions let verifier
-passes reconstruct flat shapes without unpacking the spec package at every use site.
--/
-structure Conv2dParams (α : Type) [Context α] where
+/-- Payload for an arbitrary-dimensional convolution node. -/
+structure ConvParams (α : Type) [Context α] where
+  /-- Number of spatial axes. -/
+  spatialRank : Nat
   /-- Input channels. -/
-  inC : Nat
+  inChannels : Nat
   /-- Output channels. -/
-  outC : Nat
-  /-- Kernel height. -/
-  kH : Nat
-  /-- Kernel width. -/
-  kW : Nat
-  /-- Stride. -/
-  stride : Nat
-  /-- Padding size. -/
-  padding : Nat
-  /-- Input height. -/
-  inH : Nat
-  /-- Input width. -/
-  inW : Nat
-  /-- Proof that the input channel count is nonzero, required by the spec convolution layer. -/
-  hIn : inC ≠ 0
-  /-- Proof that the kernel height is nonzero. -/
-  hKH : kH ≠ 0
-  /-- Proof that the kernel width is nonzero. -/
-  hKW : kW ≠ 0
-  /-- Proof that the stride is nonzero. -/
-  hStride : stride ≠ 0
-  /-- Spec-layer convolution package containing weights, bias, and convolution metadata. -/
-  spec : Spec.Conv2dSpec inC outC kH kW stride padding α hIn hKH hKW
+  outChannels : Nat
+  /-- Per-axis kernel extents. -/
+  kernel : Spec.Tensor Nat [spatialRank]
+  /-- Per-axis strides. -/
+  stride : Spec.Tensor Nat [spatialRank]
+  /-- Zero padding before each spatial axis. -/
+  padding : Spec.Tensor Nat [spatialRank]
+  /-- Spacing between adjacent kernel samples. -/
+  dilation : Spec.Tensor Nat [spatialRank] := Spec.fill 1 [spatialRank]
+  /-- Zero padding after each spatial axis. `padding` is the padding before the input. -/
+  paddingAfter : Spec.Tensor Nat [spatialRank] := padding
+  /-- Number of independent channel groups. -/
+  groups : Nat := 1
+  /-- Spatial shape of one input sample. -/
+  inputSpatial : Spec.Tensor Nat [spatialRank]
+  /-- The input channel count is nonzero. -/
+  inChannelsNonzero : inChannels ≠ 0
+  /-- Every kernel extent is nonzero. -/
+  kernelNonzero : ∀ i : Fin spatialRank, kernel.getScalar i ≠ 0
+  /-- Every stride is nonzero. -/
+  strideNonzero : ∀ i : Fin spatialRank, stride.getScalar i ≠ 0
+  /-- Typed weights, bias, and convolution geometry. -/
+  spec : Spec.ConvSpec spatialRank inChannels outChannels kernel stride padding α
 
-/-- Payload record for eval-mode BatchNorm2d over `N×C×H×W` tensors. -/
-structure BatchNorm2dNchwEvalParams (α : Type) [Context α] where
+namespace ConvParams
+
+/-- Whether a convolution payload implements the geometry declared by an IR node. -/
+def matchesConfig {α : Type} [Context α] (params : ConvParams α) (config : ConvConfig) : Bool :=
+  params.spatialRank == config.spatialRank &&
+    params.inChannels == config.inChannels &&
+    params.outChannels == config.outChannels &&
+    params.kernel.toList == config.kernel.toList &&
+    params.stride.toList == config.stride.toList &&
+    params.padding.toList == config.padding.toList &&
+    params.paddingAfter.toList == config.paddingAfter.toList &&
+    params.dilation.toList == config.dilation.toList &&
+    params.groups == config.groups
+
+/-- Input shape expected by a convolution payload after preserving the graph's leading axes. -/
+def inputShape {α : Type} [Context α] (params : ConvParams α) (leading : Shape) : Shape :=
+  leading.concat (Shape.ofList (params.inChannels :: params.inputSpatial.toList))
+
+/-- Output shape produced by the typed convolution payload for the given leading axes. -/
+def outputShape {α : Type} [Context α] (params : ConvParams α) (leading : Shape) : Shape :=
+  leading.concat <| Shape.ofList <|
+    params.outChannels ::
+      (Spec.convOutSpatialDilated params.inputSpatial params.kernel params.stride params.dilation
+        params.padding params.paddingAfter).toList
+
+end ConvParams
+
+/-- Payload for eval-mode BatchNorm along a channel axis selected by the graph node. -/
+structure BatchNormEvalParams (α : Type) [Context α] where
   /-- Channel count. -/
   c : Nat
   /-- Affine scale. -/
-  gamma : Tensor α (.dim c .scalar)
+  gamma : Tensor α [c]
   /-- Affine bias. -/
-  beta : Tensor α (.dim c .scalar)
+  beta : Tensor α [c]
   /-- Running mean. -/
-  mean : Tensor α (.dim c .scalar)
+  mean : Tensor α [c]
   /-- Running variance. -/
-  var : Tensor α (.dim c .scalar)
+  var : Tensor α [c]
   /-- Epsilon added to the running variance before taking the square root. -/
+  eps : α
+
+/-- Affine parameters and epsilon for LayerNorm over an arbitrary normalized suffix. -/
+structure LayerNormParams (α : Type) [Context α] where
+  /-- Shape of the suffix normalized by the corresponding node. -/
+  normalizedShape : Shape
+  /-- Learned elementwise scale over `normalizedShape`. -/
+  gamma : Tensor α normalizedShape
+  /-- Learned elementwise bias over `normalizedShape`. -/
+  beta : Tensor α normalizedShape
+  /-- Epsilon added to the variance before taking the square root. -/
   eps : α
 
 /--
@@ -116,9 +151,11 @@ structure Payload (α : Type) [Context α] where
   const?  : Nat → Option (ConstFlat α) := fun _ => none
   /-- Linear weights and bias keyed by the `linear` node id. -/
   linear? : Nat → Option (LinearWB α) := fun _ => none
-  /-- Convolution parameters keyed by the `conv2d` node id. -/
-  conv2d? : Nat → Option (Conv2dParams α) := fun _ => none
-  /-- Eval-mode BatchNorm parameters keyed by the `batchNorm2dNchwEval` node id. -/
-  batchNorm2dNchwEval? : Nat → Option (BatchNorm2dNchwEvalParams α) := fun _ => none
+  /-- Convolution parameters keyed by the `conv` node id. -/
+  conv? : Nat → Option (ConvParams α) := fun _ => none
+  /-- Eval-mode BatchNorm parameters keyed by the `batchNormEval` node id. -/
+  batchNormEval? : Nat → Option (BatchNormEvalParams α) := fun _ => none
+  /-- Affine LayerNorm parameters keyed by the `layernorm` node id. -/
+  layerNorm? : Nat → Option (LayerNormParams α) := fun _ => none
 
 end NN.IR

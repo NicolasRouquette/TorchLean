@@ -566,7 +566,7 @@ def softmaxLast {Γ : List Shape} {m n : Nat}
     (idx : Idx Γ (.dim m (.dim n .scalar))) : Node Γ (.dim m (.dim n .scalar)) :=
   let s : Shape := .dim m (.dim n .scalar)
   let hsz : Spec.Shape.size s = m * n := by simp [s, Spec.Shape.size]
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun xV =>
       castVec hsz.symm
         (SoftmaxLastAxis.forwardMN (m := m) (n := n) (castVec hsz (CtxVec.get (Γ := Γ) (s := s) idx
@@ -708,7 +708,7 @@ def logSoftmaxLast {Γ : List Shape} {m n : Nat}
     (idx : Idx Γ (.dim m (.dim n .scalar))) : Node Γ (.dim m (.dim n .scalar)) :=
   let s : Shape := .dim m (.dim n .scalar)
   let hsz : Spec.Shape.size s = m * n := by simp [s, Spec.Shape.size]
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun xV =>
       castVec hsz.symm
         (LogSoftmaxLastAxis.forwardMN (m := m) (n := n)
@@ -822,7 +822,7 @@ def softmaxLastFderiv {Γ : List Shape} {m n : Nat}
       ext i
       -- Do not unfold `castVec`: it expands to a private `vecOfFun` helper, and we want `simp` to
       -- use the public lemmas `castVec_apply`/`castVec_rfl` instead.
-      simp [softmaxLast, Node.forwardVec_ofVec, getMN, outCast, Graph.castCLM]
+      simp [softmaxLast, Node.forwardVec_ofFn, getMN, outCast, Graph.castCLM]
     exact hcomp.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     -- Avoid unfolding `derivMN` coordinatewise: reduce to `jvpMN_eq_derivMN` plus cast/CLM
@@ -842,7 +842,7 @@ def softmaxLastFderiv {Γ : List Shape} {m n : Nat}
         (Node.jvpVec (Γ := Γ) (τ := s) (softmaxLast (Γ := Γ) (m := m) (n := n) idx) xV dxV) ip
           =
         (castVec hsz.symm (SoftmaxLastAxis.jvpMN (m := m) (n := n) xMN dxMN)) ip := by
-      simp [softmaxLast, Node.jvpVec_ofVec, getMN, xMN, dxMN]
+      simp [softmaxLast, Node.jvpVec_ofFn, getMN, xMN, dxMN]
     -- RHS: the derivative CLM applied to `dxV`
     have hR :
         ((outCast.comp ((SoftmaxLastAxis.derivMN (m := m) (n := n) xMN).comp getMNCLM)) dxV) ip
@@ -905,7 +905,7 @@ def logSoftmaxLastFderiv {Γ : List Shape} {m n : Nat}
       funext xV
       ext i
       -- Same proof structure as `softmax_last_fderiv`: keep `castVec` opaque to `simp`.
-      simp [logSoftmaxLast, Node.forwardVec_ofVec, getMN, outCast, Graph.castCLM]
+      simp [logSoftmaxLast, Node.forwardVec_ofFn, getMN, outCast, Graph.castCLM]
     exact hcomp.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     let xMN : Vec (m * n) := getMN xV
@@ -921,7 +921,7 @@ def logSoftmaxLastFderiv {Γ : List Shape} {m n : Nat}
         (Node.jvpVec (Γ := Γ) (τ := s) (logSoftmaxLast (Γ := Γ) (m := m) (n := n) idx) xV dxV) ip
           =
         (castVec hsz.symm (LogSoftmaxLastAxis.jvpMN (m := m) (n := n) xMN dxMN)) ip := by
-      simp [logSoftmaxLast, Node.jvpVec_ofVec, getMN, xMN, dxMN]
+      simp [logSoftmaxLast, Node.jvpVec_ofFn, getMN, xMN, dxMN]
     have hR :
         ((outCast.comp ((LogSoftmaxLastAxis.derivMN (m := m) (n := n) xMN).comp getMNCLM)) dxV) ip
           =

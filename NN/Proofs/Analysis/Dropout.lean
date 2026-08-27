@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Layers.Dropout
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Proofs.Tensor.Basic.LinearAlgebra
 
 /-!

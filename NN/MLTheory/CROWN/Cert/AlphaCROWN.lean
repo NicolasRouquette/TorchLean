@@ -19,7 +19,7 @@ This file defines a *pure*, per-node transfer rule for affine bound propagation 
 The step function is shared by:
 
 - the certificate checker (recompute each node from its parents and compare to a claimed bound), and
-- soundness theorems of the form: "if the checker accepts, then the claimed enclosure holds".
+- soundness theorems of the form: "if local replay is consistent, then the claimed enclosure holds".
 
 This module does **not** implement the outer dual-parameter optimization loop used by α/β-CROWN; it
 only defines the local transfer rule for a fixed set of α-parameters.
@@ -70,7 +70,7 @@ def castAffineOut {n m m' : Nat} (h : m = m') (a : AffineVec α n m) : AffineVec
 
 /-- The identity affine form `x ↦ x` (as `A = I`, `c = 0`). -/
 def affIdentity (n : Nat) : AffineVec α n n :=
-  let A : Tensor α (.dim n (.dim n .scalar)) :=
+  let A : Tensor α [n, n] :=
     Tensor.dim (fun i =>
       Tensor.dim (fun j => Tensor.scalar (if i = j then 1 else 0)))
   let c := Spec.fill (α := α) 0 (.dim n .scalar)
@@ -86,9 +86,9 @@ Constant affine bounds for a node output.
 
 Both maps have `A = 0`; the offsets are the provided endpoint vectors.
 -/
-def boundsConst (inDim outDim : Nat) (lo hi : Tensor α (.dim outDim .scalar)) : FlatAffineBounds α
+def boundsConst (inDim outDim : Nat) (lo hi : Tensor α [outDim]) : FlatAffineBounds α
   :=
-  let zA : Tensor α (.dim outDim (.dim inDim .scalar)) :=
+  let zA : Tensor α [outDim, inDim] :=
     Spec.fill (α := α) 0 (.dim outDim (.dim inDim .scalar))
   { inDim := inDim
     outDim := outDim
@@ -131,9 +131,8 @@ def alphaRelaxLowerScalar (l u a : α) : NN.MLTheory.CROWN.Runtime.Ops.ReLURelax
 
 /-- Vectorized α-CROWN lower relaxation for ReLU, applied componentwise. -/
 def alphaRelaxLowerVec {n : Nat}
-    (lo hi : Tensor α (.dim n .scalar))
-    (αv : Tensor α (.dim n .scalar)) : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n
-      .scalar) :=
+    (lo hi : Tensor α [n])
+    (αv : Tensor α [n]) : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n] :=
   match lo, hi, αv with
   | .dim flo, .dim fhi, .dim fa =>
     Tensor.dim (fun i =>
@@ -147,7 +146,7 @@ def getAff? (cert : Array (Option (FlatAffineBounds α))) (pid : Nat) : Option (
   if _h : pid < cert.size then cert[pid]! else none
 
 /-- Safe lookup of the optional α vector at node id `pid`. -/
-def getAlpha? (alpha : Array (Option (FlatVec α))) (pid : Nat) : Option (FlatVec α) :=
+def getAlpha? (alpha : Array (Option (FlatTensor α))) (pid : Nat) : Option (FlatTensor α) :=
   if _h : pid < alpha.size then alpha[pid]! else none
 
 /--
@@ -155,7 +154,7 @@ Default α vector used when the certificate omits α values.
 
 This matches TorchLean's default lower relaxation: pick slope `1` when `u > -l`, otherwise `0`.
 -/
-def defaultAlphaVec {n : Nat} (lo hi : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
+def defaultAlphaVec {n : Nat} (lo hi : Tensor α [n]) : Tensor α [n] :=
   match lo, hi with
   | .dim flo, .dim fhi =>
       Tensor.dim (fun i =>
@@ -173,8 +172,8 @@ The parent node provides affine lower/upper bounds in terms of the *global input
 -/
 def linearBoundsFromAffine
     {inDim n m : Nat}
-    (W : Tensor α (.dim m (.dim n .scalar)))
-    (b : Tensor α (.dim m .scalar))
+    (W : Tensor α [m, n])
+    (b : Tensor α [m])
     (xB : FlatAffineBounds α)
     (hout : xB.outDim = n)
     (_hin : xB.inDim = inDim := by rfl) : FlatAffineBounds α :=
@@ -249,7 +248,7 @@ the soundness assumptions attached to their IBP boxes.
 def alphaCrownStepNode?
     (nodes : Array Node) (ps : ParamStore α)
     (ibp : Array (Option (FlatBox α)))
-    (alpha : Array (Option (FlatVec α)))
+    (alpha : Array (Option (FlatTensor α)))
     (cert : Array (Option (FlatAffineBounds α)))
     (ctx : AffineCtx) (id : Nat) : Option (FlatAffineBounds α) :=
   let node := nodes[id]!
@@ -264,12 +263,12 @@ def alphaCrownStepNode?
       | some v => some (boundsConst (α := α) ctx.inputDim v.n v.v v.v)
       | none => none
   | .detach =>
-      match node.parents with
-      | p1 :: _ => getAff? (α := α) cert p1
-      | _ => none
+      match NN.IR.unaryParent? node.parents with
+      | some p1 => getAff? (α := α) cert p1
+      | none => none
   | .linear =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getAff? (α := α) cert p1, ps.linearWB[id]? with
           | some xin, some p =>
               if hout : xin.outDim = p.n then
@@ -279,24 +278,24 @@ def alphaCrownStepNode?
               else
                 none
           | _, _ => none
-      | _ => none
+      | none => none
   | .matmul =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getAff? (α := α) cert p1, ps.matmulW[id]? with
           | some xin, some p =>
               if hout : xin.outDim = p.n then
-                let zb : Tensor α (.dim p.m .scalar) := Spec.fill (α := α) Numbers.zero (.dim p.m
+                let zb : Tensor α [p.m] := Spec.fill (α := α) Numbers.zero (.dim p.m
                   .scalar)
                 let out := linearBoundsFromAffine (α := α) (inDim := xin.inDim) (n := p.n) (m :=
                   p.m) p.w zb xin hout
                 some out
               else none
           | _, _ => none
-      | _ => none
+      | none => none
   | .relu =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getAff? (α := α) cert p1, ibp[p1]!, getAlpha? (α := α) alpha id with
           | some xin, some preB, some αv =>
               if hout : xin.outDim = preB.dim then
@@ -307,7 +306,7 @@ def alphaCrownStepNode?
                 let relaxHi :=
                   NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α := α) (n := preB.dim) preB.lo
                     preB.hi
-                let αt : Tensor α (.dim preB.dim .scalar) :=
+                let αt : Tensor α [preB.dim] :=
                   if hα : αv.n = preB.dim then
                     castDimScalar (α := α) (n := αv.n) (n' := preB.dim) hα αv.v
                   else
@@ -344,26 +343,26 @@ def alphaCrownStepNode?
                 some { inDim := xin.inDim, outDim := preB.dim, loAff := loAff, hiAff := hiAff }
               else none
           | _, _, _ => none
-      | _ => none
+      | none => none
   | .sum =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getAff? (α := α) cert p1 with
           | some xin =>
               -- Treat `sum` as a 1×n linear layer with all-ones weights and zero bias.
-              let onesRow : Tensor α (.dim 1 (.dim xin.outDim .scalar)) :=
+              let onesRow : Tensor α [1, xin.outDim] :=
                 Spec.fill (α := α) Numbers.one (.dim 1 (.dim xin.outDim .scalar))
-              let zb : Tensor α (.dim 1 .scalar) := Spec.fill (α := α) Numbers.zero (.dim 1 .scalar)
+              let zb : Tensor α [1] := Spec.fill (α := α) Numbers.zero (.dim 1 .scalar)
               let out :=
                 linearBoundsFromAffine (α := α)
                   (inDim := xin.inDim) (n := xin.outDim) (m := 1)
                   onesRow zb xin (by rfl)
               some out
           | none => none
-      | _ => none
+      | none => none
   | .reshape _ _ | .flatten _ =>
-      match node.parents with
-      | p1 :: _ =>
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
           match getAff? (α := α) cert p1 with
           | some xin =>
               -- The semantic evaluator for reshape/flatten checks `xin.outDim = node.outShape.size`
@@ -378,7 +377,14 @@ def alphaCrownStepNode?
               else
                 none
           | none => none
-      | _ => none
+      | none => none
+  | .conv _ | .concat _ | .layernorm _ =>
+      if crownNodeSemanticsSupported (α := α) nodes ps id then
+        match ibp[id]! with
+        | some B => some (boundsConst (α := α) ctx.inputDim B.dim B.lo B.hi)
+        | none => none
+      else
+        none
   | _ =>
       -- Conservative fallback: allow a constant affine enclosure derived from IBP (if present).
       match ibp[id]! with

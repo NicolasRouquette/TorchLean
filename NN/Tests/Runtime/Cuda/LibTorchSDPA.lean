@@ -36,11 +36,11 @@ abbrev batch : Nat := 2
 abbrev n : Nat := 2
 abbrev d : Nat := 2
 
-abbrev s : Shape := shape![batch, n, d]
-abbrev maskShape : Shape := shape![batch, n, n]
+abbrev s : Shape := [batch, n, d]
+abbrev maskShape : Shape := [batch, n, n]
 
 def q : Tensor Float s :=
-  tensorOfList! [batch, n, d] [
+  tensorOfArray! [batch, n, d] #[
     0.10, -0.20,
     0.30,  0.05,
    -0.15,  0.25,
@@ -48,7 +48,7 @@ def q : Tensor Float s :=
   ]
 
 def k : Tensor Float s :=
-  tensorOfList! [batch, n, d] [
+  tensorOfArray! [batch, n, d] #[
     0.05,  0.20,
    -0.10,  0.30,
     0.15, -0.25,
@@ -56,7 +56,7 @@ def k : Tensor Float s :=
   ]
 
 def v : Tensor Float s :=
-  tensorOfList! [batch, n, d] [
+  tensorOfArray! [batch, n, d] #[
     0.20, -0.05,
     0.10,  0.30,
    -0.20,  0.15,
@@ -64,7 +64,7 @@ def v : Tensor Float s :=
   ]
 
 def dOut : Tensor Float s :=
-  tensorOfList! [batch, n, d] [
+  tensorOfArray! [batch, n, d] #[
     1.00, 0.50,
    -0.25, 0.75,
     0.30, 1.20,
@@ -73,7 +73,7 @@ def dOut : Tensor Float s :=
 
 /-- `1` marks an allowed key. The last query row is fully blocked. -/
 def hardMask : Tensor Float maskShape :=
-  tensorOfList! [batch, n, n] [
+  tensorOfArray! [batch, n, n] #[
     1.0, 0.0,
     1.0, 1.0,
     1.0, 0.0,
@@ -195,7 +195,7 @@ def run : IO Unit := do
     (attentionCapsule := NN.Backend.Attention.torchLeanComposed)
   let (composedTape, composedOutId) ← Tests.Cuda.Utils.okOrThrow composedTapeResult
   let modelOutShape : Shape :=
-    shape![Tests.Cuda.Attention.n, Tests.Cuda.Attention.dModel]
+    [Tests.Cuda.Attention.n, Tests.Cuda.Attention.dModel]
   let libTorchTapeOut ← Tests.Cuda.Utils.cudaValue
     (s := modelOutShape) libTorchTape libTorchOutId
   let composedTapeOut ← Tests.Cuda.Utils.cudaValue

@@ -10,7 +10,7 @@ public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 public import Mathlib.MeasureTheory.Integral.Bochner.Basic
 public import Mathlib.MeasureTheory.Measure.FiniteMeasurePi
 public import Mathlib.MeasureTheory.Measure.ProbabilityMeasure
-public import NN.Spec.Core.Tensor.Vec
+public import NN.Spec.Core.Tensor.Core
 
 /-!
 # Algorithmic stability (learning theory)
@@ -36,7 +36,7 @@ right ambient structure depends on the application.
 
 We represent a dataset of size `n` as a **length-`n` spec tensor**
 
-  `Dataset n Z := Spec.Tensor Z (.dim n .scalar)`.
+  `Dataset n Z := Spec.Tensor Z [n]`.
 
   This integrates the learning-theory layer with TorchLean’s core, shape-indexed tensor datatype
   (`NN.Spec.Core.Tensor.Core`) and keeps the “dataset has exactly `n` elements” invariant enforced
@@ -87,13 +87,10 @@ variable {Z H : Type}
 /--
 A dataset of size `n` with examples in `Z`.
 
-We model datasets as **vector tensors** `Spec.Tensor Z (.dim n .scalar)`.
-
-This matches the rest of TorchLean’s codebase, where “a length-`n` vector” is represented as a
-shape-indexed tensor.
+The leading dimension records the sample count in the type.
 -/
 abbrev Dataset (n : Nat) (Z : Type) : Type :=
-  Spec.Vec n Z
+  Spec.Tensor Z [n]
 
 namespace Dataset
 
@@ -102,17 +99,17 @@ variable {n : Nat} {Z : Type}
 /--
 View a dataset tensor as a function `Fin n → Z`.
 
-This is definitional content via `Spec.Tensor.dimScalarEquiv`, and is used to:
+This is definitional content via `Spec.Tensor.vectorEquiv`, and is used to:
 
 - define replace/remove operations via `Function.update` and `Fin.succAbove`, and
 - transport the standard product measurable space / IID sampling measure to the tensor type.
 -/
 abbrev toFn (S : Dataset n Z) : Fin n → Z :=
-  Spec.Vec.toFn (n := n) (α := Z) S
+  (Spec.Tensor.vectorEquiv (α := Z) n).toFun S
 
 /-- Build a dataset tensor from a function `Fin n → Z`. -/
 abbrev ofFn (f : Fin n → Z) : Dataset n Z :=
-  Spec.Vec.ofFn (n := n) (α := Z) f
+  (Spec.Tensor.vectorEquiv (α := Z) n).invFun f
 
 @[simp] theorem toFn_ofFn (f : Fin n → Z) : toFn (n := n) (Z := Z) (ofFn (n := n) (Z := Z) f) = f :=
   by
@@ -128,7 +125,8 @@ abbrev get (S : Dataset n Z) (i : Fin n) : Z :=
 
 @[simp] theorem get_ofFn (f : Fin n → Z) (i : Fin n) :
     get (n := n) (Z := Z) (ofFn (n := n) (Z := Z) f) i = f i := by
-  simp [get, toFn, ofFn]
+  change Tensor.vectorEquiv n ((Tensor.vectorEquiv n).symm f) i = f i
+  exact congrFun ((Tensor.vectorEquiv n).apply_symm_apply f) i
 
 section Measure
 
@@ -170,6 +168,13 @@ This is the standard “replace-one” perturbation used in uniform stability de
 def replaceAt {n : Nat} [DecidableEq (Fin n)] (S : Dataset n Z) (i : Fin n) (z' : Z) : Dataset n Z
   :=
   Dataset.ofFn (n := n) (Z := Z) (Function.update (Dataset.toFn (n := n) (Z := Z) S) i z')
+
+/-- Reading a replaced dataset returns the replacement at that coordinate and the original
+example everywhere else. -/
+@[simp] theorem get_replaceAt {n : Nat} [DecidableEq (Fin n)]
+    (S : Dataset n Z) (i j : Fin n) (z' : Z) :
+    Dataset.get (replaceAt S i z') j = if j = i then z' else Dataset.get S j := by
+  simp [replaceAt, Dataset.get, Function.update_apply]
 
 /--
 Remove the example at index `i` from a dataset of size `n+1`.
@@ -245,8 +250,8 @@ IID sampling: product distribution on datasets.
 If `μ` is a distribution over examples `Z`, then `iid μ n` is the distribution over datasets of size
 `n` obtained by sampling each coordinate independently from `μ`.
 
-Implementation note: our dataset type is a tensor `Spec.Vec n Z`, but the product distribution is
-most naturally defined on functions `Fin n → Z`. We transport it across the `Vec.ofFn` equivalence.
+The product distribution is naturally defined on functions `Fin n → Z`; `Dataset.ofFn` transports
+it to the shape-indexed tensor representation.
 -/
 def iid (μ : MeasureTheory.ProbabilityMeasure Z) (n : Nat) : MeasureTheory.ProbabilityMeasure
   (Dataset n Z) :=

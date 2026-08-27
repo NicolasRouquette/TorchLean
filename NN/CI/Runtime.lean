@@ -6,42 +6,15 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime
-
-public import NN.Runtime.Autograd.TypedGraph
-public import NN.Runtime.Autograd.Engine
-public import NN.Runtime.Autograd.Overview
-public import NN.Runtime.Autograd.Torch
-public import NN.Runtime.Autograd.TorchLean
-public import NN.Runtime.Autograd.TorchLean.Autodiff
-public import NN.Runtime.Autograd.TorchLean.Program
-public import NN.Runtime.Autograd.TorchLean.Dual
-public import NN.Runtime.Autograd.TorchLean.Fno
-public import NN.Runtime.Autograd.TorchLean.Functional
-public import NN.Runtime.Autograd.TorchLean.Loss
-public import NN.Runtime.Autograd.TorchLean.Metrics
-public import NN.Runtime.Autograd.TorchLean.Module
-public import NN.Runtime.Autograd.TorchLean.NN
-public import NN.Runtime.Autograd.TorchLean.Norm
-public import NN.Runtime.Autograd.TorchLean.Optim
-public import NN.Runtime.Autograd.TorchLean.Random
-public import NN.Runtime.Autograd.TorchLean.Session
-public import NN.Runtime.Autograd.Train
-public import NN.Runtime.Context
-public import NN.Runtime.Optim
-public import NN.Runtime.PyTorch
-public import NN.Runtime.Training.Log
+import NN.Runtime
+import NN.Runtime.Autograd.IRExec.Correctness
+import NN.Runtime.Training.Log
 
 /-!
-# Runtime CI Suite
+# Additional Runtime Modules
 
-Focused CI import suite. `NN.CI.All` combines every suite for exhaustive repository validation.
-
-Local usage:
-
-```bash
-lake build NN.CI.All
-```
+The runtime umbrella leaves correctness developments and focused logging support opt-in. This target
+checks their ordinary modules without pulling the end-to-end semantic-equivalence proof into `NN`.
 -/
 
 @[expose] public section

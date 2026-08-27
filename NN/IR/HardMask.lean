@@ -52,7 +52,7 @@ def validateAs (mask : NN.IR.HardMask) (expected : Shape) :
 def toTensor? (mask : NN.IR.HardMask) : Except String (Tensor Bool mask.shape) := do
   let _ ← validateAs mask mask.shape
   if hSize : mask.allowed.size = Shape.size mask.shape then
-    let flat : Tensor Bool (.dim (Shape.size mask.shape) .scalar) :=
+    let flat : Tensor Bool [Shape.size mask.shape] :=
       Tensor.dim fun i => Tensor.scalar <| mask.allowed[i.val]'(by simp [hSize, i.isLt])
     pure (Tensor.unflattenSpec mask.shape flat)
   else

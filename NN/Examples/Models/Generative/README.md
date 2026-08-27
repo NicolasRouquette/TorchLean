@@ -1,23 +1,22 @@
 # Generative Examples
 
 This folder contains the runnable generative-model commands in TorchLean. They cover the runtime
-paths that generative models stress: reconstruction losses, latent variables, vector quantization,
-adversarial updates, masked image reconstruction, diffusion noise schedules, image artifacts, CUDA
-kernels, and training logs.
+paths that generative models stress: reconstruction losses, latent representations, adversarial
+updates, masked image reconstruction, diffusion noise schedules, image artifacts, CUDA kernels, and
+training logs.
 
 The examples are runtime producers. They train small models, write logs or images, and keep the
 model-zoo path honest across families whose losses and artifacts look very different from ordinary
 classification. The mathematical identities behind the objectives live in the theory layer:
-variational objectives for VAEs, codebook commitments for VQ-VAE, min-max losses for GAN-style
-updates, masking/reconstruction contracts for MAE-style models, and denoising/noise-schedule
-contracts for diffusion. Formal use of a generated artifact begins with the checker or theorem that
-consumes it.
+min-max losses for GAN-style updates, masking/reconstruction contracts for MAE-style models, and
+denoising/noise-schedule contracts for diffusion. Formal use of a generated artifact begins with the
+checker or theorem that consumes it.
 
 ## Files
 
 - `Autoencoder.lean`: compact vector autoencoder over real CIFAR image batches.
-- `Vae.lean`: variational autoencoder path with reconstruction and latent regularization.
-- `VqVae.lean`: vector-quantized autoencoder path for codebook-style latent reconstruction.
+- `Vae.lean`: supervised reconstruction with two auxiliary latent-statistic vectors.
+- `VqVae.lean`: continuous autoencoder with a narrow `tanh` bottleneck.
 - `Gan.lean`: compact GAN-style training loop with generator/discriminator updates.
 - `Mae.lean`: ViT-MAE-style masked autoencoder path: patch masking, transformer tokens, and image
   reconstruction.
@@ -49,8 +48,8 @@ Quick CUDA checks:
 ```bash
 lake -R -K cuda=true exe torchlean autoencoder --device cuda --steps 1 --n-total 1
 lake -R -K cuda=true exe torchlean mae --device cuda --steps 1 --n-total 1
-lake -R -K cuda=true exe torchlean vae --device cuda --steps 1 --n-total 1
-lake -R -K cuda=true exe torchlean vqvae --device cuda --steps 1 --n-total 1
+lake -R -K cuda=true exe torchlean latent_stats --device cuda --steps 1 --n-total 1
+lake -R -K cuda=true exe torchlean tanh_autoencoder --device cuda --steps 1 --n-total 1
 lake -R -K cuda=true exe torchlean gan --device cuda --steps 1 --n-total 1
 lake -R -K cuda=true exe torchlean diffusion --device cuda --dataset cifar10 --n-total 1 --steps 1 --hidden-c 1 --T 2
 ```

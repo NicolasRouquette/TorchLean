@@ -11,9 +11,9 @@ public import NN.Spec.Layers.Normalization.Core
 /-!
 # Batch Normalization
 
-Generic channel-first BatchNorm semantics together with the JVP and VJP used by TorchLean's
-concrete 2D graph operator. Training-time statistics and inference-time running statistics remain
-separate mathematical operations.
+Generic channel-first BatchNorm semantics together with its JVP and VJP. All spatial axes are
+flattened only for the reduction, so the definitions apply uniformly at every tensor rank.
+Training-time statistics and inference-time running statistics remain separate operations.
 -/
 
 @[expose] public section
@@ -24,15 +24,63 @@ open Numbers
 
 variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
 
-/-- Repeat a channel vector over every spatial position of a channel-first tensor. -/
-def broadcastChannelFirst {channels : Nat} (sSpatial : Shape)
-    (x : Tensor α (.dim channels .scalar)) : Tensor α (.dim channels sSpatial) :=
+/-- Repeat a channel vector over every position of a spatial shape. -/
+def broadcastChannel {channels : Nat} (sSpatial : Shape)
+    (x : Tensor α [channels]) : Tensor α (([channels] : Shape).concat sSpatial) :=
   let spatialSize := Spec.Shape.size sSpatial
-  let sFlat : Shape := .dim channels (.dim spatialSize .scalar)
+  let sFlat : Shape := [channels, spatialSize]
   let expanded : Tensor α sFlat := broadcastAfterSum sFlat 1 x
-  have hSize : Spec.Shape.size sFlat = Spec.Shape.size (.dim channels sSpatial) := by
+  have hSize : Spec.Shape.size sFlat = Spec.Shape.size (([channels] : Shape).concat sSpatial) := by
     simp [sFlat, spatialSize, Spec.Shape.size]
   reshapeSpec expanded hSize
+
+namespace BatchNorm
+
+/-- Differential of normalized, affine channel data after statistics have been computed. -/
+def normalizedJvp
+    {channels positions : Nat} (hPositions : 0 < positions)
+    (tangent xHat : Tensor α [channels, positions])
+    (invStd gamma dgamma dbeta : Tensor α [channels]) :
+    Tensor α [channels, positions] :=
+  let shape : Shape := [channels, positions]
+  let hAxis : Shape.HasNonemptyAxis 1 shape :=
+    ⟨Shape.NonemptyAxis.succ (Shape.hasNonemptyAxisZeroOfPos hPositions).proof⟩
+  let meanTangent := reduceMean 1 tangent hAxis.proof
+  let meanTangentXHat := reduceMean 1 (mulSpec tangent xHat) hAxis.proof
+  let normalizedTangent :=
+    mulSpec (broadcastAfterSum shape 1 invStd)
+      (subSpec
+        (subSpec tangent (broadcastAfterSum shape 1 meanTangent))
+        (mulSpec xHat (broadcastAfterSum shape 1 meanTangentXHat)))
+  addSpec
+    (addSpec
+      (mulSpec normalizedTangent (broadcastAfterSum shape 1 gamma))
+      (mulSpec xHat (broadcastAfterSum shape 1 dgamma)))
+    (broadcastAfterSum shape 1 dbeta)
+
+/-- Reverse rule adjoint to `normalizedJvp`, including affine-parameter gradients. -/
+def normalizedBackward
+    {channels positions : Nat} (hPositions : 0 < positions)
+    (gradOutput xHat : Tensor α [channels, positions])
+    (invStd gamma : Tensor α [channels]) :
+    Tensor α [channels, positions] ×
+      Tensor α [channels] × Tensor α [channels] :=
+  let shape : Shape := [channels, positions]
+  let hAxis : Shape.HasNonemptyAxis 1 shape :=
+    ⟨Shape.NonemptyAxis.succ (Shape.hasNonemptyAxisZeroOfPos hPositions).proof⟩
+  let gradGammaScaled := mulSpec gradOutput (broadcastAfterSum shape 1 gamma)
+  let meanGradGamma := reduceMean 1 gradGammaScaled hAxis.proof
+  let meanGradGammaXHat := reduceMean 1 (mulSpec gradGammaScaled xHat) hAxis.proof
+  let gradInput :=
+    mulSpec (broadcastAfterSum shape 1 invStd)
+      (subSpec
+        (subSpec gradGammaScaled (broadcastAfterSum shape 1 meanGradGamma))
+        (mulSpec xHat (broadcastAfterSum shape 1 meanGradGammaXHat)))
+  let gradGamma := reduceSum 1 (mulSpec gradOutput xHat) hAxis.proof
+  let gradBeta := reduceSum 1 gradOutput hAxis.proof
+  (gradInput, gradGamma, gradBeta)
+
+end BatchNorm
 
 /-
   Batch Normalization (spec layer)
@@ -45,7 +93,7 @@ def broadcastChannelFirst {channels : Nat} (sSpatial : Shape)
 -/
 
 /--
-Stateless BatchNorm for channel-first tensors of shape `.dim channels sSpatial`.
+Stateless BatchNorm for channel-first tensors with shape `[channels] ++ sSpatial`.
 
 This computes per-channel mean/variance over the `sSpatial` axes and applies:
 
@@ -56,18 +104,18 @@ TorchLean does **not** model the running-statistics update here.
 -/
 def batchNorm
   {channels : Nat} {sSpatial : Shape}
-  (x : Tensor α (.dim channels sSpatial))
-  (gamma : Tensor α (.dim channels .scalar))
-  (beta : Tensor α (.dim channels .scalar))
+  (x : Tensor α (([channels] : Shape).concat sSpatial))
+  (gamma : Tensor α [channels])
+  (beta : Tensor α [channels])
   (epsilon : α := Numbers.normalizationEpsilon)
-  [Shape.WellFormed (.dim channels sSpatial)] :
-  Tensor α (.dim channels sSpatial) :=
+  [Shape.WellFormed (([channels] : Shape).concat sSpatial)] :
+  Tensor α (([channels] : Shape).concat sSpatial) :=
   let spatialSize : Nat := Spec.Shape.size sSpatial
-  let s_flat : Shape := .dim channels (.dim spatialSize .scalar)
-  have h_reshape : Spec.Shape.size (.dim channels sSpatial) = Spec.Shape.size s_flat := by
+  let s_flat : Shape := [channels, spatialSize]
+  have h_reshape : Spec.Shape.size (([channels] : Shape).concat sSpatial) = Spec.Shape.size s_flat := by
     simp [s_flat, spatialSize, Spec.Shape.size]
   let x2 : Tensor α s_flat := reshapeSpec x h_reshape
-  have hwf_x : (Shape.dim channels sSpatial).wellFormed := Shape.WellFormed.proof
+  have hwf_x : (([channels] : Shape).concat sSpatial).wellFormed := Shape.WellFormed.proof
   have h_channels : channels > 0 := hwf_x.1
   have h_spatial_wf : sSpatial.wellFormed := hwf_x.2
   have h_spatialSize : spatialSize > 0 := by
@@ -75,312 +123,103 @@ def batchNorm
   letI : Shape.WellFormed s_flat := ⟨⟨h_channels, ⟨h_spatialSize, trivial⟩⟩⟩
   let h_rank : Spec.Shape.rank s_flat > 0 := by simp [s_flat, Spec.Shape.rank]
   let h_valid : Shape.HasNonemptyAxis (Spec.Shape.rank s_flat - 1) s_flat :=
-    Shape.inferNonemptyLastAxis h_rank
-  let mean : Tensor α (.dim channels .scalar) := reduceMeanLast x2 h_valid
+    Shape.inferNonemptyAxis (Nat.sub_lt h_rank Nat.zero_lt_one)
+  let mean : Tensor α [channels] := reduceMean (Shape.rank s_flat - 1) x2 h_valid.proof
   let centered := subSpec x2 (broadcastAfterSum s_flat 1 mean)
   let centered_sq := mulSpec centered centered
-  let varianceRaw : Tensor α (.dim channels .scalar) := reduceMeanLast centered_sq h_valid
-  let variance := maxSpec varianceRaw (fill 0 (.dim channels .scalar))
-  let meanB := broadcastChannelFirst sSpatial mean
-  let varianceB := broadcastChannelFirst sSpatial variance
-  let gammaB := broadcastChannelFirst sSpatial gamma
-  let betaB := broadcastChannelFirst sSpatial beta
+  let varianceRaw : Tensor α [channels] :=
+    reduceMean (Shape.rank s_flat - 1) centered_sq h_valid.proof
+  let variance := maxSpec varianceRaw (fill 0 ([channels]))
+  let meanB := broadcastChannel sSpatial mean
+  let varianceB := broadcastChannel sSpatial variance
+  let gammaB := broadcastChannel sSpatial gamma
+  let betaB := broadcastChannel sSpatial beta
   let centered := subSpec x meanB
-  let std := sqrtSpec (addSpec varianceB (fill epsilon (.dim channels sSpatial)))
+  let std := sqrtSpec (addSpec varianceB (fill epsilon (([channels] : Shape).concat sSpatial)))
   addSpec (mulSpec (divSpec centered std) gammaB) betaB
 
-/-- `batchNorm` specialized to a single channel-first image `(C,H,W)`. -/
-def batchNorm2d
-  {channels height width : Nat}
-  (x : Tensor α (.dim channels (.dim height (.dim width .scalar))))
-  (gamma : Tensor α (.dim channels .scalar))
-  (beta : Tensor α (.dim channels .scalar))
-  (h_c : channels > 0 := by norm_num)
-  (h_h : height > 0 := by norm_num)
-  (h_w : width > 0 := by norm_num)
-  (epsilon : α := Numbers.normalizationEpsilon) :
-  Tensor α (.dim channels (.dim height (.dim width .scalar))) :=
-  letI : Shape.WellFormed (.dim channels (.dim height (.dim width .scalar))) :=
-    ⟨⟨h_c, ⟨h_h, ⟨h_w, trivial⟩⟩⟩⟩
-  batchNorm (x := x) (gamma := gamma) (beta := beta) (epsilon := epsilon)
-
 /--
-Forward-mode JVP for `batchNorm2d`.
+Forward-mode JVP for `batchNorm`.
 
-TorchLean's stateless BatchNorm2d computes one set of statistics per channel over the spatial
-grid. The input tangent therefore uses the same closed-form normalization differential as
-LayerNorm, but with the mean taken over `(height,width)` for each channel:
+Stateless BatchNorm computes one set of statistics per channel over every spatial position. The
+input tangent therefore uses the same closed-form normalization differential as LayerNorm, with
+the mean taken over the flattened spatial shape for each channel:
 
 `dxhat = inv_std * (dx - mean(dx) - xhat * mean(dx*xhat))`.
 
 Affine tangents contribute `xhat * dgamma + dbeta` channel-wise.
 -/
-def batchNorm2dJvp
-  {channels height width : Nat}
-  (x tangent : Tensor α (.dim channels (.dim height (.dim width .scalar))))
-  (gamma dgamma _beta dbeta : Tensor α (.dim channels .scalar))
-  (_h_c : channels > 0 := by norm_num)
-  (_h_h : height > 0 := by norm_num)
-  (_h_w : width > 0 := by norm_num)
-  (epsilon : α := Numbers.normalizationEpsilon) :
-  Tensor α (.dim channels (.dim height (.dim width .scalar))) :=
+def batchNormJvp
+  {channels : Nat} {sSpatial : Shape}
+  (x tangent : Tensor α (([channels] : Shape).concat sSpatial))
+  (gamma dgamma _beta dbeta : Tensor α [channels])
+  (epsilon : α := Numbers.normalizationEpsilon)
+  [Shape.WellFormed (([channels] : Shape).concat sSpatial)] : Tensor α (([channels] : Shape).concat sSpatial) :=
+  let spatialSize := Shape.size sSpatial
+  let sFlat : Shape := [channels, spatialSize]
+  have hReshape : Shape.size (([channels] : Shape).concat sSpatial) = Shape.size sFlat := by
+    simp [sFlat, spatialSize, Shape.size]
+  let xFlat : Tensor α sFlat := reshapeSpec x hReshape
+  let tangentFlat : Tensor α sFlat := reshapeSpec tangent hReshape
+  have hWellFormed : (([channels] : Shape).concat sSpatial).wellFormed := Shape.WellFormed.proof
+  have hChannels : channels > 0 := hWellFormed.1
+  have hSpatial : spatialSize > 0 := by
+    simpa [spatialSize] using Shape.size_pos_of_well_formed hWellFormed.2
+  letI : Shape.WellFormed sFlat := ⟨⟨hChannels, ⟨hSpatial, trivial⟩⟩⟩
+  let hAxis : Shape.HasNonemptyAxis (Shape.rank sFlat - 1) sFlat :=
+    Shape.inferNonemptyAxis (by simp [sFlat, Shape.rank])
+  let mean : Tensor α [channels] := reduceMean (Shape.rank sFlat - 1) xFlat hAxis.proof
+  let meanB := broadcastAfterSum sFlat 1 mean
+  let centered := subSpec xFlat meanB
+  let varianceRaw : Tensor α [channels] :=
+    reduceMean (Shape.rank sFlat - 1) (mulSpec centered centered) hAxis.proof
+  let variance := maxSpec varianceRaw (fill 0 ([channels]))
+  let invStd := divSpec (fill 1 ([channels]))
+    (sqrtSpec (addSpec variance (fill epsilon ([channels]))))
+  let invStdB := broadcastAfterSum sFlat 1 invStd
+  let xHat := mulSpec centered invStdB
+  let yFlat := BatchNorm.normalizedJvp hSpatial tangentFlat xHat invStd gamma dgamma dbeta
+  reshapeSpec yFlat hReshape.symm
 
-  let spatial_size := height * width
-  let nScalar : Tensor α Shape.scalar := Tensor.scalar (spatial_size : α)
-
-  Tensor.dim (fun c =>
-    let channel_data := getAtSpec x c
-    let channel_tangent := getAtSpec tangent c
-    let channel_gamma := getAtSpec gamma c
-    let channel_dgamma := getAtSpec dgamma c
-    let channel_dbeta := getAtSpec dbeta c
-
-    let channel_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              addSpec acc_w (getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-    let mean := divSpec channel_sum nScalar
-
-    let variance_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              let val := getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩
-              let diff := subSpec val mean
-              addSpec acc_w (mulSpec diff diff)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let varianceRaw := divSpec variance_sum nScalar
-    let variance := maxSpec varianceRaw (Tensor.scalar 0)
-    let std := sqrtSpec (addSpec variance (Tensor.scalar epsilon))
-    let inv_std := divSpec (Tensor.scalar 1) std
-
-    let tangent_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              addSpec acc_w (getAtSpec (getAtSpec channel_tangent ⟨i, h_i⟩) ⟨j, h_j⟩)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-    let mean_tangent := divSpec tangent_sum nScalar
-
-    let tangent_norm_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              let val := getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩
-              let dx := getAtSpec (getAtSpec channel_tangent ⟨i, h_i⟩) ⟨j, h_j⟩
-              let xHat := mulSpec (subSpec val mean) inv_std
-              addSpec acc_w (mulSpec dx xHat)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-    let mean_tangent_norm := divSpec tangent_norm_sum nScalar
-
-    Tensor.dim (fun i =>
-      Tensor.dim (fun j =>
-        let val := getAtSpec (getAtSpec channel_data i) j
-        let dx := getAtSpec (getAtSpec channel_tangent i) j
-        let xHat := mulSpec (subSpec val mean) inv_std
-        let dnorm :=
-          mulSpec inv_std
-            (subSpec (subSpec dx mean_tangent) (mulSpec xHat mean_tangent_norm))
-        addSpec (addSpec (mulSpec dnorm channel_gamma) (mulSpec xHat channel_dgamma))
-          channel_dbeta))
-  )
-
--- Batch normalization backward pass for channel-first format
 /--
-Backward/VJP for `batchNorm2d`.
+Backward/VJP for `batchNorm`.
 
-Returns `(dx, dGamma, dBeta)`. This matches the shape of gradients you expect from a PyTorch-style
-BatchNorm2d, but note that our forward is the per-image variant (no explicit batch dimension and no
-running statistics).
+Returns `(dx, dGamma, dBeta)`. Statistics and affine-parameter gradients are reduced over every
+spatial axis, independently for each channel.
 -/
-def batchNorm2dBackward
-  {channels height width : Nat}
-  (x : Tensor α (.dim channels (.dim height (.dim width .scalar))))
-  (gamma : Tensor α (.dim channels .scalar))
-  (grad_output : Tensor α (.dim channels (.dim height (.dim width .scalar))))
-  (_h_c : channels > 0 := by norm_num)
-  (_h_h : height > 0 := by norm_num)
-  (_h_w : width > 0 := by norm_num)
-  (epsilon : α := Numbers.normalizationEpsilon) :
-  (Tensor α (.dim channels (.dim height (.dim width .scalar))) ×  -- ∂L/∂x
-   Tensor α (.dim channels .scalar) ×           -- ∂L/∂gamma
-   Tensor α (.dim channels .scalar)) :=         -- ∂L/∂beta
-
-  let spatial_size := height * width
-
-  -- Process each channel independently
-  let grad_x := Tensor.dim (fun c =>
-    let channel_data := getAtSpec x c
-    let channel_grad := getAtSpec grad_output c
-    let channel_gamma := getAtSpec gamma c
-
-    -- Recompute forward pass statistics (in practice, these would be cached)
-    let channel_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              addSpec acc_w (getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let mean := divSpec channel_sum (Tensor.scalar spatial_size)
-
-    let variance_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              let val := getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩
-              let diff := subSpec val mean
-              addSpec acc_w (mulSpec diff diff)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let varianceRaw := divSpec variance_sum (Tensor.scalar spatial_size)
-    let variance := maxSpec varianceRaw (Tensor.scalar 0)
-    let std := sqrtSpec (addSpec variance (Tensor.scalar epsilon))
-    let inv_std := divSpec (Tensor.scalar 1) std
-
-    -- Standard normalization gradient (equivalent to layer-norm over the spatial grid).
-    let dXhat_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              let grad_val := getAtSpec (getAtSpec channel_grad ⟨i, h_i⟩) ⟨j, h_j⟩
-              let dXhat := mulSpec grad_val channel_gamma
-              addSpec acc_w dXhat
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let dXhatXhat_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              let val := getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩
-              let grad_val := getAtSpec (getAtSpec channel_grad ⟨i, h_i⟩) ⟨j, h_j⟩
-              let centered := subSpec val mean
-              let xHat := mulSpec centered inv_std
-              let dXhat := mulSpec grad_val channel_gamma
-              addSpec acc_w (mulSpec dXhat xHat)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let nScalar : Tensor α Shape.scalar := Tensor.scalar (spatial_size : α)
-    let inv_n : Tensor α Shape.scalar := divSpec (Tensor.scalar (1 : α)) nScalar
-
-    Tensor.dim (fun i =>
-      Tensor.dim (fun j =>
-        let val := getAtSpec (getAtSpec channel_data i) j
-        let grad_val := getAtSpec (getAtSpec channel_grad i) j
-        let centered := subSpec val mean
-        let xHat := mulSpec centered inv_std
-        let dXhat := mulSpec grad_val channel_gamma
-        let term :=
-          subSpec (subSpec (mulSpec nScalar dXhat) dXhat_sum)
-            (mulSpec xHat dXhatXhat_sum)
-        mulSpec (mulSpec term inv_std) inv_n
-      )
-    )
-  )
-
-  -- Compute gamma gradients (sum over spatial dimensions for each channel)
-  let grad_gamma := Tensor.dim (fun c =>
-    let channel_data := getAtSpec x c
-    let channel_grad := getAtSpec grad_output c
-
-    -- Recompute mean and std for this channel
-    let channel_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              addSpec acc_w (getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let mean := divSpec channel_sum (Tensor.scalar spatial_size)
-
-    let variance_sum :=
-      (List.finRange height).foldl (fun acc_h i =>
-        (List.finRange width).foldl (fun acc_w j =>
-          if h_i : i < height then
-            if h_j : j < width then
-              let val := getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩
-              let diff := subSpec val mean
-              addSpec acc_w (mulSpec diff diff)
-            else acc_w
-          else acc_w
-        ) acc_h
-      ) (Tensor.scalar 0)
-
-    let varianceRaw := divSpec variance_sum (Tensor.scalar spatial_size)
-    let variance := maxSpec varianceRaw (Tensor.scalar 0)
-    let std := sqrtSpec (addSpec variance (Tensor.scalar epsilon))
-    let inv_std := divSpec (Tensor.scalar 1) std
-
-    -- Sum grad_output * normalized_input for this channel
-    (List.finRange height).foldl (fun acc_h i =>
-      (List.finRange width).foldl (fun acc_w j =>
-        if h_i : i < height then
-          if h_j : j < width then
-            let val := getAtSpec (getAtSpec channel_data ⟨i, h_i⟩) ⟨j, h_j⟩
-            let grad_val := getAtSpec (getAtSpec channel_grad ⟨i, h_i⟩) ⟨j, h_j⟩
-            let normalized := mulSpec (subSpec val mean) inv_std
-            addSpec acc_w (mulSpec grad_val normalized)
-          else acc_w
-        else acc_w
-      ) acc_h
-    ) (Tensor.scalar 0)
-  )
-
-  -- Compute beta gradients (sum of grad_output for each channel)
-  let grad_beta := Tensor.dim (fun c =>
-    let channel_grad := getAtSpec grad_output c
-
-    (List.finRange height).foldl (fun acc_h i =>
-      (List.finRange width).foldl (fun acc_w j =>
-        if h_i : i < height then
-          if h_j : j < width then
-            addSpec acc_w (getAtSpec (getAtSpec channel_grad ⟨i, h_i⟩) ⟨j, h_j⟩)
-          else acc_w
-        else acc_w
-      ) acc_h
-    ) (Tensor.scalar 0)
-  )
-
-  (grad_x, grad_gamma, grad_beta)
+def batchNormBackward
+  {channels : Nat} {sSpatial : Shape}
+  (x : Tensor α (([channels] : Shape).concat sSpatial))
+  (gamma : Tensor α [channels])
+  (gradOutput : Tensor α (([channels] : Shape).concat sSpatial))
+  (epsilon : α := Numbers.normalizationEpsilon)
+  [Shape.WellFormed (([channels] : Shape).concat sSpatial)] :
+  Tensor α (([channels] : Shape).concat sSpatial) ×
+    Tensor α [channels] × Tensor α [channels] :=
+  let spatialSize := Shape.size sSpatial
+  let sFlat : Shape := [channels, spatialSize]
+  have hReshape : Shape.size (([channels] : Shape).concat sSpatial) = Shape.size sFlat := by
+    simp [sFlat, spatialSize, Shape.size]
+  let xFlat : Tensor α sFlat := reshapeSpec x hReshape
+  let gradFlat : Tensor α sFlat := reshapeSpec gradOutput hReshape
+  have hWellFormed : (([channels] : Shape).concat sSpatial).wellFormed := Shape.WellFormed.proof
+  have hChannels : channels > 0 := hWellFormed.1
+  have hSpatial : spatialSize > 0 := by
+    simpa [spatialSize] using Shape.size_pos_of_well_formed hWellFormed.2
+  letI : Shape.WellFormed sFlat := ⟨⟨hChannels, ⟨hSpatial, trivial⟩⟩⟩
+  let hAxis : Shape.HasNonemptyAxis (Shape.rank sFlat - 1) sFlat :=
+    Shape.inferNonemptyAxis (by simp [sFlat, Shape.rank])
+  let mean : Tensor α [channels] := reduceMean (Shape.rank sFlat - 1) xFlat hAxis.proof
+  let centered := subSpec xFlat (broadcastAfterSum sFlat 1 mean)
+  let varianceRaw : Tensor α [channels] :=
+    reduceMean (Shape.rank sFlat - 1) (mulSpec centered centered) hAxis.proof
+  let variance := maxSpec varianceRaw (fill 0 ([channels]))
+  let invStd := divSpec (fill 1 ([channels]))
+    (sqrtSpec (addSpec variance (fill epsilon ([channels]))))
+  let invStdB := broadcastAfterSum sFlat 1 invStd
+  let xHat := mulSpec centered invStdB
+  let backward := BatchNorm.normalizedBackward hSpatial gradFlat xHat invStd gamma
+  (reshapeSpec backward.1 hReshape.symm, backward.2.1, backward.2.2)
 
 /-!
 ## BatchNorm (inference-time, running statistics)
@@ -395,7 +234,7 @@ as arguments.
 -/
 
 /--
-Inference-time BatchNorm for channel-first tensors of shape `.dim channels sSpatial`, using fixed
+Inference-time BatchNorm for channel-first tensors with shape `[channels] ++ sSpatial`, using fixed
 running statistics.
 
 Formula (per channel `c`):
@@ -410,21 +249,21 @@ At inference time, `(μ, σ², γ, β)` are constants, so this is an **affine** 
 -/
 def batchNormInference
   {channels : Nat} {sSpatial : Shape}
-  (x : Tensor α (.dim channels sSpatial))
-  (runningMean : Tensor α (.dim channels .scalar))
-  (runningVar : Tensor α (.dim channels .scalar))
-  (gamma : Tensor α (.dim channels .scalar))
-  (beta : Tensor α (.dim channels .scalar))
+  (x : Tensor α (([channels] : Shape).concat sSpatial))
+  (runningMean : Tensor α [channels])
+  (runningVar : Tensor α [channels])
+  (gamma : Tensor α [channels])
+  (beta : Tensor α [channels])
   (epsilon : α := Numbers.normalizationEpsilon) :
-  Tensor α (.dim channels sSpatial) :=
+  Tensor α (([channels] : Shape).concat sSpatial) :=
   -- Clamp the variance to stay nonnegative in approximate numeric backends.
-  let runningVar := maxSpec runningVar (fill 0 (.dim channels .scalar))
-  let meanB := broadcastChannelFirst sSpatial runningMean
-  let varianceB := broadcastChannelFirst sSpatial runningVar
-  let gammaB := broadcastChannelFirst sSpatial gamma
-  let betaB := broadcastChannelFirst sSpatial beta
+  let runningVar := maxSpec runningVar (fill 0 ([channels]))
+  let meanB := broadcastChannel sSpatial runningMean
+  let varianceB := broadcastChannel sSpatial runningVar
+  let gammaB := broadcastChannel sSpatial gamma
+  let betaB := broadcastChannel sSpatial beta
   let centered := subSpec x meanB
-  let std := sqrtSpec (addSpec varianceB (fill epsilon (.dim channels sSpatial)))
+  let std := sqrtSpec (addSpec varianceB (fill epsilon (([channels] : Shape).concat sSpatial)))
   addSpec (mulSpec (divSpec centered std) gammaB) betaB
 
 end Spec

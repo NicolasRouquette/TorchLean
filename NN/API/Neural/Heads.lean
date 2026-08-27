@@ -25,22 +25,20 @@ namespace heads
 
 
 /-- Classification head that preserves any supplied leading dimensions. -/
-def classifier (leading : Spec.Shape := .scalar) {s : Spec.Shape}
+def classifier (leading : List Nat := []) {shape : List Nat}
     (classes : Nat) (seedW seedB : Nat := 0) :
-    Sequential (leading.concat s) (leading.appendDim classes) :=
+    Sequential (leading ++ shape) (leading ++ [classes]) :=
   seq!
-    flattenLeading leading (s := s),
-    linear (Spec.Shape.size s) classes (seedW := seedW) (seedB := seedB) (leading :=
-      leading)
+    flattenAfter leading (shape := shape),
+    linear shape.prod classes (seedW := seedW) (seedB := seedB) (leading := leading)
 
 /-- Regression head that preserves any supplied leading dimensions. -/
-def regressor (leading : Spec.Shape := .scalar) {s : Spec.Shape}
+def regressor (leading : List Nat := []) {shape : List Nat}
     (outDim : Nat := 1) (seedW seedB : Nat := 0) :
-    Sequential (leading.concat s) (leading.appendDim outDim) :=
+    Sequential (leading ++ shape) (leading ++ [outDim]) :=
   seq!
-    flattenLeading leading (s := s),
-    linear (Spec.Shape.size s) outDim (seedW := seedW) (seedB := seedB) (leading :=
-      leading)
+    flattenAfter leading (shape := shape),
+    linear shape.prod outDim (seedW := seedW) (seedB := seedB) (leading := leading)
 
 end heads
 

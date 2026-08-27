@@ -49,54 +49,54 @@ namespace IRStep
 
 /-- A unary node with parent `0` and an explicit output shape. -/
 def unaryNodeOut (kind : OpKind) (outShape : Shape) : NN.IR.Node :=
-  { id := 1, parents := [0], kind := kind, outShape := outShape }
+  { id := 1, parents := #[0], kind := kind, outShape := outShape }
 
 /-- A two-node graph for a unary op with explicit input and output shapes. -/
 def unaryGraphOut (kind : OpKind) (inShape outShape : Shape) : Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := inShape },
+      { id := 0, parents := #[], kind := .input, outShape := inShape },
       unaryNodeOut kind outShape
     ] }
 
 /-- A unary node whose input and output share the same shape. -/
 def unaryNode (kind : OpKind) (s : Shape) : NN.IR.Node :=
-  { id := 1, parents := [0], kind := kind, outShape := s }
+  { id := 1, parents := #[0], kind := kind, outShape := s }
 
 /-- A two-node graph for a unary op whose input and output share the same shape. -/
 def unaryGraph (kind : OpKind) (s : Shape) : Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := s },
+      { id := 0, parents := #[], kind := .input, outShape := s },
       unaryNode kind s
     ] }
 
 /-- A binary node with parents `0` and `1` and an explicit output shape. -/
 def binaryNodeOut (kind : OpKind) (outShape : Shape) : NN.IR.Node :=
-  { id := 2, parents := [0, 1], kind := kind, outShape := outShape }
+  { id := 2, parents := #[0, 1], kind := kind, outShape := outShape }
 
 /-- A three-node graph for a binary op with explicit parent and output shapes. -/
 def binaryGraphOut (kind : OpKind) (leftShape rightShape outShape : Shape) : Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := leftShape },
-      { id := 1, parents := [], kind := .input, outShape := rightShape },
+      { id := 0, parents := #[], kind := .input, outShape := leftShape },
+      { id := 1, parents := #[], kind := .input, outShape := rightShape },
       binaryNodeOut kind outShape
     ] }
 
 /-- A binary node whose inputs and output share the same shape. -/
 def binaryNode (kind : OpKind) (s : Shape) : NN.IR.Node :=
-  { id := 2, parents := [0, 1], kind := kind, outShape := s }
+  { id := 2, parents := #[0, 1], kind := kind, outShape := s }
 
 /-- A three-node graph for a binary op whose inputs and output share the same shape. -/
 def binaryGraph (kind : OpKind) (s : Shape) : Graph :=
   { nodes := #[
-      { id := 0, parents := [], kind := .input, outShape := s },
-      { id := 1, parents := [], kind := .input, outShape := s },
+      { id := 0, parents := #[], kind := .input, outShape := s },
+      { id := 1, parents := #[], kind := .input, outShape := s },
       binaryNode kind s
     ] }
 
 /-- A node consuming every preceding entry of a shape array, in order. -/
 def variadicNodeOut (kind : OpKind) (parentShapes : Array Shape) (outShape : Shape) : NN.IR.Node :=
   { id := parentShapes.size
-    parents := List.range parentShapes.size
+    parents := Array.range parentShapes.size
     kind := kind
     outShape := outShape }
 
@@ -106,7 +106,7 @@ a node whose parent ids are the complete preceding range.
 -/
 def variadicGraphOut (kind : OpKind) (parentShapes : Array Shape) (outShape : Shape) : Graph :=
   { nodes := (parentShapes.mapIdx fun i shape =>
-      { id := i, parents := [], kind := .input, outShape := shape }).push
+      { id := i, parents := #[], kind := .input, outShape := shape }).push
       (variadicNodeOut kind parentShapes outShape) }
 
 /-- A failure-aware lookup reconstructs an array when it succeeds at every valid index. -/
@@ -140,13 +140,22 @@ theorem range_mapM_eq_toList_of_getElem_eq {β : Type} (values : Array β)
             rfl
   exact aux (List.range values.size) values.toList hLookups
 
+/-- A failure-aware lookup reconstructs an array when it succeeds at every valid index. -/
+theorem rangeArray_mapM_eq_of_getElem_eq {β : Type} (values : Array β)
+    (get : Nat → Except String β)
+    (hget : ∀ i (hi : i < values.size), get i = Except.ok values[i]) :
+    (Array.range values.size).mapM get = Except.ok values := by
+  rw [← List.toArray_range, List.mapM_toArray,
+    range_mapM_eq_toList_of_getElem_eq values get hget]
+  simp
+
 /-- The final node of a variadic evaluator fixture is its variadic operation node. -/
 @[simp] theorem variadicGraphOut_getNode
     (kind : OpKind) (parentShapes : Array Shape) (outShape : Shape) :
     (variadicGraphOut kind parentShapes outShape).getNode parentShapes.size =
       .ok (variadicNodeOut kind parentShapes outShape) := by
   let inputNodes : Array NN.IR.Node := parentShapes.mapIdx fun i shape =>
-    { id := i, parents := [], kind := OpKind.input, outShape := shape }
+    { id := i, parents := #[], kind := OpKind.input, outShape := shape }
   have hSize : inputNodes.size = parentShapes.size := by simp [inputNodes]
   change ({ nodes := inputNodes.push (variadicNodeOut kind parentShapes outShape) } : Graph).getNode
       parentShapes.size = .ok (variadicNodeOut kind parentShapes outShape)
@@ -162,8 +171,8 @@ def evalForwardLetChainVals
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (g : ForwardLetChain α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
-    (vals : Array (Spec.PackedTensor α)) : Except String (Array (Spec.PackedTensor α)) :=
+    (params : TorchLean.TensorPack α paramShapes)
+    (vals : Array (Spec.SomeTensor α)) : Except String (Array (Spec.SomeTensor α)) :=
   match g with
   | .ret _y =>
       pure vals
@@ -178,16 +187,16 @@ def evalForwardLetChainVals
 /-- `Graph.expectShape` returns the stored tensor when the dynamic shape tag matches. -/
 theorem expectShape_eq_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    {expected : Shape} (v : Spec.PackedTensor α) (h : v.shape = expected) :
+    {expected : Shape} (v : Spec.SomeTensor α) (h : v.shape = expected) :
     NN.IR.Graph.expectShape (α := α) (expected := expected) v =
       Except.ok (v.cast h) := by
   cases h
-  simp [NN.IR.Graph.expectShape, Spec.PackedTensor.cast, Pure.pure, Except.pure]
+  simp [NN.IR.Graph.expectShape, Spec.SomeTensor.cast, Pure.pure, Except.pure]
 
 /-- A successful shape check certifies the shape stored by the packed tensor. -/
 theorem shape_eq_of_expectShape_eq_ok
     {α : Type} [Context α] [DecidableEq Shape]
-    {expected : Shape} {v : Spec.PackedTensor α} {t : Tensor α expected}
+    {expected : Shape} {v : Spec.SomeTensor α} {t : Tensor α expected}
     (h : NN.IR.Graph.expectShape (α := α) (expected := expected) v = Except.ok t) :
     v.shape = expected := by
   by_contra hShape
@@ -197,13 +206,13 @@ theorem shape_eq_of_expectShape_eq_ok
 theorem getVal_eq_ok
     {α : Type} [Context α] [DecidableEq Shape]
     {inShape : Shape} {ss : List Shape} {expected : Shape}
-    (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) expected)
-    (v : Spec.PackedTensor α) (hSome : vals[idx.id]? = some v)
+    (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) expected)
+    (v : Spec.SomeTensor α) (hSome : vals[idx.id]? = some v)
     (h : v.shape = expected) :
     getVal (α := α) (inShape := inShape) (ss := ss) (s := expected) vals idx =
       Except.ok (v.cast h) := by
   cases h
-  simp [getVal, getValue?, hSome, Spec.PackedTensor.cast, Bind.bind, Except.bind,
+  simp [getVal, getValue?, hSome, Spec.SomeTensor.cast, Bind.bind, Except.bind,
     Pure.pure, Except.pure]
 
   /--
@@ -219,7 +228,7 @@ theorem getVal_eq_ok
       (read : NN.MLTheory.CROWN.Graph.ParamStore α → Nat → Option β)
       (hStep :
         ∀ {ss₀ : List Shape} {mid₀ : Shape} {node : Node α paramShapes inShape ss₀ mid₀}
-          (id k : Nat) (params : Runtime.Autograd.Torch.TList α paramShapes)
+          (id k : Nat) (params : TorchLean.TensorPack α paramShapes)
           (ps : NN.MLTheory.CROWN.Graph.ParamStore α),
           k < id →
           read
@@ -227,7 +236,7 @@ theorem getVal_eq_ok
                 (ss := ss₀) (out := mid₀) id node params ps).2 k =
             read ps k)
       (g : ForwardLetChain α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
       {k : Nat} (hk : k < c.graph.nodes.size) :
       read
@@ -274,7 +283,7 @@ theorem getVal_eq_ok
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
     (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
@@ -283,7 +292,7 @@ theorem getVal_eq_ok
     classical
     exact
     lowerForwardLetChain_ps_lookup_get?_lt
-      (α := α) (β := NN.MLTheory.CROWN.Graph.FlatVec α)
+      (α := α) (β := NN.MLTheory.CROWN.Graph.FlatTensor α)
       (read := fun ps k => ps.constVals.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
@@ -300,7 +309,7 @@ theorem getVal_eq_ok
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
     (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
@@ -319,24 +328,24 @@ theorem getVal_eq_ok
       g params c hk
 
   /--
-  Lowering a let-chain does not change `ps.conv2dCfg` entries for keys `< c.graph.nodes.size`.
+  Lowering a let-chain does not change `ps.convCfg` entries for keys `< c.graph.nodes.size`.
   Lowering only inserts convolution payloads at fresh node ids, so older keys are unchanged.
   -/
-  theorem lowerForwardLetChain_ps_conv2dCfg_get?_lt
+  theorem lowerForwardLetChain_ps_convCfg_get?_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
     (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
       out)
-        g params c).ps.conv2dCfg.get? k = c.ps.conv2dCfg.get? k := by
+        g params c).ps.convCfg.get? k = c.ps.convCfg.get? k := by
     classical
     exact
     lowerForwardLetChain_ps_lookup_get?_lt
-      (α := α) (β := NN.IR.Conv2dParams α)
-      (read := fun ps k => ps.conv2dCfg.get? k)
+      (α := α) (β := NN.IR.ConvParams α)
+      (read := fun ps k => ps.convCfg.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
         have hidk : id ≠ k := (ne_comm).1 hk.ne
@@ -345,30 +354,57 @@ theorem getVal_eq_ok
       g params c hk
 
   /--
-  Lowering a let-chain does not change `ps.batchNorm2dNchwEval` entries for keys below the
+  Lowering a let-chain does not change `ps.batchNormEval` entries for keys below the
   starting graph size.  Eval-mode BatchNorm payloads enter through the broader IR/import bridge,
   not through this proved first-order fragment.
   -/
-  theorem lowerForwardLetChain_ps_batchNorm2dNchwEval_get?_lt
+  theorem lowerForwardLetChain_ps_batchNormEval_get?_lt
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     {k : Nat} (hk : k < c.graph.nodes.size) :
     (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
       out)
-        g params c).ps.batchNorm2dNchwEval.get? k =
-      c.ps.batchNorm2dNchwEval.get? k := by
+        g params c).ps.batchNormEval.get? k =
+      c.ps.batchNormEval.get? k := by
     classical
     exact
     lowerForwardLetChain_ps_lookup_get?_lt
-      (α := α) (β := NN.IR.BatchNorm2dNchwEvalParams α)
-      (read := fun ps k => ps.batchNorm2dNchwEval.get? k)
+      (α := α) (β := NN.IR.BatchNormEvalParams α)
+      (read := fun ps k => ps.batchNormEval.get? k)
       (hStep := by
         intro ss₀ mid₀ node id k params ps hk
         cases node <;> simp [lowerNode])
       g params c hk
+
+  /--
+  Lowering a let-chain preserves LayerNorm payloads below the starting graph size.
+
+  A payload-free LayerNorm step erases only its own fresh id, preventing stale future entries from
+  changing the source fragment's unit-affine semantics.
+  -/
+  theorem lowerForwardLetChain_ps_layerNorm_get?_lt
+      {α : Type} [Context α]
+      {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
+      (g : ForwardLetChain α paramShapes inShape ss out)
+      (params : TorchLean.TensorPack α paramShapes)
+      (c : NN.Verification.TorchLean.LoweredIR α)
+      {k : Nat} (hk : k < c.graph.nodes.size) :
+      (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape)
+        (ss := ss) (out := out) g params c).ps.layerNorm.get? k = c.ps.layerNorm.get? k := by
+    classical
+    exact
+      lowerForwardLetChain_ps_lookup_get?_lt
+        (α := α) (β := NN.IR.LayerNormParams α)
+        (read := fun ps k => ps.layerNorm.get? k)
+        (hStep := by
+          intro ss₀ mid₀ node id k params ps hk
+          have hidk : id ≠ k := (ne_comm).1 hk.ne
+          cases node <;>
+            simp [lowerNode, Std.HashMap.getElem?_erase, beq_eq_false_iff_ne.mpr hidk])
+        g params c hk
 
   /--
   `lowerForwardLetChain` does not change existing nodes at indices `< c.graph.nodes.size`.
@@ -378,7 +414,7 @@ theorem getVal_eq_ok
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     {i : Nat} (hi : i < c.graph.nodes.size) :
     (NN.IR.Graph.getNode
@@ -421,7 +457,7 @@ theorem getVal_eq_ok
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
         (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
       (c : NN.Verification.TorchLean.LoweredIR α) :
     c.graph.nodes.size ≤
       (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
@@ -452,7 +488,7 @@ theorem getVal_eq_ok
 
     /-- Shape lookup through `shapesOfVals` agrees with looking up the dynamic value first. -/
     lemma shapesOfVals_get?_eq
-        {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) (i : Nat) :
+        {α : Type} [Context α] (vals : Array (Spec.SomeTensor α)) (i : Nat) :
         (shapesOfVals (α := α) vals)[i]? = (vals[i]?).map (fun v => v.1) := by
       -- Avoid `simp` loops on `Array.getElem?_eq_toList_get?'`.
       have hToList : vals.toList[i]? = vals[i]? := by
@@ -461,7 +497,7 @@ theorem getVal_eq_ok
       -- lookup.
       simp [shapesOfVals, List.getElem?_map, hToList]
 
-  @[simp] lemma shapesOfVals_length {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) :
+  @[simp] lemma shapesOfVals_length {α : Type} [Context α] (vals : Array (Spec.SomeTensor α)) :
       (shapesOfVals (α := α) vals).length = vals.size := by
       simp [shapesOfVals]
 
@@ -469,7 +505,7 @@ theorem getVal_eq_ok
   theorem index_lt_of_shapesOfVals_eq
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : idx.id < vals.size := by
     have hLen : vals.size = (Ctx inShape ss).length := by
       simpa [shapesOfVals_length] using congrArg List.length hShapes
@@ -480,15 +516,15 @@ theorem getVal_eq_ok
   def packedAt
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
-      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : Spec.PackedTensor α :=
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : Spec.SomeTensor α :=
     vals[idx.id]'(index_lt_of_shapesOfVals_eq vals idx hShapes)
 
   /-- Safe array lookup returns the packed value selected by `packedAt`. -/
   theorem getElem?_eq_some_packedAt
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
       vals[idx.id]? = some (packedAt vals idx hShapes) := by
     simp [packedAt, index_lt_of_shapesOfVals_eq vals idx hShapes]
@@ -496,7 +532,7 @@ theorem getVal_eq_ok
   @[simp] theorem packedAt_shape
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
       (packedAt vals idx hShapes).shape = s := by
     classical
@@ -531,15 +567,27 @@ theorem getVal_eq_ok
   def tensorAt
       {α : Type} [Context α]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) : Tensor α s :=
     (packedAt vals idx hShapes).cast (packedAt_shape vals idx hShapes)
+
+  /-- Packing the typed tensor recovered from a well-shaped context returns the original value. -/
+  theorem ofTensor_tensorAt_eq_packedAt
+      {α : Type} [Context α]
+      {inShape : Shape} {ss : List Shape} {s : Shape}
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
+      Spec.SomeTensor.ofTensor (tensorAt vals idx hShapes) = packedAt vals idx hShapes := by
+    let value := packedAt vals idx hShapes
+    have hShape : value.shape = s := packedAt_shape vals idx hShapes
+    change Spec.SomeTensor.ofTensor (value.cast hShape) = value
+    exact Spec.SomeTensor.ofTensor_cast value hShape
 
   /-- Shape checking succeeds for the typed tensor extracted from a well-shaped context. -/
   theorem expectShape_packedAt_eq_ok
       {α : Type} [Context α] [DecidableEq Shape]
       {inShape : Shape} {ss : List Shape} {s : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) s)
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) s)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
       NN.IR.Graph.expectShape (α := α) (expected := s) (packedAt vals idx hShapes) =
         Except.ok (tensorAt vals idx hShapes) := by
@@ -556,7 +604,7 @@ theorem getVal_eq_ok
   theorem getVal_eq_ok_of_shapesOfVals_eq
       {α : Type} [Context α] [DecidableEq Shape]
       {inShape : Shape} {ss : List Shape} {expected : Shape}
-      (vals : Array (Spec.PackedTensor α)) (idx : Idx (Ctx inShape ss) expected)
+      (vals : Array (Spec.SomeTensor α)) (idx : Idx (Ctx inShape ss) expected)
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
       getVal (α := α) (inShape := inShape) (ss := ss) (s := expected) vals idx =
         Except.ok (tensorAt vals idx hShapes) :=

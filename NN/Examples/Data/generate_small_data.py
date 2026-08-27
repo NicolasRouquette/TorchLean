@@ -40,6 +40,29 @@ def write_regression(out_dir: Path) -> None:
     print(f"wrote {out_dir / 'small_regression_y.npy'} shape={y.shape} dtype={y.dtype}")
 
 
+def write_tabular_regression(out_dir: Path) -> None:
+    """Write a seven-feature CSV for the MLP and KAN command checks."""
+    with (out_dir / "small_tabular_regression.csv").open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([f"x{i}" for i in range(1, 8)] + ["y"])
+        for row in range(10):
+            features = [np.float32((row + column) % 10) / np.float32(9) for column in range(7)]
+            target = np.float32(sum(float(value) for value in features) / len(features))
+            writer.writerow([float(value) for value in features] + [float(target)])
+    print(f"wrote {out_dir / 'small_tabular_regression.csv'} rows=10")
+
+
+def write_forecast(out_dir: Path, n_rows: int = 4, seq_len: int = 24) -> None:
+    """Write deterministic one-feature time-series windows for recurrent-model checks."""
+    base = np.linspace(0.0, 1.0, seq_len + 1, dtype=np.float32)
+    X = np.stack([base[:-1] + np.float32(row) / n_rows for row in range(n_rows)])[:, :, None]
+    y = np.stack([base[1:] + np.float32(row) / n_rows for row in range(n_rows)])[:, :, None]
+    np.save(out_dir / "small_forecast_X.npy", X)
+    np.save(out_dir / "small_forecast_y.npy", y)
+    print(f"wrote {out_dir / 'small_forecast_X.npy'} shape={X.shape} dtype={X.dtype}")
+    print(f"wrote {out_dir / 'small_forecast_y.npy'} shape={y.shape} dtype={y.dtype}")
+
+
 def make_cifar10like(n_per_class: int = 20, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     n_classes = 10
@@ -82,6 +105,22 @@ def write_cifar10like(out_dir: Path, n_per_class: int, seed: int) -> None:
     print(f"wrote {out_dir / 'small_cifar10like_y.npy'} shape={y.shape} dtype={y.dtype}")
 
 
+def write_fno1d(out_dir: Path, n_rows: int = 4, grid: int = 32) -> None:
+    """Write a deterministic periodic operator-learning fixture for FNO smoke tests."""
+    x_grid = np.linspace(0.0, 2.0 * np.pi, grid, endpoint=False, dtype=np.float32)
+    X = np.stack(
+        [np.sin(x_grid + np.float32(i) / np.float32(n_rows)) for i in range(n_rows)]
+    ).astype(np.float32)
+    y = (
+        np.float32(0.75) * X
+        + np.float32(0.1) * np.sin(np.float32(2.0) * x_grid)
+    ).astype(np.float32)
+    np.save(out_dir / "small_fno1d_X.npy", X)
+    np.save(out_dir / "small_fno1d_y.npy", y)
+    print(f"wrote {out_dir / 'small_fno1d_X.npy'} shape={X.shape} dtype={X.dtype}")
+    print(f"wrote {out_dir / 'small_fno1d_y.npy'} shape={y.shape} dtype={y.dtype}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, default=Path(__file__).resolve().parent)
@@ -94,8 +133,12 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     if not args.cifar_only:
         write_regression(args.out_dir)
+        write_tabular_regression(args.out_dir)
+        write_forecast(args.out_dir)
     if not args.regression_only:
         write_cifar10like(args.out_dir, args.n_per_class, args.seed)
+    if not args.regression_only and not args.cifar_only:
+        write_fno1d(args.out_dir)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ TorchLean's proof tree asks a more explicit question:
 > the forward denotation?
 
 The proof architecture lives in [NN/Proofs/Autograd](https://github.com/lean-dojo/TorchLean/tree/main/NN/Proofs/Autograd/). We built it in layers so the
-auditor can stop at the boundary they care about: algebraic tape soundness, Frechet derivative
+auditor can stop at the boundary they care about: algebraic tape soundness, Fréchet derivative
 statements, proofs for particular operators, theorem entry points for model blocks, and algebra for
 training steps.
 
@@ -31,7 +31,7 @@ The proof pipeline is:
 local op derivative
   -> local JVP/VJP adjointness
   -> graph backprop correctness
-  -> Frechet derivative theorem
+  -> Fréchet derivative theorem
   -> model block theorem
   -> training step algebra
 ```
@@ -76,8 +76,8 @@ proof data carried by each node.
 
 The objects to track are:
 
-- `TensorPack`: typed tensor payloads indexed by a list of shapes; internally, the
-  autograd algebra still has a small context datatype with the same shape-indexed structure.
+- `TensorPack`: a typed tuple of tensors indexed by a list of shapes. It carries model state,
+  inputs, and cotangents without introducing another tensor representation.
 - `Idx`: pointer into a context, carrying the needed proof data.
 - `NodeData`: forward, JVP, and VJP data for one local operation.
 - `Node`: a node plus the local inner product soundness law.
@@ -141,7 +141,7 @@ convert in both directions. Both node and graph conversions round-trip, and eval
 reverse accumulation commute with the conversion.
 
 The algebraic reverse pass returns cotangents for the inputs and every intermediate value. The
-analytic theorem needs only the input cotangent. `TList.takeLeft` selects that input prefix, and
+analytic theorem needs only the input cotangent. `TensorPack.takeLeft` selects that input prefix, and
 `takeLeft_backpropAllCtx` proves that it is exactly the inputs-only reverse pass used by the
 derivative theorem.
 
@@ -190,7 +190,7 @@ The two derivative APIs are:
 
 The softmax API defines `softmaxVec`, `softmaxDerivCLM`, and `softmaxJvp`. The theorem
 `softmaxJvp_eq_deriv` identifies the implemented JVP formula with the derivative formula, and
-`hasFDerivAt_softmaxVec` states the Frechet derivative of the vector softmax. The theorem
+`hasFDerivAt_softmaxVec` states the Fréchet derivative of the vector softmax. The theorem
 `inner_softmaxJvp_comm` packages the self adjoint structure of the softmax Jacobian, which is the
 reason the VJP can reuse the same formula shape.
 
@@ -292,6 +292,31 @@ ideal VJP theorem
 Without the middle bridge, we only have a theorem about the proof graph. Without the last bridge, we
 only have a theorem about ideal arithmetic.
 
+# Convolution And BatchNorm
+
+Convolution and BatchNorm are not represented by separate one-, two-, and three-dimensional proof
+families. Their spatial shape is a list, so one theorem covers sequences, images, volumes, and
+higher-dimensional grids.
+
+For convolution,
+[the FDeriv proof](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Conv/FDeriv.lean)
+first identifies the exact Fréchet derivative of the forward operation. It then proves that the
+three tensors returned by `convBackwardSpec` are the adjoint action of that derivative: a kernel
+gradient, a bias gradient, and an input gradient. Positive stride is the geometric hypothesis that
+lets the forward and transpose index equations be inverted without ambiguity.
+
+BatchNorm uses the same discipline in the
+[BatchNorm proof](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/BatchNorm.lean).
+The forward differential includes the dependence of the batch mean and variance on every value in
+the channel. `batchNormJvp_batchNormBackward_adjoint` proves that the implemented reverse rule for
+the input, learned scale, and learned bias is adjoint to that full differential.
+
+```
+#check Proofs.Autograd.Conv.hasFDerivAt_convForwardVec
+#check Proofs.Autograd.Conv.convJvpSpec_convBackwardSpec_adjoint
+#check Proofs.Autograd.BatchNorm.batchNormJvp_batchNormBackward_adjoint
+```
+
 # MLP And MSE Gradients
 
 The [MLP/MSE derivative API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/FDeriv/MlpMse.lean)
@@ -340,10 +365,8 @@ Representative theorem entry points:
 - [masked scaled-dot-product attention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/MaskedScaledDotProduct.lean)
 - [masked multi-head attention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/MaskedMultiHeadSelfAttention.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Attention.MultiHeadSelfAttention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Attention/MultiHeadSelfAttention.lean)
-- [convolution Fréchet-derivative API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Conv/FDeriv.lean)
 - [embedding gather-rows API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Embedding/GatherRows.lean)
-- [LayerNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/LayerNorm.lean) and
-  [channel-first BatchNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/BatchNormChannelFirst.lean)
+- [LayerNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/LayerNorm.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Transformer.PostNorm API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/PostNorm.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Transformer.ResidualAttention API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/ResidualAttention.lean)
 - [NN.Proofs.Autograd.Tape.Ops.Transformer.FeedForward API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Transformer/FeedForward.lean)

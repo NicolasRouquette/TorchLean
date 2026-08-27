@@ -37,8 +37,11 @@ Nodes without a justified affine transfer retain their IBP enclosure as a consta
 def runCROWN (g : Graph) (ps : ParamStore α) (ctx : AffineCtx)
     (ibp : Array (Option (FlatBox α))) : Array (Option (FlatAffineBounds α)) :=
   let init := Array.replicate g.nodes.size none
-  (List.finRange g.nodes.size).foldl (fun acc i => propagateCROWNNode (α:=α) g.nodes ps ibp acc ctx
-    i) init
+  if crownGraphSemanticsSupported (α := α) g ps then
+    (List.finRange g.nodes.size).foldl (fun acc i =>
+      propagateCROWNNode (α:=α) g.nodes ps ibp acc ctx i) init
+  else
+    init
 
 /-- Evaluate already-computed CROWN output affine bounds on an input box. -/
 def evalCROWNOutputBox? (bounds : Array (Option (FlatAffineBounds α))) (xB : FlatBox α)

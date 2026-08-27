@@ -38,28 +38,28 @@ variable {α : Type} [Context α] {n : Nat}
 /-- `V` is bounded below on the certified region. -/
 theorem v_bounded_below (lyap : NeuralLyapunov α n) (cert : LyapunovCert α n)
     (hcert : cert.ValidFor lyap)
-    (x : Tensor α (.dim n .scalar)) (hx : Box.contains cert.region x) :
+    (x : Tensor α [n]) (hx : Box.contains cert.region x) :
     lyap.value x ≥ cert.vLower :=
   hcert.valueBounds x hx |>.1
 
 /-- `V` is bounded above on the certified region. -/
 theorem v_bounded_above (lyap : NeuralLyapunov α n) (cert : LyapunovCert α n)
     (hcert : cert.ValidFor lyap)
-    (x : Tensor α (.dim n .scalar)) (hx : Box.contains cert.region x) :
+    (x : Tensor α [n]) (hx : Box.contains cert.region x) :
     lyap.value x ≤ cert.vUpper :=
   hcert.valueBounds x hx |>.2
 
 /-- `V̇` is bounded below on the certified region. -/
 theorem vdot_bounded_below (lyap : NeuralLyapunov α n) (cert : LyapunovCert α n)
     (hcert : cert.ValidFor lyap)
-    (x : Tensor α (.dim n .scalar)) (hx : Box.contains cert.region x) :
+    (x : Tensor α [n]) (hx : Box.contains cert.region x) :
     lyap.orbitalDerivative x ≥ cert.derivativeLower :=
   hcert.orbitalDerivativeBounds x hx |>.1
 
 /-- `V̇` is bounded above on the certified region. -/
 theorem vdot_bounded_above (lyap : NeuralLyapunov α n) (cert : LyapunovCert α n)
     (hcert : cert.ValidFor lyap)
-    (x : Tensor α (.dim n .scalar)) (hx : Box.contains cert.region x) :
+    (x : Tensor α [n]) (hx : Box.contains cert.region x) :
     lyap.orbitalDerivative x ≤ cert.derivativeUpper :=
   hcert.orbitalDerivativeBounds x hx |>.2
 
@@ -126,7 +126,7 @@ variable {n : Nat}
 /-- For `ℝ`: `V` is positive when the certified lower bound is positive. -/
 theorem v_positive (lyap : NeuralLyapunov ℝ n) (cert : LyapunovCert ℝ n)
     (hcert : cert.ValidFor lyap)
-    (h_pos : cert.vLower > 0) (x : Tensor ℝ (.dim n .scalar))
+    (h_pos : cert.vLower > 0) (x : Tensor ℝ [n])
     (hx : Box.contains cert.region x) : lyap.value x > 0 := by
   have h : cert.vLower ≤ lyap.value x := by
     simpa using (v_bounded_below lyap cert hcert x hx)
@@ -135,7 +135,7 @@ theorem v_positive (lyap : NeuralLyapunov ℝ n) (cert : LyapunovCert ℝ n)
 /-- For `ℝ`: `V̇` is negative when its certified upper bound is negative. -/
 theorem vdot_negative (lyap : NeuralLyapunov ℝ n) (cert : LyapunovCert ℝ n)
     (hcert : cert.ValidFor lyap)
-    (h_neg : cert.derivativeUpper < 0) (x : Tensor ℝ (.dim n .scalar))
+    (h_neg : cert.derivativeUpper < 0) (x : Tensor ℝ [n])
     (hx : Box.contains cert.region x) : lyap.orbitalDerivative x < 0 := by
   have h : lyap.orbitalDerivative x ≤ cert.derivativeUpper :=
     vdot_bounded_above lyap cert hcert x hx

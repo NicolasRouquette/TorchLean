@@ -43,18 +43,18 @@ open _root_.Spec.Tensor
 
 /-- Small fixed graph with one `softmax` node, used to exercise certificate checking. -/
 def buildGraph : Graph :=
-  let inputNode : Node := { id := 0, parents := [], kind := .input, outShape := .dim 4 .scalar }
-  let scoreNode : Node := { id := 1, parents := [0], kind := .matmul, outShape := .dim 5 .scalar }
+  let inputNode : Node := { id := 0, parents := #[], kind := .input, outShape := .dim 4 .scalar }
+  let scoreNode : Node := { id := 1, parents := #[0], kind := .matmul, outShape := .dim 5 .scalar }
   let softmaxNode : Node :=
-    { id := 2, parents := [1], kind := .softmax (axis := 0), outShape := .dim 5 .scalar }
-  let valueProjectionNode : Node := { id := 3, parents := [2], kind := .matmul, outShape := .dim 3 .scalar }
+    { id := 2, parents := #[1], kind := .softmax (axis := 0), outShape := .dim 5 .scalar }
+  let valueProjectionNode : Node := { id := 3, parents := #[2], kind := .matmul, outShape := .dim 3 .scalar }
   { nodes := #[inputNode, scoreNode, softmaxNode, valueProjectionNode] }
 
 /-- Seed deterministic weights for the two matmul nodes in `buildGraph`. -/
 def seedParamsFloat : ParamStore Float :=
-  let scoreWeight : Tensor Float (.dim 5 (.dim 4 .scalar)) :=
+  let scoreWeight : Tensor Float [5, 4] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (1 + (i.val + 2*j.val)))))
-  let valueWeight : Tensor Float (.dim 3 (.dim 5 .scalar)) :=
+  let valueWeight : Tensor Float [3, 5] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (2 + (i.val + j.val)))))
   let emptyStore : ParamStore Float := {}
   let withScoreWeight :=

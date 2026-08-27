@@ -40,10 +40,11 @@ Related APIs are organized by object:
   examples keep adapter weights and optimizer state separate.
 
 For application code, import `NN.API` and use the `TorchLean` namespace. Import
-`NN.API.Verification` to lower models and call IBP or CROWN directly; the trained regression result
-already exposes its smaller `verifyRobustLInf` operation. A file that also needs proofs, graph
-specifications, or backend internals can import `NN`. Focused imports remain available when only
-one subsystem is needed.
+`NN.API.Verification` to lower models and call IBP or CROWN directly. The specialized
+`Trainer.trainVerified` workflow is available only from `NN.API.Verification.Trainer`; its
+`VerifiedTrainResult` retains the `verifyRobustLInf` operation. A file that also needs proofs,
+graph specifications, or backend internals can import `NN`. Focused imports remain available when
+only one subsystem is needed.
 
 Trainable neural constructors live under `TorchLean.nn.models`. KNN, random-forest, Naive Bayes,
 SVM, GMM, PCA, regression, gradient-boosted-tree, HMM, and Hopfield definitions retain their
@@ -91,8 +92,8 @@ The closest PyTorch terms are similar, but not identical:
 | `module.run` | Concrete execution without gradient recording, in the current train/eval mode. |
 | `predict` | Evaluation-mode, no-gradient execution that restores the previous mode. |
 | `nn.softmax (axis := k)` | Softmax over any valid tensor dimension. |
-| `mm` | Two-dimensional matrix multiplication, matching `torch.mm`; use `bmm` for rank-three batches. TorchLean does not currently expose PyTorch's rank-polymorphic, broadcasting `torch.matmul`. |
-| `Tensor.oneHot n k` | One-hot encoding with `k : Fin n`; raw natural-number conversion is explicitly named `oneHotNatOrZero`. |
+| `Runtime.matmul` | Matrix multiplication with broadcasting over compatible leading dimensions. The same operation handles matrices, batches, and higher-rank collections. |
+| `Tensor.oneHot n k` | One-hot encoding with `k : Fin n`; use `Tensor.checkIndex` or `Tensor.checkIndices` at raw-data boundaries. |
 | `module.state` | Ordered, shape-indexed parameter and buffer tensors, not a string-keyed Python `state_dict`. |
 | `scalar` | Arithmetic semantics for a run, not merely a storage `dtype`. |
 | `execution := .typedGraph` | Record and reuse a typed forward/JVP/VJP graph; this is not `torch.compile`. |
@@ -110,14 +111,39 @@ The main entry points are:
 - `trainer.train`,
 - `trained.predict`,
 - `trained.predictMany`,
-- `trained.verifyRobustLInf`,
+- `trainer.trainVerified` and `trained.verifyRobustLInf` after importing
+  `NN.API.Verification.Trainer`,
 - `execution := .eager` or `execution := .typedGraph`,
 - CUDA flags on the command line when native execution is selected.
 
-Typed graph execution is not TorchLean's spelling of `torch.compile`. It records the model once as
-a shape-indexed SSA graph and reuses its forward/JVP/VJP programs. This checks graph construction
-and tensor shapes, but does not automatically prove every stored derivative rule. TorchLean
-reserves *compilation* for optimization, fusion, scheduling, and native code generation.
+## Numerical Containers
+
+TorchLean writes a concrete statically shaped value as `Tensor α [dims...]`: the scalar type comes
+first, followed by a list of dimensions. For example, `Tensor Float [batch, width]` contains
+`Float` values and has two axes. Shape-polymorphic definitions may replace the dimension list with
+a variable, as in `Tensor α s`.
+
+TorchLean uses `Array α` for homogeneous collections whose length is known only while the program
+runs. A rank-one tensor is already the fixed-length type: write `Tensor Float [width]`, not a
+separate vector wrapper. Dataset storage, token buffers, sampled batches, and serialized payloads
+use arrays until their shape is checked and they enter the tensor API.
+
+Application code does not choose among several tensor representations. It constructs and receives
+values such as `Tensor α [batch, width]`. Internal typed contexts use `TensorPack α shapes` only
+when a fixed tuple contains tensors of different shapes. Runtime evaluators use
+`Spec.SomeTensor α` only after they must erase a shape to store differently shaped intermediate
+values in one array.
+
+Lists have a narrower structural role. Dimension syntax such as `[batch, width]`, graph parent
+identifiers, recursive architecture descriptions, and shape-indexed parameter packs use lists
+because Lean computes types or performs structural recursion over them. They are not an alternative
+container for tensor entries. The autograd proof layer also uses mathlib's finite Euclidean spaces
+internally when applying Fréchet-derivative and adjoint APIs; model and runtime interfaces remain
+tensor-valued.
+
+Typed graph execution records a model once as a shape-indexed SSA graph and reuses its
+forward/JVP/VJP programs. It is graph lowering, not native-code compilation; the guide's execution
+chapter explains the distinction and the separate proof obligations.
 
 The comparison follows PyTorch's documentation for
 [`nn.Module`](https://pytorch.org/docs/stable/generated/torch.nn.Module.html),
@@ -147,19 +173,22 @@ backward tape; `predict` temporarily selects eval mode and restores the previous
 The ordinary `instantiate` method uses native `Float32`. Use `instantiateAs` only when a manual
 runtime deliberately needs another scalar interpretation.
 
-Embedding models use integer tensors rather than one-hot vectors:
+Embedding models take token ID tensors rather than one-hot vectors:
 
 ```lean
 let table := nn.build 2026 <| nn.embedding vocab embedDim
+let tokenShape := [batch, seqLen]
+let tokenIds ← Tensor.checkIndices vocab rawTokenIds
 let module ← nn.IndexedModule.instantiate (table.model tokenShape) { device := .cpu }
 let vectors ← module.predict tokenIds
 ```
 
-The result has shape `tokenShape.appendDim embedDim`. Token IDs are not differentiable, repeated
-IDs accumulate gradients into the same table row, and the module rejects an ID outside
-`0, ..., vocab - 1` before invoking the runtime gather. Fresh tables use standard-normal weights,
-matching `torch.nn.Embedding.reset_parameters`; model constructors such as GPT-2 supply their own
-initialization scale.
+Here `rawTokenIds` is a `Tensor Nat [batch, seqLen]` from an untrusted boundary. After
+`Tensor.checkIndices`, `tokenIds` is a bounded `Tensor (Fin vocab) [batch, seqLen]`. The result has
+shape `[batch, seqLen, embedDim]`. Token IDs are not
+differentiable, and repeated IDs accumulate gradients into the same table row. Fresh tables use
+standard-normal weights, matching `torch.nn.Embedding.reset_parameters`; model constructors such
+as GPT-2 supply their own initialization scale.
 
 An existing tensor can be used without reinitializing it:
 
@@ -175,23 +204,28 @@ scatter-add gradients. PyTorch options whose behavior changes the backward pass 
 weight during forward, including `padding_idx`, `max_norm`, `scale_grad_by_freq`, and sparse
 gradients, are not silently approximated by this constructor.
 
-The public spatial layers accept an arbitrary vector of spatial extents. Names such as `NCHW` or
-`Conv2d` are confined to layout-specific runtime kernels, where the suffix records an actual
-precondition rather than a user-facing tensor category.
+The public spatial layers accept a rank-one tensor of spatial extents. Convolution, transposed
+convolution, normalization, and pooling use one rank-polymorphic API from their specification down
+to the native CPU and CUDA boundary. Layout names remain only where an external format, such as an
+imported PyTorch program, actually carries that convention.
 
-Flattening and task heads use the same shape vocabulary. `nn.flattenLeading leading` preserves
+Flattening and task heads use the same shape vocabulary. `nn.flattenAfter leading` preserves
 every axis in `leading` and flattens only the remaining shape. For example, a classifier with
-`leading := shape![batch, time]` maps `shape![batch, time, height, width]` to
-`shape![batch, time, classes]`. TorchLean therefore has no separate batch-only classifier or
-regressor API. `Tensor.flattenPrefix` preserves the same leading shape while retaining a prefix of
+`leading := [batch, time]` maps `[batch, time, height, width]` to
+`[batch, time, classes]`. TorchLean therefore has no separate batch-only classifier or
+regressor API. `Tensor.flattenThenTake` preserves the same leading shape while retaining a prefix of
 the flattened suffix. Random tensors use that same shape directly. For dimensions stored in a list,
-write `rand.uniform key (s := Shape.ofList dims)`.
+write `rand.uniform key (s := dims)`.
 
 ## Graph Vocabulary
 
 The relevant types appear in this order:
 
-- `Tensor α s` is a tensor value whose shape `s` is part of its type.
+- `Tensor α [dims...]` is the public concrete syntax for a tensor whose dimensions are part of
+  its type. Generic definitions use `Tensor α s` when the whole shape is a variable.
+- `TensorPack α shapes` is the statically heterogeneous tuple used by model state and typed
+  contexts. Every member shape remains in the type; ordinary model inputs and outputs stay
+  `Tensor` values.
 - `Runtime.Autograd.TorchLean.Program` is model code abstract over an operation interpreter. It is
   a polymorphic function, not a stored graph.
 - `GraphSpec.Chain` and `GraphSpec.DAG.Model` are shape-indexed architecture syntax.
@@ -199,12 +233,13 @@ The relevant types appear in this order:
   the leaf context as model state followed by one input. Its inputs are tensor values, not
   session handles. The stored output is a typed reference to an input or recorded node; it is not
   required to be the last node in the graph.
-- `TensorRef` is a temporary handle owned by an eager tape or low-level graph-recording session.
+- `Runtime.ValueRef` is a temporary handle owned by an eager tape or low-level graph-recording
+  session. It names a runtime value but does not contain tensor elements.
 - `NN.IR.Graph` is the op-tagged representation used for inspection, exchange, and verification.
 - `Runtime.Autograd.IRExec.ForwardGraph` executes the supported forward fragment of `NN.IR.Graph`.
   It deliberately has no public differentiation operation.
-- `NN.Backend.GraphKernelPlan` records selected kernel capsules; it is metadata, not an executable
-  graph.
+- `NN.Backend.IR.GraphKernelPlan` records selected kernel capsules; it is metadata, not an
+  executable graph.
 
 The transitions are named explicitly: `GraphSpec.Chain.toProgram` builds an executable
 TorchLean program, `nn.lowerToTypedGraph` records a model as a differentiable typed graph,

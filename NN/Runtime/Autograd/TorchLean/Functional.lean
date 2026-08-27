@@ -15,8 +15,8 @@ public import NN.Runtime.Autograd.TorchLean.Functional.ShapeOps
 
 TorchLean functional helpers in the style of `torch.*` building blocks.
 
-These are derived ops built from the small primitive `TorchLean.Ops` surface, so eager execution and
-typed graph construction share the same model and loss definitions.
+These are derived operations built from `Runtime.Autograd.Torch.Ops`, so eager execution and typed
+graph construction share the same model and loss definitions.
 
 For background, see the PyTorch documentation for `torch.nn.functional`, `torch.autograd`, and
 checkpointing, together with the standard reverse-mode AD references by Linnainmaa and by Griewank

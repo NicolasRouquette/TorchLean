@@ -33,7 +33,7 @@ public import NN.MLTheory.CROWN.Lyapunov.TwoStage.PipelineIIIAllInLean
 Unified verification CLI registry.
 
 The repository exposes several verification entry points: LiRPA-style bound checks, PINN
-certificate recomputation, α,β-CROWN leaf artifact checks, robustness margin certificates, ODE
+certificate recomputation, α,β-CROWN leaf artifact checks, logit-bound reports, ODE
 enclosure checks, and model-to-IR bound propagation workflows.
 
 This file defines a single dispatcher so users can run everything from:
@@ -164,8 +164,8 @@ def otherTools : List Tool :=
       description := "α,β-CROWN leaf artifact structural check"
       defaultArg := some NN.Verification.Cert.AbCrownLeafCert.defaultArtifactPath
       run := fun args => NN.Verification.Cert.AbCrownLeafCert.run args }
-  , { name := "margin-cert"
-      description := "logit-margin certificate check (bounds ⇒ certified label)"
+  , { name := "margin-report"
+      description := "check internal consistency of an exported logit-bound report"
       defaultArg := some NN.Verification.Robustness.MarginCertCLI.defaultPath
       run := fun args =>
         NN.Verification.Robustness.MarginCertCLI.run args }

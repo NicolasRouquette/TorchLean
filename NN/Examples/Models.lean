@@ -25,7 +25,7 @@ The source tree is grouped by what the example teaches:
 - `Supervised`: small supervised/tabular models.
 - `Vision`: CNN, ResNet, and ViT examples.
 - `Sequence`: recurrent, transformer, GPT, text, and Mamba examples.
-- `Generative`: autoencoder, VAE/VQ-VAE/GAN/diffusion/MAE examples.
+- `Generative`: autoencoder, latent-statistics, GAN, diffusion, and MAE examples.
 - `Operators`: operator-learning examples such as FNO.
 - `RL`: executable RL trainers (artifact viewers live under `NN.Examples.RL`).
 

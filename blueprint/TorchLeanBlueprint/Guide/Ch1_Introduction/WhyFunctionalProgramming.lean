@@ -76,7 +76,7 @@ import NN.API
 
 open TorchLean
 
-def model : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def model : nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 4,
     nn.relu,
@@ -227,9 +227,9 @@ def normalizeSketch
 ```
 
 The example shows the dependency shape rather than TorchLean's BatchNorm formula. The actual
-`Layer.forward` receives a `Mode`, and `Layer.updateBuffers` optionally returns updated
-parameter or buffer tensors. `nn.programWithMode` and `nn.updateBuffers` compose that behavior
-through a sequential model.
+`Layer.forward` receives a `Mode`, and `Layer.updateBuffers` optionally returns updated parameter or
+buffer tensors. Sequential models compose the forward functions, while `nn.updateBuffers` composes
+their state updates.
 
 Explicit state lets a graph export or theorem say whether it describes `.train` or `.eval`.
 

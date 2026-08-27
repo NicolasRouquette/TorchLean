@@ -150,36 +150,38 @@ instance : NeZero horizon := ⟨by decide⟩
 instance : NeZero nActions := ⟨by decide⟩
 
 /-- The observation tensor shape used by this run: `[..., stateDim]`. -/
-def obsShape : Shape := shape![stateDim]
+def obsShape : List Nat := [stateDim]
 
-def pfxBatch : Shape := shape![horizon]
+def pfxBatch : List Nat := [horizon]
 def sStateBatch : Shape := rl.ppo.StateBatchShape horizon obsShape
 def sLogitsBatch : Shape := rl.ppo.LogitsBatchShape horizon nActions
 def sScalarBatch : Shape := rl.ppo.ScalarBatchShape horizon
 def sValueBatch : Shape := rl.ppo.ValueBatchShape horizon
 
-def stateShape : Shape := obsShape
-def logitsShape : Shape := shape![nActions]
-def valueShape : Shape := shape![1]
+def stateShape : List Nat := obsShape
+def logitsShape : List Nat := [nActions]
+def valueShape : List Nat := [1]
 
 /-!
 ## Model (Actor + Critic)
 
-We use MLPs over RAM. For pixel observations you would typically use a CNN (see
-`NN.GraphSpec.Models.TorchLean.Cnn`) and wrap the environment with Atari preprocessing.
+We use MLPs over RAM. Pixel observations can instead use the arbitrary-rank convolutional model
+from `TorchLean.nn.models.cnn` after applying the appropriate Atari preprocessing.
 -/
 
 def modelCfg : nn.models.PPO.Config :=
   { obsDim := stateDim, hiddenDim := hiddenDim, nActions := nActions }
 
 /-- Construct the actor network as an MLP mapping RAM observations to action logits. -/
-def actorMk (leading : Shape) :
-    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim nActions)) :=
+def actorMk (leading : List Nat) :
+    nn.Builder (nn.Sequential (nn.models.PPO.inputShape modelCfg leading)
+      (nn.models.PPO.actorOutputShape modelCfg leading)) :=
   nn.models.PPO.actor modelCfg leading
 
 /-- Construct the critic network as an MLP mapping RAM observations to a scalar value estimate. -/
-def criticMk (leading : Shape) :
-    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim 1)) :=
+def criticMk (leading : List Nat) :
+    nn.Builder (nn.Sequential (nn.models.PPO.inputShape modelCfg leading)
+      (nn.models.PPO.criticOutputShape modelCfg leading)) :=
   nn.models.PPO.critic modelCfg leading
 
 /-!
@@ -189,8 +191,8 @@ We request RAM observations by passing `{"obs_type": "ram"}` to `gym.make` throu
 `--make-kwargs` option. The server also auto-registers `ale_py` when `envId` starts with `ALE/`.
 -/
 
-def makeKwargs : List (String × Lean.Json) :=
-  [("obs_type", .str "ram")]
+def makeKwargs : Array (String × Lean.Json) :=
+  #[("obs_type", .str "ram")]
 
 def contract : rl.boundary.Contract obsShape nActions :=
   { checkObsFinite := true
@@ -265,9 +267,9 @@ def main (args : List String) : IO UInt32 := do
         let seedActor ← rand.nextSeedGlobal
         let seedCritic ← rand.nextSeedGlobal
         let actorObs : nn.Sequential stateShape logitsShape :=
-          nn.build seedActor (actorMk .scalar)
+          nn.build seedActor (actorMk [])
         let criticObs : nn.Sequential stateShape valueShape :=
-          nn.build seedCritic (criticMk .scalar)
+          nn.build seedCritic (criticMk [])
         let actorRollout : nn.Sequential sStateBatch sLogitsBatch :=
           nn.build seedActor (actorMk pfxBatch)
         let criticRollout : nn.Sequential sStateBatch sValueBatch :=
@@ -291,7 +293,7 @@ def main (args : List String) : IO UInt32 := do
         let mut rngSeed : Nat := opts.seed
         let mut rngCounter : Nat := 0
 
-        let mut curve : rl.train.Curve := {}
+        let mut curve : Training.Curve := {}
 
         let mkSession : Nat → rl.session.CheckedSession obsShape nActions :=
           fun seed =>

@@ -8,8 +8,9 @@ module
 
 public import NN.API.Loss
 public import NN.API.Macros
-public import NN.API.Tensor
-public import NN.API.TensorPack
+public import NN.API.Runtime
+public import NN.Tensor
+public import NN.API.Sample
 public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.Runtime.PyTorch.Import.Core
@@ -194,8 +195,10 @@ def classifier {α : Type} [Context α] [DecidableEq Shape] :
     TorchLean.Runtime.Program α (paramShapes ++ [xShape]) yShape :=
   fun {m} _ _ =>
     fun w b x =>
-      (TorchLean.Ops.linear (m := m) (α := α) (inDim := inDim) (outDim := outDim) w b x
-        : m (TorchLean.Runtime.RefTy (m := m) (α := α) yShape))
+      (TorchLean.Runtime.linear
+        (m := m) (α := α)
+        (leading := []) (inDim := inDim) (outDim := outDim) w b x
+        : m (TorchLean.Runtime.ValueRef (m := m) (α := α) yShape))
 
 /-- Load linear classifier weights exported from PyTorch into a typed `LinearSpec`. -/
 def loadWeights (path : String) : IO (Spec.LinearSpec Float inDim outDim) := do
@@ -264,9 +267,9 @@ def runOnce {α : Type} [_root_.Context α] [BoundOps α] [DecidableEq Shape] [T
   let examples := examples0.take opts.max
 
   let params : _root_.TorchLean.TensorPack α paramShapes :=
-    TensorPack!
-      (TorchLean.Tensor.map cast linF.weights),
-      (TorchLean.Tensor.map cast linF.bias)
+    _root_.TorchLean.TensorPack!
+      (Spec.Tensor.map cast linF.weights),
+      (Spec.Tensor.map cast linF.bias)
 
   let lowered ←
     match NN.Verification.TorchLean.lowerForwardToIR
@@ -287,10 +290,10 @@ def runOnce {α : Type} [_root_.Context α] [BoundOps α] [DecidableEq Shape] [T
     report := { report with total := report.total + 1 }
 
     let yF : Tensor Float yShape := Spec.linearSpec (α := Float) linF xF
-    if (TorchLean.Metrics.argmaxVector? (α := Float) (n := outDim) yF).map Fin.val = some yNat then
+    if (TorchLean.Metrics.argmax? (α := Float) yF).map Fin.val = some yNat then
       report := { report with nominalOk := report.nominalOk + 1 }
 
-    let x0 : Tensor α xShape := TorchLean.Tensor.map cast xF
+    let x0 : Tensor α xShape := Spec.Tensor.map cast xF
     let loX := Tensor.clampSpec (Tensor.subSpec x0 rad) (0 : α) 1
     let hiX := Tensor.clampSpec (Tensor.addSpec x0 rad) (0 : α) 1
     let xB : FlatBox α :=

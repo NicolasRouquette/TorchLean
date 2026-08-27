@@ -31,21 +31,22 @@ variable {α : Type} [Context α]
 /-- Decode a single observation vector into a discrete symbol by taking `argmax`. -/
 def decodeObservation
   {nObservations : Nat} (hObservations : nObservations > 0)
-  (scores : Tensor α (.dim nObservations .scalar)) : Fin nObservations :=
-  argmaxVector hObservations scores
+  (scores : Tensor α [nObservations]) : Fin nObservations :=
+  Fin.cast (by simp [Shape.size])
+    (argmax (s := [nObservations]) (by simpa [Shape.size] using hObservations) scores)
 
 /-- Convert a tensor of per-symbol scores/probabilities into a discrete observation sequence by
 decoding each timestep with `argmax`. -/
 def decodeObservations
   {seqLen nObservations : Nat} (hObservations : nObservations > 0)
-  (scores : Tensor α (.dim seqLen (.dim nObservations .scalar))) :
-  Vector (Fin nObservations) seqLen :=
-  Vector.ofFn fun t => decodeObservation hObservations (get scores t)
+  (scores : Tensor α [seqLen, nObservations]) :
+  Tensor (Fin nObservations) [seqLen] :=
+  Spec.Tensor.ofFn fun t => decodeObservation hObservations (get scores t)
 
 /-- A one-step HMM module: map an observation distribution to a filtered state distribution. -/
 def hmm {nStates nObservations : Nat}
   (hObservations : nObservations > 0) (m : HMMSpec α nStates nObservations) :
-  Spec.Module α (.dim nObservations .scalar) (.dim nStates .scalar) :=
+  Spec.Module α ([nObservations]) ([nStates]) :=
 {
   forward := fun scores =>
     let observation := decodeObservation hObservations scores
@@ -57,21 +58,21 @@ def hmm {nStates nObservations : Nat}
 
 /-- Forward messages `α_t` for each timestep (scaled). -/
 def forwardMessages
-  {nStates nObservations : Nat}
+  {nStates nObservations length : Nat}
   (m : HMMSpec α nStates nObservations)
-  (observations : ObservationSeq nObservations) :
-  Vector (Tensor α (.dim nStates .scalar)) observations.length :=
+  (observations : ObservationSeq nObservations length) :
+  Tensor (Tensor α [nStates]) [length] :=
   (hmmForwardScaled (α := α) m observations).map (·.message)
 
 /-- Sequence module: compute forward messages `α_t` for each timestep. -/
 def hmmSequence {seqLen nStates nObservations : Nat}
   (hObservations : nObservations > 0) (m : HMMSpec α nStates nObservations) :
-  Spec.Module α (.dim seqLen (.dim nObservations .scalar)) (.dim seqLen (.dim nStates .scalar)) :=
+  Spec.Module α ([seqLen, nObservations]) ([seqLen, nStates]) :=
 {
   forward := fun scores =>
     let observations := decodeObservations hObservations scores
-    let messages := forwardMessages (α := α) m observations.toList
-    Tensor.dim fun t => messages.get ⟨t.val, by simp [t.isLt]⟩,
+    let messages := forwardMessages (α := α) m observations
+    Tensor.dim fun t => messages.getScalar t,
   kind := "HMMSequence",
   pythonExpr := "UnsupportedLayer(\"HMMSequence\", \"torch.distributions.Categorical\")"
 }
@@ -79,12 +80,13 @@ def hmmSequence {seqLen nStates nObservations : Nat}
 /-- Sequence module: compute prefix likelihoods `p(o₀:t)` for each timestep `t`. -/
 def hmmPrefixLikelihoods {seqLen nStates nObservations : Nat}
   (hObservations : nObservations > 0) (m : HMMSpec α nStates nObservations) :
-  Spec.Module α (.dim seqLen (.dim nObservations .scalar)) (.dim seqLen .scalar) :=
+  Spec.Module α ([seqLen, nObservations]) ([seqLen]) :=
 {
   forward := fun scores =>
     let observations := decodeObservations hObservations scores
     Tensor.dim (fun t =>
-      let prefixObservations := observations.toList.take (t.val + 1)
+      let prefixObservations : ObservationSeq nObservations (t.val + 1) :=
+        Tensor.ofFn fun i => observations.getScalar ⟨i.val, by grind⟩
       Tensor.scalar (hmmForwardSpec (α := α) m prefixObservations)
     ),
   kind := "HMMPrefixLikelihoods",
@@ -94,13 +96,13 @@ def hmmPrefixLikelihoods {seqLen nStates nObservations : Nat}
 /-- Sequence module: normalized state probabilities at each timestep. -/
 def hmmStateProbabilities {seqLen nStates nObservations : Nat}
   (hObservations : nObservations > 0) (m : HMMSpec α nStates nObservations) :
-  Spec.Module α (.dim seqLen (.dim nObservations .scalar)) (.dim seqLen (.dim nStates .scalar)) :=
+  Spec.Module α ([seqLen, nObservations]) ([seqLen, nStates]) :=
 {
   forward := fun scores =>
     let observations := decodeObservations hObservations scores
-    let messages := forwardMessages (α := α) m observations.toList
+    let messages := forwardMessages (α := α) m observations
     Tensor.dim (fun t =>
-      let message := messages.get ⟨t.val, by simp [t.isLt]⟩
+      let message := messages.getScalar t
       let total := sumSpec message
       if total > 0 then
         Tensor.dim (fun s =>
@@ -117,12 +119,14 @@ def hmmStateProbabilities {seqLen nStates nObservations : Nat}
 /-- Sequence module: apply the one-step update independently at each timestep. -/
 def hmmIndependent {seqLen nStates nObservations : Nat}
   (hObservations : nObservations > 0) (m : HMMSpec α nStates nObservations) :
-  Spec.Module α (.dim seqLen (.dim nObservations .scalar)) (.dim seqLen (.dim nStates .scalar)) :=
+  Spec.Module α ([seqLen, nObservations]) ([seqLen, nStates]) :=
 {
   forward := fun scores =>
     Tensor.dim (fun t =>
       let observation := decodeObservation hObservations (get scores t)
-      let likelihood := hmmForwardSpec (α := α) m [observation]
+      let oneObservation : ObservationSeq nObservations 1 :=
+        Tensor.ofFn fun _ => observation
+      let likelihood := hmmForwardSpec (α := α) m oneObservation
       Tensor.dim (fun _s => Tensor.scalar likelihood)
     ),
   kind := "HMMIndependent",

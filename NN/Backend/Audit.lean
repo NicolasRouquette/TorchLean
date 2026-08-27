@@ -70,21 +70,21 @@ end KernelAudit
 
 /-- Audit view of selected kernel capsules. -/
 structure KernelPlanAudit where
-  kernels : List KernelAudit
+  kernels : Array KernelAudit
   deriving DecidableEq, Repr
 
 namespace KernelPlanAudit
 
 /-- Trust levels selected by the plan, in plan order. -/
-def trustLevels (a : KernelPlanAudit) : List TrustLevel :=
+def trustLevels (a : KernelPlanAudit) : Array TrustLevel :=
   a.kernels.map (·.trustLevel)
 
 /-- Capsule names selected by the plan, in plan order. -/
-def capsuleNames (a : KernelPlanAudit) : List String :=
+def capsuleNames (a : KernelPlanAudit) : Array String :=
   a.kernels.map (·.capsuleName)
 
 /-- Operation names whose selected capsule is trusted external. -/
-def trustedExternalOps (a : KernelPlanAudit) : List String :=
+def trustedExternalOps (a : KernelPlanAudit) : Array String :=
   (a.kernels.filter KernelAudit.isTrustedExternal).map (·.op.name)
 
 /-- Whether the plan crosses any trusted external boundary. -/
@@ -104,7 +104,7 @@ def hasTrustedExternal (p : KernelPlan) : Bool :=
   p.audit.hasTrustedExternal
 
 /-- Operation names whose selected capsules are trusted external. -/
-def trustedExternalOps (p : KernelPlan) : List String :=
+def trustedExternalOps (p : KernelPlan) : Array String :=
   p.audit.trustedExternalOps
 
 end KernelPlan

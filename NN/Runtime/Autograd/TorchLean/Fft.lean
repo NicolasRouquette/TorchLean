@@ -11,7 +11,7 @@ public import NN.Runtime.Autograd.TorchLean.NN
 import Mathlib.Algebra.Order.Algebra
 
 /-!
-# FFT (1D) building blocks
+# Fourier transforms along a selected axis
 
 TorchLean’s layer/model definitions are scalar-polymorphic: a model runs over whatever scalar type
 $\alpha$ you instantiate it with (for example `Float`, `IEEE32Exec`, or $\mathbb{R}$). A “real FFT”
@@ -47,7 +47,7 @@ open Tensor
 
 namespace NN
 
-namespace FFT1D
+namespace FFT
 
 /-!
 We build twiddle factors using only the `Context` interface:
@@ -76,7 +76,7 @@ def twiddleInv {α : Type} [Context α] (n : Nat) (j k : Nat) : α :=
 
 /-- DFT matrix $F\in\mathbb{C}^{n\times n}$ with entries $F_{k,j}=e^{-2\pi i jk/n}$. -/
 def dftMatrix {α : Type} [Context α] (n : Nat) :
-    Tensor α (.dim n (.dim n .scalar)) :=
+    Tensor α [n, n] :=
   Tensor.dim (fun k =>
     Tensor.dim (fun j =>
       Tensor.scalar (twiddle (α := α) (n := n) (j := j.val) (k := k.val))))
@@ -84,27 +84,28 @@ def dftMatrix {α : Type} [Context α] (n : Nat) :
 /-- Inverse DFT matrix $F^{-1}\in\mathbb{C}^{n\times n}$ with entries
 $(F^{-1})_{j,k}=e^{2\pi i jk/n}/n$. -/
 def idftMatrix {α : Type} [Context α] (n : Nat) :
-    Tensor α (.dim n (.dim n .scalar)) :=
+    Tensor α [n, n] :=
   Tensor.dim (fun j =>
     Tensor.dim (fun k =>
       Tensor.scalar (twiddleInv (α := α) (n := n) (j := j.val) (k := k.val) / (n : α))))
 
+namespace Internal
+
 /--
-FFT along the outermost axis of a tensor.
+Implementation of FFT along the outermost axis of a tensor.
 
 This applies the DFT to the leading dimension `n` of a shape `dim n rest` by:
 1. reshaping to a matrix `n × (numel rest)`,
 2. left-multiplying by the `n×n` DFT matrix, then
 3. reshaping back.
 
-This is the most generally useful primitive for building N-D FFTs: you can permute an axis to the
-front, call `fftLeadingAxis`, then permute back.
+The public `fftAtDepth` operation moves an arbitrary axis here and restores the original axis order.
 -/
 def fftLeadingAxis (n : Nat) (rest : Shape) :
-    Layer (.dim n rest) (.dim n rest) :=
-  let sIn : Shape := .dim n rest
+    Layer (rest.prependDim n) (rest.prependDim n) :=
+  let sIn : Shape := rest.prependDim n
   let cols : Nat := Spec.Shape.size rest
-  let sMat : Shape := .dim n (.dim cols .scalar)
+  let sMat : Shape := [n, cols]
   have hSz : Spec.Shape.size sIn = Spec.Shape.size sMat := by
     simp [Spec.Shape.size, sIn, sMat, cols]
   { stateShapes := []
@@ -114,24 +115,21 @@ def fftLeadingAxis (n : Nat) (rest : Shape) :
         fun x =>
           (show m (RefTy (m := m) (α := α) sIn) from do
             let xMat ← TorchLean.reshape (m := m) (α := α) (s₁ := sIn) (s₂ := sMat) x hSz
-            let f : Tensor α (.dim n (.dim n .scalar)) := dftMatrix (α := α) n
-            let fR ← TorchLean.const (m := m) (α := α) (s := .dim n (.dim n .scalar)) f
+            let f : Tensor α [n, n] := dftMatrix (α := α) n
+            let fR ← TorchLean.const (m := m) (α := α) (s := [n, n]) f
             let yMat ←
-              TorchLean.mm (m := m) (α := α)
+              TorchLean.matmul (m := m) (α := α)
+                (batchA := .scalar) (batchB := .scalar) (batch := .scalar)
                 (mDim := n) (nDim := n) (pDim := cols) fR xMat
             TorchLean.reshape (m := m) (α := α) (s₁ := sMat) (s₂ := sIn) yMat hSz.symm)
   }
 
-/--
-Inverse FFT along the outermost axis of a tensor (uses the inverse DFT matrix).
-
-See `fftLeadingAxis` for the implementation strategy.
--/
+/-- Implementation of inverse FFT along the outermost axis, using the inverse DFT matrix. -/
 def ifftLeadingAxis (n : Nat) (rest : Shape) :
-    Layer (.dim n rest) (.dim n rest) :=
-  let sIn : Shape := .dim n rest
+    Layer (rest.prependDim n) (rest.prependDim n) :=
+  let sIn : Shape := rest.prependDim n
   let cols : Nat := Spec.Shape.size rest
-  let sMat : Shape := .dim n (.dim cols .scalar)
+  let sMat : Shape := [n, cols]
   have hSz : Spec.Shape.size sIn = Spec.Shape.size sMat := by
     simp [Spec.Shape.size, sIn, sMat, cols]
   { stateShapes := []
@@ -141,15 +139,14 @@ def ifftLeadingAxis (n : Nat) (rest : Shape) :
         fun x =>
           (show m (RefTy (m := m) (α := α) sIn) from do
             let xMat ← TorchLean.reshape (m := m) (α := α) (s₁ := sIn) (s₂ := sMat) x hSz
-            let f : Tensor α (.dim n (.dim n .scalar)) := idftMatrix (α := α) n
-            let fR ← TorchLean.const (m := m) (α := α) (s := .dim n (.dim n .scalar)) f
+            let f : Tensor α [n, n] := idftMatrix (α := α) n
+            let fR ← TorchLean.const (m := m) (α := α) (s := [n, n]) f
             let yMat ←
-              TorchLean.mm (m := m) (α := α)
+              TorchLean.matmul (m := m) (α := α)
+                (batchA := .scalar) (batchB := .scalar) (batch := .scalar)
                 (mDim := n) (nDim := n) (pDim := cols) fR xMat
             TorchLean.reshape (m := m) (α := α) (s₁ := sMat) (s₂ := sIn) yMat hSz.symm)
   }
-
-namespace Internal
 
 /-- Apply a sequence of `swapAdjacentAtDepth` operations (shape-indexed permutation primitive). -/
 def permuteBySwaps {α : Type} [Context α] [DecidableEq Shape]
@@ -167,7 +164,7 @@ end Internal
 FFT along an axis at a given depth (0-based from the outermost).
 
 This is implemented by swapping the target axis outward (one adjacent swap per step) until it
-reaches depth `0`, applying `fftLeadingAxis`, then swapping back.
+reaches depth `0`, applying the outer-axis implementation, then swapping back.
 
 If $\mathtt{depth}\ge\operatorname{rank}(s)$, this layer is the identity.
 -/
@@ -195,7 +192,8 @@ def fftAtDepth : {s : Shape} → Nat → Layer s s
                     else
                       pure x
                 | ⟨.dim nDim rest, x0⟩ =>
-                    let y0 ← (fftLeadingAxis (n := nDim) (rest := rest)).forward mode (α := α) (m := m) x0
+                    let y0 ← (Internal.fftLeadingAxis (n := nDim) (rest := rest)).forward mode
+                      (α := α) (m := m) x0
                     let yFront : Σ s' : Shape, RefTy (m := m) (α := α) s' :=
                       ⟨.dim nDim rest, y0⟩
                     let yBack ← Internal.permuteBySwaps (α := α) (m := m) yFront swapsBack
@@ -228,7 +226,8 @@ def ifftAtDepth : {s : Shape} → Nat → Layer s s
                     else
                       pure x
                 | ⟨.dim nDim rest, x0⟩ =>
-                    let y0 ← (ifftLeadingAxis (n := nDim) (rest := rest)).forward mode (α := α) (m := m) x0
+                    let y0 ← (Internal.ifftLeadingAxis (n := nDim) (rest := rest)).forward mode
+                      (α := α) (m := m) x0
                     let yFront : Σ s' : Shape, RefTy (m := m) (α := α) s' :=
                       ⟨.dim nDim rest, y0⟩
                     let yBack ← Internal.permuteBySwaps (α := α) (m := m) yFront swapsBack
@@ -238,7 +237,7 @@ def ifftAtDepth : {s : Shape} → Nat → Layer s s
                       pure x)
     }
 
-end FFT1D
+end FFT
 
 end NN
 end TorchLean

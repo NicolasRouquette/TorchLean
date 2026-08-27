@@ -7,13 +7,18 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Neural.Builders
+public import NN.API.Runtime
 
 /-!
-# Leading-Shape Model Operations
+# Models over Leading Dimensions
 
-Adapters for applying a layer or sequential model independently over arbitrary leading dimensions.
-A conventional batch is the special case `leading = .dim batch .scalar`; the same definitions also
-support several leading axes without introducing another tensor or model type.
+This module lifts layers and sequential models over any number of leading tensor dimensions. A
+batch is the common case `leading = [batch]`; shapes such as `[batch, time]` use the same machinery.
+
+There are two distinct operations. `adaptLeadingShape` flattens the leading dimensions for a layer
+that already accepts one outer dimension. `mapEach` applies a model separately at every leading
+index. Keeping that distinction explicit matters for stateful layers, whose buffer updates may
+depend on whether the leading positions are processed together or one at a time.
 -/
 
 @[expose] public section
@@ -23,13 +28,14 @@ namespace nn
 namespace Internal
 
 /--
-Expose a runtime layer over an arbitrary leading shape.
+Reshape arbitrary leading dimensions into the single outer dimension expected by `layer`.
 
-The runtime layer sees one flattened leading dimension. This adapter changes only the input and
-output views; parameters, buffer updates, and the underlying forward program are preserved.
+For an input of shape `leading.concat σ`, the layer receives shape
+`[leading.size].concat σ`; its output is then reshaped from `[leading.size].concat τ` to
+`leading.concat τ`. The adapter reuses the layer's parameters and buffer-update function.
 -/
 def adaptLeadingShape (leading : Spec.Shape) {σ τ : Spec.Shape}
-    (layer : Layer (.dim (Spec.Shape.size leading) σ) (.dim (Spec.Shape.size leading) τ)) :
+    (layer : Layer (σ.prependDim leading.size) (τ.prependDim leading.size)) :
     Layer (leading.concat σ) (leading.concat τ) :=
   { kind := layer.kind
     stateShapes := layer.stateShapes
@@ -42,37 +48,35 @@ def adaptLeadingShape (leading : Spec.Shape) {σ τ : Spec.Shape}
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
         _root_.Runtime.Autograd.Torch.CurriedRef.curry
-          (Ref := fun shape => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) shape)
+          (Ref := fun shape => _root_.TorchLean.Runtime.ValueRef (m := m) (α := α) shape)
           (ss := layer.stateShapes ++ [leading.concat σ])
-          (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (leading.concat τ)))
+          (β := m (_root_.TorchLean.Runtime.ValueRef (m := m) (α := α) (leading.concat τ)))
           (fun args => do
             let (ps, x) :=
               _root_.Runtime.Autograd.Torch.RefList.splitLast
                 (Ref := fun shape =>
-                  _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) shape)
+                  _root_.TorchLean.Runtime.ValueRef (m := m) (α := α) shape)
                 (ss := layer.stateShapes) (τ := leading.concat σ) args
             let xBatch ←
               _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-                (s₁ := leading.concat σ) (s₂ := .dim (Spec.Shape.size leading) σ)
+                (s₁ := leading.concat σ) (s₂ := σ.prependDim leading.size)
                 x (by simp [Spec.Shape.size_concat, Spec.Shape.size])
             let yBatch ←
               _root_.Runtime.Autograd.Torch.CurriedRef.uncurry
                 (Ref := fun shape =>
-                  _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) shape)
-                (ss := layer.stateShapes ++ [.dim (Spec.Shape.size leading) σ])
-                (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
-                  (.dim (Spec.Shape.size leading) τ)))
+                  _root_.TorchLean.Runtime.ValueRef (m := m) (α := α) shape)
+                (ss := layer.stateShapes ++ [σ.prependDim leading.size])
+                (β := m (_root_.TorchLean.Runtime.ValueRef (m := m) (α := α)
+                  (τ.prependDim leading.size)))
                 (layer.forward mode (α := α) (m := m))
                 (_root_.Runtime.Autograd.Torch.RefList.append ps (.cons xBatch .nil))
             _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-              (s₁ := .dim (Spec.Shape.size leading) τ) (s₂ := leading.concat τ)
+              (s₁ := τ.prependDim leading.size) (s₂ := leading.concat τ)
               yBatch (by simp [Spec.Shape.size_concat, Spec.Shape.size])) }
 
-namespace Implementation
-
-/-- Apply one layer independently at every position of a leading axis. -/
-def mapLayerOverAxis (n : Nat) {σ τ : Spec.Shape} (layer : Layer σ τ) :
-    Layer (.dim n σ) (.dim n τ) :=
+/-- Apply `layer` separately at every position of one new leading dimension. -/
+private def mapLayerOverAxis (n : Nat) {σ τ : Spec.Shape} (layer : Layer σ τ) :
+    Layer (σ.prependDim n) (τ.prependDim n) :=
   { kind := layer.kind
     stateShapes := layer.stateShapes
     initState := layer.initState
@@ -85,34 +89,38 @@ def mapLayerOverAxis (n : Nat) {σ τ : Spec.Shape} (layer : Layer σ τ) :
     forward := fun mode {α} _ _ =>
       fun {m} _ _ =>
         _root_.Runtime.Autograd.Torch.CurriedRef.curry
-          (Ref := fun shape => _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) shape)
-          (ss := layer.stateShapes ++ [.dim n σ])
-          (β := m (_root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim n τ)))
+          (Ref := fun shape => _root_.TorchLean.Runtime.ValueRef (m := m) (α := α) shape)
+          (ss := layer.stateShapes ++ [σ.prependDim n])
+          (β := m (_root_.TorchLean.Runtime.ValueRef (m := m) (α := α)
+            (τ.prependDim n)))
           (fun args => do
             let (ps, xBatch) :=
               _root_.Runtime.Autograd.Torch.RefList.splitLast
                 (Ref := fun shape =>
-                  _root_.Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) shape)
-                (ss := layer.stateShapes) (τ := .dim n σ) args
-            _root_.Runtime.Autograd.Torch.mapLeadingAxis (m := m) (α := α)
+                  _root_.TorchLean.Runtime.ValueRef (m := m) (α := α) shape)
+                (ss := layer.stateShapes) (τ := σ.prependDim n) args
+            _root_.Runtime.Autograd.Torch.mapOuterAxis (m := m) (α := α)
               (fun x => layer.forwardRef (α := α) (m := m) mode ps x)
               xBatch) }
 
-/-- Apply a sequential model independently at every position of a leading axis. -/
-def mapModelOverAxis (n : Nat) {σ τ : Spec.Shape} :
-    Sequential σ τ → Sequential (.dim n σ) (.dim n τ)
-  | .id shape => .id (.dim n shape)
+/-- Apply every layer of `model` over one new leading dimension. -/
+private def mapModelOverAxis (n : Nat) {σ τ : Spec.Shape} :
+    Sequential σ τ → Sequential (σ.prependDim n) (τ.prependDim n)
+  | .id shape => .id (shape.prependDim n)
   | .cons layer rest => .cons (mapLayerOverAxis n layer) (mapModelOverAxis n rest)
 
-end Implementation
+/--
+Apply a sequential model separately at every index of `leading`.
 
-/-- Apply a model independently over arbitrary leading dimensions. -/
-def mapLeading (leading : Spec.Shape) {σ τ : Spec.Shape} :
-    Sequential σ τ → Sequential (leading.concat σ) (leading.concat τ)
-  | model =>
-      match leading with
-      | .scalar => model
-      | .dim n rest => Implementation.mapModelOverAxis n (mapLeading rest model)
+All positions use the same model parameters. Buffer updates are evaluated in lexicographic order
+over the leading indices.
+-/
+opaque mapEach (leading : Spec.Shape) {σ τ : Spec.Shape} :
+    Sequential σ τ → Sequential (leading.concat σ) (leading.concat τ) :=
+  fun model =>
+    match leading with
+    | .scalar => model
+    | .dim n rest => mapModelOverAxis n (mapEach rest model)
 
 end Internal
 end nn

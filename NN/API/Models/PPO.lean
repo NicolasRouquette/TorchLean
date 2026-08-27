@@ -36,19 +36,19 @@ structure Config where
 deriving Repr
 
 /-- Observation shape with arbitrary leading axes. -/
-abbrev inputShape (cfg : Config) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.obsDim
+abbrev inputShape (cfg : Config) (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.obsDim]
 
 /-- Action-logit shape with the same leading axes as the observations. -/
-abbrev actorOutputShape (cfg : Config) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.nActions
+abbrev actorOutputShape (cfg : Config) (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.nActions]
 
 /-- Value-estimate shape with the same leading axes as the observations. -/
-abbrev criticOutputShape (_cfg : Config) (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim 1
+abbrev criticOutputShape (_cfg : Config) (leading : List Nat := []) : List Nat :=
+  leading ++ [1]
 
 /-- Actor MLP mapping observations to action logits. -/
-def actor (cfg : Config) (leading : Spec.Shape := .scalar) :
+def actor (cfg : Config) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (inputShape cfg leading) (actorOutputShape cfg leading)) :=
   nn.Sequential![
     linear cfg.obsDim cfg.hiddenDim (leading := leading),
@@ -57,7 +57,7 @@ def actor (cfg : Config) (leading : Spec.Shape := .scalar) :
   ]
 
 /-- Critic MLP mapping observations to a scalar value estimate. -/
-def critic (cfg : Config) (leading : Spec.Shape := .scalar) :
+def critic (cfg : Config) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (inputShape cfg leading) (criticOutputShape cfg leading)) :=
   nn.Sequential![
     linear cfg.obsDim cfg.hiddenDim (leading := leading),

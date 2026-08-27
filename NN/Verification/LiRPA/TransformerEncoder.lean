@@ -50,25 +50,25 @@ def buildGraph : Graph :=
   let nModel := 4
   let scoresDim := 5
   let nHidden := 6
-  let inputNode : Node := { id := 0, parents := [], kind := .input, outShape := .dim nModel .scalar }
-  let scoreNode : Node := { id := 1, parents := [0], kind := .linear, outShape := .dim scoresDim .scalar }
+  let inputNode : Node := { id := 0, parents := #[], kind := .input, outShape := .dim nModel .scalar }
+  let scoreNode : Node := { id := 1, parents := #[0], kind := .linear, outShape := .dim scoresDim .scalar }
   let softmaxNode : Node :=
-    { id := 2, parents := [1], kind := .softmax (axis := 0), outShape := .dim scoresDim .scalar }
-  let attentionValueNode : Node := { id := 3, parents := [2], kind := .matmul, outShape := .dim nModel .scalar }
+    { id := 2, parents := #[1], kind := .softmax (axis := 0), outShape := .dim scoresDim .scalar }
+  let attentionValueNode : Node := { id := 3, parents := #[2], kind := .matmul, outShape := .dim nModel .scalar }
   let attentionResidualNode : Node :=
-    { id := 4, parents := [0, 3], kind := .add, outShape := .dim nModel .scalar }
+    { id := 4, parents := #[0, 3], kind := .add, outShape := .dim nModel .scalar }
   let firstLayerNormNode : Node :=
-    { id := 5, parents := [4], kind := .layernorm (axis := 0), outShape := .dim nModel .scalar }
+    { id := 5, parents := #[4], kind := .layernorm (axis := 0), outShape := .dim nModel .scalar }
   let feedForwardHiddenNode : Node :=
-    { id := 6, parents := [5], kind := .linear, outShape := .dim nHidden .scalar }
+    { id := 6, parents := #[5], kind := .linear, outShape := .dim nHidden .scalar }
   let feedForwardReluNode : Node :=
-    { id := 7, parents := [6], kind := .relu, outShape := .dim nHidden .scalar }
+    { id := 7, parents := #[6], kind := .relu, outShape := .dim nHidden .scalar }
   let feedForwardOutputNode : Node :=
-    { id := 8, parents := [7], kind := .linear, outShape := .dim nModel .scalar }
+    { id := 8, parents := #[7], kind := .linear, outShape := .dim nModel .scalar }
   let feedForwardResidualNode : Node :=
-    { id := 9, parents := [5, 8], kind := .add, outShape := .dim nModel .scalar }
+    { id := 9, parents := #[5, 8], kind := .add, outShape := .dim nModel .scalar }
   let finalLayerNormNode : Node :=
-    { id := 10, parents := [9], kind := .layernorm (axis := 0), outShape := .dim nModel .scalar }
+    { id := 10, parents := #[9], kind := .layernorm (axis := 0), outShape := .dim nModel .scalar }
   { nodes :=
       #[ inputNode
        , scoreNode
@@ -85,21 +85,21 @@ def buildGraph : Graph :=
 /-- Seed deterministic parameters for the `.linear` / `.matmul` nodes in `buildGraph`. -/
 def seedParamsFloat : ParamStore Float :=
   let nModel := 4; let scoresDim := 5; let nHidden := 6
-  let scoreWeight : Tensor Float (.dim scoresDim (.dim nModel .scalar)) :=
+  let scoreWeight : Tensor Float [scoresDim, nModel] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (1 + (i.val + 2*j.val)))))
-  let scoreBias : Tensor Float (.dim scoresDim .scalar) := Tensor.dim (fun i => Tensor.scalar (0.1 *
+  let scoreBias : Tensor Float [scoresDim] := Tensor.dim (fun i => Tensor.scalar (0.1 *
     Float.ofNat i.val))
-  let valueWeight : Tensor Float (.dim nModel (.dim scoresDim .scalar)) :=
+  let valueWeight : Tensor Float [nModel, scoresDim] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (2 + (i.val + j.val)))))
-  let feedForwardHiddenWeight : Tensor Float (.dim nHidden (.dim nModel .scalar)) :=
+  let feedForwardHiddenWeight : Tensor Float [nHidden, nModel] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (1 + ((i.val + j.val) %
       3)))))
-  let feedForwardHiddenBias : Tensor Float (.dim nHidden .scalar) := Tensor.dim (fun i => Tensor.scalar (0.05 *
+  let feedForwardHiddenBias : Tensor Float [nHidden] := Tensor.dim (fun i => Tensor.scalar (0.05 *
     Float.ofNat i.val))
-  let feedForwardOutputWeight : Tensor Float (.dim nModel (.dim nHidden .scalar)) :=
+  let feedForwardOutputWeight : Tensor Float [nModel, nHidden] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (2 + ((i.val + j.val) %
       4)))))
-  let feedForwardOutputBias : Tensor Float (.dim nModel .scalar) := Tensor.dim (fun i => Tensor.scalar (0.02 *
+  let feedForwardOutputBias : Tensor Float [nModel] := Tensor.dim (fun i => Tensor.scalar (0.02 *
     Float.ofNat i.val))
   let emptyStore : ParamStore Float := {}
   let withScoreLinear :=

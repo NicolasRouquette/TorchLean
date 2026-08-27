@@ -70,7 +70,7 @@ lemma sumCLM_apply {n : Nat} (x : Vec n) :
 
 /-- Sum all entries of a context tensor into a scalar tensor. -/
 def sum {Γ : List Shape} {s : Shape} (idx : Idx Γ s) : Node Γ Shape.scalar :=
-  Node.ofVec (Γ := Γ) (τ := Shape.scalar)
+  Node.ofFn (Γ := Γ) (τ := Shape.scalar)
     (f := fun x =>
       vecOfFun (n := Spec.Shape.size Shape.scalar) fun _ : Fin (Spec.Shape.size Shape.scalar) =>
         (sumCLM (n := Spec.Shape.size s)) (CtxVec.get (Γ := Γ) (s := s) idx x))
@@ -163,7 +163,7 @@ def sumFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s) :
         (Node.forwardVec (Γ := Γ) (τ := Shape.scalar) (sum (Γ := Γ) (s := s) idx)) = fun x : CtxVec
           Γ => D x := by
       funext x
-      simp only [sum, Node.forwardVec_ofVec, D, ContinuousLinearMap.comp_apply,
+      simp only [sum, Node.forwardVec_ofFn, D, ContinuousLinearMap.comp_apply,
         CtxVec.getCLM_apply]
       apply PiLp.ext
       intro i
@@ -171,7 +171,7 @@ def sumFderiv {Γ : List Shape} {s : Shape} (idx : Idx Γ s) :
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   jvp_eq := by
     intro xV dxV
-    simp only [sum, Node.jvpVec_ofVec, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
+    simp only [sum, Node.jvpVec_ofFn, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply]
     apply PiLp.ext
     intro i
     simp only [vecOfFun_ofLp, vecScalarCLM_ofLp] }
@@ -232,7 +232,7 @@ def broadcastToCLM {s₁ s₂ : Shape} (cb : Shape.CanBroadcastTo s₁ s₂) :
 /-- Source index obtained by deleting coordinate `axis` from an index into `s`. -/
 def afterSumIndex : (s : Shape) → (axis : Nat) →
     Fin (Spec.Shape.size s) → Fin (Spec.Shape.size (shapeAfterSum s axis))
-  | .scalar, _, _ => ⟨0, by simp [Spec.Shape.size, shapeAfterSum]⟩
+  | .scalar, _, _ => ⟨0, by simp [Spec.Shape.size]⟩
   | .dim n inner, 0, j => j.modNat (m := n) (n := Spec.Shape.size inner)
   | .dim n inner, Nat.succ axis, j =>
       let jOuter : Fin n := j.divNat (m := n) (n := Spec.Shape.size inner)
@@ -272,7 +272,7 @@ end Broadcast
 def broadcastTo {Γ : List Shape} {s₁ s₂ : Shape} (idx : Idx Γ s₁) (cb : Shape.CanBroadcastTo s₁ s₂)
   :
     Node Γ s₂ :=
-  Node.ofVec (Γ := Γ) (τ := s₂)
+  Node.ofFn (Γ := Γ) (τ := s₂)
     (f := fun xV => Broadcast.broadcastToVec (s₁ := s₁) (s₂ := s₂) cb (CtxVec.get (Γ := Γ) (s := s₁)
       idx xV))
     (jvp := fun _xV dxV =>
@@ -318,13 +318,13 @@ def broadcastToFderiv {Γ : List Shape} {s₁ s₂ : Shape} (idx : Idx Γ s₁) 
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [broadcastTo, Node.forwardVec_ofVec, D, Broadcast.broadcastToCLM_apply,
+      simp [broadcastTo, Node.forwardVec_ofFn, D, Broadcast.broadcastToCLM_apply,
         CtxVec.getCLM_apply,
         ContinuousLinearMap.comp_apply]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   jvp_eq := by
     intro xV dxV
-    simp [broadcastTo, Node.jvpVec_ofVec, Broadcast.broadcastToCLM_apply, CtxVec.getCLM_apply,
+    simp [broadcastTo, Node.jvpVec_ofFn, Broadcast.broadcastToCLM_apply, CtxVec.getCLM_apply,
       ContinuousLinearMap.comp_apply] }
 
 /-- Sum reduction along `axis` (linear; adjoint is broadcast back). -/
@@ -332,7 +332,7 @@ def reduceSum {Γ : List Shape} {s : Shape} (axis : Nat)
     [_valid : Shape.HasNonemptyAxis axis s] [_wf : Shape.WellFormed s]
     (idx : Idx Γ s) : Node Γ (shapeAfterSum s axis) :=
   let B := Broadcast.afterSumCLM s axis
-  Node.ofVec (Γ := Γ) (τ := shapeAfterSum s axis)
+  Node.ofFn (Γ := Γ) (τ := shapeAfterSum s axis)
     (f := fun xV => (B.adjoint) (CtxVec.get (Γ := Γ) (s := s) idx xV))
     (jvp := fun _xV dxV => (B.adjoint) (CtxVec.get (Γ := Γ) (s := s) idx dxV))
     (vjp := fun _xV δV => CtxVec.single (Γ := Γ) (s := s) idx (B δV))
@@ -372,11 +372,11 @@ by
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [reduceSum, Node.forwardVec_ofVec, D, B, CtxVec.getCLM_apply,
+      simp [reduceSum, Node.forwardVec_ofFn, D, B, CtxVec.getCLM_apply,
         ContinuousLinearMap.comp_apply]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
-    simp [reduceSum, Node.jvpVec_ofVec, D, B, CtxVec.getCLM_apply,
+    simp [reduceSum, Node.jvpVec_ofFn, D, B, CtxVec.getCLM_apply,
       ContinuousLinearMap.comp_apply]
 
 /-- Mean reduction along `axis` (linear; adjoint is broadcast+scale). -/
@@ -387,7 +387,7 @@ def reduceMean {Γ : List Shape} {s : Shape} (axis : Nat)
   letI : Shape.AxisInBounds axis s := valid.proof.toAxisInBounds
   let denomNat : Nat := Shape.axisSize s axis
   let c : ℝ := (1 : ℝ) / (denomNat : ℝ)
-  Node.ofVec (Γ := Γ) (τ := shapeAfterSum s axis)
+  Node.ofFn (Γ := Γ) (τ := shapeAfterSum s axis)
     (f := fun xV => c • ((B.adjoint) (CtxVec.get (Γ := Γ) (s := s) idx xV)))
     (jvp := fun _xV dxV => c • ((B.adjoint) (CtxVec.get (Γ := Γ) (s := s) idx dxV)))
     (vjp := fun _xV δV => CtxVec.single (Γ := Γ) (s := s) idx (c • (B δV)))
@@ -435,10 +435,10 @@ by
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [reduceMean, Node.forwardVec_ofVec, D, B, c, denomNat, CtxVec.getCLM_apply]
+      simp [reduceMean, Node.forwardVec_ofFn, D, B, c, denomNat, CtxVec.getCLM_apply]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
-    simp [reduceMean, Node.jvpVec_ofVec, D, B, c, denomNat, CtxVec.getCLM_apply]
+    simp [reduceMean, Node.jvpVec_ofFn, D, B, c, denomNat, CtxVec.getCLM_apply]
 
 -- ---------------------------------------------------------------------------
 -- Concatenation
@@ -469,7 +469,7 @@ def concatLeadingAxis {Γ : List Shape} {n m : Nat} {s : Shape}
   let hsz :
       Spec.Shape.size (.dim n s) + Spec.Shape.size (.dim m s) = Spec.Shape.size (.dim (n + m) s) := by
         simp [Spec.Shape.size, Nat.add_mul]
-  Node.ofVec (Γ := Γ) (τ := .dim (n + m) s)
+  Node.ofFn (Γ := Γ) (τ := .dim (n + m) s)
     (f := fun xV =>
       castVec hsz (appendVec (m := Spec.Shape.size (.dim n s)) (n := Spec.Shape.size (.dim m s))
         (CtxVec.get (Γ := Γ) (s := .dim n s) a xV)
@@ -585,13 +585,13 @@ def concatLeadingAxisFderiv {Γ : List Shape} {n m : Nat} {s : Shape}
         fun x : CtxVec Γ => D x := by
       funext x
       -- Unfold and normalize casts/append.
-      simp [concatLeadingAxis, Node.forwardVec_ofVec, D, Dcast, Dapp, Dpair,
+      simp [concatLeadingAxis, Node.forwardVec_ofFn, D, Dcast, Dapp, Dpair,
         Graph.castCLM, ContinuousLinearMap.comp_apply, ContinuousLinearMap.prod_apply,
         CtxVec.getCLM_apply, hsz, szA, szB, ShapeOps.castVec_proof_irrel]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     -- `concat_leading_axis` is linear, so its JVP matches the (constant) derivative.
-    simp [concatLeadingAxis, Node.jvpVec_ofVec, D, Dcast, Dapp, Dpair,
+    simp [concatLeadingAxis, Node.jvpVec_ofFn, D, Dcast, Dapp, Dpair,
       Graph.castCLM, ContinuousLinearMap.comp_apply, ContinuousLinearMap.prod_apply,
       CtxVec.getCLM_apply, hsz, szA, szB, ShapeOps.castVec_proof_irrel]
 

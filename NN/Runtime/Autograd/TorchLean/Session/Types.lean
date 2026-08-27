@@ -90,7 +90,7 @@ This returns a `TensorRef` that can be passed to operations. Eager execution rec
 on its tape; typed-graph execution records it in the current typed SSA graph.
 -/
 def use {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   (p : _root_.Runtime.Autograd.Torch.Param α sh) : IO (_root_.Runtime.Autograd.Torch.TensorRef α sh)
     := do
   match s.state with
@@ -104,7 +104,7 @@ Add an input tensor to the current recording phase.
 Inputs are leaf tensors that may or may not require gradients (controlled by `requiresGrad`).
 -/
 def input {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   (v : Tensor α sh) (name : Option String := none) (requiresGrad : Bool := false) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.state with
@@ -137,35 +137,6 @@ def setNat {α : Type} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatRe
   match s.state with
   | .eager sess => EagerSession.setNat (α := α) sess r v
   | .typedGraph sess => _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.setNat (α := α) sess r v
-
-/--
-Add a non-differentiable vector-of-`Nat` input leaf.
-
-This is convenient for batched indices (e.g. gather a batch of rows) without embedding indices into
-  `α`.
--/
-def inputNatVec {α : Type} {k : Nat} (s : Session α) (v : Tensor Nat (.dim k .scalar)) :
-    IO (_root_.Runtime.Autograd.Torch.NatVecRef k) := do
-  match s.state with
-  | .eager sess => EagerSession.inputNatVec (α := α) (k := k) sess v
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.inputNatVec (α := α) (k := k) sess v
-
-/-- Read back a `NatVecRef` value. -/
-def getNatVec {α : Type} {k : Nat} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatVecRef k) :
-    IO (Tensor Nat (.dim k .scalar)) := do
-  match s.state with
-  | .eager sess => EagerSession.getNatVec (α := α) (k := k) sess r
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.getNatVec (α := α) (k := k) sess r
-
-/-- Mutate a `NatVecRef` value. -/
-def setNatVec {α : Type} {k : Nat} (s : Session α) (r : _root_.Runtime.Autograd.Torch.NatVecRef k)
-    (v : Tensor Nat (.dim k .scalar)) : IO Unit := do
-  match s.state with
-  | .eager sess => EagerSession.setNatVec (α := α) (k := k) sess r v
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.setNatVec (α := α) (k := k) sess r v
 
 /-! ### Deterministic RNG state (Session-level) -/
 
@@ -237,7 +208,7 @@ Insert a constant tensor into the current graph.
 PyTorch analogy: using a tensor constant/literal in `forward`.
 -/
 def const {α : Type} (s : Session α) {sh : Shape} [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   (v : Tensor α sh) (name : Option String := none) : IO (_root_.Runtime.Autograd.Torch.TensorRef α
     sh) := do
   match s.state with
@@ -248,7 +219,7 @@ def const {α : Type} (s : Session α) {sh : Shape} [Zero α] [DecidableEq Shape
 
 /-- Read the concrete value for a tensor ref (for logging/debugging). -/
 def getValue {α : Type} (s : Session α) {sh : Shape} [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) : IO (Tensor α sh) := do
   match s.state with
   | .eager sess => EagerSession.getValue (α := α) sess (sh := sh) x
@@ -261,7 +232,7 @@ Detach a tensor ref from the graph (stop gradient flow through it).
 PyTorch analogy: `x.detach()`.
 -/
 def detach {α : Type} (s : Session α) [Context α] {sh : Shape} [DecidableEq Shape]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
     IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.state with

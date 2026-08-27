@@ -23,7 +23,7 @@ Why this matters:
 
 - It proves that `Primitive.linear` and sequential composition (`>>>`) compute the intended Spec
   formula for a concrete model.
-- It gives a template for additional equivalence proofs where we compare a GraphSpec architecture to an
+- It gives a template for additional equivalence proofs comparing a GraphSpec architecture to an
   existing hand-written Spec reference implementation.
 - It anchors the intended meaning of the *parameter ABI* for the sequential DSL: when you compose
   graphs with `>>>`, the type-level parameter list concatenates, so each model has a canonical
@@ -50,14 +50,11 @@ namespace Models
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
-
-open Runtime.Autograd.Torch (TList)
+open _root_.TorchLean.Tensor
 
 /-- Parameter ABI for the 2-layer MLP `inDim → hidDim → outDim`: `(W₁,b₁,W₂,b₂)`. -/
 abbrev MLPParams (inDim hidDim outDim : Nat) : List Shape :=
-  [ .dim hidDim (.dim inDim .scalar), .dim hidDim .scalar
-  , .dim outDim (.dim hidDim .scalar), .dim outDim .scalar ]
+  [[hidDim, inDim], [hidDim], [outDim, hidDim], [outDim]]
 
 /--
 **Theorem (GraphSpec MLP agrees with Spec reference).**
@@ -85,8 +82,8 @@ the Spec model.
 theorem mlp_interp_eq_spec_mlp_forward
     {α : Type} [Context α]
     {inDim hidDim outDim : Nat}
-    (params : TList α (MLPParams inDim hidDim outDim))
-    (x : Spec.Tensor α (.dim inDim .scalar)) :
+    (params : _root_.TorchLean.TensorPack α (MLPParams inDim hidDim outDim))
+    (x : Spec.Tensor α [inDim]) :
     Interp.spec (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim)) params x
     =
     let (w1, b1, w2, b2) :=
@@ -108,22 +105,22 @@ theorem mlp_interp_eq_spec_mlp_forward
             let l1 : Spec.LinearSpec α inDim hidDim := { weights := w1, bias := b1 }
             let l2 : Spec.LinearSpec α hidDim outDim := { weights := w2, bias := b2 }
             have hsplit1 :
-                (Interp.splitParams
-                    (ps₁ := [.dim hidDim (.dim inDim .scalar), .dim hidDim .scalar])
-                    (ps₂ := [.dim outDim (.dim hidDim .scalar), .dim outDim .scalar])
+                (_root_.TorchLean.TensorPack.split
+                    (ss₁ := [[hidDim, inDim], [hidDim]])
+                    (ss₂ := [[outDim, hidDim], [outDim]])
                     (.cons w1 (.cons b1 (.cons w2 (.cons b2 .nil))))).1
                   =
                 (.cons w1 (.cons b1 .nil) :
-                  TList α [.dim hidDim (.dim inDim .scalar), .dim hidDim .scalar]) := by
+                  _root_.TorchLean.TensorPack α [[hidDim, inDim], [hidDim]]) := by
               rfl
             have hsplit2 :
-                (Interp.splitParams
-                    (ps₁ := [.dim hidDim (.dim inDim .scalar), .dim hidDim .scalar])
-                    (ps₂ := [.dim outDim (.dim hidDim .scalar), .dim outDim .scalar])
+                (_root_.TorchLean.TensorPack.split
+                    (ss₁ := [[hidDim, inDim], [hidDim]])
+                    (ss₂ := [[outDim, hidDim], [outDim]])
                     (.cons w1 (.cons b1 (.cons w2 (.cons b2 .nil))))).2
                   =
                 (.cons w2 (.cons b2 .nil) :
-                  TList α [.dim outDim (.dim hidDim .scalar), .dim outDim .scalar]) := by
+                  _root_.TorchLean.TensorPack α [[outDim, hidDim], [outDim]]) := by
               rfl
             have hspec :
                 Interp.spec (mlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim))

@@ -24,181 +24,154 @@ namespace DAG
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 namespace PrimOp
 
-/-- Root-mean-square normalization along the last axis of a matrix. -/
-def rmsNorm (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
-    PrimOp
-      [.dim rows (.dim width .scalar), .dim width .scalar]
-      (.dim rows (.dim width .scalar)) :=
-  { name := s!"rmsNorm({rows},{width})"
-    specFwd := fun {α} _ xs =>
-      match xs with
-      | .cons input (.cons gamma .nil) =>
-          _root_.Spec.rmsNorm (α := α) input gamma hRows hWidth
-    program := fun {α} _ _ =>
-      fun {m} _ _ => fun input gamma =>
-        Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
-          (rows := rows) (width := width) hWidth input gamma }
+namespace Internal
 
-/-- Pure evaluation of matrix RMS normalization. -/
-@[simp] theorem rmsNorm_specFwd {rows width : Nat}
-    (hRows : 0 < rows) (hWidth : 0 < width)
-    {α : Type} [Context α]
-    (input : _root_.Spec.Tensor α (.dim rows (.dim width .scalar)))
-    (gamma : _root_.Spec.Tensor α (.dim width .scalar)) :
-    (rmsNorm rows width hRows hWidth).specFwd (.cons input (.cons gamma .nil)) =
-      _root_.Spec.rmsNorm input gamma hRows hWidth := by
-  rfl
-
-/--
-Interpret vector RMSNorm through the canonical matrix specification.
-
-This is a shape adapter, not a second RMSNorm definition: it inserts one leading row, applies
-`Spec.rmsNorm`, and selects that row again.
--/
 def rmsNormVectorSemantics {α : Type} [Context α] {width : Nat}
-    (hWidth : 0 < width) (input gamma : _root_.Spec.Tensor α (.dim width .scalar)) :
-    _root_.Spec.Tensor α (.dim width .scalar) :=
-  _root_.Spec.getAtSpec
+    (hWidth : 0 < width) (input gamma : _root_.Spec.Tensor α [width]) :
+    _root_.Spec.Tensor α [width] :=
+  _root_.Spec.get
     (_root_.Spec.rmsNorm (α := α) (.dim fun _ => input) gamma
       (Nat.zero_lt_succ 0) hWidth)
     ⟨0, Nat.zero_lt_succ 0⟩
 
-/-- Root-mean-square normalization of one vector.
+end Internal
 
-Single-token decoders and recurrent layers naturally carry a vector rather than a singleton
-matrix. The pure semantics uses `rmsNormVectorSemantics`; the executable path reshapes the vector
-to one row, calls the same RMSNorm runtime operation used by batched models, and restores the
-vector shape. This keeps one normalization convention without exposing layout plumbing to graph
-authors.
--/
-def rmsNormVector (width : Nat) (hWidth : 0 < width) :
-    PrimOp [.dim width .scalar, .dim width .scalar] (.dim width .scalar) :=
-  { name := s!"rmsNormVector({width})"
-    specFwd := fun {α} _ xs =>
-      match xs with
-      | .cons input (.cons gamma .nil) =>
-          rmsNormVectorSemantics hWidth input gamma
-    program := fun {α} _ _ =>
-      fun {m} _ _ => fun input gamma =>
-        (do
-          let row ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
-            (s₁ := .dim width .scalar) (s₂ := .dim 1 (.dim width .scalar)) input (by
-              simp [_root_.Spec.Shape.size])
-          let normalized ← Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
-            (rows := 1) (width := width) hWidth row gamma
-          Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
-            (s₁ := .dim 1 (.dim width .scalar)) (s₂ := .dim width .scalar) normalized (by
-              simp [_root_.Spec.Shape.size]) :
-          m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α) (.dim width .scalar))) }
+/-- Apply RMS normalization with a shared final-axis scale over an arbitrary leading shape. -/
+def rmsNormSemantics {α : Type} [Context α] (leading : Shape) {width : Nat}
+    (hWidth : 0 < width) (gamma : _root_.Spec.Tensor α [width]) :
+    _root_.Spec.Tensor α (leading.appendDim width) →
+      _root_.Spec.Tensor α (leading.appendDim width)
+  | input =>
+      match leading, input with
+      | .scalar, input => Internal.rmsNormVectorSemantics hWidth input gamma
+      | .dim _ rest, .dim values =>
+          .dim fun i => rmsNormSemantics rest hWidth gamma (values i)
 
-/-- The vector RMSNorm primitive exposes the canonical vector specification directly. -/
-@[simp] theorem rmsNormVector_specFwd {width : Nat}
-    {α : Type} [Context α] (hWidth : 0 < width)
-    (input gamma : _root_.Spec.Tensor α (.dim width .scalar)) :
-    (rmsNormVector width hWidth).specFwd (.cons input (.cons gamma .nil)) =
-      rmsNormVectorSemantics hWidth input gamma := by
+/-- Apply RMS normalization with a pointwise scale over an arbitrary leading shape. -/
+def rmsNormElementwiseSemantics {α : Type} [Context α] (leading : Shape) {width : Nat}
+    (hWidth : 0 < width) :
+    _root_.Spec.Tensor α (leading.appendDim width) →
+      _root_.Spec.Tensor α (leading.appendDim width) →
+      _root_.Spec.Tensor α (leading.appendDim width)
+  | input, gamma =>
+      match leading, input, gamma with
+      | .scalar, input, gamma => Internal.rmsNormVectorSemantics hWidth input gamma
+      | .dim _ rest, .dim inputs, .dim gammas =>
+          .dim fun i => rmsNormElementwiseSemantics rest hWidth (inputs i) (gammas i)
+
+@[simp] theorem rmsNormElementwiseSemantics_dim {α : Type} [Context α]
+    {count width : Nat} {rest : Shape} (hWidth : 0 < width)
+    (inputs gammas : Fin count → _root_.Spec.Tensor α (rest.appendDim width)) :
+    rmsNormElementwiseSemantics (.dim count rest) hWidth (.dim inputs) (.dim gammas) =
+      .dim (fun index => rmsNormElementwiseSemantics rest hWidth
+        (inputs index) (gammas index)) := by
   rfl
 
-/-- Root-mean-square normalization with a separate learned scale for every row.
+/-- Root-mean-square normalization along the final axis of an arbitrary tensor. -/
+def rmsNorm (leading : Shape) (width : Nat) (hWidth : 0 < width) :
+    PrimOp [leading.appendDim width, [width]] (leading.appendDim width) :=
+  { name := s!"rmsNorm({width})"
+    specFwd := fun {_} _ xs =>
+      match xs with
+      | .cons input (.cons gamma .nil) => rmsNormSemantics leading hWidth gamma input
+    program := fun {α} _ _ =>
+      fun {m} _ _ => fun input gamma =>
+        (Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
+          (leading := leading) (width := width) hWidth input gamma :
+          m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
+            (leading.appendDim width))) }
 
-Unlike `rmsNorm`, whose scale vector is shared across rows, both inputs have shape
-`rows × width`.  Row `i` is normalized along its final axis and then multiplied coordinatewise by
-row `i` of `gamma`.  This covers head-specific normalization without encoding the head axis in a
-special-purpose primitive. -/
-def rmsNormRows (rows width : Nat) (hWidth : 0 < width) :
-    PrimOp
-      [.dim rows (.dim width .scalar), .dim rows (.dim width .scalar)]
-      (.dim rows (.dim width .scalar)) :=
-  { name := s!"rmsNormRows({rows},{width})"
+/-- Pure evaluation of final-axis RMS normalization with a shared scale. -/
+@[simp] theorem rmsNorm_specFwd {leading : Shape} {width : Nat}
+    (hWidth : 0 < width) {α : Type} [Context α]
+    (input : _root_.Spec.Tensor α (leading.appendDim width))
+    (gamma : _root_.Spec.Tensor α [width]) :
+    (rmsNorm leading width hWidth).specFwd (.cons input (.cons gamma .nil)) =
+      rmsNormSemantics leading hWidth gamma input := by
+  rfl
+
+/-- RMS normalization with a separate final-axis scale at every leading coordinate. -/
+def rmsNormElementwise (leading : Shape) (width : Nat) (hWidth : 0 < width) :
+    PrimOp [leading.appendDim width, leading.appendDim width] (leading.appendDim width) :=
+  { name := s!"rmsNormElementwise({width})"
     specFwd := fun {_} _ xs =>
       match xs with
       | .cons input (.cons gamma .nil) =>
-          .dim fun row => rmsNormVectorSemantics hWidth
-            (_root_.Spec.get input row) (_root_.Spec.get gamma row)
+          rmsNormElementwiseSemantics leading hWidth input gamma
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input gamma =>
         (do
           let ones ← Runtime.Autograd.TorchLean.const (m := m) (α := α)
-            (_root_.Spec.fill 1 (.dim width .scalar))
+            (_root_.Spec.fill 1 ([width] : Shape))
           let normalized ← Runtime.Autograd.TorchLean.Norm.rmsNorm (m := m) (α := α)
-            (rows := rows) (width := width) hWidth input ones
+            (leading := leading) (width := width) hWidth input ones
           Runtime.Autograd.TorchLean.mul (m := m) (α := α)
-            (s := .dim rows (.dim width .scalar)) normalized gamma :
+            (s := leading.appendDim width) normalized gamma :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
-            (.dim rows (.dim width .scalar)))) }
+            (leading.appendDim width))) }
 
-/-- Pure evaluation of RMS normalization with one scale vector per row. -/
-@[simp] theorem rmsNormRows_specFwd {rows width : Nat}
+/-- Pure evaluation of final-axis RMS normalization with pointwise scale. -/
+@[simp] theorem rmsNormElementwise_specFwd {leading : Shape} {width : Nat}
     (hWidth : 0 < width) {α : Type} [Context α]
-    (input gamma : _root_.Spec.Tensor α (.dim rows (.dim width .scalar))) :
-    (rmsNormRows rows width hWidth).specFwd (.cons input (.cons gamma .nil)) =
-      .dim (fun row => rmsNormVectorSemantics hWidth
-        (_root_.Spec.get input row) (_root_.Spec.get gamma row)) := by
+    (input gamma : _root_.Spec.Tensor α (leading.appendDim width)) :
+    (rmsNormElementwise leading width hWidth).specFwd (.cons input (.cons gamma .nil)) =
+      rmsNormElementwiseSemantics leading hWidth input gamma := by
   rfl
 
+/-- Apply regularized L2 normalization over the final axis of an arbitrary tensor. -/
+def l2NormalizeSemantics {α : Type} [Context α] (leading : Shape) {width : Nat}
+    (epsilon : α) : _root_.Spec.Tensor α (leading.appendDim width) →
+      _root_.Spec.Tensor α (leading.appendDim width) :=
+  match leading with
+  | .scalar => fun input => _root_.Spec.normalizeL2RegularizedSpec input epsilon
+  | .dim _ rest => fun input =>
+      match input with
+      | .dim values => .dim fun i => l2NormalizeSemantics rest epsilon (values i)
 
-/-- Normalize every matrix row by `sqrt(sum (x * x) + epsilon)`.
+@[simp] theorem l2NormalizeSemantics_scalar {α : Type} [Context α]
+    {width : Nat} (epsilon : α) (values : _root_.Spec.Tensor α [width]) :
+    l2NormalizeSemantics .scalar epsilon values =
+      _root_.Spec.normalizeL2RegularizedSpec values epsilon := by
+  rfl
+
+@[simp] theorem l2NormalizeSemantics_dim {α : Type} [Context α]
+    {count width : Nat} {rest : Shape} (epsilon : α)
+    (values : Fin count → _root_.Spec.Tensor α (rest.appendDim width)) :
+    l2NormalizeSemantics (.dim count rest) epsilon (.dim values) =
+      .dim (fun index => l2NormalizeSemantics rest epsilon (values index)) := by
+  rfl
+
+/-- Normalize the final axis by `sqrt(sum (x * x) + epsilon)`.
 
 The stabilizer is a scalar graph input rather than a declaration parameter. This keeps the exact
 numerical convention visible in captured graphs and permits architectures to select their own
 positive epsilon without adding another primitive.
 -/
-def l2Normalize (rows width : Nat) (hRows : 0 < rows) (hWidth : 0 < width) :
-    PrimOp
-      [.dim rows (.dim width .scalar), .scalar]
-      (.dim rows (.dim width .scalar)) :=
-  letI : NeZero rows := ⟨Nat.ne_of_gt hRows⟩
-  letI : NeZero width := ⟨Nat.ne_of_gt hWidth⟩
-  letI : _root_.Spec.Shape.HasNonemptyAxis 1
-      (.dim rows (.dim width .scalar)) :=
-    _root_.Spec.Shape.hasNonemptyAxisOne (Nat.ne_of_gt hWidth)
-  { name := s!"l2Normalize({rows},{width})"
-    specFwd := fun {α} _ xs =>
+def l2Normalize (leading : Shape) (width : Nat) (hWidth : 0 < width) :
+    PrimOp [leading.appendDim width, .scalar] (leading.appendDim width) :=
+  { name := s!"l2Normalize({width})"
+    specFwd := fun {_α} _ xs =>
       match xs with
       | .cons input (.cons (.scalar epsilon) .nil) =>
-          _root_.Spec.Tensor.dim fun row =>
-            _root_.Spec.normalizeL2RegularizedSpec (_root_.Spec.get input row) epsilon
+          l2NormalizeSemantics leading epsilon input
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input epsilon =>
-        (do
-          let squared ← Runtime.Autograd.TorchLean.mul (m := m) (α := α)
-            (s := .dim rows (.dim width .scalar)) input input
-          let normSquared ← Runtime.Autograd.TorchLean.reduceSum (m := m) (α := α)
-            (s := .dim rows (.dim width .scalar)) 1 squared
-          let epsilonRows ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
-            (s₁ := .scalar) (s₂ := .dim rows .scalar)
-            (_root_.Spec.Shape.CanBroadcastTo.scalarTo (.dim rows .scalar)) epsilon
-          let shifted ← Runtime.Autograd.TorchLean.add (m := m) (α := α)
-            (s := .dim rows .scalar) normSquared epsilonRows
-          let denominator ← Runtime.Autograd.TorchLean.sqrt (m := m) (α := α)
-            (s := .dim rows .scalar) shifted
-          let inverse ← Runtime.Autograd.TorchLean.inv (m := m) (α := α)
-            (s := .dim rows .scalar) denominator
-          let inverseColumn ← Runtime.Autograd.TorchLean.reshape (m := m) (α := α)
-            (s₂ := .dim rows (.dim 1 .scalar)) inverse (by simp [_root_.Spec.Shape.size])
-          let inverseMatrix ← Runtime.Autograd.TorchLean.broadcastTo (m := m) (α := α)
-            (s₁ := .dim rows (.dim 1 .scalar))
-            (s₂ := .dim rows (.dim width .scalar))
-            (_root_.Spec.Shape.CanBroadcastTo.dim_eq
-              (_root_.Spec.Shape.CanBroadcastTo.dim_1_to_n
-                _root_.Spec.Shape.CanBroadcastTo.scalar)) inverseColumn
-          Runtime.Autograd.TorchLean.mul (m := m) (α := α)
-            (s := .dim rows (.dim width .scalar)) input inverseMatrix :
+        (Runtime.Autograd.TorchLean.Norm.l2Normalize (m := m) (α := α)
+          (leading := leading) (width := width) hWidth input epsilon :
           m (Runtime.Autograd.TorchLean.RefTy (m := m) (α := α)
-            (.dim rows (.dim width .scalar)))) }
+            (leading.appendDim width))) }
 
-/-- Pure evaluation of row-wise regularized L2 normalization. -/
-@[simp] theorem l2Normalize_specFwd {rows width : Nat}
-    (hRows : 0 < rows) (hWidth : 0 < width) {α : Type} [Context α]
-    (input : _root_.Spec.Tensor α (.dim rows (.dim width .scalar))) (epsilon : α) :
-    (l2Normalize rows width hRows hWidth).specFwd
+/-- Pure evaluation of final-axis regularized L2 normalization. -/
+@[simp] theorem l2Normalize_specFwd {leading : Shape} {width : Nat}
+    (hWidth : 0 < width) {α : Type} [Context α]
+    (input : _root_.Spec.Tensor α (leading.appendDim width)) (epsilon : α) :
+    (l2Normalize leading width hWidth).specFwd
         (.cons input (.cons (.scalar epsilon) .nil)) =
-      .dim (fun row => _root_.Spec.normalizeL2RegularizedSpec
-        (_root_.Spec.get input row) epsilon) := by
+      l2NormalizeSemantics leading epsilon input := by
   rfl
 
 

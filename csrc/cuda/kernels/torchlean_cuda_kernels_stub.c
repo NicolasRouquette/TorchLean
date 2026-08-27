@@ -1527,33 +1527,6 @@ LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gather_rows(b_lean_obj_arg MObj, 
   return torchlean_cuda_buffer_box(out);
 }
 
-LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_row(b_lean_obj_arg MObj,
-                                                              b_lean_obj_arg RowObj, uint32_t rows,
-                                                              uint32_t cols, uint32_t i) {
-  torchlean_cuda_buffer* m = torchlean_cuda_buffer_unbox(MObj);
-  torchlean_cuda_buffer* row = torchlean_cuda_buffer_unbox(RowObj);
-  const size_t R = (size_t)rows;
-  const size_t C = (size_t)cols;
-  const size_t matSz =
-      checked_mul_size(R, C, "torchlean_cuda_buffer_scatter_add_row_stub: rows*cols overflow");
-  if (m->size != matSz) {
-    lean_internal_panic("torchlean_cuda_buffer_scatter_add_row_stub: mat.size mismatch");
-  }
-  if (row->size != C) {
-    lean_internal_panic("torchlean_cuda_buffer_scatter_add_row_stub: rowVec.size mismatch");
-  }
-  if ((size_t)i >= R) {
-    lean_internal_panic("torchlean_cuda_buffer_scatter_add_row_stub: row index out of bounds");
-  }
-
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(matSz);
-  for (size_t t = 0; t < matSz; ++t) out->data[t] = m->data[t];
-  for (size_t j = 0; j < C; ++j) {
-    out->data[(size_t)i * C + j] += row->data[j];
-  }
-  return torchlean_cuda_buffer_box(out);
-}
-
 LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_rows(b_lean_obj_arg MObj,
                                                                b_lean_obj_arg ValuesObj,
                                                                uint32_t rows, uint32_t cols,

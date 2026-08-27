@@ -120,7 +120,7 @@ def run : IO Unit := do
   assertContains "batchnorm lowering" script
     "def _lower_batchnorm"
   assertContains "artifact output ids" script
-    "\"input_id\": name_to_id[input_name]"
+    "\"output_ids\": [name_to_id[output_name]]"
   assertContains "same parser artifact" script
     "\"nodes\": nodes"
   runRealONNXRoundtrip

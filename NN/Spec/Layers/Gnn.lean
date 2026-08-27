@@ -75,18 +75,19 @@ variable {α : Type} [Context α]
 This is the reusable "mix neighbors" step. The semantics are entirely determined by `A`
 (raw adjacency, normalized adjacency, weighted adjacency, etc.). -/
 def messagePassingSpec {n inDim : Nat}
-  (A : Tensor α (.dim n (.dim n .scalar)))
-  (x : Tensor α (.dim n (.dim inDim .scalar))) :
-  Tensor α (.dim n (.dim inDim .scalar)) :=
+  (A : Tensor α [n, n])
+  (x : Tensor α [n, inDim]) :
+  Tensor α [n, inDim] :=
   matMulSpec A x
 
 /-- Backward/VJP for `message_passing_spec`: returns `(dA, dX)`. -/
 def messagePassingBackwardSpec {n inDim : Nat}
-  (A : Tensor α (.dim n (.dim n .scalar)))
-  (x : Tensor α (.dim n (.dim inDim .scalar)))
-  (dY : Tensor α (.dim n (.dim inDim .scalar))) :
-  (Tensor α (.dim n (.dim n .scalar)) × Tensor α (.dim n (.dim inDim .scalar))) :=
-  matMulBackwardSpec (α := α) (m := n) (n := n) (p := inDim) A x dY
+  (A : Tensor α [n, n])
+  (x : Tensor α [n, inDim])
+  (dY : Tensor α [n, inDim]) :
+  (Tensor α [n, n] × Tensor α [n, inDim]) :=
+  matmulBackwardSpec (α := α) (m := n) (n := n) (p := inDim)
+    (Shape.CanBroadcastTo.refl .scalar) (Shape.CanBroadcastTo.refl .scalar) A x dY
 
 /-- Parameters/data for a single GCN-style layer.
 
@@ -96,11 +97,11 @@ uses explicit.
 -/
 structure GCNLayerSpec (n inDim outDim : Nat) (α : Type) where
   /-- A. -/
-  A : Tensor α (.dim n (.dim n .scalar))
+  A : Tensor α [n, n]
   /-- W. -/
-  W : Tensor α (.dim inDim (.dim outDim .scalar))
+  W : Tensor α [inDim, outDim]
   /-- b. -/
-  b : Tensor α (.dim outDim .scalar)
+  b : Tensor α [outDim]
 
 /-- Forward spec for a GCN-style layer: `Y = A · X · W + b`.
 
@@ -111,11 +112,11 @@ Notes:
 -/
 def gcnLayerSpec {n inDim outDim : Nat}
   (layer : GCNLayerSpec n inDim outDim α)
-  (x : Tensor α (.dim n (.dim inDim .scalar))) :
-  Tensor α (.dim n (.dim outDim .scalar)) :=
-  let ax : Tensor α (.dim n (.dim inDim .scalar)) :=
+  (x : Tensor α [n, inDim]) :
+  Tensor α [n, outDim] :=
+  let ax : Tensor α [n, inDim] :=
     messagePassingSpec (α := α) (n := n) (inDim := inDim) layer.A x
-  let axw : Tensor α (.dim n (.dim outDim .scalar)) :=
+  let axw : Tensor α [n, outDim] :=
     matMulSpec ax layer.W
   let hB : Shape.CanBroadcastTo (.dim outDim .scalar) (.dim n (.dim outDim .scalar)) := by
     apply Shape.CanBroadcastTo.expand_dims
@@ -148,25 +149,29 @@ We include `dA` because in some setups the adjacency/normalization is also:
 Returns `(dA, dW, db, dX)` in that order. -/
 def gcnLayerBackwardSpec {n inDim outDim : Nat}
   (layer : GCNLayerSpec n inDim outDim α)
-  (x : Tensor α (.dim n (.dim inDim .scalar)))
-  (grad_output : Tensor α (.dim n (.dim outDim .scalar)))
+  (x : Tensor α [n, inDim])
+  (grad_output : Tensor α [n, outDim])
   (h_n : n ≠ 0) :
-  (Tensor α (.dim n (.dim n .scalar)) ×               -- ∂L/∂A
-   Tensor α (.dim inDim (.dim outDim .scalar)) ×      -- ∂L/∂W
-   Tensor α (.dim outDim .scalar) ×                   -- ∂L/∂b
-   Tensor α (.dim n (.dim inDim .scalar))) :=         -- ∂L/∂x
+  (Tensor α [n, n] ×               -- ∂L/∂A
+   Tensor α [inDim, outDim] ×      -- ∂L/∂W
+   Tensor α [outDim] ×                   -- ∂L/∂b
+   Tensor α [n, inDim]) :=         -- ∂L/∂x
 
-  let ax : Tensor α (.dim n (.dim inDim .scalar)) := matMulSpec layer.A x
+  let ax : Tensor α [n, inDim] := matMulSpec layer.A x
 
   -- Backprop through the second matmul: (A·X) · W
-  let (dAx, dW) := matMulBackwardSpec ax layer.W grad_output
+  let (dAx, dW) :=
+    matmulBackwardSpec (Shape.CanBroadcastTo.refl .scalar)
+      (Shape.CanBroadcastTo.refl .scalar) ax layer.W grad_output
 
   -- Bias gradient: sum across the node axis.
   let db := reduceSum (α := α) (s := Shape.dim n (Shape.dim outDim Shape.scalar)) 0
     grad_output (Shape.hasNonemptyAxisZeroOfNe h_n).proof
 
   -- Backprop through the first matmul: A · X
-  let (dA, dX) := matMulBackwardSpec layer.A x dAx
+  let (dA, dX) :=
+    matmulBackwardSpec (Shape.CanBroadcastTo.refl .scalar)
+      (Shape.CanBroadcastTo.refl .scalar) layer.A x dAx
   (dA, dW, db, dX)
 
 end Spec

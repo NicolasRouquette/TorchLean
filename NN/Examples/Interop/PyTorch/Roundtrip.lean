@@ -35,6 +35,7 @@ Design goals:
 namespace NN.Examples.Interop.PyTorch.Roundtrip
 
 open Lean
+open TorchLean
 
 /-! ## CLI model/action selection -/
 
@@ -113,9 +114,11 @@ private def cnnPoolStride1 : Nat := 2
 private def cnnPoolStride2 : Nat := 2
 
 private def cnnFlatSize : Nat :=
-  _root_.Models.Cnn.featSize cnnOutC cnnInH cnnInW cnnKH cnnKW cnnStride1 cnnPadding1 cnnStride2
-    cnnPadding2
-    cnnPoolKH cnnPoolKW cnnPoolStride1 cnnPoolStride2
+  _root_.Models.Cnn.featureSize cnnOutC tensor! [cnnInH, cnnInW] tensor! [cnnKH, cnnKW]
+    tensor! [cnnStride1, cnnStride1] tensor! [cnnPadding1, cnnPadding1]
+    tensor! [cnnStride2, cnnStride2] tensor! [cnnPadding2, cnnPadding2]
+    tensor! [cnnPoolKH, cnnPoolKW] tensor! [cnnPoolStride1, cnnPoolStride1] tensor! [0, 0]
+    tensor! [cnnPoolStride2, cnnPoolStride2] tensor! [0, 0]
 
 -- Transformer dims (matches `train_transformer.py` and `Import.TransformerPyTorch` example)
 private def trSeqLen : Nat := 1
@@ -150,43 +153,54 @@ private def exportMLP : IO Unit := do
 
 private def exportCNN : IO Unit := do
   let dir := dirOf .cnn
-  let conv1 : Export.CNNPyTorch.Conv2dCfg :=
-    { inChannels := cnnInC, outChannels := cnnOutC, kernelH := cnnKH, kernelW := cnnKW
-      stride := cnnStride1, padding := cnnPadding1 }
-  let pool1 : Export.CNNPyTorch.MaxPool2dCfg :=
-    { kernelH := cnnPoolKH, kernelW := cnnPoolKW, stride := cnnPoolStride1 }
-  let conv2 : Export.CNNPyTorch.Conv2dCfg :=
-    { inChannels := cnnOutC, outChannels := cnnOutC, kernelH := cnnKH, kernelW := cnnKW
-      stride := cnnStride2, padding := cnnPadding2 }
-  let pool2 : Export.CNNPyTorch.MaxPool2dCfg :=
-    { kernelH := cnnPoolKH, kernelW := cnnPoolKW, stride := cnnPoolStride2 }
-  let cfg : Export.CNNPyTorch.CnnStackConfig :=
+  let conv1 : Export.CNNPyTorch.ConvCfg 2 :=
+    { inChannels := cnnInC
+      outChannels := cnnOutC
+      kernel := tensor! [cnnKH, cnnKW]
+      stride := tensor! [cnnStride1, cnnStride1]
+      padding := tensor! [cnnPadding1, cnnPadding1] }
+  let pool1 : Export.CNNPyTorch.MaxPoolCfg 2 :=
+    { kernel := tensor! [cnnPoolKH, cnnPoolKW]
+      stride := tensor! [cnnPoolStride1, cnnPoolStride1]
+      padding := tensor! [0, 0] }
+  let conv2 : Export.CNNPyTorch.ConvCfg 2 :=
+    { inChannels := cnnOutC
+      outChannels := cnnOutC
+      kernel := tensor! [cnnKH, cnnKW]
+      stride := tensor! [cnnStride2, cnnStride2]
+      padding := tensor! [cnnPadding2, cnnPadding2] }
+  let pool2 : Export.CNNPyTorch.MaxPoolCfg 2 :=
+    { kernel := tensor! [cnnPoolKH, cnnPoolKW]
+      stride := tensor! [cnnPoolStride2, cnnPoolStride2]
+      padding := tensor! [0, 0] }
+  let cfg : Export.CNNPyTorch.CnnStackConfig 2 :=
     { className := "TestCNN"
       inputC := cnnInC
-      inputH := cnnInH
-      inputW := cnnInW
+      inputSpatial := tensor! [cnnInH, cnnInW]
       conv1 := conv1
       pool1 := pool1
       conv2 := conv2
       pool2 := pool2
       flatSize := cnnFlatSize
       fcOut := cnnOutC }
-  let stub := Export.CNNPyTorch.generateCnnStackPyTorchClass cfg
+  let stub ←
+    match Export.CNNPyTorch.generateCnnStackPyTorchClass cfg with
+    | .ok code => pure code
+    | .error message => throw <| IO.userError message
   writePy dir "TestCNN_PyTorch" stub
   -- If we have a JSON state_dict handy, also emit a runnable "with weights" helper.
   try
     let j ← TorchLean.Json.parseFile (jsonOf .cnn)
     let some sd := Import.CNNPyTorch.loadCnnStateDict cnnInC cnnOutC cnnKH cnnKW cnnFlatSize j
       | throw <| IO.userError "CNN JSON present but failed to parse as a CNN state_dict"
-    let codeW :=
-      Export.CNNPyTorch.generateCNNWithWeights
-        (Export.PyTorch.rankFourTensorToPy sd.convW1) (Export.PyTorch.vectorTensorToPy sd.convB1)
-        (Export.PyTorch.rankFourTensorToPy sd.convW2) (Export.PyTorch.vectorTensorToPy sd.convB2)
-        (Export.PyTorch.matrixTensorToPy sd.linearW) (Export.PyTorch.vectorTensorToPy sd.linearB)
-        cnnInC cnnOutC cnnInH cnnInW cnnKH cnnKW
-        cnnStride1 cnnPadding1 cnnStride2 cnnPadding2
-        cnnPoolKH cnnPoolKW cnnPoolStride1 cnnPoolStride2 cnnFlatSize
-        "TestCNN"
+    let codeW ←
+      match Export.CNNPyTorch.generateCNNWithWeights cfg
+        (Export.PyTorch.tensorToPyString sd.convW1) (Export.PyTorch.tensorToPyString sd.convB1)
+        (Export.PyTorch.tensorToPyString sd.convW2) (Export.PyTorch.tensorToPyString sd.convB2)
+        (Export.PyTorch.tensorToPyString sd.linearW) (Export.PyTorch.tensorToPyString sd.linearB)
+      with
+      | .ok code => pure code
+      | .error message => throw <| IO.userError message
     writePy dir "TestCNN_WithWeights" codeW
   catch _ =>
     pure ()
@@ -231,13 +245,13 @@ private def importMLP : IO Unit := do
   let some sd := Import.MLPPyTorch.loadMlpStateDict mlpInDim mlpHidDim mlpOutDim j
     | throw <| IO.userError "Failed to load MLP state dict"
 
-  let x : _root_.Spec.Tensor Float (.dim mlpInDim .scalar) := tensor! [0.5, 0.8]
+  let x : Tensor Float [mlpInDim] := tensor! [0.5, 0.8]
   let y := Import.MLPPyTorch.forward sd x
 
   IO.println "== MLP import example =="
   IO.println s!"Loaded: {jsonOf .mlp}"
   IO.println "Output (Lean, Float):"
-  NN.Tensor.print y
+  TorchLean.Tensor.print y
 
 private def importCNN : IO Unit := do
   let j ← TorchLean.Json.parseFile (jsonOf .cnn)
@@ -253,37 +267,44 @@ private def importCNN : IO Unit := do
   let hPoolStride1 : cnnPoolStride1 ≠ 0 := by decide
   let hPoolStride2 : cnnPoolStride2 ≠ 0 := by decide
 
-  let conv1 : _root_.Spec.Conv2dSpec cnnInC cnnOutC cnnKH cnnKW cnnStride1 cnnPadding1 Float hInC
-    hKH hKW :=
+  let conv1 : _root_.Spec.ConvSpec 2 cnnInC cnnOutC tensor! [cnnKH, cnnKW]
+      tensor! [cnnStride1, cnnStride1] tensor! [cnnPadding1, cnnPadding1] Float :=
     { kernel := sd.convW1, bias := sd.convB1 }
-  let conv2 : _root_.Spec.Conv2dSpec cnnOutC cnnOutC cnnKH cnnKW cnnStride2 cnnPadding2 Float hOutC
-    hKH hKW :=
+  let conv2 : _root_.Spec.ConvSpec 2 cnnOutC cnnOutC tensor! [cnnKH, cnnKW]
+      tensor! [cnnStride2, cnnStride2] tensor! [cnnPadding2, cnnPadding2] Float :=
     { kernel := sd.convW2, bias := sd.convB2 }
-  let pool1 : _root_.Spec.MaxPool2dSpec cnnPoolKH cnnPoolKW cnnPoolStride1 hPoolH hPoolW hPoolStride1 :=
+  let pool1 : _root_.Spec.MaxPoolSpec 2 tensor! [cnnPoolKH, cnnPoolKW]
+      tensor! [cnnPoolStride1, cnnPoolStride1] tensor! [0, 0]
+      (by intro i; fin_cases i <;> assumption)
+      (by intro i; fin_cases i <;> assumption) :=
     {}
-  let pool2 : _root_.Spec.MaxPool2dSpec cnnPoolKH cnnPoolKW cnnPoolStride2 hPoolH hPoolW hPoolStride2 :=
+  let pool2 : _root_.Spec.MaxPoolSpec 2 tensor! [cnnPoolKH, cnnPoolKW]
+      tensor! [cnnPoolStride2, cnnPoolStride2] tensor! [0, 0]
+      (by intro i; fin_cases i <;> assumption)
+      (by intro i; fin_cases i <;> assumption) :=
     {}
   let linear : _root_.Spec.LinearSpec Float cnnFlatSize cnnOutC := { weights := sd.linearW, bias :=
     sd.linearB }
 
+  let spatial : Tensor Nat [2] := tensor! [cnnInH, cnnInW]
   let net :=
     _root_.Models.Cnn.withReluSpec (α := Float)
-      (inH := cnnInH) (inW := cnnInW)
+      (spatial := spatial)
       conv1 conv2 pool1 pool2 linear
 
   -- Deterministic input matching the Python training script: values 1..64 laid out row-major.
-  let x : _root_.Spec.Tensor Float (.dim cnnInC (.dim cnnInH (.dim cnnInW .scalar))) :=
-    _root_.Spec.Tensor.dim (fun _ =>
-      _root_.Spec.Tensor.dim (fun i =>
-        _root_.Spec.Tensor.dim (fun j =>
-          _root_.Spec.Tensor.scalar (Float.ofNat (i.val * cnnInW + j.val + 1)))))
+  let x : Tensor Float [cnnInC, cnnInH, cnnInW] :=
+    TorchLean.Tensor.generate [cnnInC, cnnInH, cnnInW] fun
+      | [_, i, j] => Float.ofNat (i * cnnInW + j + 1)
+      | _ => 0.0
 
-  let y := Spec.Module.Chain.forward (α := Float) net x
+  let y := Spec.Module.Chain.forward (α := Float) net (by
+    simpa [spatial] using x)
 
   IO.println "== CNN import example =="
   IO.println s!"Loaded: {jsonOf .cnn}"
   IO.println "Output (Lean, Float):"
-  NN.Tensor.print y
+  TorchLean.Tensor.print y
 
 private def importTransformer : IO Unit := do
   let j ← TorchLean.Json.parseFile (jsonOf .transformer)
@@ -308,16 +329,16 @@ private def importTransformer : IO Unit := do
       norm2Bias := sd.norm2Bias }
   let encoder : _root_.Spec.TransformerEncoder trNumLayers trHeadCount trEmbedDim trHiddenDim Float
     :=
-    { layers := #v[layer] }
+    { layers := tensor! [layer] }
 
-  let x : _root_.Spec.Tensor Float (.dim trSeqLen (.dim trEmbedDim .scalar)) := tensor! [[1.5, 1.5]]
+  let x : Tensor Float [trSeqLen, trEmbedDim] := tensor! [[1.5, 1.5]]
   let y := _root_.Spec.TransformerEncoder.forward (seqLen := trSeqLen) (embedDim := trEmbedDim)
     encoder x (by decide) (by decide)
 
   IO.println "== Transformer import example =="
   IO.println s!"Loaded: {jsonOf .transformer}"
   IO.println "Output (Lean, Float):"
-  NN.Tensor.print y
+  TorchLean.Tensor.print y
 
 private def runImport (m : Model) : IO Unit := do
   match m with

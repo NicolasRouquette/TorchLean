@@ -31,6 +31,8 @@ This writes:
 | `small_regression_y.npy` | `(25, 1)` `float32` targets |
 | `small_cifar10like_X.npy` | `(200, 3, 32, 32)` `float32` image-shaped features |
 | `small_cifar10like_y.npy` | `(200,)` integer labels stored as `float32` |
+| `small_fno1d_X.npy` | `(4, 32)` deterministic periodic inputs |
+| `small_fno1d_y.npy` | `(4, 32)` deterministic operator-learning targets |
 
 ## Dataset Shapes
 
@@ -160,23 +162,22 @@ def src : Data.SupervisedSource :=
     [64]
 ```
 
-Wrap loaded datasets with `Data.batchLoader` for typed minibatches:
+Wrap loaded datasets with `Data.supervisedEpochs` for typed minibatches:
 
 ```lean
-let loader := Data.batchLoader ds 8 (shuffle := true) (seed := 0) (dropLast := true)
-let (_loader', batches) ← CLI.orThrow "trainer" <| Data.BatchLoader.epoch "trainer" loader
+let loader := Data.supervisedEpochs ds 8 (shuffle := true) (seed := 0) (dropLast := true)
+let (_loader', batches) ← CLI.orThrow "trainer" <| Data.SupervisedEpochs.epoch "trainer" loader
 ```
 
 The batch axis is reflected in the type. For example, a batch of channel-first images and its
 class labels can have the following shapes:
 
 ```text
-X : Tensor α (.dim batch (.dim channels (.dim height (.dim width .scalar))))
-Y : Tensor α (.dim batch (.dim classes .scalar))
+X : Tensor α [batch, channels, height, width]
+Y : Tensor α [batch, classes]
 ```
 
-These are ordinary tensors built from `Shape.dim`; channel-first is an axis convention rather than
-a separate image tensor type.
+These are ordinary tensors; channel-first is an axis convention rather than a separate image type.
 
 ## Provenance
 

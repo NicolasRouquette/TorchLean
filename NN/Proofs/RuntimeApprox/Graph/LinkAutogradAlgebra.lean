@@ -18,7 +18,7 @@ This is a definitional/structural bridge:
 - We show `GraphData.eval` / `GraphData.backpropCtx` coincide with
   `RevGraph.evalRuntime` / `RevGraph.backpropRuntime`.
 
-Both sides use `Proofs.Autograd.Algebra.TList` directly, so the bridge does not convert between
+Both sides use `TorchLean.TensorPack` directly, so the bridge does not convert between
 different context representations.
 
 Note on environments (`Δ`):
@@ -87,7 +87,7 @@ evaluate to the same runtime context.
 theorem evalRuntime_of_toGraphData {Γ : List Shape} :
     {ss : List Shape} →
     (g : _root_.Proofs.RuntimeApprox.RevGraph (α := α) toSpec Γ ss) →
-    (xR : TList α Γ) →
+    (xR : _root_.TorchLean.TensorPack α Γ) →
       GraphData.eval (α := α) (Δ := Unit) (Γ := Γ) (ss := ss)
           (g := toGraphData (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) g) xR ()
         =
@@ -112,8 +112,8 @@ Informally: the executable `GraphData.backpropCtx` computes the same reverse-mod
 theorem backpropRuntime_of_toGraphData {Γ : List Shape} [Add α] :
     {ss : List Shape} →
     (g : _root_.Proofs.RuntimeApprox.RevGraph (α := α) toSpec Γ ss) →
-    (xR : TList α Γ) →
-    (seedR : TList α (Γ ++ ss)) →
+    (xR : _root_.TorchLean.TensorPack α Γ) →
+    (seedR : _root_.TorchLean.TensorPack α (Γ ++ ss)) →
       GraphData.backpropCtx (α := α) (Δ := Unit) (Γ := Γ) (ss := ss)
           (g := toGraphData (α := α) (toSpec := toSpec) (Γ := Γ) (ss := ss) g) xR () seedR
         =

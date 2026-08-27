@@ -215,172 +215,89 @@ private lemma evalNode?_congr_of_parents
     (hpar : ∀ p, p ∈ (nodes[id]!).parents → vals₁[p]! = vals₂[p]!) :
     evalNode? nodes ps inputs vals₁ id = evalNode? nodes ps inputs vals₂ id := by
   classical
+  have hvalOfParent (p : Nat) (hp : p ∈ (nodes[id]!).parents) :
+      getVal? vals₁ p = getVal? vals₂ p := by
+    have hpLt : p < id := hparsLt p hp
+    have hpNodes : p < nodes.size := lt_trans hpLt hid
+    have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
+    have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
+    simpa [getVal?, hp1, hp2] using hpar p hp
   cases hk : (nodes[id]!).kind with
   | input =>
       simp [evalNode?, hk]
   | const valueShape =>
       simp [evalNode?, hk]
   | detach =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simpa [evalNode?, hk, hp] using hget
   | add =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p1 rest =>
-        cases rest with
-        | nil => simp [evalNode?, hk, hp]
-        | cons p2 tail =>
-            have hp1Lt : p1 < id := hparsLt p1 (by simp [hp])
-            have hp2Lt : p2 < id := hparsLt p2 (by simp [hp])
-            have hp1Nodes : p1 < nodes.size := lt_trans hp1Lt hid
-            have hp2Nodes : p2 < nodes.size := lt_trans hp2Lt hid
-            have hp1a : p1 < vals₁.size := by simpa [hsize₁] using hp1Nodes
-            have hp1b : p1 < vals₂.size := by simpa [hsize₂] using hp1Nodes
-            have hp2a : p2 < vals₁.size := by simpa [hsize₁] using hp2Nodes
-            have hp2b : p2 < vals₂.size := by simpa [hsize₂] using hp2Nodes
-            have heq1 : vals₁[p1]! = vals₂[p1]! := hpar p1 (by simp [hp])
-            have heq2 : vals₁[p2]! = vals₂[p2]! := hpar p2 (by simp [hp])
-            have hget1 : getVal? vals₁ p1 = getVal? vals₂ p1 := by
-              simpa [getVal?, hp1a, hp1b] using heq1
-            have hget2 : getVal? vals₁ p2 = getVal? vals₂ p2 := by
-              simpa [getVal?, hp2a, hp2b] using heq2
-            simp [evalNode?, hk, hp, hget1, hget2]
+      cases hp : NN.IR.binaryParents? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some parents =>
+          rcases parents with ⟨p1, p2⟩
+          have hget1 := hvalOfParent p1 (NN.IR.fst_mem_of_binaryParents?_eq_some hp)
+          have hget2 := hvalOfParent p2 (NN.IR.snd_mem_of_binaryParents?_eq_some hp)
+          simp [evalNode?, hk, hp, hget1, hget2]
   | sub =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p1 rest =>
-        cases rest with
-        | nil => simp [evalNode?, hk, hp]
-        | cons p2 tail =>
-            have hp1Lt : p1 < id := hparsLt p1 (by simp [hp])
-            have hp2Lt : p2 < id := hparsLt p2 (by simp [hp])
-            have hp1Nodes : p1 < nodes.size := lt_trans hp1Lt hid
-            have hp2Nodes : p2 < nodes.size := lt_trans hp2Lt hid
-            have hp1a : p1 < vals₁.size := by simpa [hsize₁] using hp1Nodes
-            have hp1b : p1 < vals₂.size := by simpa [hsize₂] using hp1Nodes
-            have hp2a : p2 < vals₁.size := by simpa [hsize₁] using hp2Nodes
-            have hp2b : p2 < vals₂.size := by simpa [hsize₂] using hp2Nodes
-            have heq1 : vals₁[p1]! = vals₂[p1]! := hpar p1 (by simp [hp])
-            have heq2 : vals₁[p2]! = vals₂[p2]! := hpar p2 (by simp [hp])
-            have hget1 : getVal? vals₁ p1 = getVal? vals₂ p1 := by
-              simpa [getVal?, hp1a, hp1b] using heq1
-            have hget2 : getVal? vals₁ p2 = getVal? vals₂ p2 := by
-              simpa [getVal?, hp2a, hp2b] using heq2
-            simp [evalNode?, hk, hp, hget1, hget2]
+      cases hp : NN.IR.binaryParents? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some parents =>
+          rcases parents with ⟨p1, p2⟩
+          have hget1 := hvalOfParent p1 (NN.IR.fst_mem_of_binaryParents?_eq_some hp)
+          have hget2 := hvalOfParent p2 (NN.IR.snd_mem_of_binaryParents?_eq_some hp)
+          simp [evalNode?, hk, hp, hget1, hget2]
   | mul_elem =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p1 rest =>
-        cases rest with
-        | nil => simp [evalNode?, hk, hp]
-        | cons p2 tail =>
-            have hp1Lt : p1 < id := hparsLt p1 (by simp [hp])
-            have hp2Lt : p2 < id := hparsLt p2 (by simp [hp])
-            have hp1Nodes : p1 < nodes.size := lt_trans hp1Lt hid
-            have hp2Nodes : p2 < nodes.size := lt_trans hp2Lt hid
-            have hp1a : p1 < vals₁.size := by simpa [hsize₁] using hp1Nodes
-            have hp1b : p1 < vals₂.size := by simpa [hsize₂] using hp1Nodes
-            have hp2a : p2 < vals₁.size := by simpa [hsize₁] using hp2Nodes
-            have hp2b : p2 < vals₂.size := by simpa [hsize₂] using hp2Nodes
-            have heq1 : vals₁[p1]! = vals₂[p1]! := hpar p1 (by simp [hp])
-            have heq2 : vals₁[p2]! = vals₂[p2]! := hpar p2 (by simp [hp])
-            have hget1 : getVal? vals₁ p1 = getVal? vals₂ p1 := by
-              simpa [getVal?, hp1a, hp1b] using heq1
-            have hget2 : getVal? vals₁ p2 = getVal? vals₂ p2 := by
-              simpa [getVal?, hp2a, hp2b] using heq2
-            simp [evalNode?, hk, hp, hget1, hget2]
+      cases hp : NN.IR.binaryParents? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some parents =>
+          rcases parents with ⟨p1, p2⟩
+          have hget1 := hvalOfParent p1 (NN.IR.fst_mem_of_binaryParents?_eq_some hp)
+          have hget2 := hvalOfParent p2 (NN.IR.snd_mem_of_binaryParents?_eq_some hp)
+          simp [evalNode?, hk, hp, hget1, hget2]
   | relu =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | tanh =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | sigmoid =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | sin =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | cos =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | linear =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | matmul =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [evalNode?, hk, hp]
-      | cons p rest =>
-          have hpLt : p < id := hparsLt p (by simp [hp])
-          have hpNodes : p < nodes.size := lt_trans hpLt hid
-          have hp1 : p < vals₁.size := by simpa [hsize₁] using hpNodes
-          have hp2 : p < vals₂.size := by simpa [hsize₂] using hpNodes
-          have hpEq : vals₁[p]! = vals₂[p]! := hpar p (by simp [hp])
-          have hget : getVal? vals₁ p = getVal? vals₂ p := by
-            simpa [getVal?, hp1, hp2] using hpEq
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [evalNode?, hk, hp]
+      | some p =>
+          have hget := hvalOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [evalNode?, hk, hp, hget]
   | _ =>
       have : False := by
@@ -412,82 +329,76 @@ private lemma certStepNode?_congr_of_parents
   | const valueShape =>
       simp [certStepNode?, hk]
   | detach =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simpa [certStepNode?, hk, hp] using hbox
   | add =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p1 rest =>
-        cases rest with
-        | nil => simp [certStepNode?, hk, hp]
-        | cons p2 tail =>
-            have hbox1 : getBox? cert₁ p1 = getBox? cert₂ p1 := hboxOfParent p1 (by simp [hp])
-            have hbox2 : getBox? cert₁ p2 = getBox? cert₂ p2 := hboxOfParent p2 (by simp [hp])
-            simp [certStepNode?, hk, hp, hbox1, hbox2]
+      cases hp : NN.IR.binaryParents? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some parents =>
+          rcases parents with ⟨p1, p2⟩
+          have hbox1 := hboxOfParent p1 (NN.IR.fst_mem_of_binaryParents?_eq_some hp)
+          have hbox2 := hboxOfParent p2 (NN.IR.snd_mem_of_binaryParents?_eq_some hp)
+          simp [certStepNode?, hk, hp, hbox1, hbox2]
   | sub =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p1 rest =>
-        cases rest with
-        | nil => simp [certStepNode?, hk, hp]
-        | cons p2 tail =>
-            have hbox1 : getBox? cert₁ p1 = getBox? cert₂ p1 := hboxOfParent p1 (by simp [hp])
-            have hbox2 : getBox? cert₁ p2 = getBox? cert₂ p2 := hboxOfParent p2 (by simp [hp])
-            simp [certStepNode?, hk, hp, hbox1, hbox2]
+      cases hp : NN.IR.binaryParents? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some parents =>
+          rcases parents with ⟨p1, p2⟩
+          have hbox1 := hboxOfParent p1 (NN.IR.fst_mem_of_binaryParents?_eq_some hp)
+          have hbox2 := hboxOfParent p2 (NN.IR.snd_mem_of_binaryParents?_eq_some hp)
+          simp [certStepNode?, hk, hp, hbox1, hbox2]
   | mul_elem =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p1 rest =>
-        cases rest with
-        | nil => simp [certStepNode?, hk, hp]
-        | cons p2 tail =>
-            have hbox1 : getBox? cert₁ p1 = getBox? cert₂ p1 := hboxOfParent p1 (by simp [hp])
-            have hbox2 : getBox? cert₁ p2 = getBox? cert₂ p2 := hboxOfParent p2 (by simp [hp])
-            simp [certStepNode?, hk, hp, hbox1, hbox2]
+      cases hp : NN.IR.binaryParents? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some parents =>
+          rcases parents with ⟨p1, p2⟩
+          have hbox1 := hboxOfParent p1 (NN.IR.fst_mem_of_binaryParents?_eq_some hp)
+          have hbox2 := hboxOfParent p2 (NN.IR.snd_mem_of_binaryParents?_eq_some hp)
+          simp [certStepNode?, hk, hp, hbox1, hbox2]
   | relu =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | tanh =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | sigmoid =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | sin =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | cos =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | linear =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | matmul =>
-      cases hp : (nodes[id]!).parents with
-      | nil => simp [certStepNode?, hk, hp]
-      | cons p rest =>
-          have hbox : getBox? cert₁ p = getBox? cert₂ p := hboxOfParent p (by simp [hp])
+      cases hp : NN.IR.unaryParent? (nodes[id]!).parents with
+      | none => simp [certStepNode?, hk, hp]
+      | some p =>
+          have hbox := hboxOfParent p (NN.IR.mem_of_unaryParent?_eq_some hp)
           simp [certStepNode?, hk, hp, hbox]
   | _ =>
       simp [certStepNode?, hk]

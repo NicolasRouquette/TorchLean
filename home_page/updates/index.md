@@ -3,6 +3,7 @@ title: Updates
 ---
 
 <nav class="timeline-nav" aria-label="TorchLean update timeline">
+  <a href="#august-2026-tensor-overhaul">Tensor overhaul</a>
   <a href="#august-2026-lean-433">Lean 4.33</a>
   <a href="#august-2026-autograd-cuda">August 2026</a>
   <a href="#july-2026-refactor">July 2026</a>
@@ -17,6 +18,65 @@ title: Updates
 
 <div class="updates-timeline">
 
+<article class="update-card" id="august-2026-tensor-overhaul" markdown="1">
+  <div class="update-date">August 2026</div>
+  <div class="update-body" markdown="1">
+
+## Cleaning Up the Tensor API
+
+We wanted to improve the naming and cut out repeated code. Too many public names said `2d`, `3d`,
+`NCHW`, or `batch` even when the operation itself did not depend on those choices. That made the
+API harder to guess and left us maintaining several routes to the same tensor operation.
+
+Convolution was the biggest example. `nn.conv`, `nn.convTranspose`, `nn.maxPool`, and `nn.avgPool`
+now take a spatial rank `d` together with `Tensor Nat [d]` values for their geometry. One definition
+covers lines, images, volumes, and higher-dimensional grids. Batch, sequence, and other outer axes
+are passed in `leading : List Nat` and preserved by the operation. `nn.ConvGeometry.samePadding`
+works at any spatial rank and comes with a proof that it preserves positive spatial extents.
+
+We made the same change to normalization and shape operations. `nn.batchNorm` and
+`nn.instanceNorm` preserve any leading and spatial axes. `permute` and `transpose` take explicit
+axes instead of putting a layout in the function name. `matmul` handles compatible leading
+dimensions, and `flattenAfter` says exactly which prefix of the shape should be kept.
+
+The main name changes are:
+
+| Old name | Use now |
+| --- | --- |
+| `conv2d`, `Conv2dSpec` | `nn.conv`, `Spec.convSpec` |
+| `convTranspose2d`, `ConvTranspose2dSpec` | `nn.convTranspose`, `Spec.convTransposeSpec` |
+| `maxPool2d`, `avgPool2d`, adaptive `*2d` specs | rank-polymorphic pooling operations and specs |
+| `batchNorm2d`, `batchNormChannelFirst`, `instanceNorm2dNchw` | axis-general normalization |
+| `transpose2d`, `transpose3d*`, `nchwToNhwc`, `nhwcToNchw` | `permute` or `transpose` with explicit axes |
+| `mm`, `bmm` | `matmul` |
+| `flattenBatch`, `flattenLeading` | `flattenAfter` |
+
+We removed the old names and migrated their callers instead of keeping aliases around. PyTorch's
+rank-specific names still appear inside import and export code because that is how PyTorch spells
+those operations, but they are no longer TorchLean APIs.
+
+While doing that, we got rid of vague names like `General` and `ND` too. The ordinary MLP evaluator
+is now just `mlpEval`; its scalar-input version is `mlpEvalScalar`. Grouped convolution and dilated
+geometry say so in their names, the pooling implementation lives under `Pooling.Spatial`, and the
+tensor-input Stone–Weierstrass result lives in `Universal.StoneWeierstrass`.
+
+We followed the change all the way down through the specification, typed graph, IR evaluator, shape
+inference, eager runtime, CUDA dispatch, and reverse-mode rules. Convolution now has general input,
+kernel, bias, and transpose-convolution derivatives. BatchNorm has the matching adjointness theorem
+for its input, scale, and bias gradients at any spatial rank. The rounded-real proofs follow the
+implementation's actual accumulation order.
+
+The smaller tensor details got cleaned up too. Proofs can use `Tensor.map_scalar`, `Tensor.map_dim`,
+and `Tensor.getScalar_map` instead of reopening the shape recursion themselves. Classifier and
+regressor heads keep their leading axes. Indexed embeddings append their width to the token shape
+and scatter-add repeated token IDs during backward execution.
+
+This let us delete the old tensor forwarding modules, packed/vector wrappers, fixed-rank pooling
+files, 2D padding helpers, and the channel-first BatchNorm proof wrapper along with their callers.
+
+  </div>
+</article>
+
 <article class="update-card" id="august-2026-lean-433" markdown="1">
   <div class="update-date">August 2026</div>
   <div class="update-body" markdown="1">
@@ -25,7 +85,6 @@ title: Updates
 
 TorchLean now builds on Lean and mathlib 4.33. The migration touched dependent tensor casts,
 autograd derivative proofs, graph evaluation, CROWN certificates, and the documentation toolchain.
-The full library builds without compiler warnings on the new toolchain.
 
 The execution API now separates execution mode from device selection:
 
@@ -49,17 +108,10 @@ immutable values used by lowering and proofs. Instantiating a checked model prod
 `Module.Objective` pairs that state with a scalar training objective. Its name makes clear that the
 object owns model state as well as the loss calculation.
 
-Indexed embeddings now accept `Tensor Nat` token IDs and append the embedding dimension to the
-input shape. Forward execution gathers rows, backward execution scatter-adds repeated IDs, and
-`freeze := true` keeps the table in state without requesting its gradient. The causal-transformer
-example uses this path directly rather than expanding tokens to one-hot vectors. The public
-rank-two matrix product is likewise named `mm`, matching `torch.mm`; the name `matmul` remains
-reserved until TorchLean supports PyTorch's rank-polymorphic broadcasting semantics.
-
-Batch-specific flattening and task-head names were removed as well. `flattenLeading` and the
-classifier/regressor heads preserve an arbitrary leading shape, so the same definitions cover one
-example, a batch, or several outer axes. Dimension-list random constructors now end in `Dims`,
-which distinguishes a runtime list of dimensions from the shape-indexed constructors.
+Training now has one public lifecycle for regression, classification, and custom losses. A trainer
+selects the loss once, then `predict`, `train`, checkpointing, streams, and verification reuse the
+same model state and runtime dispatch. The duplicate task-specific runners and definitional state
+layout lemmas are gone.
 
 Lean's `Float32.Model` exposes the logical definitions of core binary32 operations. TorchLean now
 proves agreement between that model and its independent raw-bit `IEEE32Exec` implementation for
@@ -140,7 +192,7 @@ enough to expose bugs that the small examples never reached.
 
 ### Imports and File Layout
 
-Most model code starts with `import NN`. The old `NN.Library` and `NN.Entrypoint.*` forwarding
+Most model code starts with `import NN.API`. The old `NN.Library` and `NN.Entrypoint.*` forwarding
 modules are gone. Focused imports such as `NN.Spec`, `NN.Runtime`, `NN.Floats`, and
 `NN.Verification` still lead directly to their declarations. The model zoo remains part of
 TorchLean.
@@ -162,9 +214,9 @@ execution and CUDA Adam serialization.
   <section>
     <h3>General tensors</h3>
     <p>
-      A batch is an axis of a tensor. Generic permutation, reduction, reshape, and
-      global-average-pooling operations replace the old CHW/NCHW helpers. We keep layout names
-      where the operation depends on a layout, as channel-first batch normalization does.
+      A batch is an axis of a tensor. Permutation, reduction, reshape, and global average pooling
+      work over declared axes. Channel normalization takes an explicit channel axis and preserves
+      every other axis.
     </p>
   </section>
   <section>
@@ -191,12 +243,12 @@ tensor minibatch, so `batchSize := 1` keeps one vectorized pass per update. Larg
 gradients across several items. Logged pre-update loss comes from the same forward tapes as the
 gradients; training no longer runs a second forward pass just for logging.
 
-Transformer batches use one batch-aware attention tape node instead of asking the host to run
-the attention layer once per sample. The eager CUDA path folds batch and head axes into batched
-matrix multiplications, applies TorchLean's hard-masked softmax, and computes the local VJP in
-TorchLean. The specification and typed graph path still define the operation as a leading-axis map
-of ordinary attention. A regression compares the vectorized forward value, input gradient, and
-shared weight gradients with repeated single-sample execution.
+Transformer batches use one attention tape node instead of asking the host to run the layer once
+per sample. The public model and typed graph preserve the declared leading shape. The eager CUDA
+path may fold those axes together with the attention heads for batched matrix multiplication, while
+TorchLean still applies the hard mask and computes the local VJP. A regression compares the
+vectorized forward value, input gradient, and shared weight gradients with repeated single-sample
+execution.
 
 Layer normalization and tanh-approximate GELU follow the same rule: one TorchLean operation,
 one local VJP, and fused CUDA kernels for the numerical work. In a two-step GPT-2-small trace with
@@ -222,7 +274,9 @@ backend-owned optimizer checkpoints; the CUDA Adam-family codec supplies the for
 configuration and moment payload.
 
 Discrete model inputs have their own typed path through programs, modules, evaluators,
-trainers, and checkpoints. CharGPT passes token ids and targets as `Tensor Nat`; the old
+trainers, and checkpoints. CharGPT passes token ids and targets as bounded
+`Tensor (Fin vocab) [batch, seqLen]` values; raw `Tensor Nat [batch, seqLen]` values are admitted
+only after `Tensor.checkIndices` validates the tokenizer boundary. The old
 floating-point transport and conversion step are gone. The causal Transformer API supports either
 an independent vocabulary head or an output projection tied to the embedding table. In the tied
 form, lookup and output gradients accumulate into the same parameter.
@@ -317,42 +371,13 @@ rather than separate image-specific APIs.
 
 ### Backend Contracts
 
-Backend selection has three parts. `Device` says where the work runs, `Provider` identifies the
-implementation, and `BackendOp` names the requested operation. For each available implementation,
-a kernel capsule records its shape and layout requirements, whether it supplies forward and
-backward computation, and what evidence supports its numerical contract.
-
-Attention, native CUDA, portable reference code, and optional LibTorch providers contribute named
-capsule modules. Another provider can extend a profile with its own module. Model definitions
-continue to request operations instead of provider-specific kernels.
-
-Typed handlers connect capsules to runtime code. Before an operation runs, the
-session checks that the selected capsule and handler agree on operation, provider, and device. A
-missing binding fails explicitly instead of allowing the backend report and executed closure to
-disagree. This guarantees dispatch identity. Kernel correctness still has the evidence and trust
-level shown in the capsule.
-
-Verified implementations use a separate typed path. A `ProofCarryingKernel` contains the function
-that runs and a proof that it equals one explicit Lean specification. The verified planner keeps
-that theorem in the selected result. Ordinary capsule metadata cannot acquire verified status by
-setting a trust tag after the proof has been erased.
-
-Capability names are rank-polymorphic operation families. Convolution, pooling, reduction,
-permutation, slicing, gathering, and matrix multiplication each have one backend capability; rank,
-axes, padding, strides, and index tensors remain in the graph payload. Numerical certificates use
-their own transfer keys where two payloads need different interval rules, so provider discovery no
-longer doubles as a mathematical semantics table.
-
-Named profiles bundle choices that must agree. The checked CPU and native CUDA profiles keep the
-TorchLean tape and backward rules. The LibTorch-forward profile prefers its registered attention
-kernel, falls back to native CUDA for other operations, records the same TorchLean tape node, and
-uses TorchLean's local VJP. At present, the LibTorch bridge covers scaled dot-product attention; it
-is not a general PyTorch dispatcher.
-
-TorchLean runs on macOS CPU and on Linux CPU or native CUDA. For Windows, WSL2 is currently the
-documented route. The type system already has room for Metal, ROCm, WebGPU, TPU, Trainium, native
-Windows, and custom accelerators, but naming a target is not the same as implementing it. If a
-requested provider is unavailable, TorchLean reports that fact instead of silently falling back.
+Backend planning now records device, provider, operation, contracts, and evidence separately, then
+binds each accepted capsule to a matching runtime handler. Unavailable providers fail explicitly,
+and proof-carrying implementations retain their refinement theorem instead of relying on a trust
+label. The [backend chapter]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/' | relative_url }})
+contains the maintained profiles and full contract model; the
+[GPU chapter]({{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }})
+covers native execution and platform boundaries.
 
 ### Mathematical and Verification Corrections
 
@@ -449,13 +474,22 @@ range over the full operation vocabulary, so adding a new file does not weaken t
 proved. We removed theorems tied to incidental list lengths and retained small definitional lemmas
 only when later correctness proofs actually use them.
 
-Convolution and pooling shape inference share one channel-first spatial contract over an
-arbitrary list of spatial axes. Fixed-window `maxPool2d` and `avgPool2d` remain familiar API names,
-but their forward, JVP, and VJP definitions are dependent-shape adapters over the N-dimensional
-pooling semantics. Adaptive pooling remains two-dimensional because variable-size binning is a
-different operation. The current IR still has two-dimensional convolution and pooling operators;
-their height and width checks specialize the shared spatial contract instead of copying `CHW`
-formulas through inference and verification.
+Convolution, transposed convolution, fixed-window pooling, and adaptive pooling now share
+channel-first contracts parameterized by spatial rank. Their public APIs take vectors of kernel,
+stride, padding, and output dimensions; the same definitions therefore cover lines, images,
+volumes, and higher-dimensional grids. The IR, eager runtime, CUDA path, and shape inference use
+these contracts without separate rank-named wrappers. A semantic-preservation theorem connects
+typed convolution lowering to forward IR evaluation. The exact derivative theorem covers the same
+rank-polymorphic operation and proves the input, kernel, and bias reverse rules. Rounded-real
+theorems bound every forward and backward coordinate using the implementation's actual accumulation
+order. BatchNorm now has the corresponding arbitrary-spatial-rank adjointness theorem for its input,
+scale, and bias gradients.
+
+PyTorch graph import now preserves every leading dimension of a linear layer. In particular, a
+batched input of shape `[3, 4]` passed through `Linear(4, 1)` is imported with output shape `[3, 1]`
+rather than `[3]`. The runtime check includes this case alongside arbitrary-axis reductions,
+permutations, normalization, convolution, pooling, and attention, while continuing to reject
+unsupported operator semantics explicitly.
 
 Verification artifact readers share one finite box-region parser. It rejects non-finite
 coordinates, negative radii, mismatched dimensions, reversed intervals, incomplete field pairs,
@@ -509,11 +543,8 @@ Linux, macOS, WSL2, native Windows, CUDA, and optional LibTorch support, and the
 backend chapters explain where a theorem ends and a runtime assumption begins. Repository checks
 build `NN` directly; `NN.Library` no longer exists.
 
-The Guide ends with a map of 61 definitions and 48 theorems. Its 110 dependency edges distinguish
-statement dependencies from proof dependencies, and every node links back to its Lean declaration.
-The first view groups the map into 17 parts; the full view shows all 109 entries. Lyapunov results
-consume an explicit `LyapunovCert.ValidFor` proof, so a producer's JSON flags cannot become a
-stability theorem by themselves.
+Lyapunov results consume an explicit `LyapunovCert.ValidFor` proof, so a producer's JSON flags
+cannot become a stability theorem by themselves.
 
 The Graphs page contains the module-import explorer and build-performance link. The Tools page links
 LeanProfiler and TorchLean Verified Examples. LeanProfiler includes a TorchLean model run, Perfetto
@@ -534,7 +565,7 @@ KaTeX.
 - `lake build NN NN.CI.All`
 - `lake exe nn_tests_suite`
 - `lake -R -K cuda=true exe nn_tests_suite`
-- `scripts/checks/example_regression.sh` across 42 registered commands and examples
+- `scripts/checks/example_regression.sh` across all registered commands and examples
 - `scripts/checks/example_regression.sh --cuda --extended-cuda --skip-help --skip-default`
 - sustained 20-update CPU runs across 21 model workflows
 - sustained 100-update CUDA runs across 24 model workflows
@@ -635,7 +666,7 @@ website metadata, README, and formalization metadata were moved together.
 
 The migration fixed proof-term breakages in differentiability and autograd
 composition files where Lean 4.31 became stricter about composed functions and
-eventual equality. The full repository build was rerun on the new toolchain.
+eventual equality.
 
   </div>
 </article>

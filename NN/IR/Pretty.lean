@@ -42,7 +42,7 @@ open Spec
 namespace Node
 
 /-!
-Render a parent id list in a compact form.
+Render parent ids in a compact form.
 
 `parents` in TorchLean's IR are **data dependencies**: an edge `p -> n` means "node `n` consumes
 the value produced by node `p`."
@@ -52,8 +52,8 @@ graph listing (or the `.dot` output).
 -/
 /-- One-line rendering of a node (useful for logs). -/
 def prettyLine (n : Node) : String :=
-  let parentsString (ps : List Nat) : String :=
-    "[" ++ String.intercalate ", " (ps.map toString) ++ "]"
+  let parentsString (ps : Array Nat) : String :=
+    "[" ++ String.intercalate ", " (ps.map toString).toList ++ "]"
   s!"{n.id}: {n.kind.describe} parents={parentsString n.parents} out={Shape.pretty n.outShape}"
 
 end Node
@@ -69,9 +69,7 @@ This assumes the usual IR invariant that nodes are in id/topological order, but 
 it; if you need validation, run `Graph.checkWellFormed` / `Graph.checkShapes` first.
 -/
 def pretty (g : Graph) : String :=
-  let joinLines (xs : List String) : String :=
-    String.intercalate "\n" xs
-  joinLines <| (g.nodes.toList.map (fun n => n.prettyLine))
+  String.intercalate "\n" (g.nodes.map Node.prettyLine).toList
 
 /-! ## GraphViz `.dot` rendering -/
 
@@ -86,8 +84,6 @@ Usage:
 - `dot -Tpng g.dot -o g.png`
 -/
 def toDot (g : Graph) : String :=
-  let joinLines (xs : List String) : String :=
-    String.intercalate "\n" xs
   let dotNodeLabel (n : Node) : String :=
     -- Keep labels short; shapes get long quickly.
     --
@@ -104,13 +100,13 @@ def toDot (g : Graph) : String :=
     s.replace "\\" "\\\\" |>.replace "\"" "\\\"" |>.replace "\n" "\\n"
   let header := "digraph IR {\n  rankdir=LR;\n  node [shape=box, fontsize=10];\n"
   let nodes :=
-    g.nodes.toList.map (fun n =>
+    g.nodes.map (fun n =>
       s!"  n{n.id} [label=\"{dotEscape (dotNodeLabel n)}\"];")
   let edges :=
-    g.nodes.toList.foldl (init := []) (fun acc n =>
+    g.nodes.foldl (init := #[]) (fun acc n =>
       acc ++ n.parents.map (fun p => s!"  n{p} -> n{n.id};"))
   let footer := "}\n"
-  header ++ joinLines (nodes ++ edges) ++ "\n" ++ footer
+  header ++ String.intercalate "\n" (nodes ++ edges).toList ++ "\n" ++ footer
 
 end Graph
 

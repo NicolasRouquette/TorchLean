@@ -25,19 +25,13 @@ namespace F
 /-!
 # Functional Core
 
-Small functional helpers built from the primitive `TorchLean.Ops` API.
+Small functional helpers built from the primitive `Runtime.Autograd.Torch.Ops` API.
 
 These definitions are shared by eager and typed graph execution, so they stay close to the primitive
 operation names: elementwise helpers, broadcasting, embedding lookup, reductions, and seeded RNG.
 -/
 
 /-! ## Elementwise helpers -/
-
-/-- Safe list indexing helper used in the dynamic (`String`-parsed) einsum/permute code paths. -/
-def listGet? {β : Type} (xs : List β) (i : Nat) : Option β :=
-  match xs.drop i with
-  | [] => none
-  | x :: _ => some x
 
 /--
 Elementwise square: $x\mapsto x^2$.
@@ -183,56 +177,38 @@ def mulB {α : Type} [Context α] [DecidableEq Shape]
 
 /-! ## Indexing helpers -/
 
+namespace Internal
+
+def embeddingFlat {α : Type} [Context α] [DecidableEq Shape]
+    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
+    {vocab dim k : Nat}
+    (w : RefTy (m := m) (α := α) [vocab, dim])
+    (idx : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin vocab) [k]) :
+    m (RefTy (m := m) (α := α) [k, dim]) :=
+  indexSelect (m := m) (α := α) (s := [vocab, dim]) 0 k w idx
+
+end Internal
+
 /--
-Embedding lookup (gather one row of an embedding table).
+Embedding lookup for an arbitrary tensor of bounded token ids.
 
-Given `w : vocab × dim`, return `w[idx] : dim`.
-
-PyTorch analogue: `torch.nn.functional.embedding` for a single index.
+The indexing primitive operates on a flat vector of indices. This wrapper flattens any input shape,
+selects the corresponding rows, and restores the original axes with the embedding dimension
+appended. The element type `Fin vocab` makes an out-of-range token unrepresentable.
 -/
 def embedding {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {vocab dim : Nat}
-    (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
-    (idx : Fin vocab) :
-    m (RefTy (m := m) (α := α) (.dim dim .scalar)) :=
-  gatherRow (m := m) (α := α) (rows := vocab) (cols := dim) w idx
-
-/--
-Embedding lookup for a vector of token ids, returning zero for an out-of-range id.
-
-This is the indexed version of the public one-hot embedding layer: instead of multiplying a
-`k × vocab` one-hot matrix by the embedding table, gather the `k` rows directly from
-`w : vocab × dim`.
--/
-def embeddingRowsNatOrZero {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {vocab dim k : Nat}
-    (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
-    (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) (.dim k .scalar)) :
-    m (RefTy (m := m) (α := α) (.dim k (.dim dim .scalar))) :=
-  gatherRowsNatOrZero (m := m) (α := α) (rows := vocab) (cols := dim) (k := k) w idx
-
-/--
-Embedding lookup for a tensor of token ids, returning zero for an out-of-range id.
-
-The gather kernel operates on a flat vector of indices. This wrapper flattens any input shape,
-gathers the corresponding rows, and restores the original axes with the embedding dimension
-appended.
--/
-def embeddingNatOrZero {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {vocab dim : Nat} {s : Shape}
-    (w : RefTy (m := m) (α := α) (.dim vocab (.dim dim .scalar)))
-    (idx : _root_.Runtime.Autograd.Torch.NatTensorRef (m := m) (α := α) s) :
+    {vocab dim : Nat} [NeZero vocab] {s : Shape}
+    (w : RefTy (m := m) (α := α) [vocab, dim])
+    (idx : _root_.Runtime.Autograd.Torch.DataRef (m := m) (α := α) (Fin vocab) s) :
     m (RefTy (m := m) (α := α) (s.appendDim dim)) := do
-  let flatIds := _root_.Runtime.Autograd.Torch.mapNatTensor (m := m) (α := α)
+  let flatIds := _root_.Runtime.Autograd.Torch.mapData (m := m) (α := α)
     (fun x => Spec.Tensor.reshapeSpec
-      (s₁ := s) (s₂ := .dim s.size .scalar) x (by simp [Shape.size])) idx
-  let gathered ← embeddingRowsNatOrZero (m := m) (α := α)
+      (s₁ := s) (s₂ := [s.size]) x (by simp [Shape.size])) idx
+  let gathered ← Internal.embeddingFlat (m := m) (α := α)
     (vocab := vocab) (dim := dim) (k := s.size) w flatIds
   reshape (m := m) (α := α)
-    (s₁ := .dim s.size (.dim dim .scalar))
+    (s₁ := [s.size, dim])
     (s₂ := s.appendDim dim) gathered (by simp [Shape.size_appendDim, Shape.size])
 
 /-! ## Reductions -/

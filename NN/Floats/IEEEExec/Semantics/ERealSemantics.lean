@@ -37,6 +37,33 @@ multiple IEEEExec proof modules.
 
 @[expose] public section
 
+namespace TorchLean.Floats
+
+/-! ## Real coercions -/
+
+/-- Coercion from `ℝ` to `EReal` preserves `min`. -/
+theorem coe_min (a b : ℝ) : ((min a b : ℝ) : EReal) = min (a : EReal) (b : EReal) := by
+  by_cases h : a ≤ b
+  · have hE : (a : EReal) ≤ (b : EReal) := by
+      simpa [EReal.coe_le_coe_iff] using h
+    simp [min_eq_left h, min_eq_left hE]
+  · have h' : b ≤ a := le_of_not_ge h
+    have hE : (b : EReal) ≤ (a : EReal) := by
+      simpa [EReal.coe_le_coe_iff] using h'
+    simp [min_eq_right h', min_eq_right hE]
+
+/-- Coercion from `ℝ` to `EReal` preserves `max`. -/
+theorem coe_max (a b : ℝ) : ((max a b : ℝ) : EReal) = max (a : EReal) (b : EReal) := by
+  by_cases h : a ≤ b
+  · have hE : (a : EReal) ≤ (b : EReal) := by
+      simpa [EReal.coe_le_coe_iff] using h
+    simp [max_eq_right h, max_eq_right hE]
+  · have h' : b ≤ a := le_of_not_ge h
+    have hE : (b : EReal) ≤ (a : EReal) := by
+      simpa [EReal.coe_le_coe_iff] using h'
+    simp [max_eq_left h', max_eq_left hE]
+
+end TorchLean.Floats
 
 namespace TorchLean.Floats.IEEE754
 

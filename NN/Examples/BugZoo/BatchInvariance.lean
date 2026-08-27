@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.TensorReductionShape
+public import NN.Tensor
 
 /-!
 # BugZoo: batch-invariance contracts
@@ -37,10 +37,10 @@ cross-example communication, no dynamic batching heuristic, and no hidden state.
 -/
 def mapBatch {α : Type} {batch : Nat} {sIn sOut : Spec.Shape}
     (f : Spec.Tensor α sIn → Spec.Tensor α sOut)
-    (xs : Spec.Tensor α (.dim batch sIn)) :
-    Spec.Tensor α (.dim batch sOut) :=
-  match xs with
-  | Spec.Tensor.dim rows => Spec.Tensor.dim fun i => f (rows i)
+    (xs : Spec.Tensor α (sIn.prependDim batch)) :
+    Spec.Tensor α (sOut.prependDim batch) := by
+  simpa [Spec.Shape.insertAxis] using
+    (TorchLean.Tensor.stack 0 fun i => f (Spec.get xs i))
 
 /--
 Batch-invariance for the reference batched semantics.
@@ -50,11 +50,10 @@ point tolerance if it changes by design reduction order.
 -/
 theorem mapBatch_select_eq_single {α : Type} {batch : Nat} {sIn sOut : Spec.Shape}
     (f : Spec.Tensor α sIn → Spec.Tensor α sOut)
-    (xs : Spec.Tensor α (.dim batch sIn))
+    (xs : Spec.Tensor α (sIn.prependDim batch))
     (i : Fin batch) :
-    Spec.getAtSpec (mapBatch f xs) i = f (Spec.getAtSpec xs i) := by
-  cases xs
-  rfl
+    Spec.get (mapBatch f xs) i = f (Spec.get xs i) := by
+  simp [mapBatch, TorchLean.Tensor.stack, TorchLean.Tensor.Internal.stack, Spec.get]
 
 /--
 Composing two per-example stages before batching is the same as batching each stage in sequence.
@@ -65,9 +64,8 @@ strategy, not a change to the model.
 theorem mapBatch_comp {α : Type} {batch : Nat} {s₁ s₂ s₃ : Spec.Shape}
     (f : Spec.Tensor α s₁ → Spec.Tensor α s₂)
     (g : Spec.Tensor α s₂ → Spec.Tensor α s₃)
-    (xs : Spec.Tensor α (.dim batch s₁)) :
+    (xs : Spec.Tensor α (s₁.prependDim batch)) :
     mapBatch (fun x => g (f x)) xs = mapBatch g (mapBatch f xs) := by
-  cases xs
-  rfl
+  simp [mapBatch, TorchLean.Tensor.stack, TorchLean.Tensor.Internal.stack, Spec.get]
 
 end NN.Examples.BugZoo.BatchInvariance

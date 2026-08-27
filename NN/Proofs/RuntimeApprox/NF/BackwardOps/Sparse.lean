@@ -34,13 +34,13 @@ noncomputable section
 
 namespace SparseContext
 
-/-- A `TList` filled with zeros (shape-wise), used to build sparse contexts for local VJPs. -/
-def zeros {α : Type} [Zero α] : {ss : List Shape} → TList α ss
+/-- A `_root_.TorchLean.TensorPack` filled with zeros (shape-wise), used to build sparse contexts for local VJPs. -/
+def zeros {α : Type} [Zero α] : {ss : List Shape} → _root_.TorchLean.TensorPack α ss
   | [] => .nil
   | s :: ss => .cons (Spec.fill (0 : α) s) (zeros (ss := ss))
 
-/-- Set a single `Idx` position in a `TList`, filling all other entries with zeros. -/
-def setIdx {α : Type} [Zero α] : {Γ : List Shape} → {s : Shape} → Idx Γ s → Tensor α s → TList α Γ
+/-- Set a single `Idx` position in a `_root_.TorchLean.TensorPack`, filling all other entries with zeros. -/
+def setIdx {α : Type} [Zero α] : {Γ : List Shape} → {s : Shape} → Idx Γ s → Tensor α s → _root_.TorchLean.TensorPack α Γ
   | [], _, idx, _t => nomatch idx.i
   | s0 :: Γ, s, ⟨⟨0, _⟩, hshape⟩, t =>
       let t0 : Tensor α s0 :=
@@ -54,7 +54,7 @@ def setIdx {α : Type} [Zero α] : {Γ : List Shape} → {s : Shape} → Idx Γ 
 /-- Set two indices; if they coincide, add the contributions at that position. -/
 def set2Idx {α : Type} [Zero α] [Add α] :
     {Γ : List Shape} → {s₁ s₂ : Shape} →
-      Idx Γ s₁ → Tensor α s₁ → Idx Γ s₂ → Tensor α s₂ → TList α Γ
+      Idx Γ s₁ → Tensor α s₁ → Idx Γ s₂ → Tensor α s₂ → _root_.TorchLean.TensorPack α Γ
   | [], _, _, idx, _t₁, _jdx, _t₂ => nomatch idx.i
   | s0 :: Γ, s₁, s₂, ⟨⟨0, _⟩, h₁⟩, t₁, ⟨⟨0, _⟩, h₂⟩, t₂ =>
       let t₁0 : Tensor α s0 :=
@@ -124,7 +124,7 @@ def set3IdxNe {α : Type} [Zero α] [Add α] :
       (b : Idx Γ s₂) → Tensor α s₂ →
       (c : Idx Γ s₃) → Tensor α s₃ →
       a.i ≠ b.i → a.i ≠ c.i → b.i ≠ c.i →
-      TList α Γ
+      _root_.TorchLean.TensorPack α Γ
   | [], _, _, _, a, _t₁, _b, _t₂, _c, _t₃, _hab, _hac, _hbc => nomatch a.i
   | s0 :: Γ, s₁, s₂, s₃, ⟨⟨0, _⟩, h₁⟩, t₁, ⟨⟨0, _⟩, _h₂⟩, _t₂, _c, _t₃, hab, _hac, _hbc =>
       False.elim (hab rfl)

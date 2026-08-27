@@ -252,25 +252,6 @@ theorem dot_mul_reassoc {s : Shape}
   -- and `mul_spec (mul_spec dLdy m) dx = mul_spec (mul_spec m dLdy) dx`.
   simp [dot, hAssoc, hComm]
 
-/-- Unfolding lemma for `get2` (2D tensor indexing). -/
-lemma get2_eq {α : Type} {m n : Nat} (A : Tensor α (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin
-  n) :
-  get2 A i j =
-    match get A i with
-    | Tensor.dim row => match row j with
-      | Tensor.scalar v => v := by
-  -- unfold get2 definition explicitly so both sides match
-  unfold get2
-  rfl
-
-
-/-- Unfolding lemma for `get` on a `Tensor.dim` value. -/
-lemma get_eq {α : Type} {n s} (t : Tensor α (.dim n s)) (i : Fin n) :
-  get t i = match t with
-  | Tensor.dim f => f i := by
-  unfold get
-  rfl
-
 /--
 Coordinate formula for `mat_vec_mul_spec`, converted from the spec's `List.finRange` fold to a
 `Finset.univ.sum`.
@@ -278,13 +259,13 @@ Coordinate formula for `mat_vec_mul_spec`, converted from the spec's `List.finRa
 This is the “PyTorch-looking” statement of matvec: each output entry is a dot product of the
 corresponding row with the input vector.
 -/
-lemma toVec_mat_vec_mul_spec {m n : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (v : Tensor ℝ (.dim n .scalar)) (i : Fin m) :
-  toVec (matVecMulSpec A v) i = ∑ k : Fin n, (get2 A i k) * (toVec v k) := by
+lemma getScalar_mat_vec_mul_spec {m n : Nat}
+  (A : Tensor ℝ [m, n])
+  (v : Tensor ℝ [n]) (i : Fin m) :
+  getScalar (matVecMulSpec A v) i = ∑ k : Fin n, (get2 A i k) * (getScalar v k) := by
   -- Reuse the backend-generic lemma from `NN/Proofs/Tensor/Algebra.lean` (instantiated at `ℝ`).
   simpa using
-    (Proofs.TensorAlgebra.toVec_mat_vec_mul_spec (α := ℝ) (A := A) (v := v) (i := i))
+    (Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec (α := ℝ) (A := A) (v := v) (i := i))
 
 set_option linter.auxLemma false in
 /--
@@ -297,8 +278,8 @@ Citations:
 https://pytorch.org/docs/stable/generated/torch.matmul.html
 -/
 lemma get2_mat_mul_spec {m n p : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (B : Tensor ℝ (.dim n (.dim p .scalar))) (i : Fin m) (j : Fin p) :
+  (A : Tensor ℝ [m, n])
+  (B : Tensor ℝ [n, p]) (i : Fin m) (j : Fin p) :
   get2 (matMulSpec A B) i j = ∑ k : Fin n, (get2 A i k) * (get2 B k j) := by
   classical
   cases A with

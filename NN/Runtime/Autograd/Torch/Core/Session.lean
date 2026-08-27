@@ -6,15 +6,15 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Runtime.Autograd.Torch.Core.CudaBridge
 public import NN.Runtime.Autograd.Torch.Core.Types
-public import NN.Floats.IEEEExec.Exec32.Compare
 public import NN.Backend.Report
 
 /-!
-# Eager Session and CUDA Bridge
+# Eager Session
 
-Session state, CUDA upload/download conversions, parameter synchronization, and tape lifecycle
-helpers for the eager Torch-style runtime.
+Session state, parameter synchronization, and tape lifecycle helpers for the eager Torch-style
+runtime.
 -/
 
 
@@ -39,122 +39,13 @@ to.
 
 namespace Internal
 
-/-!
-### CUDA Bridge (Upload/Download)
-
-The CUDA eager tape stores float32 device buffers (`Runtime.Autograd.Cuda.Buffer`) paired with a
-runtime `Shape` (`Runtime.Autograd.Cuda.AnyBuffer`).
-
-The Torch eager front-end still presents the spec-level `Tensor α s` API, so in CUDA mode we need:
-- upload: `Tensor α s` -> `Cuda.AnyBuffer` (float32, contiguous, row-major)
-- download: `Cuda.AnyBuffer` -> `Spec.PackedTensor α`
-
-The helper namespace gives CUDA bridge conversions stable call sites and a clear boundary.
--/
-namespace CudaBridge
-
-/-- Conversions required by the eager CUDA tape path. -/
-class TensorConv (α : Type) where
-  /-- Upload a spec tensor to a CUDA `AnyBuffer` (float32). -/
-  toAnyBuffer : {s : Shape} → Tensor α s → IO Runtime.Autograd.Cuda.AnyBuffer
-  /-- Download a CUDA `AnyBuffer` to a packed host tensor. -/
-  ofAnyBuffer : Runtime.Autograd.Cuda.AnyBuffer → IO (Spec.PackedTensor α)
-  /-- Convert a scalar constant to a host `Float` for CUDA kernels (e.g. `scale`, `axpy`). -/
-  toFloat : α → IO Float
-
-/-! #### Float implementation -/
-
-/-- `Float` CUDA conversions: upload/download via row-major `FloatArray`. -/
-instance (priority := 1000) : TensorConv Float where
-  toAnyBuffer := fun {s} t => do
-    let a := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) t
-    let b ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO a
-    pure { s := s, buf := b }
-  ofAnyBuffer := fun any => do
-    let a := Runtime.Autograd.Cuda.Buffer.toFloatArray any.buf
-    if a.size != Spec.Shape.size any.s then
-      throw <| IO.userError
-        s!"torch: cuda: bad buffer length (expected {Spec.Shape.size any.s}, got {a.size})"
-    let t : Tensor Float any.s :=
-      Runtime.Autograd.Cuda.Convert.Internal.unflattenFloat (s := any.s) a 0
-    pure { shape := any.s, tensor := t }
-  toFloat := fun x => pure x
-
-/-! #### Native Float32 implementation -/
-
-/-- Native binary32 conversions preserve the exact device wire representation. -/
-instance (priority := 1000) : TensorConv Float32 where
-  toAnyBuffer := fun {s} t => do
-    let asFloat : Tensor Float s := Spec.mapTensor Float32.toFloat t
-    let a := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) asFloat
-    let b ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO a
-    pure { s := s, buf := b }
-  ofAnyBuffer := fun any => do
-    let a := Runtime.Autograd.Cuda.Buffer.toFloatArray any.buf
-    if a.size != Spec.Shape.size any.s then
-      throw <| IO.userError
-        s!"torch: cuda: bad buffer length (expected {Spec.Shape.size any.s}, got {a.size})"
-    let asFloat : Tensor Float any.s :=
-      Runtime.Autograd.Cuda.Convert.Internal.unflattenFloat (s := any.s) a 0
-    pure { shape := any.s, tensor := Spec.mapTensor Float.toFloat32 asFloat }
-  toFloat := fun x => pure x.toFloat
-
-/-! #### Executable IEEE32 host scalar implementation -/
-
-/--
-Host-side conversion for TorchLean's executable IEEE-754 binary32 scalar.
-
-`IEEE32Exec` is a Lean-defined bit-level scalar semantics, not the CUDA eager tape's float32 device
-wire format. We allow scalar readback to `Float` so CPU examples can print predictions and
-summaries, but CUDA upload/download remains an explicit unsupported boundary.
--/
-instance (priority := 1000) : TensorConv TorchLean.Floats.IEEE754.IEEE32Exec where
-  toAnyBuffer := fun {_s} _ =>
-    throw <| IO.userError
-      "torch: cuda: IEEE32Exec has host-side scalar conversion only; use Float for eager CUDA"
-  ofAnyBuffer := fun _ =>
-    throw <| IO.userError
-      "torch: cuda: IEEE32Exec has host-side scalar conversion only; use Float for eager CUDA"
-  toFloat := fun x => pure (TorchLean.Floats.IEEE754.IEEE32Exec.toFloat x)
-
-/--
-Generic CPU-preserving fallback for scalar types without a CUDA wire-format bridge.
-
-Many TorchLean sessions are scalar-polymorphic on CPU, while the eager CUDA tape stores float32
-buffers. This fallback keeps those CPU instantiations usable and fails loudly if a CUDA upload is
-requested for a scalar type that has no declared float32 wire representation. Add a
-higher-priority `TensorConv α` instance when a scalar type should be allowed onto the CUDA tape.
--/
-instance (priority := 10) (α : Type) : TensorConv α where
-  toAnyBuffer := fun {_s} _ =>
-    throw <| IO.userError
-      "torch: cuda: this scalar type has no CudaBridge.TensorConv upload; use Float for eager CUDA or run this scalar on CPU"
-  ofAnyBuffer := fun _ =>
-    throw <| IO.userError
-      "torch: cuda: this scalar type has no CudaBridge.TensorConv download; use Float for eager CUDA or run this scalar on CPU"
-  toFloat := fun _ =>
-    throw <| IO.userError
-      "torch: cuda: this scalar type has no CudaBridge.TensorConv scalar conversion; use Float for eager CUDA or run this scalar on CPU"
-
-/-! #### Shape helpers for CUDA kernels -/
-
-/-- Runtime dimension list as an `Array Nat` (outermost-first). -/
-def dimsArray (s : Shape) : Array Nat :=
-  Shape.toArray s
-
-/-- `axisMap` as an array. -/
-def axisMapArray {s₁ s₂ : Shape} (cb : Shape.CanBroadcastTo s₁ s₂) : Array Nat :=
-  Runtime.Autograd.Cuda.Broadcast.axisMap cb
-
-end CudaBridge
-
 /--
 Synchronize a CUDA-updated parameter back to its host tensor, if needed.
 
 This synchronization point is explicit. Training hot paths keep parameters resident on device; public
 readback APIs call this helper before exposing parameter tensors to the Lean side.
 -/
-def syncParamCudaToHost {α : Type} [CudaBridge.TensorConv α] {sh : Shape} [DecidableEq Shape]
+def syncParamCudaToHost {α : Type} [TensorTransfer α] {sh : Shape} [DecidableEq Shape]
     (p : Param α sh) : IO Unit := do
   let current ← p.hostCurrent.get
   if current then
@@ -164,7 +55,7 @@ def syncParamCudaToHost {α : Type} [CudaBridge.TensorConv α] {sh : Shape} [Dec
     | none =>
         p.hostCurrent.set true
     | some any =>
-        let anyHost ← CudaBridge.TensorConv.ofAnyBuffer (α := α) any
+        let anyHost ← CudaBridge.ofAnyBuffer (α := α) any
         if h : anyHost.shape = sh then
           p.value.set (anyHost.cast h)
           p.hostCurrent.set true
@@ -218,7 +109,11 @@ structure EagerSession (α : Type) where
   /-- Number of seeded random tensors generated by this session. -/
   rngCounter : IO.Ref Nat
   /-- Accepted capsules already reported for this session, in first-use order. -/
-  selectedBackends : IO.Ref (List NN.Backend.AcceptedKernel)
+  selectedBackends : IO.Ref (Array NN.Backend.AcceptedKernel)
+  /-- Process-unique owner id for session references. -/
+  refOwner : Nat
+  /-- Current recording generation for session references. -/
+  refGeneration : IO.Ref Nat
 
 namespace EagerSession
 
@@ -243,7 +138,7 @@ def selectedCapsule {α : Type} (s : EagerSession α) (op : NN.Backend.BackendOp
   match capsule.validateEagerRequest op s.opts.device with
   | .ok () => pure ()
   | .error msg => throw <| IO.userError s!"torch: invalid backend selection during eager execution: {msg}"
-  s.selectedBackends.set (selected ++ [planned])
+  s.selectedBackends.set (selected.push planned)
   if s.opts.showBackend then
     let row := NN.Backend.KernelAudit.ofPlannedKernel
       { op := planned.op, capsule := planned.capsule }
@@ -260,13 +155,13 @@ selection fails here instead of recording one provider while silently running an
 strength of the numerical evidence.
 -/
 def executeSelected {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
-    (handlers : List (NN.Backend.KernelHandler β)) : IO β := do
+    (handlers : Array (NN.Backend.KernelHandler β)) : IO β := do
   let capsule ← s.selectedCapsule op
   match handlers.find? (fun handler => handler.matchesCapsule capsule) with
   | none =>
       let available := String.intercalate ", " <|
-        handlers.map fun handler =>
-          s!"{handler.name} ({reprStr handler.provider}/{handler.device.cliName})"
+        (handlers.map fun handler =>
+          s!"{handler.name} ({reprStr handler.provider}/{handler.device.cliName})").toList
       throw <| IO.userError <|
         s!"torch: `{op.name}` selected capsule `{capsule.name}` " ++
           s!"({reprStr capsule.provider}/{capsule.device.cliName}), but no matching executable " ++
@@ -287,7 +182,7 @@ attention, pass their complete handler list directly to `executeSelected`.
 def executeReferenceOrNativeCuda {α β : Type} (s : EagerSession α)
     (op : NN.Backend.BackendOp) (cpu cuda : IO β) : IO β :=
   s.executeSelected op
-    [ ({ name := "TorchLean reference CPU"
+    #[({ name := "TorchLean reference CPU"
          op
          provider := .reference
          device := .cpu
@@ -296,10 +191,10 @@ def executeReferenceOrNativeCuda {α β : Type} (s : EagerSession α)
          op
          provider := .nativeCuda
          device := .cuda
-         execute := fun _ => cuda } : NN.Backend.KernelHandler β) ]
+         execute := fun _ => cuda } : NN.Backend.KernelHandler β)]
 
 /-- Accepted capsules actually selected by this eager session. -/
-def backendSelections {α : Type} (s : EagerSession α) : IO (List NN.Backend.AcceptedKernel) :=
+def backendSelections {α : Type} (s : EagerSession α) : IO (Array NN.Backend.AcceptedKernel) :=
   s.selectedBackends.get
 
 /-- Allocate a fresh eager session with an empty tape and empty side tables. -/
@@ -313,7 +208,9 @@ def new {α : Type} (opts : Options := {}) : IO (EagerSession α) := do
   let paramsByLeaf ← IO.mkRef (Std.HashMap.emptyWithCapacity)
   let nats ← IO.mkRef #[]
   let rngCounter ← IO.mkRef 0
-  let selectedBackends ← IO.mkRef ([] : List NN.Backend.AcceptedKernel)
+  let selectedBackends ← IO.mkRef (#[] : Array NN.Backend.AcceptedKernel)
+  let refOwner ← RefIdentity.freshOwner
+  let refGeneration ← IO.mkRef 0
   if opts.showBackend then
     IO.println "[TorchLean] backend capsules used:"
   pure
@@ -323,7 +220,42 @@ def new {α : Type} (opts : Options := {}) : IO (EagerSession α) := do
       paramsByLeaf := paramsByLeaf
       nats := nats
       rngCounter := rngCounter
-      selectedBackends := selectedBackends }
+      selectedBackends := selectedBackends
+      refOwner := refOwner
+      refGeneration := refGeneration }
+
+/-- Capture the current owner and generation for a newly recorded handle. -/
+def currentRefIdentity {α : Type} (s : EagerSession α) : IO RefIdentity := do
+  pure { owner := s.refOwner, generation := ← s.refGeneration.get }
+
+/-- Construct a tensor handle owned by the current recording phase. -/
+def makeTensorRef {α : Type} {sh : Shape} (s : EagerSession α) (id : Nat) : IO (TensorRef α sh) := do
+  pure { id, identity? := some (← s.currentRefIdentity) }
+
+/-- Construct a non-differentiable handle owned by the current recording phase. -/
+def makeNatRef {α : Type} (s : EagerSession α) (id : Nat) : IO NatRef := do
+  pure { id, identity? := some (← s.currentRefIdentity) }
+
+/-- Validate one tensor handle before using its numeric tape id. -/
+def validateTensorRef {α : Type} (s : EagerSession α) {sh : Shape}
+    (x : TensorRef α sh) : IO Unit := do
+  match x.identity? with
+  | some identity => identity.validateAgainst s.refOwner s.refGeneration "tensor reference"
+  | none => throw <| IO.userError "torch: tensor reference has no session owner"
+
+/-- Validate tensor handles consumed by one operation. -/
+def validateRefIdentities {α : Type} (s : EagerSession α)
+    (identities : Array (Option RefIdentity)) : IO Unit := do
+  for identity? in identities do
+    match identity? with
+    | some identity => identity.validateAgainst s.refOwner s.refGeneration "tensor reference"
+    | none => throw <| IO.userError "torch: tensor reference has no session owner"
+
+/-- Validate one non-differentiable handle before using its environment index. -/
+def validateNatRef {α : Type} (s : EagerSession α) (x : NatRef) : IO Unit := do
+  match x.identity? with
+  | some identity => identity.validateAgainst s.refOwner s.refGeneration "Nat reference"
+  | none => throw <| IO.userError "torch: Nat reference has no session owner"
 
 /-- Force-free a CUDA buffer allocation; the external finalizer is safe to call twice. -/
 def releaseCudaBuffer (b : Runtime.Autograd.Cuda.Buffer) : IO Unit := do
@@ -450,6 +382,7 @@ def resetTape {α : Type} (s : EagerSession α) : IO Unit := do
   s.cudaTape.set Runtime.Autograd.Cuda.Tape.empty
   s.paramsByLeaf.set (Std.HashMap.emptyWithCapacity)
   s.nats.set #[]
+  s.refGeneration.modify (fun generation => generation + 1)
 
 /--
 Create a mutable parameter object (not yet on the tape).
@@ -474,14 +407,15 @@ Read back the concrete tensor value stored at a `TensorRef`.
 
 This is a dynamic check: we ensure the id exists on the tape and the stored shape matches `sh`.
 -/
-def getValue {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
+def getValue {α : Type} [TensorTransfer α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
   (x : TensorRef α sh) : IO (Tensor α sh) := do
+  s.validateTensorRef x
   if Options.device s.opts == .cuda then
     let t ← s.cudaTape.get
     let any ← match t.getValue? x.id with
       | some v => pure v
       | none => throw <| IO.userError "torch: invalid tensor id (missing CUDA value)"
-    let anyHost ← CudaBridge.TensorConv.ofAnyBuffer (α := α) any
+    let anyHost ← CudaBridge.ofAnyBuffer (α := α) any
     if h : anyHost.shape = sh then
       pure (anyHost.cast h)
     else
@@ -505,22 +439,22 @@ Record a constant leaf (non-differentiable) on the tape.
 
 PyTorch comparison: like constructing a tensor with `requires_grad=False`.
 -/
-def const {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
+def const {α : Type} [TensorTransfer α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
   (v : Tensor α sh) (name : Option String := none) : IO (TensorRef α sh) := do
   if Options.device s.opts == .cuda then
-    let anyBuf ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := sh) v
+    let anyBuf ← CudaBridge.toAnyBuffer (α := α) (s := sh) v
     let t0 ← s.cudaTape.get
     let (t1, id) :=
       Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := anyBuf) (name := name)
         (requiresGrad := false)
     s.cudaTape.set t1
-    pure { id := id }
+    s.makeTensorRef id
   else
     let t0 ← s.tape.get
     let (t1, id) := Runtime.Autograd.Tape.leaf (t := t0) (s := sh) (value := v)
       (name := name) (requiresGrad := false)
     s.tape.set t1
-    pure { id := id }
+    s.makeTensorRef id
 
 /--
 Stop-gradient boundary.
@@ -528,8 +462,9 @@ Stop-gradient boundary.
 Forward semantics: identity (`detach(x) = x`).
 Backward semantics: no gradient flows to `x`.
 -/
-def detach {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
+def detach {α : Type} [TensorTransfer α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
     (x : TensorRef α sh) (name : Option String := none) : IO (TensorRef α sh) := do
+  s.validateTensorRef x
   if Options.device s.opts == .cuda then
     let t0 ← s.cudaTape.get
     let any ← match t0.getValue? x.id with
@@ -541,11 +476,11 @@ def detach {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sh
         { name := name
           value := any'
           requiresGrad := false
-          parents := [x.id]
-          backward := fun _ => .ok [] }
+          parents := #[x.id]
+          backward := fun _ => .ok #[] }
       let (t1, id) := Runtime.Autograd.Cuda.Tape.addNode t0 node
       s.cudaTape.set t1
-      pure { id := id }
+      s.makeTensorRef id
     else
       throw <| IO.userError <|
         s!"torch: detach: shape mismatch (expected {Shape.pretty sh}, got {Shape.pretty any.s})"
@@ -554,16 +489,16 @@ def detach {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Sh
     let t0 ← s.tape.get
     let node : Runtime.Autograd.Node α :=
       { name := name
-        value := Spec.PackedTensor.ofTensor xVal
+        value := Spec.SomeTensor.ofTensor xVal
         requiresGrad := false
-        parents := [x.id]
-        backward := fun _ => .ok [] }
+        parents := #[x.id]
+        backward := fun _ => .ok #[] }
     let (t1, id) := Runtime.Autograd.Tape.addNode t0 node
     s.tape.set t1
-    pure { id := id }
+    s.makeTensorRef id
 
 /-- Deterministic `U[0,1)` tensor generator (seeded). -/
-def randUniform {α : Type} [Context α] [CudaBridge.TensorConv α]
+def randUniform {α : Type} [Context α] [TensorTransfer α]
     (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
     (seed : Nat) (name : Option String := none) : IO (TensorRef α sh) := do
   let nextInvocation := do
@@ -581,7 +516,7 @@ def randUniform {α : Type} [Context α] [CudaBridge.TensorConv α]
     let (t1, id) :=
       Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requiresGrad := false)
     s.cudaTape.set t1
-    pure { id := id }
+    s.makeTensorRef id
   let cpu := do
     let invocation ← nextInvocation
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
@@ -590,7 +525,7 @@ def randUniform {α : Type} [Context α] [CudaBridge.TensorConv α]
   s.executeReferenceOrNativeCuda .randUniform cpu cuda
 
 /-- Deterministic `{0,1}` mask generator (seeded) with a scalar keep-probability input. -/
-def bernoulliMask {α : Type} [Context α] [CudaBridge.TensorConv α]
+def bernoulliMask {α : Type} [Context α] [TensorTransfer α]
     (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
     (keepProb : TensorRef α Shape.scalar) (seed : Nat) (name : Option String := none) :
     IO (TensorRef α sh) := do
@@ -608,13 +543,13 @@ def bernoulliMask {α : Type} [Context α] [CudaBridge.TensorConv α]
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
     let n32 ← Runtime.Autograd.okOrThrow <|
       Runtime.Autograd.Cuda.AnyBuffer.natToU32Checked (Spec.Shape.size sh)
-    let keepF ← CudaBridge.TensorConv.toFloat (α := α) keepProbVal
+    let keepF ← TensorTransfer.toFloat (α := α) keepProbVal
     let buf := Runtime.Autograd.Cuda.Buffer.bernoulliMask n32 keepF key
     let any : Runtime.Autograd.Cuda.AnyBuffer := { s := sh, buf := buf }
     let (t1, id) :=
       Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := any) (name := name) (requiresGrad := false)
     s.cudaTape.set t1
-    pure { id := id }
+    s.makeTensorRef id
   let cpu := do
     let invocation ← nextInvocation
     let key := Runtime.Autograd.TorchLean.Random.keyOf seed invocation
@@ -633,7 +568,7 @@ autograd graph).
 When `s.opts.gradEnabled = false`, the parameter is still registered as a leaf so CUDA cleanup
 can recognize persistent parameter buffers, but the leaf itself is marked non-differentiable.
 -/
-def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
+def use {α : Type} [TensorTransfer α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
   (p : Param α sh) : IO (TensorRef α sh) := do
   let requiresGrad := s.opts.gradEnabled && p.requiresGrad
   let id ←
@@ -647,14 +582,14 @@ def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape
               -- A well-formed `Param` has a cached CUDA buffer with the declared shape; if the
               -- cache is inconsistent, re-upload from the host value.
               let v ← p.value.get
-              let uploaded ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := sh) v
+              let uploaded ← CudaBridge.toAnyBuffer (α := α) (s := sh) v
               AnyParam.releaseCachedCudaValue p
               p.cudaValue.set (some uploaded)
               p.hostCurrent.set true
               pure uploaded
         | none =>
             let v ← p.value.get
-            let uploaded ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := sh) v
+            let uploaded ← CudaBridge.toAnyBuffer (α := α) (s := sh) v
             AnyParam.releaseCachedCudaValue p
             p.cudaValue.set (some uploaded)
             p.hostCurrent.set true
@@ -675,7 +610,7 @@ def use {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape
       s.tape.set t1
       pure id
   s.paramsByLeaf.modify (fun m => m.insert id (AnyParam.ofParam p))
-  pure { id := id }
+  s.makeTensorRef id
 
 /--
 Record an external input tensor as a leaf on the tape.
@@ -687,23 +622,23 @@ The session-level `gradEnabled` flag is a final gate on the caller's requested `
 This keeps inference helpers from accidentally building a trainable tape even when a lower-level
 caller asks for a differentiable input.
 -/
-def input {α : Type} [CudaBridge.TensorConv α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
+def input {α : Type} [TensorTransfer α] (s : EagerSession α) {sh : Shape} [DecidableEq Shape]
   (v : Tensor α sh) (name : Option String := none) (requiresGrad : Bool := false) :
   IO (TensorRef α sh) := do
   let requiresGrad := s.opts.gradEnabled && requiresGrad
   if Options.device s.opts == .cuda then
-    let anyBuf ← CudaBridge.TensorConv.toAnyBuffer (α := α) (s := sh) v
+    let anyBuf ← CudaBridge.toAnyBuffer (α := α) (s := sh) v
     let t0 ← s.cudaTape.get
     let (t1, id) := Runtime.Autograd.Cuda.Tape.leaf (t := t0) (value := anyBuf)
       (name := name) (requiresGrad := requiresGrad)
     s.cudaTape.set t1
-    pure { id := id }
+    s.makeTensorRef id
   else
     let t0 ← s.tape.get
     let (t1, id) := Runtime.Autograd.Tape.leaf (t := t0) (s := sh) (value := v)
       (name := name) (requiresGrad := requiresGrad)
     s.tape.set t1
-    pure { id := id }
+    s.makeTensorRef id
 
 /--
 Record a non-differentiable `Nat` input in the session environment.
@@ -714,10 +649,11 @@ def inputNat {α : Type} (s : EagerSession α) (v : Nat) : IO NatRef := do
   let xs ← s.nats.get
   let id := xs.size
   s.nats.set (xs.push v)
-  pure { id := id }
+  s.makeNatRef id
 
 /-- Read a previously recorded `NatRef`. -/
 def getNat {α : Type} (s : EagerSession α) (r : NatRef) : IO Nat := do
+  s.validateNatRef r
   let xs ← s.nats.get
   if h : r.id < xs.size then
     pure <| xs[r.id]'h
@@ -726,69 +662,13 @@ def getNat {α : Type} (s : EagerSession α) (r : NatRef) : IO Nat := do
 
 /-- Overwrite a previously recorded `NatRef`. -/
 def setNat {α : Type} (s : EagerSession α) (r : NatRef) (v : Nat) : IO Unit := do
+  s.validateNatRef r
   let xs ← s.nats.get
   if h : r.id < xs.size then
     let i : Fin xs.size := ⟨r.id, h⟩
     s.nats.set (xs.set i v)
   else
     throw <| IO.userError "torch: invalid nat id"
-
-/--
-Convert a `Tensor Nat (.dim k .scalar)` to an `Array Nat`.
-
-Used to stage `NatVecRef` values into the session environment.
--/
-def natVecToArray {k : Nat} (v : Tensor Nat (.dim k .scalar)) : Array Nat :=
-  match v with
-  | .dim f =>
-      Array.ofFn (fun i : Fin k =>
-        match f i with
-        | .scalar n => n)
-
-/--
-Record a non-differentiable vector of `Nat`s in the session environment.
-
-Returns a `NatVecRef k` pointing to the stored block.
--/
-def inputNatVec {α : Type} {k : Nat} (s : EagerSession α) (v : Tensor Nat (.dim k .scalar)) : IO
-  (NatVecRef k) := do
-  let old ← s.nats.get
-  let start := old.size
-  let xsNew := (natVecToArray (k := k) v).foldl (fun acc x => acc.push x) old
-  s.nats.set xsNew
-  pure { start := start }
-
-/-- Read back the vector stored at `NatVecRef k`. -/
-def getNatVec {α : Type} {k : Nat} (s : EagerSession α) (r : NatVecRef k) : IO (Tensor Nat (.dim k
-  .scalar)) := do
-  let xs ← s.nats.get
-  if h : r.start + k ≤ xs.size then
-    pure <|
-      Tensor.dim (fun i =>
-        have hi : r.start + i.val < r.start + k := Nat.add_lt_add_left i.is_lt r.start
-        have hi' : r.start + i.val < xs.size := lt_of_lt_of_le hi h
-        Tensor.scalar (xs[r.start + i.val]'hi'))
-  else
-    throw <| IO.userError "torch: invalid nat vec ref (out of bounds)"
-
-/-- Overwrite the stored vector at `NatVecRef k`. -/
-def setNatVec {α : Type} {k : Nat} (s : EagerSession α) (r : NatVecRef k) (v : Tensor Nat (.dim k
-  .scalar)) : IO Unit := do
-  let xs ← s.nats.get
-  if h : r.start + k ≤ xs.size then
-    let xs' :=
-      (List.finRange k).foldl (fun acc (i : Fin k) =>
-        have hi : r.start + i.val < xs.size := by
-          have hlt : r.start + i.val < r.start + k := Nat.add_lt_add_left i.is_lt r.start
-          exact lt_of_lt_of_le hlt h
-        let vi : Nat :=
-          match getAtSpec v i with
-          | .scalar n => n
-        acc.set! (r.start + i.val) vi
-      ) xs
-    s.nats.set xs'
-  else
-    throw <| IO.userError "torch: invalid nat vec ref (out of bounds)"
 
 end EagerSession
 

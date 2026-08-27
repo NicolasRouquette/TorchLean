@@ -8,8 +8,6 @@ module
 
 public import NN.Floats.IEEEExec.Bridge.ERealTotal
 public import NN.Floats.IEEEExec.Bridge.Expressions
-public import NN.Floats.IEEEExec.Bridge.FP32
-public import NN.Floats.IEEEExec.Bridge.FP32Total
 public import NN.Floats.IEEEExec.Bridge.LeanFloat32
 
 /-!

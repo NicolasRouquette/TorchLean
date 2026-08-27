@@ -119,9 +119,9 @@ Reference:
 - Sutton and Barto, *Reinforcement Learning: An Introduction* (returns / bootstrapping).
 -/
 def discountedReturnsIntervals {n : Nat}
-    (gamma : Float32Exec) (rewards : Tensor Float32Exec (.dim n .scalar))
+    (gamma : Float32Exec) (rewards : Tensor Float32Exec [n])
     (bootstrap : Float32Exec := (0 : Float32Exec)) :
-    Tensor Interval32 (.dim n .scalar) :=
+    Tensor Interval32 [n] :=
   let rArr : Array Float32Exec :=
     Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
   let out : Array Interval32 :=
@@ -152,9 +152,9 @@ Reference:
 -/
 def generalizedAdvantageEstimationIntervals {n : Nat}
     (gamma lam : Float32Exec)
-    (rewards values nextValues : Tensor Float32Exec (.dim n .scalar))
-    (dones : Tensor Bool (.dim n .scalar)) :
-    Tensor Interval32 (.dim n .scalar) :=
+    (rewards values nextValues : Tensor Float32Exec [n])
+    (dones : Tensor Bool [n]) :
+    Tensor Interval32 [n] :=
   let rArr : Array Float32Exec :=
     Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
   let vArr : Array Float32Exec :=
@@ -203,8 +203,8 @@ This is an executable regression check for examples and tests; formal enclosure 
 `NN/Floats/Interval/*`.
 -/
 def returnsWithinIntervals {n : Nat}
-    (returns : Tensor Float32Exec (.dim n .scalar))
-    (intervals : Tensor Interval32 (.dim n .scalar)) : Bool :=
+    (returns : Tensor Float32Exec [n])
+    (intervals : Tensor Interval32 [n]) : Bool :=
   let idxs : Array (Fin n) := Array.ofFn (fun i => i)
   idxs.all fun i =>
     let x : Float32Exec := Tensor.item (get returns i)

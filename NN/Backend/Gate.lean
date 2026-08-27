@@ -36,17 +36,17 @@ def AssurancePolicy.acceptsDisposition (p : AssurancePolicy) (d : EvidenceDispos
 
 /-- Why a candidate plan was rejected by an acceptance gate. -/
 inductive GateFailure where
-  | missingEvidence (reports : List ObligationReport)
-  | runtimeGuardEvidence (reports : List ObligationReport)
-  | testEvidence (reports : List ObligationReport)
-  | trustedBoundary (reports : List ObligationReport)
-  | fuzzEvidence (reports : List ObligationReport)
+  | missingEvidence (reports : Array ObligationReport)
+  | runtimeGuardEvidence (reports : Array ObligationReport)
+  | testEvidence (reports : Array ObligationReport)
+  | trustedBoundary (reports : Array ObligationReport)
+  | fuzzEvidence (reports : Array ObligationReport)
   deriving Repr
 
 /-- Result of applying an acceptance policy to an execution audit. -/
 inductive GateResult where
   | accepted
-  | rejected (failures : List GateFailure)
+  | rejected (failures : Array GateFailure)
   deriving Repr
 
 namespace ObligationReport
@@ -69,63 +69,56 @@ end ObligationReport
 
 namespace KernelPlanAudit
 
-def guardedReports (a : KernelPlanAudit) : List ObligationReport :=
+def guardedReports (a : KernelPlanAudit) : Array ObligationReport :=
   a.obligationReports.filter ObligationReport.isGuarded
 
-def testedReports (a : KernelPlanAudit) : List ObligationReport :=
+def testedReports (a : KernelPlanAudit) : Array ObligationReport :=
   a.obligationReports.filter ObligationReport.isTested
 
 /-- Fuzz-backed recheck obligations. -/
-def fuzzReports (a : KernelPlanAudit) : List ObligationReport :=
+def fuzzReports (a : KernelPlanAudit) : Array ObligationReport :=
   a.obligationReports.filter ObligationReport.isFuzzed
 
 /-- Gate failures induced by an acceptance policy. -/
-def gateFailures (policy : AssurancePolicy) (a : KernelPlanAudit) : List GateFailure :=
+def gateFailures (policy : AssurancePolicy) (a : KernelPlanAudit) : Array GateFailure :=
   let missing :=
     if policy.requireEvidence then
-      match a.missingReports with
-      | [] => []
-      | reports => [GateFailure.missingEvidence reports]
+      let reports := a.missingReports
+      if reports.isEmpty then #[] else #[GateFailure.missingEvidence reports]
     else
-      []
+      #[]
   let trusted :=
     if policy.allowTrustedExternal then
-      []
+      #[]
     else
-      match a.trustedBoundaryReports with
-      | [] => []
-      | reports => [GateFailure.trustedBoundary reports]
+      let reports := a.trustedBoundaryReports
+      if reports.isEmpty then #[] else #[GateFailure.trustedBoundary reports]
   let guarded :=
-    if policy.allowRuntimeGuards then [] else
-      match a.guardedReports with
-      | [] => []
-      | reports => [GateFailure.runtimeGuardEvidence reports]
+    if policy.allowRuntimeGuards then #[] else
+      let reports := a.guardedReports
+      if reports.isEmpty then #[] else #[GateFailure.runtimeGuardEvidence reports]
   let tested :=
-    if policy.allowTestEvidence then [] else
-      match a.testedReports with
-      | [] => []
-      | reports => [GateFailure.testEvidence reports]
+    if policy.allowTestEvidence then #[] else
+      let reports := a.testedReports
+      if reports.isEmpty then #[] else #[GateFailure.testEvidence reports]
   let fuzzed :=
     if policy.allowFuzzed then
-      []
+      #[]
     else
-      match a.fuzzReports with
-      | [] => []
-      | reports => [GateFailure.fuzzEvidence reports]
+      let reports := a.fuzzReports
+      if reports.isEmpty then #[] else #[GateFailure.fuzzEvidence reports]
   missing ++ guarded ++ tested ++ trusted ++ fuzzed
 
 /-- Apply an acceptance policy to an execution audit. -/
 def gate (policy : AssurancePolicy) (a : KernelPlanAudit) : GateResult :=
-  match a.gateFailures policy with
-  | [] => .accepted
-  | failures => .rejected failures
+  let failures := a.gateFailures policy
+  if failures.isEmpty then .accepted else .rejected failures
 
 /-- An audit is accepted by a policy exactly when the policy reports no gate failures. -/
-theorem gate_eq_accepted_iff_gateFailures_eq_nil
+theorem gate_eq_accepted_iff_gateFailures_eq_empty
     (policy : AssurancePolicy) (a : KernelPlanAudit) :
-    a.gate policy = .accepted ↔ a.gateFailures policy = [] := by
-  unfold gate
-  cases a.gateFailures policy <;> simp
+    a.gate policy = .accepted ↔ a.gateFailures policy = #[] := by
+  simp [gate, Array.isEmpty_iff]
 
 end KernelPlanAudit
 
@@ -148,15 +141,15 @@ structure AcceptedKernel where
   op : BackendOp
   capsule : KernelCapsule
   policy : AssurancePolicy
-  gateProof : ({ kernels := [{ op, capsule }] } : KernelPlan).gate policy = .accepted
+  gateProof : ({ kernels := #[{ op, capsule }] } : KernelPlan).gate policy = .accepted
 
 instance : Repr AcceptedKernel where
   reprPrec k _ := Std.Format.text s!"AcceptedKernel({k.op.name}, {k.capsule.name})"
 
 /-- Gate a planned kernel and return a value that an executor can consume only on success. -/
 def PlannedKernel.accept (policy : AssurancePolicy) (k : PlannedKernel) :
-    Except (List GateFailure) AcceptedKernel :=
-  let plan : KernelPlan := { kernels := [k] }
+    Except (Array GateFailure) AcceptedKernel :=
+  let plan : KernelPlan := { kernels := #[k] }
   match h : plan.gate policy with
   | .accepted => .ok { op := k.op, capsule := k.capsule, policy, gateProof := h }
   | .rejected failures => .error failures

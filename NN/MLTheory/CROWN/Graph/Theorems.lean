@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.MLTheory.CROWN.Graph.Backward
+public import NN.MLTheory.CROWN.Graph.Engine
 
 /-!
 # CROWN Graph Theorems
@@ -31,15 +31,6 @@ variable [BoundOps α]
 
 open BoundOps
 
-/-! Helper lemmas about shapes/dimensions of basic constructions -/
-
-omit [BoundOps α] in
-/-- `toFlatBox` creates a box whose `dim` matches the given `n`. -/
-lemma toFlatBox_dim (n : Nat) (B : Box α (.dim n .scalar)) : (toFlatBox (α:=α) n B).dim = n := rfl
-
--- Note: `ofFlatBox` returns a `Box` whose shape is definitionally `.dim B.dim .scalar`.
--- We omit a separate lemma about a `.matches` predicate since it is not present here.
-
 namespace Theorems
 
 /-- Dimension lemma: linear IBP returns an output box with the expected dimension. -/
@@ -49,9 +40,7 @@ lemma ibp_linear_output_dim
   (ps : ParamStore α) (id : Nat)
   (hstore : ps.linearWB[id]? = some p)
   : ((ibpLinear (α:=α) id ps Xin).map (·.dim) = some p.m) := by
-  -- From the definition of `ibpLinear`, the result is `some (toFlatBox p.m yB)`.
-  -- Mapping `(·.dim)` over that gives `some p.m` by `toFlatBox_dim`.
-  simp [ibpLinear, ibpLinearParams, h, hstore, toFlatBox_dim]
+  simp [ibpLinear, ibpLinearParams, h, hstore, toFlatBox]
 
 /-- Simple shape-preservation facts for FlatBox combinators used by IBP. -/
 lemma box_add_dim (B1 B2 : FlatBox α) : (boxAdd (α:=α) B1 B2).dim = B1.dim := by
@@ -87,7 +76,7 @@ lemma box_square_dim (B : FlatBox α) : (boxSquare (α:=α) B).dim = B.dim := by
 /-! Canonical forms for boxAdd/boxSub when dimensions match -/
 
 lemma box_add_on_eq (n : Nat)
-  (lo1 hi1 lo2 hi2 : Tensor α (.dim n .scalar)) :
+  (lo1 hi1 lo2 hi2 : Tensor α [n]) :
   boxAdd (α:=α) { dim := n, lo := lo1, hi := hi1 } { dim := n, lo := lo2, hi := hi2 }
     =
       { dim := n
@@ -97,7 +86,7 @@ lemma box_add_on_eq (n : Nat)
 
 /-- Canonical form for `boxSub` when both boxes have the same dimension. -/
 lemma box_sub_on_eq (n : Nat)
-  (lo1 hi1 lo2 hi2 : Tensor α (.dim n .scalar)) :
+  (lo1 hi1 lo2 hi2 : Tensor α [n]) :
   boxSub (α:=α) { dim := n, lo := lo1, hi := hi1 } { dim := n, lo := lo2, hi := hi2 }
     =
       { dim := n
@@ -110,7 +99,7 @@ lemma box_sub_on_eq (n : Nat)
 namespace Semantics
 
 /-- `encloses B x` means vector `x` lies componentwise between `B.lo` and `B.hi`. -/
-@[expose] public def encloses (B : FlatBox α) (x : Tensor α (.dim B.dim .scalar)) : Prop :=
+@[expose] public def encloses (B : FlatBox α) (x : Tensor α [B.dim]) : Prop :=
   let fx := getDimScalarFn (α:=α) x
   let flo := getDimScalarFn (α:=α) B.lo
   let fhi := getDimScalarFn (α:=α) B.hi
@@ -128,9 +117,9 @@ The scalar order fact is passed as `add_mono`: from `a ≤ b` and `c ≤ d`, der
 `a + c ≤ b + d`.
 -/
 theorem box_add_sound (n : Nat)
-  (lo1 hi1 lo2 hi2 : Tensor α (.dim n .scalar))
+  (lo1 hi1 lo2 hi2 : Tensor α [n])
   (add_mono : ∀ {a b c d : α}, a ≤ b → c ≤ d → a + c ≤ b + d)
-  (x y : Tensor α (.dim n .scalar))
+  (x y : Tensor α [n])
   (hx : encloses (α:=α) { dim := n, lo := lo1, hi := hi1 } x)
   (hy : encloses (α:=α) { dim := n, lo := lo2, hi := hi2 } y)
   : encloses (α:=α)
@@ -179,9 +168,9 @@ The scalar order fact is passed as `sub_mono`: from `a ≤ b` and `d ≤ c`, der
 `a - c ≤ b - d`.
 -/
 theorem box_sub_sound (n : Nat)
-  (lo1 hi1 lo2 hi2 : Tensor α (.dim n .scalar))
+  (lo1 hi1 lo2 hi2 : Tensor α [n])
   (sub_mono : ∀ {a b c d : α}, a ≤ b → d ≤ c → a - c ≤ b - d)
-  (x y : Tensor α (.dim n .scalar))
+  (x y : Tensor α [n])
   (hx : encloses (α:=α) { dim := n, lo := lo1, hi := hi1 } x)
   (hy : encloses (α:=α) { dim := n, lo := lo2, hi := hi2 } y)
   : encloses (α:=α)
@@ -227,10 +216,10 @@ omit [BoundOps α] in
 /-- Enclosure for `boxRelu`: if $x\in B$, then $\operatorname{ReLU}(x)$ belongs to the resulting
 box. -/
 theorem box_relu_sound (n : Nat)
-  (lo hi : Tensor α (.dim n .scalar))
+  (lo hi : Tensor α [n])
   (relu_mono : ∀ {a b : α}, a ≤ b →
     Activation.Math.reluSpec (α:=α) a ≤ Activation.Math.reluSpec (α:=α) b)
-  (x : Tensor α (.dim n .scalar))
+  (x : Tensor α [n])
   (hx : encloses (α:=α) { dim := n, lo := lo, hi := hi } x)
   : encloses (α:=α) (boxRelu (α:=α) { dim := n, lo := lo, hi := hi })
       (castDimScalar (α:=α)
@@ -281,7 +270,7 @@ omit [BoundOps α] in
 theorem box_square_sound (B : FlatBox α)
   (sq_bound : ∀ {l u v : α}, l ≤ v → v ≤ u → sqLower (α:=α) l u ≤ v * v ∧ v * v ≤ sqUpper (α:=α) l
     u)
-  (x : Tensor α (.dim B.dim .scalar))
+  (x : Tensor α [B.dim])
   (hx : encloses (α:=α) B x)
   : encloses (α:=α) (boxSquare (α:=α) B)
       (castDimScalar (α:=α)

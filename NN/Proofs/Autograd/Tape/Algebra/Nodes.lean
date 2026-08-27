@@ -37,14 +37,14 @@ noncomputable section
 
 namespace NodeData
 
-/-- Build an executable unary node from a spec `OpSpec`, storing the VJP in a sparse `TList`. -/
+/-- Build an executable unary node from a spec `OpSpec`, storing the VJP in a sparse `_root_.TorchLean.TensorPack`. -/
 def ofOpSpec {α : Type} {Δ : Type} [Zero α] {Γ : List Shape} {σ τ : Shape}
     (idx : Idx Γ σ) (op : Spec.OpSpec α σ τ) : NodeData α Δ Γ τ :=
   { forward := fun ctx _d => op.forward (getIdx (xs := ctx) idx)
     -- This executable node uses only its stored VJP. The zero tangent keeps the unused JVP field
     -- total; `NodeData` does not claim that either map is a derivative of `forward`.
     jvp := fun _ctx _dctx _d => Spec.fill (0 : α) τ
-    vjp := fun ctx _d δ => TList.single (α := α) (Γ := Γ) idx (op.backward (getIdx (xs := ctx) idx)
+    vjp := fun ctx _d δ => TensorPack.single (α := α) (Γ := Γ) idx (op.backward (getIdx (xs := ctx) idx)
       δ) }
 
 /-- Executable binary add node (two parents of the same shape). -/
@@ -53,9 +53,9 @@ def add {α : Type} {Δ : Type} [Zero α] [Add α] {Γ : List Shape} {s : Shape}
   { forward := fun ctx _d => addSpec (getIdx (xs := ctx) a) (getIdx (xs := ctx) b)
     jvp := fun _ctx dctx _d => addSpec (getIdx (xs := dctx) a) (getIdx (xs := dctx) b)
     vjp := fun _ctx _d δ =>
-      TList.add (α := α) (ss := Γ)
-        (TList.single (α := α) (Γ := Γ) a δ)
-        (TList.single (α := α) (Γ := Γ) b δ) }
+      _root_.TorchLean.TensorPack.add (α := α) (ss := Γ)
+        (TensorPack.single (α := α) (Γ := Γ) a δ)
+        (TensorPack.single (α := α) (Γ := Γ) b δ) }
 
 end NodeData
 
@@ -67,22 +67,22 @@ def ofOpSpecCorrect {α : Type} {Δ : Type} [CommSemiring α] {Γ : List Shape} 
   { toNodeData :=
       { forward := fun ctx _d => op.op.forward (getIdx (xs := ctx) idx)
         jvp := fun ctx dctx _d => op.jvp (getIdx (xs := ctx) idx) (getIdx (xs := dctx) idx)
-        vjp := fun ctx _d δ => TList.single (α := α) (Γ := Γ) idx (op.op.backward (getIdx (xs :=
+        vjp := fun ctx _d δ => TensorPack.single (α := α) (Γ := Γ) idx (op.op.backward (getIdx (xs :=
           ctx) idx) δ) }
     correct := by
       intro ctx dctx d δ
-      -- Reduce to the per-op adjointness law and the `TList.single` dot lemma.
+      -- Reduce to the per-op adjointness law and the `TensorPack.single` dot lemma.
       let x := getIdx (xs := ctx) idx
       let dx := getIdx (xs := dctx) idx
       have hop := op.correct x dx δ
       have hsingle :
           dot (α := α) dx (op.op.backward x δ) =
-            TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) idx (op.op.backward x δ)) :=
+            TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) idx (op.op.backward x δ)) :=
               by
-        simpa using (TList.dotList_single (α := α) (Γ := Γ) (dx := dctx) (idx := idx)
+        simpa using (TensorPack.dotList_single (α := α) (Γ := Γ) (dx := dctx) (idx := idx)
           (v := op.op.backward x δ)).symm
       -- `hop` gives `dot (jvp ...) δ = dot dx (backward ...)`.
-      -- Rewrite the RHS into the `TList.dotList` form.
+      -- Rewrite the RHS into the `TensorPack.dotList` form.
       simpa [x, dx] using hop.trans hsingle }
 
 /-- Proof-carrying binary add node (two parents of the same shape). -/
@@ -91,40 +91,40 @@ def add {α : Type} {Δ : Type} [CommSemiring α] {Γ : List Shape} {s : Shape} 
   { toNodeData := NodeData.add (α := α) (Δ := Δ) (Γ := Γ) (s := s) a b
     correct := by
       intro ctx dctx d δ
-      -- Reduce to dot distribution and the fact that `TList.single` is the adjoint of `getIdx`.
+      -- Reduce to dot distribution and the fact that `TensorPack.single` is the adjoint of `getIdx`.
       let da := getIdx (xs := dctx) a
       let db := getIdx (xs := dctx) b
       have hsplit :
           dot (α := α) (addSpec da db) δ = dot (α := α) da δ + dot (α := α) db δ := by
         simpa [da, db] using TensorAlgebra.dot_add_left (α := α) (a := da) (b := db) (c := δ)
       have hsingleA :
-          TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) a δ) = dot (α := α) da δ := by
-        simpa [da] using (TList.dotList_single (α := α) (Γ := Γ) (dx := dctx) (idx := a) (v := δ))
+          TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) a δ) = dot (α := α) da δ := by
+        simpa [da] using (TensorPack.dotList_single (α := α) (Γ := Γ) (dx := dctx) (idx := a) (v := δ))
       have hsingleB :
-          TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) b δ) = dot (α := α) db δ := by
-        simpa [db] using (TList.dotList_single (α := α) (Γ := Γ) (dx := dctx) (idx := b) (v := δ))
+          TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) b δ) = dot (α := α) db δ := by
+        simpa [db] using (TensorPack.dotList_single (α := α) (Γ := Γ) (dx := dctx) (idx := b) (v := δ))
       have hadd :
-          TList.dotList (α := α) dctx
-              (TList.add (α := α) (ss := Γ)
-                (TList.single (α := α) (Γ := Γ) a δ)
-                (TList.single (α := α) (Γ := Γ) b δ))
+          TensorPack.dotList (α := α) dctx
+              (_root_.TorchLean.TensorPack.add (α := α) (ss := Γ)
+                (TensorPack.single (α := α) (Γ := Γ) a δ)
+                (TensorPack.single (α := α) (Γ := Γ) b δ))
             =
-          TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) a δ) +
-            TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) b δ) := by
+          TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) a δ) +
+            TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) b δ) := by
         simpa using
-          (TList.dotList_add_right (α := α) (ss := Γ) (x := dctx)
-            (y := TList.single (α := α) (Γ := Γ) a δ)
-            (z := TList.single (α := α) (Γ := Γ) b δ))
+          (TensorPack.dotList_add_right (α := α) (ss := Γ) (x := dctx)
+            (y := TensorPack.single (α := α) (Γ := Γ) a δ)
+            (z := TensorPack.single (α := α) (Γ := Γ) b δ))
       -- Finish.
       calc
         dot (α := α) (NodeData.add (α := α) (Δ := Δ) (Γ := Γ) (s := s) a b |>.jvp ctx dctx d) δ
             = dot (α := α) (addSpec da db) δ := by
                 simp [NodeData.add, da, db]
         _ = dot (α := α) da δ + dot (α := α) db δ := hsplit
-        _ = TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) a δ) +
-              TList.dotList (α := α) dctx (TList.single (α := α) (Γ := Γ) b δ) := by
+        _ = TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) a δ) +
+              TensorPack.dotList (α := α) dctx (TensorPack.single (α := α) (Γ := Γ) b δ) := by
                 simp [hsingleA, hsingleB]
-        _ = TList.dotList (α := α) dctx
+        _ = TensorPack.dotList (α := α) dctx
               (NodeData.add (α := α) (Δ := Δ) (Γ := Γ) (s := s) a b |>.vjp ctx d δ) := by
                 simp [NodeData.add, hadd] }
 

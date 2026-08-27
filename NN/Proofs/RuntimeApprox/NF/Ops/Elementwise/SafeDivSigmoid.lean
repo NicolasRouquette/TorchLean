@@ -463,7 +463,7 @@ def sigmoidBoundScalar (xR : R) : ℝ :=
 
 /-- Per-entry bound tensor for `sigmoid`. -/
 def sigmoidBoundTensor {s : Shape} (_eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
-  Spec.mapTensor (sigmoidBoundScalar (β := β) (fexp := fexp) (rnd := rnd)) xR
+  Spec.Tensor.map (sigmoidBoundScalar (β := β) (fexp := fexp) (rnd := rnd)) xR
 
 /--
 `approxTensor` bound for `sigmoid` lifted to arbitrary tensor shapes.
@@ -524,7 +524,7 @@ theorem approxTensor_sigmoid_spec {s : Shape} :
                       (s := Shape.scalar) eps (Tensor.scalar xR)) := by
                 refine le_trans hb ?_
                 -- `linf_norm` of a scalar tensor is `abs` of its entry.
-                simpa [sigmoidBoundTensor, Spec.mapTensor, linfNorm, RuntimeApprox.linfNorm,
+                simpa [sigmoidBoundTensor, Spec.Tensor.map, linfNorm, RuntimeApprox.linfNorm,
                   tensorLinfNorm, MathFunctions.abs] using
                   (le_abs_self (sigmoidBoundScalar (β := β) (fexp := fexp) (rnd := rnd) xR))
               exact
@@ -562,7 +562,7 @@ theorem approxTensor_sigmoid_spec {s : Shape} :
                 have hB_ge :
                     linfNorm (sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := s) eps (xRf i)) ≤ B := by
-                  simpa [B, sigmoidBoundTensor, Spec.mapTensor] using
+                  simpa [B, sigmoidBoundTensor, Spec.Tensor.map] using
                     (linf_norm_le_get_dim
                       (t := sigmoidBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := Shape.dim n s) eps (Tensor.dim xRf)) i)

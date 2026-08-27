@@ -29,8 +29,7 @@ variable {α : Type} [Context α]
 def seq2seq {srcVocabSize tgtVocabSize embedDim hiddenDim srcSeqLen tgtSeqLen : Nat}
   (m : Seq2SeqSpec α srcVocabSize tgtVocabSize embedDim hiddenDim)
   (startToken : Fin tgtVocabSize) :
-  Spec.Module α (.dim srcSeqLen (.dim srcVocabSize .scalar)) (.dim tgtSeqLen (.dim tgtVocabSize
-    .scalar)) :=
+  Spec.Module α ([srcSeqLen, srcVocabSize]) ([tgtSeqLen, tgtVocabSize]) :=
 {
   forward := fun srcOneHot =>
     let sourceEmbeddings := Seq2SeqEmbeddingSpec.forwardOneHot m.sourceEmbedding srcOneHot

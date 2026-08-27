@@ -55,7 +55,7 @@ def softmaxBoundScalar (eps : ℝ) (xR : R) : ℝ :=
 
 /-- Per-entry bound tensor for the scalar logistic NF node. -/
 def softmaxBoundTensor {s : Shape} (eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
-  Spec.mapTensor (softmaxBoundScalar (β := β) (fexp := fexp) (rnd := rnd) eps) xR
+  Spec.Tensor.map (softmaxBoundScalar (β := β) (fexp := fexp) (rnd := rnd) eps) xR
 
 /--
 `approxTensor` bound for the scalar logistic NF node lifted to arbitrary tensor shapes.
@@ -113,7 +113,7 @@ theorem approxTensor_softmax_spec {s : Shape} :
                     linfNorm (softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                       (s := Shape.scalar) eps (Tensor.scalar xR)) := by
                 refine le_trans hb ?_
-                simpa [softmaxBoundTensor, Spec.mapTensor, linfNorm, RuntimeApprox.linfNorm,
+                simpa [softmaxBoundTensor, Spec.Tensor.map, linfNorm, RuntimeApprox.linfNorm,
                   tensorLinfNorm, MathFunctions.abs] using
                   (le_abs_self (softmaxBoundScalar (β := β) (fexp := fexp) (rnd := rnd) eps xR))
               exact
@@ -151,7 +151,7 @@ theorem approxTensor_softmax_spec {s : Shape} :
                 have hB_ge :
                     linfNorm (softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := s) eps (xRf i)) ≤ B := by
-                  simpa [B, softmaxBoundTensor, Spec.mapTensor] using
+                  simpa [B, softmaxBoundTensor, Spec.Tensor.map] using
                     (linf_norm_le_get_dim
                       (t := softmaxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
                         (s := Shape.dim n s) eps (Tensor.dim xRf)) i)

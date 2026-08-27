@@ -44,13 +44,13 @@ def sigmoid {α : Type} [Context α] [DecidableEq Shape]
   let y := Activation.sigmoidSpec (α:=α) x
   let node : Node α :=
     { name := some "sigmoid"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let dsig := Activation.sigmoidDerivSpec (α := α) x
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec dsig dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dsig dLdy))]
     }
   pure (t.addNode node)
 
@@ -69,13 +69,13 @@ def tanh {α : Type} [Context α] [DecidableEq Shape]
   let y := Activation.tanhSpec (α:=α) x
   let node : Node α :=
     { name := some "tanh"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let dtanh := Activation.tanhDerivSpec (α := α) x
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec dtanh dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dtanh dLdy))]
     }
   pure (t.addNode node)
 
@@ -92,22 +92,21 @@ def gelu {α : Type} [Context α] [DecidableEq Shape]
   let y := Activation.geluSpec (α := α) x
   let node : Node α :=
     { name := some "gelu"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let dgelu := Activation.geluDerivSpec (α := α) x
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec dgelu dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dgelu dLdy))]
     }
   pure (t.addNode node)
 
 /--
  Softmax along the last axis (recursing over outer dimensions).
 
- This matches `Activation.softmaxLastSpec` (which applies softmax to the final dimension and recurses
- over earlier dimensions). The backward pass uses the standard Jacobian-vector product implemented
- by `Activation.softmaxLastBackwardSpec`, avoiding materializing an `n×n` Jacobian per slice.
+ This is the tape primitive behind the general axis API after it moves the selected axis to the
+ innermost position. Its backward pass avoids materializing an `n×n` Jacobian per slice.
 
  PyTorch comparison: `torch.softmax(x, dim=-1)`.
  Reference: https://pytorch.org/docs/stable/generated/torch.softmax.html
@@ -115,39 +114,40 @@ def gelu {α : Type} [Context α] [DecidableEq Shape]
 def softmaxLast {α : Type} [Context α] [DecidableEq Shape]
   {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
   let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.softmaxLastSpec (α:=α) x
+  let y := Activation.Internal.softmaxInnermostSpec (α := α) x
   let node : Node α :=
     { name := some "softmax"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dx := Activation.softmaxLastBackwardSpec (α := α) (s := s) x dLdy
-        pure [(xId, Spec.PackedTensor.ofTensor dx)]
+        let dx := Activation.Internal.softmaxInnermostBackwardSpec (α := α) (s := s) x dLdy
+        pure #[(xId, Spec.SomeTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
 /--
 Stable log-softmax along the last axis.
 
-Unlike `log (softmax x)`, this uses `Activation.logSoftmaxLastSpec`, i.e. the max-shifted
+Unlike `log (softmax x)`, this uses the max-shifted
 `x - max(x) - log(sum(exp(x - max(x))))` formulation.  That matches the numerical contract of
 `torch.nn.functional.log_softmax` and is the right primitive for cross-entropy on logits.
 -/
 def logSoftmaxLast {α : Type} [Context α] [DecidableEq Shape]
   {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
   let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.logSoftmaxLastSpec (α:=α) x
+  let y := Activation.Internal.logSoftmaxInnermostSpec (α := α) x
   let node : Node α :=
     { name := some "log_softmax"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dx := Activation.logSoftmaxLastBackwardSpec (α := α) (s := s) y dLdy
-        pure [(xId, Spec.PackedTensor.ofTensor dx)]
+        let dx := Activation.Internal.logSoftmaxInnermostBackwardSpec
+          (α := α) (s := s) y dLdy
+        pure #[(xId, Spec.SomeTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -165,13 +165,13 @@ def softplus {α : Type} [Context α] [DecidableEq Shape]
   let y := Activation.softplusSpec (α:=α) x
   let node : Node α :=
     { name := some "softplus"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let dsoft := Activation.softplusDerivSpec (α := α) x
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec dsoft dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dsoft dLdy))]
     }
   pure (t.addNode node)
 
@@ -189,12 +189,12 @@ def exp {α : Type} [Context α] [DecidableEq Shape]
   let y := expSpec (α:=α) x
   let node : Node α :=
     { name := some "exp"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec (expSpec (α := α) x) dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec (expSpec (α := α) x) dLdy))]
     }
   pure (t.addNode node)
 
@@ -218,12 +218,12 @@ def log {α : Type} [Context α] [DecidableEq Shape]
   let y := logSpec (α:=α) x
   let node : Node α :=
     { name := some "log"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec (invSpec (α := α) x) dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec (invSpec (α := α) x) dLdy))]
     }
   pure (t.addNode node)
 
@@ -241,16 +241,16 @@ def inv {α : Type} [Context α] [DecidableEq Shape]
   let y := invSpec (α := α) x
   let node : Node α :=
     { name := some "inv"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         -- d/dx (x⁻¹) = -(x⁻¹)²
         let invx := invSpec (α := α) x
         let invx2 := mulSpec invx invx
         let dx := scaleSpec (α := α) (s := s) (mulSpec dLdy invx2) (-1 : α)
-        pure [(xId, Spec.PackedTensor.ofTensor dx)]
+        pure #[(xId, Spec.SomeTensor.ofTensor dx)]
     }
   pure (t.addNode node)
 
@@ -270,13 +270,13 @@ def safeLog {α : Type} [Context α] [DecidableEq Shape]
   let y := Activation.safeLogSpec (α:=α) x ε
   let node : Node α :=
     { name := some "safe_log"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
         let dlog := Activation.safeLogDerivSpec (α := α) x ε
-        pure [(xId, Spec.PackedTensor.ofTensor (mulSpec dlog dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dlog dLdy))]
     }
   pure (t.addNode node)
 
@@ -292,15 +292,15 @@ def safeLog {α : Type} [Context α] [DecidableEq Shape]
 def sum {α : Type} [Add α] [Zero α] [DecidableEq Shape]
   {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
   let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y : Tensor α Shape.scalar := Tensor.scalar (sumSpec (α:=α) x)
+  let y : Tensor α .scalar := Tensor.scalar (sumSpec (α:=α) x)
   let node : Node α :=
     { name := some "sum"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := Shape.scalar) dLdyAny
-        pure [(xId, Spec.PackedTensor.ofTensor (replicate (α := α) (s := s) dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (replicate (α := α) (s := s) dLdy))]
     }
   pure (t.addNode node)
 
@@ -318,18 +318,18 @@ def mseLoss {α : Type}
   {s : Shape} (t : Tape α) (yhatId targetId : Nat) : Result (Tape α × Nat) := do
   let yhat ← requireValue (α:=α) (t:=t) (s:=s) yhatId
   let target ← requireValue (α:=α) (t:=t) (s:=s) targetId
-  let y : Tensor α Shape.scalar := Tensor.scalar (Spec.mseSpec (α := α) yhat target)
+  let y : Tensor α .scalar := Tensor.scalar (Spec.mseSpec (α := α) yhat target)
   let node : Node α :=
     { name := some "mse_loss"
-      value := Spec.PackedTensor.ofTensor y
+      value := Spec.SomeTensor.ofTensor y
       requiresGrad := true
-      parents := [yhatId, targetId]
+      parents := #[yhatId, targetId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := Shape.scalar) dLdyAny
         let g : α := Tensor.item dLdy
         let dYhat :=
           scaleSpec (α := α) (s := s) (Spec.mseDerivSpec (α := α) yhat target) g
         let dTarget : Tensor α s := subSpec (fill (0 : α) s) dYhat
-        pure [(yhatId, Spec.PackedTensor.ofTensor dYhat), (targetId, Spec.PackedTensor.ofTensor dTarget)]
+        pure #[(yhatId, Spec.SomeTensor.ofTensor dYhat), (targetId, Spec.SomeTensor.ofTensor dTarget)]
     }
   pure (t.addNode node)

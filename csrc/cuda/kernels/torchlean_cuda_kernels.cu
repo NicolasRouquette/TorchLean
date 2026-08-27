@@ -797,21 +797,6 @@ __global__ void gather_rows_f32(const float* mat, uint32_t rows, uint32_t cols,
   }
 }
 
-__global__ void scatter_add_row_f32(const float* mat, const float* rowVec,
-                                   uint32_t rows, uint32_t cols, uint32_t row,
-                                   float* out) {
-  size_t idx = (size_t)blockIdx.x * (size_t)blockDim.x + (size_t)threadIdx.x;
-  const size_t total = (size_t)rows * (size_t)cols;
-  if (idx >= total) return;
-  const uint32_t r = (uint32_t)(idx / (size_t)cols);
-  const uint32_t c = (uint32_t)(idx % (size_t)cols);
-  float v = mat[idx];
-  if (r == row) {
-    v += rowVec[c];
-  }
-  out[idx] = v;
-}
-
 __global__ void scatter_add_rows_f32(const float* values, const uint32_t* idx,
                                     uint32_t k, uint32_t rows, uint32_t cols,
                                     float* out) {
@@ -2920,38 +2905,6 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_gather_rows(b_lean_obj
   return torchlean_cuda_buffer_box(out);
 }
 
-extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_row(b_lean_obj_arg MObj,
-                                                                         b_lean_obj_arg RowObj,
-                                                                         uint32_t rows, uint32_t cols,
-                                                                         uint32_t i) {
-  torchlean_cuda_buffer* m = torchlean_cuda_buffer_unbox(MObj);
-  torchlean_cuda_buffer* row = torchlean_cuda_buffer_unbox(RowObj);
-  const size_t R = (size_t)rows;
-  const size_t C = (size_t)cols;
-  const size_t matSz =
-      checked_mul_size(R, C, "torchlean_cuda_buffer_scatter_add_row: rows*cols overflow");
-  if (m->size != matSz) {
-    lean_internal_panic("torchlean_cuda_buffer_scatter_add_row: mat.size mismatch");
-  }
-  if (row->size != C) {
-    lean_internal_panic("torchlean_cuda_buffer_scatter_add_row: rowVec.size mismatch");
-  }
-  if ((size_t)i >= R) {
-    lean_internal_panic("torchlean_cuda_buffer_scatter_add_row: row index out of bounds");
-  }
-
-  torchlean_cuda_buffer* out = torchlean_cuda_buffer_alloc(matSz);
-  if (matSz == 0) {
-    return torchlean_cuda_buffer_box(out);
-  }
-
-  dim3 blocks = blocks_for(matSz);
-  dim3 threads = dim3(kBlockSize);
-  scatter_add_row_f32<<<blocks, threads>>>(m->data, row->data, rows, cols, i, out->data);
-  checkCuda(cudaGetLastError(), "cuda scatterAddRow kernel launch failed");
-  return torchlean_cuda_buffer_box(out);
-}
-
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_rows(
     b_lean_obj_arg MObj,
     b_lean_obj_arg ValuesObj,
@@ -3012,6 +2965,6 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_scatter_add_rows(
     checkCuda(cudaGetLastError(), "cuda scatterAddRows kernel launch failed");
   }
 
-  torchlean_cuda_scratch_free(&dIdx, K, "cudaFree scatterAddRow indices failed");
+  torchlean_cuda_scratch_free(&dIdx, K, "cudaFree scatterAddRows indices failed");
   return torchlean_cuda_buffer_box(out);
 }

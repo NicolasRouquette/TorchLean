@@ -23,26 +23,6 @@ namespace F
 
 /-! ## Einsum-ish building blocks -/
 
-/-- Matrix matmul: `[m,n] × [n,p] → [m,p]`. -/
-def matmul2d {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {mDim nDim pDim : Nat}
-    (a : RefTy (m := m) (α := α) (.dim mDim (.dim nDim .scalar)))
-    (b : RefTy (m := m) (α := α) (.dim nDim (.dim pDim .scalar))) :
-    m (RefTy (m := m) (α := α) (.dim mDim (.dim pDim .scalar))) :=
-  _root_.Runtime.Autograd.Torch.mm (m := m) (α := α) (mDim := mDim) (nDim := nDim) (pDim :=
-    pDim) a b
-
-/-- Batched matmul: `[batch,m,n] × [batch,n,p] → [batch,m,p]`. -/
-def bmm {α : Type} [Context α] [DecidableEq Shape]
-    {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
-    {batch mDim nDim pDim : Nat}
-    (a : RefTy (m := m) (α := α) (.dim batch (.dim mDim (.dim nDim .scalar))))
-    (b : RefTy (m := m) (α := α) (.dim batch (.dim nDim (.dim pDim .scalar)))) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim mDim (.dim pDim .scalar)))) :=
-  _root_.Runtime.Autograd.Torch.bmm (m := m) (α := α) (batch := batch) (mDim := mDim) (nDim := nDim)
-    (pDim := pDim) a b
-
 /-!
 ## Typed einsum wrappers (fast, total)
 
@@ -55,35 +35,39 @@ They are intended to be used directly (no string parsing), and serve as the fast
 def einsumIjJkIk {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {iDim jDim kDim : Nat}
-    (a : RefTy (m := m) (α := α) (.dim iDim (.dim jDim .scalar)))
-    (b : RefTy (m := m) (α := α) (.dim jDim (.dim kDim .scalar))) :
-    m (RefTy (m := m) (α := α) (.dim iDim (.dim kDim .scalar))) :=
-  matmul2d (m := m) (α := α) (mDim := iDim) (nDim := jDim) (pDim := kDim) a b
+    (a : RefTy (m := m) (α := α) [iDim, jDim])
+    (b : RefTy (m := m) (α := α) [jDim, kDim]) :
+    m (RefTy (m := m) (α := α) [iDim, kDim]) :=
+  _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+    (batchA := .scalar) (batchB := .scalar) (batch := .scalar)
+    (mDim := iDim) (nDim := jDim) (pDim := kDim) a b
 
 /-- `einsum("bij,bjk->bik", A, B)` as a typed batched matmul. -/
 def einsumBijBjkBik {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {batch iDim jDim kDim : Nat}
-    (a : RefTy (m := m) (α := α) (.dim batch (.dim iDim (.dim jDim .scalar))))
-    (b : RefTy (m := m) (α := α) (.dim batch (.dim jDim (.dim kDim .scalar)))) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim iDim (.dim kDim .scalar)))) :=
-  bmm (m := m) (α := α) (batch := batch) (mDim := iDim) (nDim := jDim) (pDim := kDim) a b
+    (a : RefTy (m := m) (α := α) [batch, iDim, jDim])
+    (b : RefTy (m := m) (α := α) [batch, jDim, kDim]) :
+    m (RefTy (m := m) (α := α) [batch, iDim, kDim]) :=
+  _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+    (batchA := [batch]) (batchB := [batch]) (batch := [batch])
+    (mDim := iDim) (nDim := jDim) (pDim := kDim) a b
 
 /-- Einsum pattern used in attention: `bhid,bhjd -> bhij` (batched Q·Kᵀ per head). -/
 def einsumBhidBhjdBhij {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {batch heads iDim jDim dDim : Nat}
-    (q : RefTy (m := m) (α := α) (.dim batch (.dim heads (.dim iDim (.dim dDim .scalar)))))
-    (k : RefTy (m := m) (α := α) (.dim batch (.dim heads (.dim jDim (.dim dDim .scalar))))) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim heads (.dim iDim (.dim jDim .scalar))))) := do
+    (q : RefTy (m := m) (α := α) [batch, heads, iDim, dDim])
+    (k : RefTy (m := m) (α := α) [batch, heads, jDim, dDim]) :
+    m (RefTy (m := m) (α := α) [batch, heads, iDim, jDim]) := do
   let bh : Nat := batch * heads
-  let sQ4 : Shape := .dim batch (.dim heads (.dim iDim (.dim dDim .scalar)))
-  let sK4 : Shape := .dim batch (.dim heads (.dim jDim (.dim dDim .scalar)))
-  let sQ3 : Shape := .dim bh (.dim iDim (.dim dDim .scalar))
-  let sK3 : Shape := .dim bh (.dim jDim (.dim dDim .scalar))
-  let sKT : Shape := .dim bh (.dim dDim (.dim jDim .scalar))
-  let sOut3 : Shape := .dim bh (.dim iDim (.dim jDim .scalar))
-  let sOut4 : Shape := .dim batch (.dim heads (.dim iDim (.dim jDim .scalar)))
+  let sQ4 : Shape := [batch, heads, iDim, dDim]
+  let sK4 : Shape := [batch, heads, jDim, dDim]
+  let sQ3 : Shape := [bh, iDim, dDim]
+  let sK3 : Shape := [bh, jDim, dDim]
+  let sKT : Shape := [bh, dDim, jDim]
+  let sOut3 : Shape := [bh, iDim, jDim]
+  let sOut4 : Shape := [batch, heads, iDim, jDim]
   have hQ : Spec.Shape.size sQ4 = Spec.Shape.size sQ3 := by
     simp [sQ4, sQ3, Spec.Shape.size, bh, Nat.mul_left_comm, Nat.mul_comm]
   have hK : Spec.Shape.size sK4 = Spec.Shape.size sK3 := by
@@ -92,25 +76,27 @@ def einsumBhidBhjdBhij {α : Type} [Context α] [DecidableEq Shape]
     simp [sOut3, sOut4, Spec.Shape.size, bh, Nat.mul_left_comm, Nat.mul_comm]
   let q3 ← reshape (m := m) (α := α) (s₁ := sQ4) (s₂ := sQ3) q hQ
   let k3 ← reshape (m := m) (α := α) (s₁ := sK4) (s₂ := sK3) k hK
-  let kt ← _root_.Runtime.Autograd.Torch.transpose3dLastTwo
-    (m := m) (α := α) (a := bh) (b := jDim) (c := dDim) k3
-  let out3 ← bmm (m := m) (α := α) (batch := bh) (mDim := iDim) (nDim := dDim) (pDim := jDim) q3 kt
+  let kt ← _root_.Runtime.Autograd.Torch.swapAdjacentAtDepth
+    (m := m) (α := α) (s := sK3) 1 k3
+  let out3 ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+    (batchA := [bh]) (batchB := [bh]) (batch := [bh])
+    (mDim := iDim) (nDim := dDim) (pDim := jDim) q3 kt
   reshape (m := m) (α := α) (s₁ := sOut3) (s₂ := sOut4) out3 hOut
 
 /-- Einsum pattern used in attention: `bhij,bhjd -> bhid` (batched Attn·V per head). -/
 def einsumBhijBhjdBhid {α : Type} [Context α] [DecidableEq Shape]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]
     {batch heads iDim jDim dDim : Nat}
-    (attn : RefTy (m := m) (α := α) (.dim batch (.dim heads (.dim iDim (.dim jDim .scalar)))))
-    (v : RefTy (m := m) (α := α) (.dim batch (.dim heads (.dim jDim (.dim dDim .scalar))))) :
-    m (RefTy (m := m) (α := α) (.dim batch (.dim heads (.dim iDim (.dim dDim .scalar))))) := do
+    (attn : RefTy (m := m) (α := α) [batch, heads, iDim, jDim])
+    (v : RefTy (m := m) (α := α) [batch, heads, jDim, dDim]) :
+    m (RefTy (m := m) (α := α) [batch, heads, iDim, dDim]) := do
   let bh : Nat := batch * heads
-  let sA4 : Shape := .dim batch (.dim heads (.dim iDim (.dim jDim .scalar)))
-  let sV4 : Shape := .dim batch (.dim heads (.dim jDim (.dim dDim .scalar)))
-  let sA3 : Shape := .dim bh (.dim iDim (.dim jDim .scalar))
-  let sV3 : Shape := .dim bh (.dim jDim (.dim dDim .scalar))
-  let sOut3 : Shape := .dim bh (.dim iDim (.dim dDim .scalar))
-  let sOut4 : Shape := .dim batch (.dim heads (.dim iDim (.dim dDim .scalar)))
+  let sA4 : Shape := [batch, heads, iDim, jDim]
+  let sV4 : Shape := [batch, heads, jDim, dDim]
+  let sA3 : Shape := [bh, iDim, jDim]
+  let sV3 : Shape := [bh, jDim, dDim]
+  let sOut3 : Shape := [bh, iDim, dDim]
+  let sOut4 : Shape := [batch, heads, iDim, dDim]
   have hA : Spec.Shape.size sA4 = Spec.Shape.size sA3 := by
     simp [sA4, sA3, Spec.Shape.size, bh, Nat.mul_left_comm, Nat.mul_comm]
   have hV : Spec.Shape.size sV4 = Spec.Shape.size sV3 := by
@@ -119,7 +105,9 @@ def einsumBhijBhjdBhid {α : Type} [Context α] [DecidableEq Shape]
     simp [sOut3, sOut4, Spec.Shape.size, bh, Nat.mul_left_comm, Nat.mul_comm]
   let a3 ← reshape (m := m) (α := α) (s₁ := sA4) (s₂ := sA3) attn hA
   let v3 ← reshape (m := m) (α := α) (s₁ := sV4) (s₂ := sV3) v hV
-  let out3 ← bmm (m := m) (α := α) (batch := bh) (mDim := iDim) (nDim := jDim) (pDim := dDim) a3 v3
+  let out3 ← _root_.Runtime.Autograd.Torch.matmul (m := m) (α := α)
+    (batchA := [bh]) (batchB := [bh]) (batch := [bh])
+    (mDim := iDim) (nDim := jDim) (pDim := dDim) a3 v3
   reshape (m := m) (α := α) (s₁ := sOut3) (s₂ := sOut4) out3 hOut
 
 /-! ## General einsum (PyTorch-style subscripts; runtime-checked) -/
@@ -564,10 +552,10 @@ def einsum? {α : Type} [Context α] [DecidableEq Shape]
         failure
       if xs.length != 2 then
         failure
-      let some sub0 := listGet? parsed.inputs 0 | failure
-      let some sub1 := listGet? parsed.inputs 1 | failure
-      let some x0 := listGet? xs 0 | failure
-      let some x1 := listGet? xs 1 | failure
+      let some sub0 := parsed.inputs[0]? | failure
+      let some sub1 := parsed.inputs[1]? | failure
+      let some x0 := xs[0]? | failure
+      let some x1 := xs[1]? | failure
       let out? := parsed.output?
 
       -- Require "simple" subscripts for fast paths: no ellipsis and no post-ellipsis labels.
@@ -600,11 +588,11 @@ def einsum? {α : Type} [Context α] [DecidableEq Shape]
                 let b' : RefTy (m := m) (α := α) (.dim jDim (.dim kDim .scalar)) := by
                   simpa [hJ] using b
                 -- Extract labels (must be length-2 on both operands).
-                let some li0 := listGet? sub0.pre 0 | failure
-                let some lj0 := listGet? sub0.pre 1 | failure
+                let some li0 := sub0.pre[0]? | failure
+                let some lj0 := sub0.pre[1]? | failure
                 if sub0.pre.length != 2 then failure
-                let some lj1 := listGet? sub1.pre 0 | failure
-                let some lk1 := listGet? sub1.pre 1 | failure
+                let some lj1 := sub1.pre[0]? | failure
+                let some lk1 := sub1.pre[1]? | failure
                 if sub1.pre.length != 2 then failure
                 if lj0 != lj1 then failure
                 expectOut [li0, lk1]
@@ -624,13 +612,13 @@ def einsum? {α : Type} [Context α] [DecidableEq Shape]
                   let b' : RefTy (m := m) (α := α)
                       (.dim batch (.dim jDim (.dim kDim .scalar))) := by
                     simpa [hB, hJ] using b
-                  let some lb0 := listGet? sub0.pre 0 | failure
-                  let some li0 := listGet? sub0.pre 1 | failure
-                  let some lj0 := listGet? sub0.pre 2 | failure
+                  let some lb0 := sub0.pre[0]? | failure
+                  let some li0 := sub0.pre[1]? | failure
+                  let some lj0 := sub0.pre[2]? | failure
                   if sub0.pre.length != 3 then failure
-                  let some lb1 := listGet? sub1.pre 0 | failure
-                  let some lj1 := listGet? sub1.pre 1 | failure
-                  let some lk1 := listGet? sub1.pre 2 | failure
+                  let some lb1 := sub1.pre[0]? | failure
+                  let some lj1 := sub1.pre[1]? | failure
+                  let some lk1 := sub1.pre[2]? | failure
                   if sub1.pre.length != 3 then failure
                   if lb0 != lb1 then failure
                   if lj0 != lj1 then failure
@@ -653,15 +641,15 @@ def einsum? {α : Type} [Context α] [DecidableEq Shape]
                   let x1Ref' : RefTy (m := m) (α := α)
                       (.dim batch (.dim heads (.dim jDim (.dim dDim .scalar)))) := by
                     simpa [hB, hH] using x1Ref
-                  let some lb0 := listGet? sub0.pre 0 | failure
-                  let some lh0 := listGet? sub0.pre 1 | failure
-                  let some l2_0 := listGet? sub0.pre 2 | failure
-                  let some l3_0 := listGet? sub0.pre 3 | failure
+                  let some lb0 := sub0.pre[0]? | failure
+                  let some lh0 := sub0.pre[1]? | failure
+                  let some l2_0 := sub0.pre[2]? | failure
+                  let some l3_0 := sub0.pre[3]? | failure
                   if sub0.pre.length != 4 then failure
-                  let some lb1 := listGet? sub1.pre 0 | failure
-                  let some lh1 := listGet? sub1.pre 1 | failure
-                  let some l2_1 := listGet? sub1.pre 2 | failure
-                  let some l3_1 := listGet? sub1.pre 3 | failure
+                  let some lb1 := sub1.pre[0]? | failure
+                  let some lh1 := sub1.pre[1]? | failure
+                  let some l2_1 := sub1.pre[2]? | failure
+                  let some l3_1 := sub1.pre[3]? | failure
                   if sub1.pre.length != 4 then failure
                   if lb0 != lb1 then failure
                   if lh0 != lh1 then failure
@@ -769,7 +757,7 @@ def einsum? {α : Type} [Context α] [DecidableEq Shape]
                           (by
                             letI : Shape.WellFormed sPerm := ⟨hw⟩
                             haveI : Shape.HasNonemptyAxis axis sPerm :=
-                              Shape.hasNonemptyLastAxis (s := sPerm) hRankPerm hw
+                              Shape.inferNonemptyAxis (by grind)
                             exact reduceSum (m := m) (α := α) (s := sPerm) axis xPerm))
                       let nextShape : Shape := Spec.Tensor.shapeAfterSum sPerm axis
                       diagonalizeOperand fuel ⟨nextShape, nextRef⟩ (Einsum.removeAt labs q)
@@ -913,7 +901,7 @@ def einsum? {α : Type} [Context α] [DecidableEq Shape]
                   (by
                     letI : Shape.WellFormed curShape := ⟨hw⟩
                     haveI : Shape.HasNonemptyAxis axis curShape :=
-                      Shape.hasNonemptyLastAxis (s := curShape) hRank hw
+                      Shape.inferNonemptyAxis (by grind)
                     exact reduceSum (m := m) (α := α) (s := curShape) axis cur.snd))
               let nextShape : Shape :=
                 Spec.Tensor.shapeAfterSum curShape axis

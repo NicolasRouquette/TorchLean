@@ -29,10 +29,10 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 
 /-- Logistic regression wrapped as `Spec.Module` (linear + sigmoid). -/
 def logisticRegression {p : ℕ} (model : LogisticRegression p 0 α) :
-  Spec.Module α (.dim p .scalar) (.dim 1 .scalar) :=
-  let weightMatrix : Tensor α (.dim 1 (.dim p .scalar)) :=
+  Spec.Module α ([p]) ([1]) :=
+  let weightMatrix : Tensor α [1, p] :=
     Tensor.dim (fun _ => model.weights)
-  let biasVec : Tensor α (.dim 1 .scalar) :=
+  let biasVec : Tensor α [1] :=
     Tensor.dim (fun _ => Tensor.scalar model.intercept)
   let linearSpec : Spec.LinearSpec α p 1 :=
     { weights := weightMatrix, bias := biasVec }

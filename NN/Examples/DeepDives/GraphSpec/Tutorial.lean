@@ -54,7 +54,7 @@ namespace NN.Examples.DeepDives.GraphSpec.Tutorial
 
 open _root_.Spec
 open _root_.Spec.Tensor
-open NN.Tensor
+open TorchLean.Tensor
 open _root_.TorchLean
 
 /-- Command-line help for the GraphSpec tutorial. -/
@@ -78,13 +78,13 @@ def usage : String :=
 The smallest sequential GraphSpec model.
 
 Parameter ABI:
-`[Mat 3 2, Vec 3, Mat 1 3, Vec 1]`.
+`[[3, 2], [3], [1, 3], [1]]`.
 -/
 def tutorialMlp :
     NN.GraphSpec.Chain
-      [ .dim 3 (.dim 2 .scalar), .dim 3 .scalar
-      , .dim 1 (.dim 3 .scalar), .dim 1 .scalar ]
-      (.dim 2 .scalar) (.dim 1 .scalar) :=
+      [ [3, 2], [3]
+      , [1, 3], [1] ]
+      [2] [1] :=
   NN.GraphSpec.Models.mlp (inDim := 2) (hidDim := 3) (outDim := 1)
 
 /--
@@ -96,15 +96,16 @@ arithmetic are checked before the model can be used.
 -/
 def tutorialCnn :=
   NN.GraphSpec.Models.twoConvCnn
-    (inC := 1) (c1 := 2) (c2 := 3) (outDim := 4)
-    (inH := 8) (inW := 8) (kH := 3) (kW := 3)
-    (stride1 := 1) (padding1 := 1) (stride2 := 1) (padding2 := 1)
-    (poolKH := 2) (poolKW := 2) (poolStride1 := 2) (poolStride2 := 2)
-    (h_inC := by decide) (h_c1 := by decide) (_h_c2 := by decide)
-    (h_kH := by decide) (h_kW := by decide)
-    (h_stride1 := by decide) (h_stride2 := by decide)
-    (h_poolKH := by decide) (h_poolKW := by decide)
-    (h_poolStride1 := by decide) (h_poolStride2 := by decide)
+    (inChannels := 1) (firstChannels := 2) (secondChannels := 3) (outputSize := 4)
+    tensor! [8, 8] tensor! [3, 3] tensor! [1, 1] tensor! [1, 1] tensor! [1, 1] tensor! [1, 1]
+    tensor! [2, 2] tensor! [2, 2] tensor! [0, 0] tensor! [2, 2] tensor! [0, 0]
+    (hInChannels := by decide) (hFirstChannels := by decide)
+    (hKernel := by intro i; fin_cases i <;> decide)
+    (hConvStride₁ := by intro i; fin_cases i <;> decide)
+    (hConvStride₂ := by intro i; fin_cases i <;> decide)
+    (hPoolKernel := by intro i; fin_cases i <;> decide)
+    (hPoolStride₁ := by intro i; fin_cases i <;> decide)
+    (hPoolStride₂ := by intro i; fin_cases i <;> decide)
 
 /--
 The minimal DAG-native skip-connection example:
@@ -128,11 +129,13 @@ def printCatalog : IO Unit := do
   IO.println ""
 
 /-- Tiny one-sample dataset for the lowered GraphSpec MLP training path. -/
-def tutorialDataset : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
-  let xF : Spec.Tensor Float (.dim 2 .scalar) := tensorF! id [2] [0.5, 0.8]
-  let yF : Spec.Tensor Float (.dim 1 .scalar) := tensorF! id [1] [1.0]
-  let XFloat : Spec.Tensor Float (shape![1, 2]) := Spec.Tensor.dim (fun _ => xF)
-  let YFloat : Spec.Tensor Float (shape![1, 1]) := Spec.Tensor.dim (fun _ => yF)
+def tutorialDataset : Trainer.Dataset [2] [1] :=
+  let xF : Tensor Float [2] := Spec.Tensor.map id (tensorOfArray! (ty := Float) [2] #[0.5, 0.8])
+  let yF : Tensor Float [1] := Spec.Tensor.map id (tensorOfArray! (ty := Float) [1] #[1.0])
+  let XFloat : TorchLean.Tensor Float [1, 2] :=
+    TorchLean.Tensor.stack 0 (count := 1) fun _ => xF
+  let YFloat : TorchLean.Tensor Float [1, 1] :=
+    TorchLean.Tensor.stack 0 (count := 1) fun _ => yF
   Data.tensorDataset XFloat YFloat
 
 /-- Run the compact MLP lowering/training path. -/
@@ -141,8 +144,8 @@ def runMlpTrainingPath (args : List String) : IO Unit := do
   let hidDim : Nat := 3
   let outDim : Nat := 1
 
-  let xShape : Spec.Shape := .dim inDim .scalar
-  let yShape : Spec.Shape := .dim outDim .scalar
+  let xShape : Spec.Shape := [inDim]
+  let yShape : Spec.Shape := [outDim]
 
   -- GraphSpec is the source architecture. This exact graph also has pure semantics and an
   -- executable program view; here we ask for the additional `nn.Sequential` training view.
@@ -152,13 +155,13 @@ def runMlpTrainingPath (args : List String) : IO Unit := do
   | .error msg =>
       throw <| IO.userError s!"GraphSpec.ToSequential.toSeq failed: {msg}"
   | .ok seqR =>
-      let seq : nn.Sequential xShape yShape := by
+      let seq : nn.Sequential [inDim] [outDim] := by
         -- `nn.Sequential` is the public API name for the same runtime `Seq` type.
         simpa using seqR
       let run ← Trainer.RunConfig.parseRuntimeArgsOrThrow "GraphSpecTutorial"
         (CLI.dropDashDash args)
         { optimizer := optim.sgd { lr := 0.1 } }
-      let trainer := Trainer.new seq <|
+      let trainer := Trainer.new (inputShape := [inDim]) (outputShape := [outDim]) seq <|
         Trainer.Config.fromRunConfig run .regression
       trainer.printInfo
       let trained ← trainer.train tutorialDataset { steps := 3, title := "GraphSpec tutorial" }

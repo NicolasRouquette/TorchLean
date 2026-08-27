@@ -110,7 +110,7 @@ def runOne (func : String) (lo hi : Float) (precBits digits : Nat) : IO Unit := 
     -- Use the safe `expr` request format (not the unary `--func` mode).
     let xVar := ("x", (toString lo, toString hi))
     try
-      let r ← TorchLean.Floats.Arb.runExpr (vars := [xVar]) (expr := polynomialExpr)
+      let r ← TorchLean.Floats.Arb.runExpr (vars := #[xVar]) (expr := polynomialExpr)
         (precBits := precBits) (digits := digits)
       IO.println s!"  Arb(expr):[{r.outLo}, {r.outHi}] (precBits={r.precBits})"
     catch e =>

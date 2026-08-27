@@ -35,19 +35,27 @@ Trainer.new alreadyBuiltModel ...
 
 The seed is consumed only by the builder case. Already-built models pass through unchanged.
 -/
-class ToModel (model : Type u) (σ τ : outParam Shape) where
+class ToModel (model : Type u)
+    (inputShape outputShape : outParam (List Nat)) where
   /-- Materialize the model, using the seed only when the value still needs initialization. -/
-  build : Nat → model → TorchLean.nn.Sequential σ τ
+  build : Nat → model → TorchLean.nn.Sequential inputShape outputShape
 
-instance {σ τ : Shape} : ToModel (TorchLean.nn.Sequential σ τ) σ τ where
-  build _ model := model
+instance {inputShape outputShape : Shape} :
+    ToModel (TorchLean.nn.Sequential inputShape outputShape)
+      inputShape.toList outputShape.toList where
+  build _ model := by
+    simpa using model
 
-instance {σ τ : Shape} : ToModel (TorchLean.nn.Builder (TorchLean.nn.Sequential σ τ)) σ τ where
+instance {inputShape outputShape : List Nat} :
+    ToModel (TorchLean.nn.Builder (TorchLean.nn.Sequential inputShape outputShape))
+      inputShape outputShape where
   build seed model := TorchLean.nn.build seed model
 
 /-- Build a trainer from a sequential model or seedable model builder. -/
-def new {model : Type u} {σ τ : Shape} [ToModel model σ τ] (m : model)
-    (cfg : Config σ τ := {}) : TorchLean.Trainer σ τ :=
+def new {model : Type u} {inputShape outputShape : List Nat}
+    [ToModel model inputShape outputShape] (m : model)
+    (cfg : Config inputShape outputShape := {}) :
+    TorchLean.Trainer inputShape outputShape :=
   let built := ToModel.build cfg.seed m
   { model := built
     task := cfg.task

@@ -72,6 +72,27 @@ def exeName : String := "torchlean gpt2"
 /-- Default JSON loss-curve path for this command. -/
 def defaultLogJson : System.FilePath := ModelZoo.trainLogPath "gpt2"
 
+/-- Complete command help, including the text and training flags parsed after runtime selection. -/
+def usage : String :=
+  Module.Command.usage exeName ++ "\n" ++ String.intercalate "\n"
+    [ "Text data:"
+    , "  --data-file PATH | --tiny-shakespeare | --tinystories-valid"
+    , ""
+    , "Training:"
+    , "  --steps N          optimizer updates"
+    , "  --batch-size N     corpus windows accumulated per update"
+    , "  --windows N        corpus windows available to training"
+    , "  --lr X             Adam learning rate"
+    , "  --log PATH|false   write a TrainLog JSON, or disable logging"
+    , "  --cuda-mem-watch N sample CUDA allocator state every N updates"
+    , "  --load-checkpoint PATH | --save-checkpoint PATH"
+    , ""
+    , "Generation:"
+    , "  --prompt TEXT --generate N --temperature X --top-k N"
+    , "  --repeat-penalty X --repeat-window N --sample-seed N"
+    , "  --ascii-only [true|false] --interactive"
+    ]
+
 /-- Batch size for the byte-level causal Transformer. -/
 def batch : Nat := 1
 
@@ -80,6 +101,10 @@ def seqLen : Nat := 1
 
 /-- Byte vocabulary width used by the one-hot tokenizer. -/
 def vocab : Nat := 8
+
+/-- Toy byte bucketing: encode byte id `b` as `b % 8`; collisions are intentional. -/
+def byteBucket (id : Nat) : Fin vocab :=
+  ⟨id % vocab, Nat.mod_lt _ (by decide)⟩
 
 /-- Number of attention heads in the miniature Transformer block. -/
 def numHeads : Nat := 1
@@ -101,11 +126,11 @@ local instance : NeZero seqLen := ⟨by decide⟩
 local instance : NeZero dModel := ⟨by decide⟩
 
 /-- Input shape: batched byte-level one-hot token windows. -/
-abbrev σ : Shape :=
-  shape![batch, seqLen, vocab]
+abbrev σ : List Nat :=
+  [batch, seqLen, vocab]
 
 /-- Output shape: one vocabulary-logit row for every input token position. -/
-abbrev τ : Shape :=
+abbrev τ : List Nat :=
   σ
 
 /-- Public GPT-style causal Transformer constructor specialized to the byte-level config. -/
@@ -117,7 +142,7 @@ def model : nn.Builder (nn.Sequential σ τ) :=
       headDim := headDim
       ffnHidden := ffnHidden
       layers := layers }
-    (.dim batch .scalar)
+    [batch]
 
 /-- Command-local controls for GPT training, checkpointing, generation, and the prompt loop. -/
 structure TrainOptions extends
@@ -154,15 +179,15 @@ def parse (args : List String) (defaultSteps : Nat) :
 end TrainOptions
 
 /-- Build a batched causal-LM sample by repeating one token window across all rows. -/
-def mkSampleFromTokenIds (toks : List Nat) : Sample.Supervised Float σ τ :=
-  Data.CausalLM.oneHotBatch (α := Float) batch seqLen vocab (toks.map (· % vocab))
-    (padId := 0)
+def mkSampleFromTokenIds (toks : Tensor Nat [seqLen + 1]) : Sample.Supervised Float σ τ :=
+  Data.CausalLM.oneHotSample (α := Float) [batch] seqLen vocab
+    (Tensor.repeatAxis 0 batch (toks.map byteBucket))
 
 /-- Build a batch sample from exactly one token window per batch row. -/
-def mkSampleBatchFromTokenIds (idsByBatch : Vector (List Nat) batch) :
+def mkSampleBatchFromTokenIds (idsByBatch : Tensor Nat [batch, seqLen + 1]) :
     Sample.Supervised Float σ τ :=
-  Data.CausalLM.oneHotBatchRows (α := Float) batch seqLen vocab
-    (fun i => (idsByBatch.get i).map (· % vocab)) (padId := 0)
+  Data.CausalLM.oneHotSample (α := Float) [batch] seqLen vocab
+    (idsByBatch.map byteBucket)
 
 /--
 Parse GPT-2-specific data flags and return the training corpus plus remaining runtime flags.
@@ -174,8 +199,8 @@ def takeInputText (args : List String) : IO (String × List String) :=
     RealData.missingTinyShakespeareOrTinyStoriesHint args
 
 /-- Byte-token window used for reporting prompt/target text. -/
-def tokenWindowIds (input : String) (offset : Nat) : List Nat :=
-  (text.tokenWindow text.Tokenizer.byte seqLen input (offset := offset) (padId := 32)).toList
+def tokenWindowIds (input : String) (offset : Nat) : Array Nat :=
+  (text.tokenWindow text.Tokenizer.byte seqLen input (offset := offset) (padId := 32)).toArray
 
 /-- Print a compact before/after language-model report for the first batch row. -/
 def printPredictionReport (label : String) (input : String) (logits : Tensor Float σ) :
@@ -186,11 +211,9 @@ def printPredictionReport (label : String) (input : String) (logits : Tensor Flo
   IO.println s!"  target={text.escapeByteIdsForDisplay (tokenWindowIds input 1)}"
 
 /-- Convert byte ids into the typed batched one-hot input tensor used for generation. -/
-def inputTensorFromIds (ids : List Nat) : Tensor Float σ :=
-  let (x2dF, _) := Data.CausalLM.oneHotPair (α := Float)
-    (seqLen := seqLen) (vocab := vocab) (ids.map (· % vocab)) (padId := 0)
-  let x : Tensor Float σ := Spec.Tensor.dim (fun _bi => x2dF)
-  x
+def inputTensorFromIds (ids : Tensor Nat [seqLen]) : Tensor Float σ :=
+  Tensor.repeatAxis 0 batch <|
+    Data.CausalLM.oneHotInputs (α := Float) vocab (ids.map byteBucket)
 
 /--
 Fitted byte-level GPT predictor.
@@ -206,8 +229,8 @@ mutual
 /-- Autoregressively extend byte token ids using a trained byte-level GPT model. -/
 partial def generateSampledFromIds
     (predict : Predictor)
-    (promptIds : List Nat) (steps : Nat) (temperature : Float) (topK seed repeatWindow : Nat)
-    (repeatPenalty : Float) (asciiOnly : Bool) : IO (List Nat) := do
+    (promptIds : Array Nat) (steps : Nat) (temperature : Float) (topK seed repeatWindow : Nat)
+    (repeatPenalty : Float) (asciiOnly : Bool) : IO (Array Nat) := do
   let gen : text.GenerationOptions :=
     { prompt := ""
       generate := steps
@@ -221,18 +244,16 @@ partial def generateSampledFromIds
   let ids ←
     text.autoregressiveTokenIds seqLen 32 promptIds gen
       (fun padded predPos => do
-        let logits ← predict (inputTensorFromIds padded.toList)
+        let logits ← predict (inputTensorFromIds padded)
         pure (text.batchLogitScoresAt logits ⟨0, by decide⟩ predPos))
-      (allowId := allowId)
-      -- Keep the same "space" fallback convention across byte-level text commands.
-      (sanitize := fun tok => if tok < vocab then tok else 0)
+      (allowId := fun i => allowId i.val)
   pure ids
 
 /-- Encode a string prompt and autoregressively extend it. -/
 partial def generateSampled
     (predict : Predictor)
     (prompt : String) (steps : Nat) (temperature : Float) (topK seed repeatWindow : Nat)
-    (repeatPenalty : Float) (asciiOnly : Bool) : IO (List Nat) := do
+    (repeatPenalty : Float) (asciiOnly : Bool) : IO (Array Nat) := do
   let init := text.Tokenizer.byte.encode prompt
   generateSampledFromIds predict init steps temperature topK seed repeatWindow repeatPenalty
     asciiOnly
@@ -243,13 +264,13 @@ end
 def samplesFromCorpus (input _prompt : String) (windows : Nat) :
     Array (Sample.Supervised Float σ τ) :=
   let toks := text.Tokenizer.byte.encode input
-  let offs := (text.Corpus.promptAwareOffsets toks.length seqLen windows none).toArray
+  let offs := text.Corpus.promptAwareOffsets toks.size seqLen windows none
   offs.map (fun off =>
-    let idsByBatch : Vector (List Nat) batch :=
-      Vector.ofFn (fun i =>
-        let off' := (off + i.val * (seqLen / 2 + 1)) % Nat.max 1 (toks.length - (seqLen + 1))
-        (text.tokenWindow text.Tokenizer.byte (seqLen + 1) input
-          (offset := off') (padId := 32)).toList)
+    let idsByBatch : Tensor Nat [batch, seqLen + 1] :=
+      Tensor.stack 0 fun i =>
+        let off' := (off + i.val * (seqLen / 2 + 1)) % Nat.max 1 (toks.size - (seqLen + 1))
+        text.tokenWindow text.Tokenizer.byte (seqLen + 1) input
+          (offset := off') (padId := 32)
     mkSampleBatchFromTokenIds idsByBatch)
 
 /--
@@ -264,7 +285,7 @@ partial def interactiveLoopFloat
     IO Unit := do
   IO.println s!"  interactive: enter text; :q exits, :clear resets, :show prints context (window={seqLen} bytes)"
   let stdin ← IO.getStdin
-  let rec loop (ctx : List Nat) : IO Unit := do
+  let rec loop (ctx : Array Nat) : IO Unit := do
     IO.print "  prompt> "
     let line ← stdin.getLine
     let prompt := line.trimAscii.toString
@@ -272,19 +293,19 @@ partial def interactiveLoopFloat
       IO.println "  interactive: done"
     else if prompt = ":clear" then
       IO.println "  interactive: cleared context"
-      loop []
+      loop #[]
     else if prompt = ":show" then
       IO.println s!"  context={text.escapeByteIdsForDisplay ctx}"
       loop ctx
     else
-      let inputIds := ctx ++ text.Tokenizer.byte.encode prompt ++ [10]
+      let inputIds := ctx ++ text.Tokenizer.byte.encode prompt ++ #[10]
       let outIds ←
         generateSampledFromIds predict inputIds train.generate
           train.temperature train.topK train.seed train.repeatWindow train.repeatPenalty train.asciiOnly
-      let genOnly := outIds.drop inputIds.length
+      let genOnly := outIds.drop inputIds.size
       IO.println s!"  generated={text.escapeByteIdsForDisplay genOnly}"
       loop outIds
-  loop []
+  loop #[]
 
 /--
 Train the byte-level model and decode a prediction report.
@@ -296,9 +317,10 @@ def trainAndDecode (opts : Options) (input : String)
     (train : TrainOptions) :
     IO (Float × Float × String) := do
   let samples := samplesFromCorpus input train.prompt train.windows
-  let reportSample := Data.CausalLM.byteBatch (α := Float) batch seqLen vocab train.prompt
+  let reportSample :=
+    Data.CausalLM.byteBatch (α := Float) batch seqLen vocab byteBucket train.prompt
   let run := Trainer.RunConfig.ofRuntimeOptions opts { optimizer := optim.adam { lr := train.lr } }
-  let task : Trainer.Task σ τ := .oneHotCrossEntropy 2
+  let task : Trainer.Task τ := .oneHotCrossEntropy 2
   let trainer := Trainer.new model (Trainer.Config.fromRunConfig run task)
   trainer.printInfo
 
@@ -309,8 +331,9 @@ def trainAndDecode (opts : Options) (input : String)
   module bookkeeping.
   -/
   let trained ← trainer.train
-    (Data.floatSampleArray samples)
+    (Data.floatSamples samples)
     { steps := train.steps
+      batchSize := train.batchSize
       cudaMemWatch := train.cudaMemWatch
       log := .disabled
       loadCheckpoint? := train.loadCheckpoint?
@@ -343,6 +366,7 @@ def trainAndDecode (opts : Options) (input : String)
 def main (args : List String) : IO UInt32 := do
   Module.Command.runFloat32 exeName args
     (banner := ModelZoo.bannerWithDevice exeName "causal LM training")
+    (usage? := some usage)
     (k := fun opts rest => do
       let (input, rest) ← takeInputText rest
       let defaultSteps : Nat := if opts.usesCuda then 1 else 0

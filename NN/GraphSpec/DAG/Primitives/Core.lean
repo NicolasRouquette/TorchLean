@@ -12,7 +12,7 @@ public import NN.GraphSpec.Primitives
 /-!
 # Core DAG Primitives
 
-Constants, elementwise arithmetic, and the standard sequential operations exposed as typed DAG nodes.
+Constants, elementwise arithmetic, and standard sequential operations exposed as typed DAG nodes.
 -/
 
 @[expose] public section
@@ -23,7 +23,7 @@ namespace DAG
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 
 namespace PrimOp
 
@@ -59,30 +59,30 @@ Dense linear layer in DAG form.
 
 Inputs are ordered as `[W, b, x]`:
 
-- `W : Mat outDim inDim`,
-- `b : Vec outDim`,
-- `x : Vec inDim`.
+- `W : Tensor α [outDim, inDim]`,
+- `b : Tensor α [outDim]`,
+- `x` has shape `[inDim]`.
 
-The output is `Vec outDim`. This is the DAG embedding of `Primitive.linear`, so the DAG and
+The output has shape `[outDim]`. This is the DAG embedding of `Primitive.linear`, so the DAG and
 sequential authoring surfaces share the same Spec semantics and TorchLean lowering path.
 -/
 def linear (inDim outDim : Nat) :
-    PrimOp [.dim outDim (.dim inDim .scalar), .dim outDim .scalar, .dim inDim .scalar] (.dim outDim .scalar) :=
+    PrimOp [[outDim, inDim], [outDim], [inDim]] [outDim] :=
   (LowerToDAG.Primitive.toDAGPrimOp (Primitive.linear inDim outDim) : PrimOp _ _)
 
 /--
-Flatten a tensor to a one-dimensional vector in DAG form.
+Flatten a tensor to a rank-one tensor in DAG form.
 
 Input: `[x : Spec.Tensor s]`.
-Output: `Vec (Spec.Shape.size s)`.
+Output: `Tensor α [Spec.Shape.size s]`.
 
 This is the DAG embedding of `Primitive.flatten`, so it has exactly the same row-major view
 semantics as the sequential primitive.
 -/
-def flatten (s : Shape) : PrimOp [s] (.dim (Spec.Shape.size s) .scalar) :=
+def flatten (s : Shape) : PrimOp [s] [Spec.Shape.size s] :=
   (LowerToDAG.Primitive.toDAGPrimOp (Primitive.flatten s) : PrimOp _ _)
 
-/-! ## Vision / residual DAG primitives -/
+/-! ## Spatial and residual DAG primitives -/
 
 /--
 ReLU activation in DAG form.
@@ -157,71 +157,41 @@ def mul (s : Shape) : PrimOp [s, s] s :=
   rfl
 
 
-/--
-2D convolution in DAG form, using channel-first `CHW` tensors without an explicit batch dimension.
-
-Inputs are ordered as `[kernel, bias, x]`:
-
-- `kernel : OIHW outC inC kH kW`,
-- `bias   : Vec outC`,
-- `x      : CHW inC inH inW`.
-
-The output shape uses the standard convolution formula:
-
-`outH = Spec.Shape.slidingWindowOutDim inH kH stride padding`
-
-and similarly for `outW`. This is derived from the sequential `Primitive.conv2d`.
--/
-def conv2d
-    (inC outC kH kW stride padding inH inW : Nat)
-    {h_inC : inC ≠ 0} {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
+/-- Arbitrary-rank convolution in DAG form, with inputs ordered as `[kernel, bias, x]`. -/
+def conv
+    {d : Nat} (inC outC : Nat)
+    (kernel stride padding spatial : Spec.Tensor Nat [d])
+    {hInC : inC ≠ 0}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    {hStride : ∀ i : Fin d, stride.getScalar i ≠ 0} :
     PrimOp
-      [ .dim outC (.dim inC (.dim kH (.dim kW .scalar))), .dim outC .scalar, .dim inC (.dim inH (.dim inW .scalar)) ]
-      (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding) (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))) :=
+      [Shape.ofList (outC :: inC :: kernel.toList), [outC],
+        Shape.ofList (inC :: spatial.toList)]
+      (Shape.ofList (outC :: (Spec.convOutSpatial spatial kernel stride padding).toList)) :=
   (LowerToDAG.Primitive.toDAGPrimOp
-      (Primitive.conv2d (inC := inC) (outC := outC) (kH := kH) (kW := kW)
-        (stride := stride) (padding := padding) (inH := inH) (inW := inW)
-        (h_inC := h_inC) (h_kH := h_kH) (h_kW := h_kW) (hStride := hStride)) : PrimOp _ _)
+      (Primitive.conv (inC := inC) (outC := outC) kernel stride padding spatial
+        (hInC := hInC) (hKernel := hKernel) (_hStride := hStride)) : PrimOp _ _)
 
-/--
-Max pooling in DAG form for channel-first `CHW` tensors.
-
-Input: `[x : CHW inC inH inW]`.
-Output shape uses the standard pooling formula:
-
-`outH = Spec.poolOutDim inH kH stride 0`
-
-and similarly for `outW`. This is derived from the sequential `Primitive.maxPool2d`.
--/
-def maxPool2d
-    (kH kW inH inW inC stride : Nat)
-    {h_kH : kH ≠ 0} {h_kW : kW ≠ 0} {hStride : stride ≠ 0} :
-    PrimOp [.dim inC (.dim inH (.dim inW .scalar))] (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar))) :=
+/-- Arbitrary-rank max pooling in DAG form. -/
+def maxPool
+    {d : Nat} (channels : Nat)
+    (kernel stride padding spatial : Spec.Tensor Nat [d])
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    {hStride : ∀ i : Fin d, stride.getScalar i ≠ 0} :
+    PrimOp [Shape.ofList (channels :: spatial.toList)]
+      (Shape.ofList (channels ::
+        (Spec.poolOutSpatialPad spatial kernel stride padding).toList)) :=
   (LowerToDAG.Primitive.toDAGPrimOp
-      (Primitive.maxPool2d (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride :=
-        stride)
-        (h_kH := h_kH) (h_kW := h_kW) (hStride := hStride)) : PrimOp _ _)
+      (Primitive.maxPool (channels := channels) kernel stride padding spatial
+        (hKernel := hKernel) (hStride := hStride)) : PrimOp _ _)
 
-/--
-Batch normalization on `CHW` tensors in DAG form.
-
-Inputs are `[gamma, beta, x]` where `gamma,beta : Vec channels` and
-`x : CHW channels height width`.
-
-This version models the learnable affine parameters but does not carry running mean/variance state
-in the graph; stateful training statistics belong in an explicit runtime/state model.
-
-Reference: Ioffe and Szegedy (2015), "Batch Normalization: Accelerating Deep Network Training...".
--/
-def batchNormChw
-    (channels height width : Nat)
-    (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0) :
-    PrimOp
-      [.dim channels .scalar, .dim channels .scalar, .dim channels (.dim height (.dim width .scalar))]
-      (.dim channels (.dim height (.dim width .scalar))) :=
+/-- Batch normalization over an arbitrary spatial shape in DAG form. -/
+def batchNorm (channels : Nat) (spatial : Shape)
+    (hWellFormed : (Shape.dim channels spatial).wellFormed) :
+    PrimOp [[channels], [channels], .dim channels spatial]
+      (.dim channels spatial) :=
   (LowerToDAG.Primitive.toDAGPrimOp
-      (Primitive.batchNormChw (channels := channels) (height := height) (width := width)
-        (h_c := h_c) (h_h := h_h) (h_w := h_w)) : PrimOp _ _)
+      (Primitive.batchNorm channels spatial hWellFormed) : PrimOp _ _)
 
 end PrimOp
 

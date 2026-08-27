@@ -8,13 +8,14 @@ module
 
 public import NN.MLTheory.CROWN.Graph.Core
 public import NN.IR.Payload
+public import NN.IR.Semantics
 public import NN.Spec.Core.Shape
-public import NN.Spec.Core.Tensor.Packed
+public import NN.Spec.Core.Tensor.SomeTensor
 
 /-!
 Shared definitions for the graph CROWN engine.
 
-This file contains the flat vector representation, parameter stores, interval boxes, shape
+This file contains the rank-one tensor representation, parameter stores, interval boxes, shape
 permutation helpers, and tensor casts used by the IBP, derivative, affine, CROWN, and backward
 objective passes.
 -/
@@ -34,17 +35,19 @@ variable [BoundOps α]
 open BoundOps
 
 /--
-Flat vector pack: a tensor paired with its flattened dimension.
+An existentially sized rank-one tensor used by the flat LiRPA engine.
 
-This is used for constant payloads and objective coefficient vectors in the flat LiRPA engine.
+Graph nodes carry dimensions discovered while lowering, so the dimension cannot always appear in
+the surrounding static type. The field `n` is the hidden tensor dimension, not duplicate runtime
+storage.
 -/
-structure FlatVec (α : Type) [Context α] where
-  /-- Vector dimension. -/
+structure FlatTensor (α : Type) [Context α] where
+  /-- Number of scalar entries. -/
   n : Nat
-  /-- Vector payload (shape `.dim n .scalar`). -/
-  v : Tensor α (.dim n .scalar)
+  /-- Rank-one tensor payload (shape `.dim n .scalar`). -/
+  v : Tensor α [n]
 
--- The flat-vector engine is the canonical executable path for the current graph verifier.
+-- The flat-tensor engine is the canonical executable path for the current graph verifier.
 
 /--
 Parameters for a linear layer `y = W*x + b` in flattened form.
@@ -57,9 +60,9 @@ structure LinParams (α : Type) [Context α] where
   /-- Input dimension. -/
   n : Nat
   /-- Weight matrix `W` (shape `m × n`). -/
-  w : Tensor α (.dim m (.dim n .scalar))
-  /-- Bias vector `b` (shape `m`). -/
-  b : Tensor α (.dim m .scalar)
+  w : Tensor α [m, n]
+  /-- Bias tensor `b` (shape `m`). -/
+  b : Tensor α [m]
 
 /-- Matrix parameters for bias-free matmul: y = W x. -/
 structure MatParams (α : Type) [Context α] where
@@ -68,56 +71,53 @@ structure MatParams (α : Type) [Context α] where
   /-- Input dimension. -/
   n : Nat
   /-- Weight matrix `W` (shape `m × n`). -/
-  w : Tensor α (.dim m (.dim n .scalar))
+  w : Tensor α [m, n]
 
-/-- Channel index for a flattened `N×C×H×W` tensor in row-major order. -/
-def nchwChannelOfFlat (c h w idx : Nat) : Nat :=
-  if h * w = 0 then
-    0
-  else
-    (idx / (h * w)) % c
+/-- Coordinate on `axis` corresponding to a row-major flat index. -/
+def axisCoordinateOfFlat (shape : Shape) (axis idx : Nat) : Nat :=
+  let dims := shape.toList
+  let axisStride := (dims.drop (axis + 1)).prod
+  if axisStride = 0 then 0 else idx / axisStride
 
 /-- Eval BatchNorm scale for one channel. -/
-def batchNorm2dNchwEvalScale (cfg : NN.IR.BatchNorm2dNchwEvalParams α) (ci : Fin cfg.c) : α :=
-  match getAtSpec cfg.gamma ci, getAtSpec cfg.var ci with
+def batchNormEvalScale (cfg : NN.IR.BatchNormEvalParams α) (ci : Fin cfg.c) : α :=
+  match get cfg.gamma ci, get cfg.var ci with
   | .scalar gamma, .scalar var =>
       gamma / MathFunctions.sqrt (max var Numbers.zero + cfg.eps)
 
-/-- Eval BatchNorm bias for one channel after folding running statistics into an affine map. -/
-def batchNorm2dNchwEvalBias (cfg : NN.IR.BatchNorm2dNchwEvalParams α) (ci : Fin cfg.c) : α :=
-  match getAtSpec cfg.beta ci, getAtSpec cfg.mean ci with
+/-- Eval-mode BatchNorm bias after folding one channel's running statistics into an affine map. -/
+def batchNormEvalBias (cfg : NN.IR.BatchNormEvalParams α) (ci : Fin cfg.c) : α :=
+  match get cfg.beta ci, get cfg.mean ci with
   | .scalar beta, .scalar mean =>
-      beta - mean * batchNorm2dNchwEvalScale (α := α) cfg ci
+      beta - mean * batchNormEvalScale (α := α) cfg ci
 
 /--
-Build the exact diagonal affine form for eval-mode BatchNorm2d over an `N×C×H×W` tensor.
+Build the exact diagonal affine form for eval-mode BatchNorm on an arbitrary channel axis.
 
-The IR stores the channel parameters in the node payload. The spatial dimensions come from the
-checked parent shape, so malformed shapes produce no verifier transfer rule.
+The graph records the channel axis while the payload stores one scale and bias per channel. A
+malformed axis or mismatched channel extent has no verifier transfer rule.
 -/
-def batchNorm2dNchwEvalLinear? (parentShape : Shape)
-    (cfg : NN.IR.BatchNorm2dNchwEvalParams α) : Option (LinParams α) :=
-  match parentShape with
-  | .dim _n (.dim c (.dim h (.dim w .scalar))) =>
-      if hcfg : cfg.c = 0 then
-        none
-      else if c = cfg.c then
-        haveI : NeZero cfg.c := ⟨hcfg⟩
-        let outDim := parentShape.size
-        let weight : Tensor α (.dim outDim (.dim outDim .scalar)) :=
-          Tensor.dim (fun oi =>
-            Tensor.dim (fun ii =>
-              let ch := nchwChannelOfFlat cfg.c h w oi.val
-              let scale := batchNorm2dNchwEvalScale (α := α) cfg (Fin.ofNat cfg.c ch)
-              Tensor.scalar (if decide (oi.val = ii.val) then scale else Numbers.zero)))
-        let bias : Tensor α (.dim outDim .scalar) :=
-          Tensor.dim (fun oi =>
-            let ch := nchwChannelOfFlat cfg.c h w oi.val
-            Tensor.scalar (batchNorm2dNchwEvalBias (α := α) cfg (Fin.ofNat cfg.c ch)))
-        some { m := outDim, n := outDim, w := weight, b := bias }
-      else
-        none
-  | _ => none
+def batchNormEvalLinear? (parentShape : Shape) (channelAxis : Nat)
+    (cfg : NN.IR.BatchNormEvalParams α) : Option (LinParams α) := do
+  let channels ← parentShape.toList[channelAxis]?
+  if hcfg : cfg.c = 0 then
+    none
+  else if channels = cfg.c then
+    haveI : NeZero cfg.c := ⟨hcfg⟩
+    let outDim := parentShape.size
+    let weight : Tensor α [outDim, outDim] :=
+      Tensor.dim (fun oi =>
+        Tensor.dim (fun ii =>
+          let ch := axisCoordinateOfFlat parentShape channelAxis oi.val
+          let scale := batchNormEvalScale (α := α) cfg (Fin.ofNat cfg.c ch)
+          Tensor.scalar (if decide (oi.val = ii.val) then scale else Numbers.zero)))
+    let bias : Tensor α [outDim] :=
+      Tensor.dim (fun oi =>
+        let ch := axisCoordinateOfFlat parentShape channelAxis oi.val
+        Tensor.scalar (batchNormEvalBias (α := α) cfg (Fin.ofNat cfg.c ch)))
+    some { m := outDim, n := outDim, w := weight, b := bias }
+  else
+    none
 
 /--
 Parameters keyed by node id (weights, biases, constants, and seeded input boxes).
@@ -128,17 +128,23 @@ without pulling in a heavyweight runtime.
 structure ParamStore (α : Type) [Context α] where
   /-- Seed boxes for designated input nodes (`id -> FlatBox`). -/
   inputBoxes : Std.HashMap Nat (FlatBox α) := Std.HashMap.emptyWithCapacity
-  /-- Constants (`id -> FlatVec`). -/
-  constVals  : Std.HashMap Nat (FlatVec α) := Std.HashMap.emptyWithCapacity
+  /-- Constants (`id -> FlatTensor`). -/
+  constVals  : Std.HashMap Nat (FlatTensor α) := Std.HashMap.emptyWithCapacity
   /-- Linear layer params (`id -> (W,b)`). -/
   linearWB   : Std.HashMap Nat (LinParams α) := Std.HashMap.emptyWithCapacity
   /-- Matmul params (`id -> W`) for bias-free multiplication. -/
   matmulW    : Std.HashMap Nat (MatParams α) := Std.HashMap.emptyWithCapacity
-  /-- Conv2d specs (`id -> conv configuration`). -/
-  conv2dCfg  : Std.HashMap Nat (NN.IR.Conv2dParams α) := Std.HashMap.emptyWithCapacity
-  /-- Eval-mode BatchNorm2d parameters (`id -> gamma/beta/running stats`). -/
-  batchNorm2dNchwEval : Std.HashMap Nat (NN.IR.BatchNorm2dNchwEvalParams α) :=
+  /-- Convolution specs (`id -> convolution configuration`). -/
+  convCfg : Std.HashMap Nat (NN.IR.ConvParams α) := Std.HashMap.emptyWithCapacity
+  /-- Eval-mode BatchNorm parameters (`id -> gamma/beta/running stats`). -/
+  batchNormEval : Std.HashMap Nat (NN.IR.BatchNormEvalParams α) :=
     Std.HashMap.emptyWithCapacity
+  /-- Affine LayerNorm parameters keyed by node id.
+
+  The current CROWN transfer rule supports only the pure normalization recorded by an absent
+  payload. Retaining an explicit map lets the verifier reject affine LayerNorm rather than silently
+  replacing its scale, bias, or epsilon with defaults. -/
+  layerNorm : Std.HashMap Nat (NN.IR.LayerNormParams α) := Std.HashMap.emptyWithCapacity
 
 namespace ParamStore
 
@@ -153,6 +159,71 @@ def seedLInfBall {α : Type} [Context α] {s : Shape}
   ps.seedInputBox inputId <| FlatBox.lInfBall (α := α) center eps
 
 end ParamStore
+
+/--
+Whether the current dense convolution transfer exactly matches the corresponding IR semantics.
+
+The flattened CROWN rule implements channel-first convolution without leading batch axes, channel
+groups, dilation, or asymmetric padding. The payload must also agree with the configuration stored
+in the graph node; otherwise executable IR evaluation and bound propagation would denote different
+operators.
+-/
+def convTransferSupported (config : NN.IR.ConvConfig) (cfg : NN.IR.ConvParams α)
+    (parentShape outShape : Shape) : Bool :=
+  cfg.matchesConfig config &&
+    config.channelAxis == 0 &&
+    config.groups == 1 &&
+    config.dilation.toList == List.replicate config.spatialRank 1 &&
+    config.paddingAfter.toList == config.padding.toList &&
+    parentShape == cfg.inputShape .scalar &&
+    outShape == cfg.outputShape .scalar
+
+/--
+Check the graph-level semantic restrictions imposed by the current CROWN engine.
+
+Unsupported convolutions, non-leading-axis concatenation, and payload-bearing LayerNorm nodes are
+left without bounds. This predicate is shared by forward, backward, and certificate replay paths so
+one path cannot silently reinterpret a node rejected by another.
+-/
+def crownNodeSemanticsSupported (nodes : Array Node) (ps : ParamStore α) (id : Nat) : Bool :=
+  match nodes[id]? with
+  | none => false
+  | some node =>
+      match node.kind with
+      | .conv config =>
+          match node.parents with
+          | #[parentId] =>
+              match nodes[parentId]?, ps.convCfg[id]? with
+              | some parent, some cfg =>
+                  convTransferSupported (α := α) config cfg parent.outShape node.outShape
+              | _, _ => false
+          | _ => false
+      | .concat axis =>
+          if axis != 0 then
+            false
+          else
+            match node.parents with
+            | #[leftId, rightId] =>
+                match nodes[leftId]?, nodes[rightId]? with
+                | some left, some right =>
+                    match OpContracts.inferConcatOutShape axis #[left.outShape, right.outShape] with
+                    | .ok expected => expected == node.outShape
+                    | .error _ => false
+                | _, _ => false
+            | _ => false
+      | .layernorm axis =>
+          match node.parents, ps.layerNorm[id]? with
+          | #[parentId], none =>
+              match nodes[parentId]? with
+              | some parent =>
+                  axis == node.outShape.rank - 1 && parent.outShape == node.outShape
+              | none => false
+          | _, _ => false
+      | _ => true
+
+/-- Whether every node in a graph is interpreted exactly by the current CROWN engine. -/
+def crownGraphSemanticsSupported (g : Graph) (ps : ParamStore α) : Bool :=
+  (List.range g.nodes.size).all (crownNodeSemanticsSupported (α := α) g.nodes ps)
 
 /-- Read a node's interval box from an IBP-style result array. -/
 def outputBox? {α : Type} [Context α]
@@ -355,9 +426,9 @@ def boxUnaryEnclosure? [NonlinearBoundOps α]
   let bounds ← boxUnaryEnclosure.traverseFin fun i =>
     match lo i, hi i with
     | .scalar l, .scalar u => enclose l u
-  let lower : Tensor α (.dim B.dim .scalar) :=
+  let lower : Tensor α [B.dim] :=
     Tensor.dim fun i => Tensor.scalar (bounds i).1
-  let upper : Tensor α (.dim B.dim .scalar) :=
+  let upper : Tensor α [B.dim] :=
     Tensor.dim fun i => Tensor.scalar (bounds i).2
   pure { dim := B.dim, lo := lower, hi := upper }
 
@@ -367,21 +438,21 @@ The real value represented by each coordinate of `x` lies between the interprete
 semantics.
 -/
 def EnclosesReal [LawfulBoundOps α]
-    (B : FlatBox α) (x : Tensor ℝ (.dim B.dim .scalar)) : Prop :=
+    (B : FlatBox α) (x : Tensor ℝ [B.dim]) : Prop :=
   ∀ i,
-    LawfulBoundOps.toReal (FlatBox.getScalar B.lo i) ≤ FlatBox.getScalar x i ∧
-      FlatBox.getScalar x i ≤ LawfulBoundOps.toReal (FlatBox.getScalar B.hi i)
+    LawfulBoundOps.toReal (Spec.Tensor.getScalar B.lo i) ≤ Spec.Tensor.getScalar x i ∧
+      Spec.Tensor.getScalar x i ≤ LawfulBoundOps.toReal (Spec.Tensor.getScalar B.hi i)
 
 /-- Dimension-aware enclosure of a real vector by a backend box. -/
 def EnclosesRealValue [LawfulBoundOps α] {n : Nat}
-    (B : FlatBox α) (x : Tensor ℝ (.dim n .scalar)) : Prop :=
+    (B : FlatBox α) (x : Tensor ℝ [n]) : Prop :=
   ∃ h : B.dim = n, EnclosesReal B (h.symm ▸ x)
 
 /-- A lawful scalar transfer remains sound when applied coordinatewise to a flat graph box. -/
 theorem boxUnaryEnclosure?_enclosesReal [LawfulBoundOps α] [NonlinearBoundOps α]
     (f : ℝ → ℝ) (enclose : α → α → Option (α × α))
     (henclose : UnaryEnclosure (α := α) f enclose) (B : FlatBox α)
-    (x : Tensor ℝ (.dim B.dim .scalar)) (hx : EnclosesReal B x)
+    (x : Tensor ℝ [B.dim]) (hx : EnclosesReal B x)
     {out : FlatBox α} (hout : boxUnaryEnclosure? (α := α) enclose B = some out) :
     EnclosesRealValue out (Tensor.mapSpec f x) := by
   cases hlo : B.lo with
@@ -412,11 +483,11 @@ theorem boxUnaryEnclosure?_enclosesReal [LawfulBoundOps α] [NonlinearBoundOps �
               have htransfer : enclose l u = some (bounds i) := by
                 simpa [hloi, hhii] using hpoint i
               have hscalar := henclose htransfer
-                (by simpa [EnclosesReal, FlatBox.getScalar, hlo, hhi, hxv, hloi, hhii, hxvi]
+                (by simpa [EnclosesReal, Spec.Tensor.getScalar, hlo, hhi, hxv, hloi, hhii, hxvi]
                   using hx_i.1)
-                (by simpa [EnclosesReal, FlatBox.getScalar, hlo, hhi, hxv, hloi, hhii, hxvi]
+                (by simpa [EnclosesReal, Spec.Tensor.getScalar, hlo, hhi, hxv, hloi, hhii, hxvi]
                   using hx_i.2)
-              simpa [EnclosesReal, FlatBox.getScalar, Tensor.mapSpec, hxv, hxvi] using hscalar
+              simpa [EnclosesReal, Spec.Tensor.getScalar, Tensor.mapSpec, hxv, hxvi] using hscalar
 
 /-- Componentwise square-root enclosure supplied by the scalar backend. -/
 def boxSqrt? [NonlinearBoundOps α] (B : FlatBox α) : Option (FlatBox α) :=
@@ -460,39 +531,52 @@ def boxNeg (B : FlatBox α) : FlatBox α :=
     lo := Tensor.mapSpec (fun x => -x) B.hi
     hi := Tensor.mapSpec (fun x => -x) B.lo }
 
-/-- Decompose an axis permutation into adjacent swaps, rejecting invalid permutations. -/
-def swapDepthsForPerm? (perm : List Nat) (r : Nat) : Option (List Nat) :=
-  let rec bubbleLeft (cur : List Nat) (swapsRev : List Nat) (i j : Nat) : List Nat × List Nat :=
-    if j ≤ i then
-      (cur, swapsRev)
-    else
-      bubbleLeft (Spec.Shape.swapAdjacentAxes cur (j - 1)) ((j - 1) :: swapsRev) i (j - 1)
-  if perm.length = r && perm.all (fun d => d < r) then
-    let rec go (i : Nat) (targets : List Nat) (cur : List Nat) (swapsRev : List Nat) :
-        Option (List Nat) :=
-      match targets with
-      | [] => some swapsRev.reverse
-      | target :: targets' =>
-          match cur.findIdx? (· == target) with
-          | none => none
-          | some j =>
-              let (cur', swapsRev') := bubbleLeft cur swapsRev i j
-              go (i + 1) targets' cur' swapsRev'
-    go 0 perm (List.range r) []
-  else
-    none
-
 /-- Apply a full axis permutation to a shape-tagged tensor when the permutation is valid. -/
-def permutePackedTensor? {α : Type} [Context α]
-    (v : Spec.PackedTensor α) (perm : List Nat) : Option (Spec.PackedTensor α) :=
-  let sIn := v.shape
-  match Spec.Shape.permute? sIn perm with
-  | none => none
-  | some _ =>
-      match swapDepthsForPerm? perm (Spec.Shape.rank sIn) with
-      | none => none
-      | some swaps =>
-          some <| swaps.foldl (fun acc d => Spec.PackedTensor.swapAdjacentAtDepth acc d) v
+def permuteSomeTensor? {α : Type} [Context α]
+    (v : Spec.SomeTensor α) (perm : Array Nat) : Option (Spec.SomeTensor α) :=
+  (NN.IR.Graph.permuteSomeTensor v perm).toOption
+
+/-- Convert a row-major flat index into coordinates for the given dimensions. -/
+private def flatCoordinates (dims : Array Nat) (index : Nat) : Array Nat := Id.run do
+  let mut coordinates := Array.replicate dims.size 0
+  let mut remainder := index
+  for axis in [0:dims.size] do
+    let tailSize := (dims.extract (axis + 1) dims.size).foldl (· * ·) 1
+    coordinates := coordinates.set! axis (remainder / tailSize)
+    remainder := remainder % tailSize
+  return coordinates
+
+/-- Convert row-major coordinates back into a flat index. -/
+private def coordinatesFlatIndex (dims coordinates : Array Nat) : Nat := Id.run do
+  let mut index := 0
+  for axis in [0:min dims.size coordinates.size] do
+    index := index * dims[axis]! + coordinates[axis]!
+  return index
+
+/--
+Return the flat-coordinate permutation induced by an axis permutation.
+
+`perm` follows the tensor convention used by `Shape.permute?`: output axis `i` is read from input
+axis `perm[i]`. The resulting function therefore maps each output flat coordinate to the input
+flat coordinate from which its value is taken. Invalid permutations and inconsistent dimensions
+are rejected.
+-/
+def flatAxisPermutation? (sourceShape : Shape) (perm : Array Nat) (n : Nat) :
+    Option (Fin n → Fin n) := do
+  let targetShape ← Spec.Shape.permute? sourceShape perm.toList
+  if sourceShape.size != n || targetShape.size != n then
+    none
+  else if hn : n = 0 then
+    none
+  else
+    let _ : NeZero n := ⟨hn⟩
+    let inverse ← (NN.IR.OpContracts.inversePerm perm).toOption
+    let sourceDims := sourceShape.toArray
+    let targetDims := targetShape.toArray
+    pure fun outputIndex =>
+      let targetCoordinates := flatCoordinates targetDims outputIndex.val
+      let sourceCoordinates := inverse.map (fun targetAxis => targetCoordinates.getD targetAxis 0)
+      Fin.ofNat n (coordinatesFlatIndex sourceDims sourceCoordinates)
 
 /-- Componentwise max bounds: `max(x,y)` over interval boxes. -/
 def boxMaxElem (B1 B2 : FlatBox α) : FlatBox α :=
@@ -606,10 +690,10 @@ def mkCanBroadcastTo? : (s₁ s₂ : Shape) → Option (Shape.CanBroadcastTo s�
       | _, _ => none
 
 /-- Reinterpret a flattened tensor as shape `s` when the element counts agree. -/
-def ibpUnflatten {s : Shape} (dim : Nat) (t : Tensor α (.dim dim .scalar)) (h : dim =
+def ibpUnflatten {s : Shape} (dim : Nat) (t : Tensor α [dim]) (h : dim =
   Spec.Shape.size s) :
     Tensor α s :=
-  let t' : Tensor α (.dim (Spec.Shape.size s) .scalar) := by
+  let t' : Tensor α [Spec.Shape.size s] := by
     simpa [h] using t
   Tensor.unflattenSpec (α := α) s t'
 
@@ -750,7 +834,7 @@ is called only from exact-arithmetic branches; executable endpoint propagation u
 `ibpLayerNormRange?` instead.
 -/
 def idealLayerNormVarianceUpper {n : Nat}
-    (lo hi : Tensor α (.dim n .scalar)) (muLo muHi : α) : α :=
+    (lo hi : Tensor α [n]) (muLo muHi : α) : α :=
   if _h : n > 0 then
     match lo, hi with
     | .dim flo, .dim fhi =>
@@ -771,7 +855,7 @@ For `n = 0`, the mathematical mean is undefined; this total helper returns `(0,0
 not accidentally divide by zero while they reject or totalize the empty case.
 -/
 def idealLayerNormMeanBounds {n : Nat}
-    (lo hi : Tensor α (.dim n .scalar)) : α × α :=
+    (lo hi : Tensor α [n]) : α × α :=
   if _h : n > 0 then
     let nA : α := (n : Nat)
     (Spec.Tensor.sumSpec lo / nA, Spec.Tensor.sumSpec hi / nA)
@@ -786,8 +870,8 @@ and second derivative streams. Keeping it here avoids duplicating the same endpo
 IBP and derivative propagation.
 -/
 def idealLayerNormCenteredBounds {n : Nat}
-    (lo hi : Tensor α (.dim n .scalar)) (muLo muHi : α) :
-    Tensor α (.dim n .scalar) × Tensor α (.dim n .scalar) :=
+    (lo hi : Tensor α [n]) (muLo muHi : α) :
+    Tensor α [n] × Tensor α [n] :=
   let flo := match lo with | .dim f => f
   let fhi := match hi with | .dim f => f
   let loOut :=
@@ -898,8 +982,7 @@ def ibpLayerNormRange? [NonlinearBoundOps α]
         hi := Spec.fill (α := α) radius (.dim dim .scalar) }
 
 /-- For tensors known to have shape `.dim n .scalar`, extract the underlying function. -/
-@[expose] public def getDimScalarFn {n : Nat} (t : Tensor α (.dim n .scalar)) : (Fin n → Tensor α
-  .scalar) :=
+@[expose] public def getDimScalarFn {n : Nat} (t : Tensor α [n]) : Fin n → Tensor α .scalar :=
   match t with
   | .dim f => f
 
@@ -914,8 +997,8 @@ public def castBoxDim {n n' : Nat}
 /-- Cast a ReLU relaxation vector across a proven-equal hidden dimension. -/
 def castRelax {n n' : Nat}
   (h : n = n')
-  (r : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n .scalar)) :
-  Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim n' .scalar) := by
+  (r : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n]) :
+  Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n'] := by
   simpa [h] using r
 
 /-- Cast the input dimension of an affine map across a proven equality. -/
@@ -935,13 +1018,13 @@ Cast a dim-scalar tensor across an equality of dimensions.
 We keep this as an `abbrev` so it unfolds aggressively in simp-based soundness proofs.
 -/
 abbrev castDimScalar {n n' : Nat}
-    (h : n = n') (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n' .scalar) :=
+    (h : n = n') (t : Tensor α [n]) : Tensor α [n'] :=
   Tensor.castShape t (congrArg (fun k => Shape.dim k Shape.scalar) h)
 
 omit [Context α] [BoundOps α] in
 /-- Casting a flat vector tensor along an equality from a dimension to itself changes no data. -/
 @[simp] theorem castDimScalar_self {n : Nat}
-    (h : n = n) (t : Tensor α (.dim n .scalar)) :
+    (h : n = n) (t : Tensor α [n]) :
     castDimScalar (α := α) h t = t := by
   exact Tensor.cast_shape_self t _
 
@@ -985,31 +1068,63 @@ public def ibpMatmul (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option
       some (toFlatBox p.m yB')
     else none
 
-/-- IBP transfer for a convolution node whose parameters are stored in `ParamStore.conv2dCfg`. -/
-def ibpConv2dNode (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
-  match ps.conv2dCfg[id]? with
+/--
+IBP transfer for a supported convolution node whose parameters are stored in `ParamStore.convCfg`.
+-/
+def ibpConvNode (config : NN.IR.ConvConfig) (parentShape outShape : Shape)
+    (id : Nat) (ps : ParamStore α) (Xin : FlatBox α) : Option (FlatBox α) :=
+  match ps.convCfg[id]? with
   | none => none
   | some cfg =>
-    let expected := cfg.inC * cfg.inH * cfg.inW
-    if _hs : cfg.stride = 0 then
+    if !convTransferSupported (α := α) config cfg parentShape outShape then
       none
-    else if hdim : Xin.dim = expected then
-      let sFlat := Shape.dim Xin.dim Shape.scalar
-      let sIn := Shape.dim cfg.inC (Shape.dim cfg.inH (Shape.dim cfg.inW Shape.scalar))
-      have hsize : sFlat.size = sIn.size := by
-        simp [Spec.Shape.size, sFlat, sIn, hdim, expected, Nat.mul_assoc]
-      let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
-      let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
-      let xBox : Box α sIn := { lo := xLo, hi := xHi }
-      let yBox := NN.MLTheory.CROWN.ibpConv2d (α:=α)
-        (layer:=cfg.spec) (xB:=xBox)
-      let outH := Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
-      let outW := Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
-      let outShape := Shape.dim cfg.outC (Shape.dim outH (Shape.dim outW Shape.scalar))
-      let flatLo := Tensor.flattenSpec (α:=α) yBox.lo
-      let flatHi := Tensor.flattenSpec (α:=α) yBox.hi
-      some { dim := outShape.size, lo := flatLo, hi := flatHi }
-    else none
+    else
+      let expected := cfg.inChannels * cfg.inputSpatial.toList.prod
+      if hdim : Xin.dim = expected then
+        let sFlat := Shape.dim Xin.dim Shape.scalar
+        let sIn := Shape.ofList (cfg.inChannels :: cfg.inputSpatial.toList)
+        have hsize : sFlat.size = sIn.size := by
+          simp [Spec.Shape.size, sFlat, sIn, hdim, expected]
+        let xLo := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.lo hsize
+        let xHi := Tensor.reshapeSpec (α:=α) (s₁:=sFlat) (s₂:=sIn) Xin.hi hsize
+        let xBox : Box α sIn := { lo := xLo, hi := xHi }
+        let yBox := NN.MLTheory.CROWN.ibpConv (α:=α) (layer:=cfg.spec) (xB:=xBox)
+        let outSpatial := Spec.convOutSpatial cfg.inputSpatial cfg.kernel cfg.stride cfg.padding
+        let flatOutShape := Shape.ofList (cfg.outChannels :: outSpatial.toList)
+        let flatLo := Tensor.flattenSpec (α:=α) yBox.lo
+        let flatHi := Tensor.flattenSpec (α:=α) yBox.hi
+        some { dim := flatOutShape.size, lo := flatLo, hi := flatHi }
+      else none
+
+/-- Apply a monotone `SomeTensor` operation independently to both interval endpoints. -/
+def ibpMonotoneSomeTensor?
+    (parentShape outShape : Shape)
+    (op : SomeTensor α → Except String (SomeTensor α))
+    (input : FlatBox α) : Option (FlatBox α) :=
+  if hdim : input.dim = parentShape.size then
+    let flatShape := Shape.dim input.dim Shape.scalar
+    have hsize : flatShape.size = parentShape.size := by
+      simp [flatShape, Shape.size, hdim]
+    let loInput := Tensor.reshapeSpec (α := α) (s₁ := flatShape) (s₂ := parentShape) input.lo hsize
+    let hiInput := Tensor.reshapeSpec (α := α) (s₁ := flatShape) (s₂ := parentShape) input.hi hsize
+    match op (SomeTensor.mk (α := α) parentShape loInput),
+        op (SomeTensor.mk (α := α) parentShape hiInput) with
+    | .ok lo, .ok hi =>
+        if hlo : lo.shape = outShape then
+          if hhi : hi.shape = outShape then
+            let loTensor : Tensor α outShape := hlo ▸ lo.tensor
+            let hiTensor : Tensor α outShape := hhi ▸ hi.tensor
+            some
+              { dim := outShape.size
+                lo := Tensor.flattenSpec (α := α) loTensor
+                hi := Tensor.flattenSpec (α := α) hiTensor }
+          else
+            none
+        else
+          none
+    | _, _ => none
+  else
+    none
 
 
 end NN.MLTheory.CROWN.Graph

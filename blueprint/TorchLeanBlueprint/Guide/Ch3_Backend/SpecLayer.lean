@@ -36,7 +36,7 @@ This is not a claim that CUDA stores a matrix as nested Lean functions. Native r
 contiguous buffers. The specification chooses the representation that makes mathematical reasoning
 clear; a layout contract is needed when an implementation flattens that value into memory.
 
-The exported aliases hide most of the recursive spelling:
+Model code uses ordinary shape lists, so the recursive representation stays out of tensor types:
 
 ```
 import NN.Spec.Layers.Linear
@@ -45,8 +45,8 @@ import NN.Spec.Layers.Activation
 open Spec
 open Spec.Tensor
 
-#check Tensor ℝ (shape![2])
-#check Tensor ℝ (shape![3, 2])
+#check Tensor ℝ [2]
+#check Tensor ℝ [3, 2]
 #check LinearSpec ℝ 2 3
 ```
 
@@ -105,8 +105,8 @@ The forward definition is deliberately short:
 def linearSpec {α : Type} [Add α] [Mul α] [Zero α]
     {inDim outDim : Nat}
     (layer : LinearSpec α inDim outDim)
-    (x : Tensor α (shape![inDim])) :
-    Tensor α (shape![outDim]) :=
+    (x : Tensor α [inDim]) :
+    Tensor α [outDim] :=
   addSpec (matVecMulSpec layer.weights x) layer.bias
 ```
 
@@ -142,8 +142,8 @@ def twoLayerMlp
     {inDim hidden outDim : Nat}
     (first : LinearSpec α inDim hidden)
     (second : LinearSpec α hidden outDim)
-    (x : Tensor α (shape![inDim])) :
-    Tensor α (shape![outDim]) :=
+    (x : Tensor α [inDim]) :
+    Tensor α [outDim] :=
   linearSpec second
     (Activation.reluSpec (linearSpec first x))
 ```
@@ -260,7 +260,7 @@ conditions under which one interpretation encloses or approximates another.
 # The Implemented Specifications
 
 The spec layer is broader than the running MLP. `NN.Spec.Layers` contains typed meanings for
-linear algebra, convolution and transposed convolution, two-dimensional and N-dimensional pooling,
+linear algebra, rank-polymorphic convolution, transposed convolution, and pooling,
 activations and losses, normalization, dropout, embeddings, recurrent cells, selective scan, and
 scaled dot-product attention. Model definitions under `NN.Spec.Models` compose these operations
 into families such as CNNs, transformers, recurrent networks, and state-space models.
@@ -322,10 +322,10 @@ admission check answer different questions.
 GraphSpec's checked MLP uses the same four parameter tensors:
 
 ```
-[W₁ : shape![hidden, input],
- b₁ : shape![hidden],
- W₂ : shape![output, hidden],
- b₂ : shape![output]]
+[W₁ : [hidden, input],
+ b₁ : [hidden],
+ W₂ : [output, hidden],
+ b₂ : [output]]
 ```
 
 The theorem

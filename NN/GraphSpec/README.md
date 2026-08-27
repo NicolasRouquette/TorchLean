@@ -86,10 +86,11 @@ entire architecture for every later result.
 | `DAG/Core.lean` | typed variables, terms, blocks, substitutions, semantics, and lowering |
 | `DAG/Term.lean` | reusable term combinators |
 | `DAG/Primitives/Core.lean` | primitive operation interface and basic operations |
-| `DAG/Primitives/LinearAlgebra.lean` | matrix and batched linear algebra |
+| `DAG/Primitives/LinearAlgebra.lean` | broadcasted matrix and vector linear algebra |
 | `DAG/Primitives/Nonlinear.lean` | activations and elementwise nonlinearities |
 | `DAG/Primitives/Normalization.lean` | normalization operations |
 | `DAG/Primitives/Shape.lean` | reshape, broadcast, concat, slicing, and axis operations |
+| `Primitives/Spatial.lean` | rank-polymorphic convolution, pooling, and spatial normalization |
 | `ToSequential.lean` | conversion of the supported layer-stack subset to `TorchLean.NN.Seq` |
 | `Models/` | MLP, CNN, residual, and TorchLean lowering examples |
 
@@ -102,7 +103,7 @@ namespace NN.GraphSpec.Primitive
 
 open Spec
 open Tensor
-open NN.Tensor
+open TorchLean.Tensor
 
 def myOp (s : Shape) : Primitive [] s s :=
   { name := "myOp"
@@ -121,6 +122,13 @@ Unary sequential primitives can be embedded in DAG syntax with
 
 Add semantic lemmas next to the primitive. Model-specific proofs can then simplify through the
 primitive interface rather than unfold its implementation.
+
+`DAG.PrimOp.matmul` accepts separate left, right, and result batch-prefix shapes together with
+`Shape.CanBroadcastTo` evidence for both operands. `DAG.PrimOp.broadcastVecMat` provides the same
+batch-prefix generality for vector–matrix products, including shared vectors and pairwise batched
+vectors without separate special-case operations. `DAG.PrimOp.multiHeadAttention` similarly
+accepts any leading shape and applies the single-sequence specification independently at every
+leading index.
 
 ## Runtime Data
 

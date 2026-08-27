@@ -118,7 +118,7 @@ Abstract result bits for native CUDA scalar primitives.
 
 This structure provides a bit-by-bit comparison point between the FFI/runtime implementation and
 the `IEEE32Exec` reference. It makes no claim that Lean proves the CUDA implementation correct.
-Vector and tensor kernels lift the comparison elementwise, except for reductions whose order must
+Rank-one and higher-rank tensor kernels lift the comparison elementwise, except for reductions whose order must
 also be specified.
 -/
 structure NativePrimitiveBits where

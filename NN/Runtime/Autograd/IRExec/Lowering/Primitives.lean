@@ -70,54 +70,46 @@ Keeping the context spelling `[inShape] ++ ss` explicit prevents dependent elabo
 normalizing the singleton append differently at lowering pass and correctness-proof call sites.
 -/
 def getIRValue {α : Type} {inShape : Shape} {ss : List Shape} {s : Shape}
-    (ctx : TList α ([inShape] ++ ss)) (idx : Idx ([inShape] ++ ss) s) : Tensor α s :=
+    (ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss)) (idx : Idx ([inShape] ++ ss) s) : Tensor α s :=
   getIdx (α := α) (xs := ctx) idx
 
 /-- Package a typed forward closure as one node of the executable IR graph. -/
 def mkForwardNode {α : Type} {Γ : List Shape} {τ : Shape}
-    (forward : TList α Γ → Tensor α τ) : ForwardNode α Γ τ :=
+    (forward : _root_.TorchLean.TensorPack α Γ → Tensor α τ) : ForwardNode α Γ τ :=
   ⟨forward⟩
 
 /--
 Evaluation projection for `mkForwardNode`.
 -/
 @[simp] theorem mkForwardNode_eval {α : Type} {Γ : List Shape} {τ : Shape}
-    (f : TList α Γ → Tensor α τ) (ctx : TList α Γ) :
+    (f : _root_.TorchLean.TensorPack α Γ → Tensor α τ) (ctx : _root_.TorchLean.TensorPack α Γ) :
     (mkForwardNode (α := α) (Γ := Γ) (τ := τ) f).eval ctx = f ctx := by
   rfl
 
-/--
-Apply a list of adjacent swaps (specified by swap depths) to a shape.
-
-This is the shape-level companion of `applySwapsTensor`, and mirrors IR permutation lowering.
--/
-def swapShapeBySwaps (s : Shape) : List Nat → Shape
+/-- Internal list recursion used to track the dependent output shape of adjacent swaps. -/
+def swapShapeBySwapsList (s : Shape) : List Nat → Shape
   | [] => s
-  | d :: ds => swapShapeBySwaps (s.swapAdjacentAtDepth d) ds
+  | d :: ds => swapShapeBySwapsList (s.swapAdjacentAtDepth d) ds
 
-/--
-Apply the same swap sequence as `swapShapeBySwaps`, but to a tensor value.
+/-- Apply adjacent swaps, represented by their axis depths, to a shape. -/
+def swapShapeBySwaps (s : Shape) (swaps : Array Nat) : Shape :=
+  swapShapeBySwapsList s swaps.toList
 
-This uses `Tensor.swap_at_depth_helper` repeatedly; it is the runtime companion of the IR-side
-`swapDepthsForPerm` lowering used by `.permute`.
--/
-def applySwapsTensor {α : Type} [Context α] :
-    {s : Shape} → (swaps : List Nat) → Tensor α s → Tensor α (swapShapeBySwaps s swaps)
+/-- Internal dependent recursion underlying `applySwapsTensor`. -/
+def applySwapsTensorList {α : Type} [Context α] :
+    {s : Shape} → (swaps : List Nat) → Tensor α s → Tensor α (swapShapeBySwapsList s swaps)
   | _s, [], t => t
   | s, d :: ds, t =>
       let t' : Tensor α (s.swapAdjacentAtDepth d) := Tensor.swapAdjacentAxes (tensor := t) d
-      applySwapsTensor (s := s.swapAdjacentAtDepth d) (swaps := ds) t'
+      applySwapsTensorList (s := s.swapAdjacentAtDepth d) (swaps := ds) t'
 
-/--
-Concatenate a list of tensors (all with shape `.dim nP rest`) along dimension 0.
+/-- Apply the same adjacent-swap sequence as `swapShapeBySwaps` to a tensor value. -/
+def applySwapsTensor {α : Type} [Context α] {s : Shape} (swaps : Array Nat)
+    (tensor : Tensor α s) : Tensor α (swapShapeBySwaps s swaps) :=
+  applySwapsTensorList swaps.toList tensor
 
-The input list is expressed as typed indices into the runtime context `Γ`; the result tracks the
-total concatenated size as a sigma.
-
-This helper supports lowering of IR concat-style operators while preserving shape information.
--/
-def concatLeadingAxisFromInfos
-    {α : Type} [Context α] {Γ : List Shape} {rest : Shape} (ctx : TList α Γ) :
+def concatLeadingAxisFromInfosList
+    {α : Type} [Context α] {Γ : List Shape} {rest : Shape} (ctx : _root_.TorchLean.TensorPack α Γ) :
     (infos : List (Sigma fun nP => Idx Γ (.dim nP rest))) →
       Sigma fun nSum => Tensor α (.dim nSum rest)
   | [] =>
@@ -130,8 +122,16 @@ def concatLeadingAxisFromInfos
           match acc, nxt with
   | ⟨n1, t1⟩, ⟨n2, idx2⟩ =>
               let t2 := getIdx (α := α) (xs := ctx) idx2
-              ⟨n1 + n2, Tensor.concatLeadingAxisSpec (α := α) (n := n1) (m := n2) (s := rest) t1 t2⟩)
+              ⟨n1 + n2, Tensor.concatAxisSpec .scalar (α := α) (n := n1) (m := n2)
+                (suffix := rest) t1 t2⟩)
         s0
+
+/-- Concatenate tensors selected by typed indices along their leading axis. -/
+def concatLeadingAxisFromInfos
+    {α : Type} [Context α] {Γ : List Shape} {rest : Shape} (ctx : _root_.TorchLean.TensorPack α Γ)
+    (infos : Array (Sigma fun nP => Idx Γ (.dim nP rest))) :
+    Sigma fun nSum => Tensor α (.dim nSum rest) :=
+  concatLeadingAxisFromInfosList ctx infos.toList
 
 /--
 The concatenated size reported by `concatLeadingAxisFromInfos` is the sum of the input sizes.
@@ -140,13 +140,18 @@ This theorem is used to justify the output-shape side conditions in concat lower
 -/
 theorem concatLeadingAxisFromInfos_size_eq_sum
     {α : Type} [Context α] {Γ : List Shape} {rest : Shape}
-    (ctx : TList α Γ) (infos : List (Sigma fun nP => Idx Γ (.dim nP rest))) :
+    (ctx : _root_.TorchLean.TensorPack α Γ) (infos : Array (Sigma fun nP => Idx Γ (.dim nP rest))) :
     (concatLeadingAxisFromInfos (α := α) (Γ := Γ) (rest := rest) ctx infos).1 =
       infos.foldl (fun acc info => acc + info.1) 0 := by
-  cases infos with
+  rw [← Array.foldl_toList]
+  change
+    (concatLeadingAxisFromInfosList (α := α) (Γ := Γ) (rest := rest) ctx infos.toList).1 =
+      infos.toList.foldl (fun acc info => acc + info.1) 0
+  cases hInfos : infos.toList with
   | nil =>
-      simp [concatLeadingAxisFromInfos]
+      simp [concatLeadingAxisFromInfosList]
   | cons info infosTail =>
+      clear hInfos infos
       -- `concatLeadingAxisFromInfos` is a foldl over `infosTail` starting from a sigma whose `.1` is
       -- `info.1`.
       -- Its `.1` component is therefore the `Nat` foldl over the same list of `nP`s.
@@ -158,7 +163,8 @@ theorem concatLeadingAxisFromInfos_size_eq_sum
           match acc, nxt with
           | ⟨n1, t1⟩, ⟨n2, idx2⟩ =>
               let t2 := getIdx (α := α) (xs := ctx) idx2
-              ⟨n1 + n2, Tensor.concatLeadingAxisSpec (α := α) (n := n1) (m := n2) (s := rest) t1 t2⟩
+              ⟨n1 + n2, Tensor.concatAxisSpec .scalar (α := α) (n := n1) (m := n2)
+                (suffix := rest) t1 t2⟩
       have hfold :
           ∀ acc0 : Sigma fun n => Tensor α (.dim n rest),
             (infosTail.foldl f acc0).1 = infosTail.foldl (fun acc nxt => acc + nxt.1) acc0.1 := by
@@ -169,7 +175,7 @@ theorem concatLeadingAxisFromInfos_size_eq_sum
         | cons nxt infos ih =>
             simp [List.foldl, f, ih]
       -- Now rewrite the outer fold (starting at 0) and finish.
-      simpa [concatLeadingAxisFromInfos, List.foldl] using
+      simpa [concatLeadingAxisFromInfosList, List.foldl] using
         (hfold ⟨info.1, getIdx (α := α) (xs := ctx) info.2⟩)
 
 end Internal

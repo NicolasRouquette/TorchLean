@@ -63,7 +63,7 @@ abbrev vecSize (n : Nat) : Nat :=
     simp [idxMN]
 
   /-- Relate the tensor vectorization `tensorToVec` to `Spec.get2` at a matrix coordinate. -/
-  private lemma tensorToVec_get2 {m n : Nat} (A : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin m) (j :
+  private lemma tensorToVec_get2 {m n : Nat} (A : Tensor ℝ [m, n]) (i : Fin m) (j :
     Fin n) :
       tensorToVec (t := A) (idxMN (m := m) (n := n) i j) = Spec.get2 A i j := by
     cases n with
@@ -91,13 +91,9 @@ abbrev vecSize (n : Nat) : Nat :=
                   simp [j', k0, finProdFinEquiv]
                 cases hx : cols j with
                 | scalar x =>
-                    have hscalar : tensorToVec (t := (Tensor.scalar x : Tensor ℝ Shape.scalar)) k0 = x :=
+                    have hscalar : tensorToVec (t := (Tensor.scalar x : Tensor ℝ .scalar)) k0 = x :=
                       by
-                      simpa [tensorToVec, toVecE, flattenSpec, Spec.Shape.size, Spec.toVec, k0] using
-                        (euclideanEquiv_symm_ofLp
-                          (n := Spec.Shape.size Shape.scalar)
-                          (f := fun _ : Fin (Spec.Shape.size Shape.scalar) => x)
-                          (i := k0))
+                      exact tensorToVec_scalar x k0
                     have hidx : idxMN (m := m) (n := Nat.succ n) i j = finProdFinEquiv (i, j') := by
                       apply Fin.ext
                       simp [idxMN, j', hn]
@@ -114,11 +110,11 @@ abbrev vecSize (n : Nat) : Nat :=
                         hconv.symm.trans hinner
                       have hinner'' :
                           tensorToVec (t := Tensor.dim cols) j' = tensorToVec (t := (Tensor.scalar x : Tensor ℝ
-                            Shape.scalar)) k0 := by
+                            .scalar)) k0 := by
                         simpa [hx] using hinner'
                       simpa [hrow] using (hinner''.trans hscalar)
                     -- `get2` picks out exactly this scalar entry.
-                    simpa [Spec.get2, Spec.get, Spec.getAtSpec, hrow, hx, houter', hrowCoord]
+                    simpa [Spec.get2, Spec.get, hrow, hx, houter', hrowCoord]
                       using (houter'.trans hrowCoord)
 
   /-- `Spec.get2` of an `vecToTensor`-constructed matrix reads back the corresponding flattened entry. -/
@@ -132,7 +128,7 @@ abbrev vecSize (n : Nat) : Nat :=
     exact (tensorToVec_get2 (A := vecToTensor (s := .dim m (.dim n .scalar)) v) i j).symm.trans htv
 
   /-- Entrywise formula for matrix addition: `(A + B)[i,j] = A[i,j] + B[i,j]`. -/
-  private lemma get2_add_spec {m n : Nat} (A B : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin m) (j
+  private lemma get2_add_spec {m n : Nat} (A B : Tensor ℝ [m, n]) (i : Fin m) (j
     : Fin n) :
       Spec.get2 (addSpec A B) i j = Spec.get2 A i j + Spec.get2 B i j := by
     cases A with
@@ -148,11 +144,11 @@ abbrev vecSize (n : Nat) : Nat :=
                         cases hB : colsB j with
                         | scalar b =>
                             simp [addSpec, Spec.Tensor.addSpec, Spec.Tensor.map2Spec, Spec.get2,
-                              Spec.get, Spec.getAtSpec,
+                              Spec.get,
                               hrowA, hrowB, hA, hB]
 
   /-- Vectorization commutes with matrix addition: `tensorToVec (A + B) = tensorToVec A + tensorToVec B`. -/
-  lemma tensorToVec_add_spec_mat {m n : Nat} (A B : Tensor ℝ (.dim m (.dim n .scalar))) :
+  lemma tensorToVec_add_spec_mat {m n : Nat} (A B : Tensor ℝ [m, n]) :
       tensorToVec (t := addSpec A B) = tensorToVec (t := A) + tensorToVec (t := B) := by
     classical
     ext ip
@@ -590,7 +586,7 @@ https://pytorch.org/docs/stable/generated/torch.transpose.html
 /-- Tape node computing matrix transpose: `(m×n) ↦ (n×m)`. -/
 def matrixTranspose {Γ : List Shape} {m n : Nat}
     (A : Idx Γ (.dim m (.dim n .scalar))) : Node Γ (.dim n (.dim m .scalar)) :=
-  Node.ofVec (Γ := Γ) (τ := .dim n (.dim m .scalar))
+  Node.ofFn (Γ := Γ) (τ := .dim n (.dim m .scalar))
     (f := fun xV => MatTranspose.transposeVec (m := m) (n := n) (CtxVec.get (Γ := Γ) (s := .dim m
       (.dim n .scalar)) A xV))
     (jvp := fun _xV dxV => MatTranspose.transposeVec (m := m) (n := n) (CtxVec.get (Γ := Γ) (s :=
@@ -651,18 +647,18 @@ def matrixTransposeFderiv {Γ : List Shape} {m n : Nat}
           (fun x : CtxVec Γ =>
             (Tlin.comp (CtxVec.getCLM (Γ := Γ) (s := .dim m (.dim n .scalar)) A)) x) := by
       funext x
-      simp [matrixTranspose, Node.forwardVec_ofVec, ContinuousLinearMap.comp_apply,
+      simp [matrixTranspose, Node.forwardVec_ofFn, ContinuousLinearMap.comp_apply,
         CtxVec.getCLM_apply, Tlin]
     exact hCLM.congr_of_eventuallyEq hfun.eventuallyEq
   · intro _xV dxV
-    simp [matrixTranspose, Node.jvpVec_ofVec, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply,
+    simp [matrixTranspose, Node.jvpVec_ofFn, ContinuousLinearMap.comp_apply, CtxVec.getCLM_apply,
       Tlin]
 
 /-- Matrix multiplication node on 2D tensors. -/
 def matmul {Γ : List Shape} {m n p : Nat}
     (A : Idx Γ (.dim m (.dim n .scalar))) (B : Idx Γ (.dim n (.dim p .scalar))) :
     Node Γ (.dim m (.dim p .scalar)) :=
-  Node.ofVec (Γ := Γ) (τ := .dim m (.dim p .scalar))
+  Node.ofFn (Γ := Γ) (τ := .dim m (.dim p .scalar))
     (f := fun xV =>
       let aT := vecToTensor (s := .dim m (.dim n .scalar)) (CtxVec.get (Γ := Γ) (s := .dim m (.dim n
         .scalar)) A xV)
@@ -685,8 +681,8 @@ def matmul {Γ : List Shape} {m n p : Nat}
       let bT := vecToTensor (s := .dim n (.dim p .scalar)) (CtxVec.get (Γ := Γ) (s := .dim n (.dim p
         .scalar)) B xV)
       let δT := vecToTensor (s := .dim m (.dim p .scalar)) δV
-      let dA := Spec.matMulSpec δT (matrixTransposeSpec bT)
-      let dB := Spec.matMulSpec (matrixTransposeSpec aT) δT
+      let dA := Spec.matMulSpec δT (swapAdjacentAxes bT 0)
+      let dB := Spec.matMulSpec (swapAdjacentAxes aT 0) δT
       CtxVec.single (Γ := Γ) (s := .dim m (.dim n .scalar)) A (tensorToVec (t := dA)) +
         CtxVec.single (Γ := Γ) (s := .dim n (.dim p .scalar)) B (tensorToVec (t := dB)))
     (correct_inner := by
@@ -703,8 +699,8 @@ def matmul {Γ : List Shape} {m n p : Nat}
         .scalar)) B dxV)
       let δT := vecToTensor (s := .dim m (.dim p .scalar)) δV
       let dC := addSpec (Spec.matMulSpec daT bT) (Spec.matMulSpec aT dbT)
-      let dA := Spec.matMulSpec δT (matrixTransposeSpec bT)
-      let dB := Spec.matMulSpec (matrixTransposeSpec aT) δT
+      let dA := Spec.matMulSpec δT (swapAdjacentAxes bT 0)
+      let dB := Spec.matMulSpec (swapAdjacentAxes aT 0) δT
 
       -- LHS: rewrite `inner` into tensor `dot` using vectorization.
       have hL : inner ℝ (tensorToVec (t := dC)) δV = dot dC δT := by
@@ -836,7 +832,7 @@ by
           =
         (fun xV : CtxVec Γ => (Bmul (fA xV)) (fB xV)) := by
       funext ctxV
-      simp [matmul, Node.forwardVec_ofVec, fA, fB, Bmul, Matmul.forward_eq_matmulVec]
+      simp [matmul, Node.forwardVec_ofFn, fA, fB, Bmul, Matmul.forward_eq_matmulVec]
     exact hbilin.congr_of_eventuallyEq hEq.eventuallyEq
 
   · intro xV dxV
@@ -846,7 +842,7 @@ by
     -- is exactly `Matmul.matmulVec a b`.
     ext ip
     -- After expanding, the two bilinear terms may appear in the opposite order.
-    simp [matmul, Node.jvpVec_ofVec, fA, fB, Bmul, Matmul.tensorToVec_add_spec_mat,
+    simp [matmul, Node.jvpVec_ofFn, fA, fB, Bmul, Matmul.tensorToVec_add_spec_mat,
       Matmul.forward_eq_matmulVec, ContinuousLinearMap.comp_apply,
       CtxVec.getCLM_apply, add_comm]
 
@@ -930,7 +926,7 @@ end MatrixLinear
 /-- Broadcast a vector `(.dim m .scalar)` across columns to `(.dim m (.dim n .scalar))`. -/
 def broadcastRow {Γ : List Shape} {m n : Nat}
     (idx : Idx Γ (.dim m .scalar)) : Node Γ (.dim m (.dim n .scalar)) :=
-  Node.ofVec (Γ := Γ) (τ := .dim m (.dim n .scalar))
+  Node.ofFn (Γ := Γ) (τ := .dim m (.dim n .scalar))
     (f := fun xV => MatrixLinear.broadcastRowCLM (m := m) (n := n) (getVec (Γ := Γ) (n := m) idx
       xV))
     (jvp := fun _xV dxV => MatrixLinear.broadcastRowCLM (m := m) (n := n) (getVec (Γ := Γ) (n := m)
@@ -977,16 +973,16 @@ by
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [broadcastRow, D, Node.forwardVec_ofVec, getVecCLM_apply]
+      simp [broadcastRow, D, Node.forwardVec_ofFn, getVecCLM_apply]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     ext ip
-    simp [broadcastRow, Node.jvpVec_ofVec, getVecCLM_apply, ContinuousLinearMap.comp_apply]
+    simp [broadcastRow, Node.jvpVec_ofFn, getVecCLM_apply, ContinuousLinearMap.comp_apply]
 
 /-- Broadcast a vector `(.dim n .scalar)` across rows to `(.dim m (.dim n .scalar))`. -/
 def broadcastCol {Γ : List Shape} {m n : Nat}
     (idx : Idx Γ (.dim n .scalar)) : Node Γ (.dim m (.dim n .scalar)) :=
-  Node.ofVec (Γ := Γ) (τ := .dim m (.dim n .scalar))
+  Node.ofFn (Γ := Γ) (τ := .dim m (.dim n .scalar))
     (f := fun xV => MatrixLinear.broadcastColCLM (m := m) (n := n) (getVec (Γ := Γ) (n := n) idx
       xV))
     (jvp := fun _xV dxV => MatrixLinear.broadcastColCLM (m := m) (n := n) (getVec (Γ := Γ) (n := n)
@@ -1033,11 +1029,11 @@ by
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [broadcastCol, D, Node.forwardVec_ofVec, getVecCLM_apply]
+      simp [broadcastCol, D, Node.forwardVec_ofFn, getVecCLM_apply]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     ext ip
-    simp [broadcastCol, Node.jvpVec_ofVec, getVecCLM_apply, ContinuousLinearMap.comp_apply]
+    simp [broadcastCol, Node.jvpVec_ofFn, getVecCLM_apply, ContinuousLinearMap.comp_apply]
 
 -- ---------------------------------------------------------------------------
 -- Shape-preserving reshapes (vector reinterpretation)
@@ -1053,7 +1049,7 @@ def rowMean {Γ : List Shape} {m n : Nat}
     (idx : Idx Γ (.dim m (.dim n .scalar))) : Node Γ (.dim m .scalar) :=
   let outShape : Shape := .dim m .scalar
   let hsz : Spec.Shape.size outShape = m := by simp [outShape, Spec.Shape.size]
-  Node.ofVec (Γ := Γ) (τ := outShape)
+  Node.ofFn (Γ := Γ) (τ := outShape)
     (f := fun xV =>
       castVec hsz.symm <|
         MatrixLinear.rowMeanCLM (m := m) (n := n)
@@ -1126,12 +1122,12 @@ by
           =
         fun x : CtxVec Γ => D x := by
       funext x
-      simp [rowMean, outShape, D, Node.forwardVec_ofVec, CtxVec.getCLM_apply, Graph.castCLM,
+      simp [rowMean, outShape, D, Node.forwardVec_ofFn, CtxVec.getCLM_apply, Graph.castCLM,
         ContinuousLinearMap.comp_apply]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     ext i
-    simp [rowMean, outShape, Node.jvpVec_ofVec, Graph.castCLM, ContinuousLinearMap.comp_apply,
+    simp [rowMean, outShape, Node.jvpVec_ofFn, Graph.castCLM, ContinuousLinearMap.comp_apply,
       CtxVec.getCLM_apply]
 
 

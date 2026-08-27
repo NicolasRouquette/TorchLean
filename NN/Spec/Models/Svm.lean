@@ -53,20 +53,19 @@ out of the parameter record; those are *choices about an optimizer*, not part of
 -/
 structure LinearSVM (p : Nat) (α : Type) where
   /-- Normal vector of the separating hyperplane. -/
-  w : Tensor α (.dim p .scalar)
+  w : Tensor α [p]
   /-- Bias, or intercept, of the separating hyperplane. -/
   b : α
 
 /-- Decision function `f(x) = w·x + b`. -/
-def LinearSVM.decision {p : Nat} (m : LinearSVM p α) (x : Tensor α (.dim p .scalar)) : α :=
+def LinearSVM.decision {p : Nat} (m : LinearSVM p α) (x : Tensor α [p]) : α :=
   Tensor.dotSpec m.w x + m.b
 
 /-- Batch decision values for `X : (n×p)`. -/
-def LinearSVM.decisionBatch {n p : Nat} (m : LinearSVM p α) (X : Tensor α (.dim n (.dim p
-  .scalar))) :
-  Tensor α (.dim n .scalar) :=
+def LinearSVM.decisionBatch {n p : Nat} (m : LinearSVM p α) (X : Tensor α [n, p]) :
+  Tensor α [n] :=
   Tensor.dim (fun i =>
-    Tensor.scalar (LinearSVM.decision m (getAtSpec X i)))
+    Tensor.scalar (LinearSVM.decision m (get X i)))
 
 /-- Hinge loss per example: `ℓ_i = max(0, 1 - y_i * f(x_i))`.
 
@@ -76,12 +75,12 @@ def hingeLossPerExample (score y : α) : α :=
   if one_minus_margin > (0 : α) then one_minus_margin else 0
 
 /-- Mean hinge loss over a dataset. -/
-def hingeLossMean {n : Nat} (scores : Tensor α (.dim n .scalar)) (y : Tensor α (.dim n .scalar)) :
+def hingeLossMean {n : Nat} (scores : Tensor α [n]) (y : Tensor α [n]) :
   α :=
-  let losses : Tensor α (.dim n .scalar) :=
+  let losses : Tensor α [n] :=
     Tensor.dim (fun i =>
-      let s := item (getAtSpec scores i)
-      let yi := item (getAtSpec y i)
+      let s := item (get scores i)
+      let yi := item (get y i)
       Tensor.scalar (hingeLossPerExample s yi))
   meanSpec losses
 
@@ -91,7 +90,7 @@ We use the common objective
 $\frac12\lambda\lVert w\rVert^2+\operatorname{mean}(\text{hinge loss})$.
 -/
 def LinearSVM.objective {n p : Nat} (lambda : α) (m : LinearSVM p α)
-  (X : Tensor α (.dim n (.dim p .scalar))) (y : Tensor α (.dim n .scalar)) : α :=
+  (X : Tensor α [n, p]) (y : Tensor α [n]) : α :=
   let scores := LinearSVM.decisionBatch (n := n) m X
   let hinge := hingeLossMean scores y
   let wnorm2 : α := Tensor.dotSpec m.w m.w
@@ -127,25 +126,25 @@ def LinearSVM.backward
   {n p : Nat}
   (lambda : α)
   (m : LinearSVM p α)
-  (X : Tensor α (.dim n (.dim p .scalar)))
-  (y : Tensor α (.dim n .scalar)) :
-  (Tensor α (.dim p .scalar) × α × Tensor α (.dim n (.dim p .scalar))) :=
+  (X : Tensor α [n, p])
+  (y : Tensor α [n]) :
+  (Tensor α [p] × α × Tensor α [n, p]) :=
 
   let nα : α := (n : α)
   let invN : α := 1 / (Max.max nα Numbers.epsilon)
 
   -- Regularization contribution: λ w
-  let reg_dw : Tensor α (.dim p .scalar) := scaleSpec m.w lambda
+  let reg_dw : Tensor α [p] := scaleSpec m.w lambda
 
   -- Accumulate hinge contributions for `w` and `b` by folding over the dataset.
   -- The hinge is active exactly when `1 - y_i * score_i > 0`, i.e. when the margin is < 1.
   let (dw_hinge, db_hinge) :=
     (List.finRange n).foldl
-      (fun (acc : Tensor α (.dim p .scalar) × α) idx =>
+      (fun (acc : Tensor α [p] × α) idx =>
         let dw := acc.1
         let db := acc.2
-        let xi := getAtSpec X idx
-        let yi := item (getAtSpec y idx)
+        let xi := get X idx
+        let yi := item (get y idx)
         let score := LinearSVM.decision m xi
         let one_minus_margin := (1 : α) - (yi * score)
         if decide (one_minus_margin > (0 : α)) then
@@ -155,10 +154,10 @@ def LinearSVM.backward
       (fill 0 (.dim p .scalar), (0 : α))
 
   -- Per-example input gradients.
-  let dX_hinge : Tensor α (.dim n (.dim p .scalar)) :=
+  let dX_hinge : Tensor α [n, p] :=
     Tensor.dim (fun idx =>
-      let xi := getAtSpec X idx
-      let yi := item (getAtSpec y idx)
+      let xi := get X idx
+      let yi := item (get y idx)
       let score := LinearSVM.decision m xi
       let one_minus_margin := (1 : α) - (yi * score)
       let active : Bool := decide (one_minus_margin > (0 : α))
@@ -193,11 +192,11 @@ useful as a reference model in the TorchLean spec layer.
 -/
 structure SVM (p n : ℕ) (α : Type) where
   /-- Normal vector `w` of the separating hyperplane. -/
-  weights : Tensor α (.dim p .scalar)
+  weights : Tensor α [p]
   /-- Bias/intercept term `b`. -/
   bias : α
   /-- Heuristic support-vector indices (approximate: margin near `1`). -/
-  supportVectorIndices : Tensor Nat (.dim n .scalar)
+  supportVectorIndices : Tensor Nat [n]
 
 /--
 Heuristic support-vector index extractor.
@@ -206,15 +205,15 @@ We mark an example as a "support vector" if its margin is close to `1`. This is 
 introspection and examples (it is not used by the optimizer).
 -/
 def findSupportVectorIndices {n p : Nat}
-  (X : Tensor α (.dim n (.dim p .scalar)))
-  (y : Tensor α (.dim n .scalar))
-  (final_weights : Tensor α (.dim p .scalar))
+  (X : Tensor α [n, p])
+  (y : Tensor α [n])
+  (final_weights : Tensor α [p])
   (final_bias : α) :
-  Tensor Nat (.dim n .scalar) :=
+  Tensor Nat [n] :=
 
   Tensor.dim (fun i =>
-    let x_i := getAtSpec X i
-    let y_i := item (getAtSpec y i)
+    let x_i := get X i
+    let y_i := item (get y i)
     let margin := y_i * (Tensor.dotSpec final_weights x_i + final_bias)
     if abs (margin - (1 : α)) < (oneTenth : α) then
       Tensor.scalar i.val  -- support vector index
@@ -231,15 +230,15 @@ Parameters:
 - `lambda`: L2 regularization strength
 - `iterations`: number of GD steps
 -/
-def fitLinearSVM {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar))) (y : Tensor α (.dim n .scalar))
+def fitLinearSVM {n p : ℕ} (X : Tensor α [n, p]) (y : Tensor α [n])
                  (learning_rate : α) (lambda : α) (iterations : Nat) : SVM p n α :=
   -- Initialize weights with zeros
-  let initial_weights : Tensor α (.dim p .scalar) := fill (0 : α) (.dim p .scalar)
+  let initial_weights : Tensor α [p] := fill (0 : α) [p]
   let initial_bias := (0 : α)
 
   -- Implement gradient descent (structural recursion for predictable runtime)
-  let rec gradient_descent (iter : Nat) (weights : Tensor α (.dim p .scalar)) (bias : α) :
-      (Tensor α (.dim p .scalar) × α) :=
+  let rec gradient_descent (iter : Nat) (weights : Tensor α [p]) (bias : α) :
+      (Tensor α [p] × α) :=
     match iter with
     | 0 => (weights, bias)
     | Nat.succ k =>
@@ -264,10 +263,9 @@ def fitLinearSVM {n p : ℕ} (X : Tensor α (.dim n (.dim p .scalar))) (y : Tens
 
 -- Predict method for linear SVM
 /-- Predict signed labels `±1` for a batch `X` using the learned hyperplane. -/
-def predict {n p : ℕ} (model : SVM p n α) (X : Tensor α (.dim n (.dim p .scalar))) : Tensor α (.dim
-  n .scalar) :=
+def predict {n p : ℕ} (model : SVM p n α) (X : Tensor α [n, p]) : Tensor α [n] :=
   Tensor.dim (fun i =>
-    let decision_value := Tensor.dotSpec model.weights (getAtSpec X i) + model.bias
+    let decision_value := Tensor.dotSpec model.weights (get X i) + model.bias
     if decision_value > (0 : α) then
       Tensor.scalar (1 : α)
     else
@@ -276,11 +274,11 @@ def predict {n p : ℕ} (model : SVM p n α) (X : Tensor α (.dim n (.dim p .sca
 
 namespace Kernel
 /-- Linear kernel: `k(x, y) = x·y`. -/
-def linear {p : ℕ} (x y : Tensor α (.dim p .scalar)) : α :=
+def linear {p : ℕ} (x y : Tensor α [p]) : α :=
   Tensor.dotSpec x y
 
 /-- Polynomial kernel: `k(x, y) = (x·y + c)^degree` (naive power for generic `α`). -/
-def polynomial {p : ℕ} (degree : Nat) (c : α) (x y : Tensor α (.dim p .scalar)) : α :=
+def polynomial {p : ℕ} (degree : Nat) (c : α) (x y : Tensor α [p]) : α :=
   let dot := Tensor.dotSpec x y
   -- Generic `α` does not provide a `Float.pow`-style operation, so use recursive multiplication.
   let rec pow_rec (base : α) (exp : Nat) : α :=
@@ -292,7 +290,7 @@ def polynomial {p : ℕ} (degree : Nat) (c : α) (x y : Tensor α (.dim p .scala
 
 -- RBF kernel: k(x, y) = exp(-γ||x-y||^2)
 /-- RBF kernel: `k(x, y) = exp(-gamma * ||x - y||^2)`. -/
-def rbf {p : ℕ} (gamma : α) (x y : Tensor α (.dim p .scalar)) {h : p ≠ 0} : α :=
+def rbf {p : ℕ} (gamma : α) (x y : Tensor α [p]) {h : p ≠ 0} : α :=
   let diff := subSpec x y
   let squared := mulSpec diff diff
   let squaredDist := reduceSum 0 squared (Shape.hasNonemptyAxisZeroOfNe h).proof

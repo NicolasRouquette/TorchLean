@@ -13,7 +13,7 @@ public import NN.Verification.PINN.Core
 
 Derivative-residual regression test for the PINN certificate pipeline.
 
-This checks that Lean's `runSecondDerivative1D` enclosure contains each derivative-residual
+This checks that Lean's `runScalarSecondDerivative` enclosure contains each derivative-residual
 interval stored in the Python-produced certificate. Equality is neither required nor expected:
 the executable CROWN pass may use a coarser sound relaxation than the certificate producer.
 
@@ -47,20 +47,21 @@ def run : IO Unit := do
   match res with
   | .error msg => throw <| IO.userError s!"Bad Cert JSON: {msg}"
   | .ok (cfg, _, residPairsDeriv, _uTriples) => do
-    let g := buildGraph
-    let basePs := seedParamsFloat
-    let residDerivA := residPairsDeriv.toArray
+    let g := buildReferenceGraph 1
+    let basePs : ParamStore Float := referenceParams 1
     let tol := 1e-5
-    for i in List.finRange cfg.nPts do
-      let x := Tensor.vecGet cfg.pts i
-      let ps := seedInputFloat basePs x cfg.eps
+    for i in Array.finRange cfg.nPts do
+      let x := Tensor.getScalar cfg.pts i
+      let center : Spec.Tensor Float [1] :=
+        Spec.Tensor.ofFn fun _ => x
+      let ps := seedInput basePs center cfg.eps
       let boxes := runIBP (α:=Float) g ps
-      let d1 := runFirstDerivative1D (α:=Float) g ps boxes
-      let d2 := runSecondDerivative1D (α:=Float) g ps boxes d1
+      let d1 := runScalarDerivative (α:=Float) g ps boxes
+      let d2 := runScalarSecondDerivative (α:=Float) g ps boxes d1
       let some d2B := d2[5]! | throw <| IO.userError "No d2 box at output"
       let d2lo := Spec.Tensor.sumSpec d2B.lo
       let d2hi := Spec.Tensor.sumSpec d2B.hi
-      let (pyLo, pyHi) := residDerivA[i.1]!
+      let (pyLo, pyHi) := residPairsDeriv[i.1]!
       if d2lo > pyLo + tol ∨ d2hi + tol < pyHi then
         throw <| IO.userError
           s!"Derivative residual is not enclosed at x={x}: Lean [{d2lo},{d2hi}], certificate [{pyLo},{pyHi}]"

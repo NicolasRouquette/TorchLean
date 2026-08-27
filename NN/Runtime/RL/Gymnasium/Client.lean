@@ -131,22 +131,22 @@ The handshake checks that:
 
 If the handshake fails, the subprocess is terminated and an `IO.userError` is thrown.
 
-`makeKwargs` (optional) is a JSON object encoded as a list of fields and passed through to the
+`makeKwargs` (optional) is a JSON object encoded as an array of fields and passed through to the
 Python bridge as `--make-kwargs <json>`, which the server forwards to `gym.make(envId, **kwargs)`.
 This is useful for environments that require constructor options, e.g. Atari RAM observations:
-`makeKwargs := [("obs_type", .str "ram")]`.
+`makeKwargs := #[("obs_type", .str "ram")]`.
 -/
 def spawn {obsShape : Shape} {nActions : Nat}
     (serverScript : String)
     (envId : String)
     (contract : Boundary.Contract obsShape nActions)
-    (makeKwargs : List (String × Json) := []) :
+    (makeKwargs : Array (String × Json) := #[]) :
     IO (Client obsShape nActions) := do
   let extraArgs : Array String :=
     if makeKwargs.isEmpty then
       #[]
     else
-      #["--make-kwargs", Json.compress (Json.mkObj makeKwargs)]
+      #["--make-kwargs", Json.compress (Json.mkObj makeKwargs.toList)]
   let child : IO.Process.Child stdio ← IO.Process.spawn
     { cmd := "python3"
       args := #["-u", serverScript, "--env-id", envId] ++ extraArgs

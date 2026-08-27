@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.API.Verification
 public import NN.Verification.TorchLean.Lowering
 
 /-!
@@ -73,40 +74,27 @@ def modelLoss {α : Type} [Context α] [DecidableEq Spec.Shape] :
     fun wq wk wv wo gamma beta target x =>
       (do
         let y ← _root_.Runtime.Autograd.TorchLean.multiHeadAttention (m := m) (α := α)
-          (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel)
+          (leadingShape := [batch]) (n := n) (numHeads := numHeads) (dModel := dModel)
           (headDim := headDim)
-          (h1 := by decide) wq wk wv wo x (mask := none)
-        let yRows ← _root_.Runtime.Autograd.TorchLean.layerNorm (m := m) (α := α)
-          (rows := batch * n) (width := dModel) (hWidth := by decide)
-          (← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-            (s₁ := xShape) (s₂ := .dim (batch * n) (.dim dModel .scalar)) y (by
-              simp [xShape, Spec.Shape.size, Nat.mul_assoc])) gamma beta
-        let yLn ← _root_.Runtime.Autograd.Torch.reshape (m := m) (α := α)
-          (s₁ := .dim (batch * n) (.dim dModel .scalar)) (s₂ := xShape) yRows (by
-            simp [xShape, Spec.Shape.size, Nat.mul_assoc])
-        Ops.mseLoss (m := m) (α := α) (s := xShape) yLn target
-        : m (Ops.RefTy (m := m) (α := α) Spec.Shape.scalar))
+          (hN := by decide) wq wk wv wo x (mask := none)
+        let yLn ← _root_.Runtime.Autograd.TorchLean.layerNorm (m := m) (α := α)
+          (leading := [batch, n]) (width := dModel) (hWidth := by decide) y gamma beta
+        Runtime.mseLoss (m := m) (α := α) (s := xShape) yLn target
+        : m (Runtime.ValueRef (m := m) (α := α) Spec.Shape.scalar))
 
 /-- Runtime-selected typed runner used by the CLI entrypoint. -/
 def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString α]
     [Runtime.FromFloat α] [BoundOps α] (withCrown : Bool) : IO Unit := do
   let cast : Float → α := Runtime.ofFloat
-  let params : TensorPack α paramShapes :=
-    TensorPack!
-      (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2, 2]
-        [cast 1.0, cast 0.0, cast 0.0, cast 1.0] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2]
-        [cast 1.0, cast 1.0] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [2]
-        [cast 0.0, cast 0.0] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [1, 2, 2]
-        [cast 0.0, cast 0.0, cast 0.0, cast 0.0] (by rfl))
+  let params : _root_.TorchLean.TensorPack α paramShapes :=
+    _root_.TorchLean.TensorPack!
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2, 2] #[1.0, 0.0, 0.0, 1.0])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2, 2] #[1.0, 0.0, 0.0, 1.0])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2, 2] #[1.0, 0.0, 0.0, 1.0])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2, 2] #[1.0, 0.0, 0.0, 1.0])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[1.0, 1.0])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.0, 0.0])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1, 2, 2] #[0.0, 0.0, 0.0, 0.0]))
 
   let lowered ←
     match Verification.lowerProgramToIR
@@ -119,10 +107,9 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
 
   let x0 : Spec.Tensor α xShape :=
-    NN.Tensor.ofListOfLength (α := α) [1, 2, 2]
-      [cast 0.2, cast (-0.3), cast 0.7, cast 0.1] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1, 2, 2] #[0.2, -0.3, 0.7, 0.1])
   let eps : α := Runtime.ofFloat 0.05
-  let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
+  let xB : FlatBox α := NN.Verification.TorchLean.lInfBall (α := α) x0 eps
   let ps : ParamStore α := lowered.seedInputBox xB
 
   let boxes := lowered.runIBP ps
@@ -147,7 +134,7 @@ def runMain {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
       IO.println s!"[CROWN] {msg}"
 
   IO.println "[CROWN-backward] running objective-dependent backward CROWN"
-  let obj : FlatVec α := { n := 1, v := Spec.fill (α := α) Numbers.one (.dim 1 .scalar) }
+  let obj : FlatTensor α := { n := 1, v := Spec.fill (α := α) Numbers.one (.dim 1 .scalar) }
   match lowered.backwardObjectiveBox? ps boxes xB obj with
   | .ok outC =>
       IO.println s!"[CROWN-backward] loss lo: {pretty outC.lo}"

@@ -45,23 +45,10 @@ structure VitMaeConfig (d : Nat) where
   /-- Number of reconstructed output coordinates. -/
   reconDim : Nat
 
-/-- Masked input shape after prepending independently mapped axes. -/
-abbrev VitMaeConfig.inputShape {d : Nat} (cfg : VitMaeConfig d)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  cfg.encoder.inputShape leading
-
 /-- Reconstruction-vector output shape after preserving every leading axis. -/
 abbrev VitMaeConfig.outputShape {d : Nat} (cfg : VitMaeConfig d)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.reconDim
-
-/-- Number of patch tokens produced by the ViT-MAE patch embedding. -/
-def VitMaeConfig.seqLen {d : Nat} (cfg : VitMaeConfig d) : Nat :=
-  cfg.encoder.seqLen
-
-/-- Flattened encoded-token representation size before the MAE decoder head. -/
-def VitMaeConfig.flatDim {d : Nat} (cfg : VitMaeConfig d) : Nat :=
-  cfg.encoder.flatDim
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.reconDim]
 
 /--
 Compact ViT-MAE image reconstructor.
@@ -69,7 +56,7 @@ Compact ViT-MAE image reconstructor.
 This is a real image/patch transformer path:
 1. patch embedding by strided convolution,
 2. tokenization to `N×numPatches×dModel`,
-3. one transformer encoder block,
+3. the configured Transformer encoder stack,
 4. a linear pixel decoder from encoded patch tokens to a reconstruction vector.
 
 The masking objective is provided by `TorchLean.ssl.BlockMAE.sample`. Its axis policy is
@@ -77,15 +64,19 @@ independent of the model architecture and spatial rank, so this constructor uses
 operation as signal, volume, and higher-dimensional masked-prediction models.
 -/
 def vitMaskedAutoencoder {d : Nat} (cfg : VitMaeConfig d)
-    (leading : Spec.Shape := .scalar)
+    (leading : List Nat := [])
     (h_inC : cfg.encoder.inChannels ≠ 0 := by decide)
-    (h_seqLen : cfg.seqLen ≠ 0 := by decide)
+    (h_seqLen : cfg.encoder.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.encoder.patch.outChannels ≠ 0 := by decide) :
-    nn.Builder (nn.Sequential (cfg.inputShape leading) (cfg.outputShape leading)) := do
+    nn.Builder (nn.Sequential (cfg.encoder.inputShape leading) (cfg.outputShape leading)) := do
   let encoder ← vitEncoder cfg.encoder leading h_inC h_seqLen h_dModel
-  let flatten ← flattenLeading leading
-    (s := .dim cfg.seqLen (.dim cfg.encoder.patch.outChannels .scalar))
-  let decoder ← linear cfg.flatDim cfg.reconDim (leading := leading)
+  let flattenRaw ← flattenAfter leading
+    (s := [cfg.encoder.encodedSeqLen, cfg.encoder.patch.outChannels])
+  let flatten : Sequential
+      (leading ++ [cfg.encoder.encodedSeqLen, cfg.encoder.patch.outChannels])
+      (leading ++ [cfg.encoder.flatDim]) := by
+    simpa [VitConfig.flatDim] using flattenRaw
+  let decoder ← linear cfg.encoder.flatDim cfg.reconDim (leading := leading)
   pure <| encoder >>> flatten >>> decoder
 
 end models

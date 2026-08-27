@@ -72,7 +72,7 @@ source code.
 For an unbatched input `x : [2]` and weight `W : [8,2]`, the eager CUDA path proceeds roughly as:
 
 ```
-typed Tensor [2]
+typed Tensor α [2]
     ↓ upload / existing CUDA handle
 opaque contiguous float32 buffer
     ↓ reshape and matrix-layout preparation
@@ -80,7 +80,7 @@ native_cuda.matmul
     ↓ broadcast bias [8] to output shape
 native_cuda.add
     ↓
-typed runtime Tensor [8]
+typed runtime Tensor α [8]
 ```
 
 The Lean wrapper knows the logical shapes and element counts. The device buffer is opaque; Lean
@@ -244,7 +244,7 @@ arithmetic came from custom code or a vendor library.
 
 The eager CUDA tape currently covers elementwise arithmetic and activations, reductions and
 broadcasting, shape transforms, gather/scatter, dense and batched matrix multiplication,
-normalization and softmax, two-dimensional and N-dimensional convolution/transposed convolution,
+normalization and softmax, rank-polymorphic convolution and transposed convolution,
 max/average/smooth-max pooling, composed attention, a direct attention reference kernel, and fused
 spectral convolution. Backward rules are recorded as tape nodes rather than delegated to an
 invisible global autograd engine. Lower-level kernels additionally expose packed real FFT and

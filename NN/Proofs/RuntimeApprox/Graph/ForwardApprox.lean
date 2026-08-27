@@ -28,7 +28,7 @@ proofs.
   is within a computable propagated error budget of the spec evaluation.
 
 ## Reading guide
-1. `Autograd.Algebra.TList` and `EList`: heterogeneous contexts and aligned error vectors.
+1. `Autograd.Algebra.TensorPack` and `EList`: heterogeneous contexts and aligned error vectors.
 2. `approxTensor` and `approxCtx`: the approximation predicates for a single tensor and a whole context.
 3. `Idx`: a typed index into a context (so graph nodes can refer to earlier values safely).
 4. `FwdNode` / `FwdGraph`: local approximation lemmas and their composition over a snoc-list DAG.
@@ -134,18 +134,18 @@ def get : {ss : List Shape} → EList ss → (i : Fin ss.length) → ℝ
 /-- Erase shape indices while retaining bounds in context order.
 
 This is the reporting boundary used by architecture-independent numerical traces. Proofs continue
-to use `EList`; UI and serialization code receives an ordinary list only after propagation has
+to use `EList`; UI and serialization code receives an array only after propagation has
 finished.
 -/
-def toList : {ss : List Shape} → EList ss → List ℝ
-  | [], .nil => []
-  | _ :: _, .cons error errors => error :: toList errors
+def toArray : {ss : List Shape} → EList ss → Array ℝ
+  | [], .nil => #[]
+  | _ :: _, .cons error errors => #[error] ++ toArray errors
 
-@[simp] theorem length_toList {ss : List Shape} (errors : EList ss) :
-    errors.toList.length = ss.length := by
+@[simp] theorem size_toArray {ss : List Shape} (errors : EList ss) :
+    errors.toArray.size = ss.length := by
   induction errors with
   | nil => rfl
-  | cons _ _ ih => simp [toList, ih]
+  | cons _ _ ih => simp [toArray, ih, Nat.add_comm]
 
 end EList
 
@@ -197,7 +197,7 @@ lemma approxTensorWithTol_absOnly_iff {s : Shape} {toSpec : α → SpecScalar}
 
 /-- Context-level approximation with a per-entry error list. -/
 def approxCtx (toSpec : α → SpecScalar) : {ss : List Shape} →
-    TList SpecScalar ss → TList α ss → EList ss → Prop
+    _root_.TorchLean.TensorPack SpecScalar ss → _root_.TorchLean.TensorPack α ss → EList ss → Prop
   | [], .nil, .nil, .nil => True
   | _ :: ss, .cons x xs, .cons y ys, .cons e es =>
       approxTensor (α := α) (toSpec := toSpec) x y e ∧ approxCtx (ss := ss) toSpec xs ys es
@@ -223,11 +223,11 @@ This is used any time we need to reassociate `Γ ++ ss` type indices (casts are 
 `List Shape`-indexed encoding).
 -/
 lemma approxCtx_cast {toSpec : α → SpecScalar} {ss₁ ss₂ : List Shape} (h : ss₁ = ss₂)
-    {xS : TList SpecScalar ss₁} {xR : TList α ss₁} {eps : EList ss₁} :
+    {xS : _root_.TorchLean.TensorPack SpecScalar ss₁} {xR : _root_.TorchLean.TensorPack α ss₁} {eps : EList ss₁} :
     approxCtx (α := α) toSpec xS xR eps →
       approxCtx (α := α) toSpec
-        (TList.cast (α := SpecScalar) (ss₁ := ss₁) (ss₂ := ss₂) h xS)
-        (TList.cast (α := α) (ss₁ := ss₁) (ss₂ := ss₂) h xR)
+        (_root_.TorchLean.TensorPack.cast (α := SpecScalar) (ss₁ := ss₁) (ss₂ := ss₂) h xS)
+        (_root_.TorchLean.TensorPack.cast (α := α) (ss₁ := ss₁) (ss₂ := ss₂) h xR)
         (EList.cast (ss₁ := ss₁) (ss₂ := ss₂) h eps) := by
   cases h
   simp
@@ -240,20 +240,20 @@ approximated, and the new node output is approximated with some bound `e`, then 
 is approximated with the extended error list.
 -/
 lemma approxCtx_snoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
-    {xS : TList SpecScalar ss} {xR : TList α ss} {eps : EList ss}
+    {xS : _root_.TorchLean.TensorPack SpecScalar ss} {xR : _root_.TorchLean.TensorPack α ss} {eps : EList ss}
     (hx : approxCtx (α := α) toSpec xS xR eps)
     {yS : SpecTensor τ} {yR : Tensor α τ} {e : SpecScalar}
     (hy : approxTensor (α := α) (toSpec := toSpec) yS yR e) :
     approxCtx (α := α) toSpec
-      (TList.snoc (α := SpecScalar) (ss := ss) xS yS)
-      (TList.snoc (α := α) (ss := ss) xR yR)
+      (_root_.TorchLean.TensorPack.snoc (α := SpecScalar) (ss := ss) xS yS)
+      (_root_.TorchLean.TensorPack.snoc (α := α) (ss := ss) xR yR)
       (EList.snoc (ss := ss) (τ := τ) eps e) := by
   induction ss with
   | nil =>
       cases xS
       cases xR
       cases eps
-      simpa [TList.snoc, EList.snoc, approxCtx] using And.intro hy True.intro
+      simpa [_root_.TorchLean.TensorPack.snoc, EList.snoc, approxCtx] using And.intro hy True.intro
   | cons s ss ih =>
       cases xS with
       | cons xSh xSt =>
@@ -268,11 +268,11 @@ lemma approxCtx_snoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
 
 /-- Extract a single entry approximation from `approxCtx`. -/
 lemma approxCtx_get {toSpec : α → SpecScalar} {Γ : List Shape}
-    {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ}
+    {xS : _root_.TorchLean.TensorPack SpecScalar Γ} {xR : _root_.TorchLean.TensorPack α Γ} {eps : EList Γ}
     (h : approxCtx (α := α) toSpec xS xR eps) (i : Fin Γ.length) :
     approxTensor (α := α) (toSpec := toSpec)
-      (TList.get (α := SpecScalar) xS i)
-      (TList.get (α := α) xR i)
+      (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+      (_root_.TorchLean.TensorPack.get (α := α) xR i)
       (EList.get eps i) := by
   induction Γ with
   | nil =>
@@ -295,7 +295,7 @@ lemma approxCtx_get {toSpec : α → SpecScalar} {Γ : List Shape}
                       | succ j =>
                           have := ih (xS := xSt) (xR := xRt) (eps := et) h.2
                             ⟨j, Nat.lt_of_succ_lt_succ hiVal⟩
-                          simpa [TList.get, EList.get] using this
+                          simpa [_root_.TorchLean.TensorPack.get, EList.get] using this
 
 /--
 `approxCtx_get` expressed in terms of `approxTensorWithTol` with an absolute-only tolerance.
@@ -304,27 +304,27 @@ Many downstream theorems are stated using a tolerance record (`ApproxTol`) rathe
 `eps : ℝ`. For absolute-only bounds, this lemma gives the bridge.
 -/
 lemma approxCtx_get_tolAbsOnly {toSpec : α → SpecScalar} {Γ : List Shape}
-    {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ}
+    {xS : _root_.TorchLean.TensorPack SpecScalar Γ} {xR : _root_.TorchLean.TensorPack α Γ} {eps : EList Γ}
     (h : approxCtx (α := α) toSpec xS xR eps) (i : Fin Γ.length) :
     approxTensorWithTol (α := α) (toSpec := toSpec)
-      (TList.get (α := SpecScalar) xS i)
-      (TList.get (α := α) xR i)
+      (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+      (_root_.TorchLean.TensorPack.get (α := α) xR i)
       (ApproxTol.absOnly (EList.get eps i)) := by
   have hi :
       approxTensor (α := α) (toSpec := toSpec)
-        (TList.get (α := SpecScalar) xS i)
-        (TList.get (α := α) xR i)
+        (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+        (_root_.TorchLean.TensorPack.get (α := α) xR i)
         (EList.get eps i) :=
     approxCtx_get (α := α) (toSpec := toSpec) (xS := xS) (xR := xR) (eps := eps) h i
   have : approxWith (α := α) (toSpec := toSpec) (norm := linfNorm)
-      (TList.get (α := SpecScalar) xS i)
-      (TList.get (α := α) xR i)
+      (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i)
+      (_root_.TorchLean.TensorPack.get (α := α) xR i)
       (EList.get eps i) := by
     simpa [approxTensor] using hi
   simpa using
     (approxTensor_to_approxTensorWithTol_absOnly (toSpec := toSpec)
-      (spec := (TList.get (α := SpecScalar) xS i))
-      (runtime := (TList.get (α := α) xR i))
+      (spec := (_root_.TorchLean.TensorPack.get (α := SpecScalar) xS i))
+      (runtime := (_root_.TorchLean.TensorPack.get (α := α) xR i))
       (eps := (EList.get eps i)) this)
 
 /--
@@ -333,16 +333,16 @@ Split a context approximation for `ss ++ [τ]` into:
 - a single-tensor approximation for the last entry of shape `τ`.
 -/
 lemma approxCtx_unsnoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shape}
-    {xS : TList SpecScalar (ss ++ [τ])} {xR : TList α (ss ++ [τ])} {eps : EList (ss ++ [τ])} :
+    {xS : _root_.TorchLean.TensorPack SpecScalar (ss ++ [τ])} {xR : _root_.TorchLean.TensorPack α (ss ++ [τ])} {eps : EList (ss ++ [τ])} :
     approxCtx (α := α) toSpec xS xR eps →
       approxCtx (α := α) toSpec
-          (TList.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).1
-          (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).1
+          (_root_.TorchLean.TensorPack.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).1
+          (_root_.TorchLean.TensorPack.unsnoc (α := α) (ss := ss) (τ := τ) xR).1
           (EList.unsnoc (ss := ss) (τ := τ) eps).1
         ∧
       approxTensor (α := α) (toSpec := toSpec)
-          (TList.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).2
-          (TList.unsnoc (α := α) (ss := ss) (τ := τ) xR).2
+          (_root_.TorchLean.TensorPack.unsnoc (α := SpecScalar) (ss := ss) (τ := τ) xS).2
+          (_root_.TorchLean.TensorPack.unsnoc (α := α) (ss := ss) (τ := τ) xR).2
           (EList.unsnoc (ss := ss) (τ := τ) eps).2 := by
   intro h
   induction ss with
@@ -360,8 +360,8 @@ lemma approxCtx_unsnoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shap
                           cases es with
                           | nil =>
                               refine And.intro ?_ ?_
-                              · simp [TList.unsnoc, EList.unsnoc, approxCtx]
-                              · simpa [TList.unsnoc, EList.unsnoc, approxCtx] using h.1
+                              · simp [_root_.TorchLean.TensorPack.unsnoc, EList.unsnoc, approxCtx]
+                              · simpa [_root_.TorchLean.TensorPack.unsnoc, EList.unsnoc, approxCtx] using h.1
   | cons s ss ih =>
       cases xS with
       | cons xSh xSt =>
@@ -373,8 +373,8 @@ lemma approxCtx_unsnoc {toSpec : α → SpecScalar} {ss : List Shape} {τ : Shap
                   have ht : approxCtx (α := α) toSpec xSt xRt et := h.2
                   have ih' := ih (xS := xSt) (xR := xRt) (eps := et) ht
                   refine And.intro ?_ ?_
-                  · simpa [TList.unsnoc, EList.unsnoc, approxCtx] using And.intro hx ih'.1
-                  · simpa [TList.unsnoc, EList.unsnoc] using ih'.2
+                  · simpa [_root_.TorchLean.TensorPack.unsnoc, EList.unsnoc, approxCtx] using And.intro hx ih'.1
+                  · simpa [_root_.TorchLean.TensorPack.unsnoc, EList.unsnoc] using ih'.2
 
 -- ---------------------------------------------------------------------------
 -- Typed indexing into contexts (for building graphs)
@@ -387,9 +387,9 @@ structure Idx (Γ : List Shape) (s : Shape) where
   /-- Proof that the selected context entry has shape `s`. -/
   h : Γ.get i = s
 
-/-- Typed lookup from a heterogeneous context `TList α Γ` using an index `Idx Γ s`. -/
-def getIdx {α : Type} {Γ : List Shape} {s : Shape} (xs : TList α Γ) (idx : Idx Γ s) : Tensor α s :=
-  Spec.tensorCast (α := α) (t := s) idx.h (TList.get (α := α) xs idx.i)
+/-- Typed lookup from a heterogeneous context `_root_.TorchLean.TensorPack α Γ` using an index `Idx Γ s`. -/
+def getIdx {α : Type} {Γ : List Shape} {s : Shape} (xs : _root_.TorchLean.TensorPack α Γ) (idx : Idx Γ s) : Tensor α s :=
+  Spec.tensorCast (α := α) (t := s) idx.h (_root_.TorchLean.TensorPack.get (α := α) xs idx.i)
 
 /-- Lookup the epsilon entry associated to an index `Idx Γ s`. -/
 def getIdxEps {Γ : List Shape} {s : Shape} (es : EList Γ) (idx : Idx Γ s) : ℝ :=
@@ -403,7 +403,7 @@ aligned error list `eps`), then reading any entry `idx : Idx Γ s` yields an `ap
 corresponding scalar bound `getIdxEps eps idx`.
 -/
 lemma approxCtx_getIdx {toSpec : α → SpecScalar} {Γ : List Shape} {s : Shape}
-    {xS : TList SpecScalar Γ} {xR : TList α Γ} {eps : EList Γ}
+    {xS : _root_.TorchLean.TensorPack SpecScalar Γ} {xR : _root_.TorchLean.TensorPack α Γ} {eps : EList Γ}
     (h : approxCtx (α := α) toSpec xS xR eps) (idx : Idx Γ s) :
     approxTensor (α := α) (toSpec := toSpec)
       (getIdx (α := SpecScalar) xS idx)
@@ -433,13 +433,13 @@ approximated (`approxTensor`) with error at most `bound`.
 -/
 structure FwdNode (toSpec : α → SpecScalar) (Γ : List Shape) (τ : Shape) where
   /-- Specification-level semantics of this node. -/
-  forwardSpec : TList SpecScalar Γ → SpecTensor τ
+  forwardSpec : _root_.TorchLean.TensorPack SpecScalar Γ → SpecTensor τ
   /-- Runtime semantics of this node. -/
-  forwardRuntime : TList α Γ → Tensor α τ
+  forwardRuntime : _root_.TorchLean.TensorPack α Γ → Tensor α τ
   /-- Error bound computed from the current context bounds and runtime values. -/
-  bound : EList Γ → TList α Γ → SpecScalar
+  bound : EList Γ → _root_.TorchLean.TensorPack α Γ → SpecScalar
   /-- Local approximation theorem for this node. -/
-  sound : ∀ (xS : TList SpecScalar Γ) (xR : TList α Γ) (eps : EList Γ),
+  sound : ∀ (xS : _root_.TorchLean.TensorPack SpecScalar Γ) (xR : _root_.TorchLean.TensorPack α Γ) (eps : EList Γ),
       approxCtx (α := α) toSpec xS xR eps →
         approxTensor (α := α) (toSpec := toSpec) (forwardSpec xS) (forwardRuntime xR) (bound eps xR)
 
@@ -465,39 +465,39 @@ Evaluate a forward graph in the **spec** semantics.
 Result type: an extended context `Γ ++ ss` containing the original inputs and all intermediate
 values produced by the graph.
 -/
-def evalSpec {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α) toSpec Γ ss) (x : TList
+def evalSpec {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α) toSpec Γ ss) (x : _root_.TorchLean.TensorPack
   SpecScalar Γ) :
-    TList SpecScalar (Γ ++ ss) :=
+    _root_.TorchLean.TensorPack SpecScalar (Γ ++ ss) :=
   match g with
   | .nil =>
       let h : Γ = Γ ++ [] := (List.append_nil Γ).symm
-      TList.cast (α := SpecScalar) (ss₁ := Γ) (ss₂ := Γ ++ []) h x
+      _root_.TorchLean.TensorPack.cast (α := SpecScalar) (ss₁ := Γ) (ss₂ := Γ ++ []) h x
   | .snoc (ss := ssPrev) (τ := τ) g node =>
       let ctx := evalSpec (Γ := Γ) (ss := ssPrev) g x
       let y := node.forwardSpec ctx
       let hAssoc : (Γ ++ ssPrev) ++ [τ] = Γ ++ (ssPrev ++ [τ]) := List.append_assoc Γ ssPrev [τ]
-      TList.cast (α := SpecScalar) (ss₁ := (Γ ++ ssPrev) ++ [τ]) (ss₂ := Γ ++ (ssPrev ++ [τ]))
+      _root_.TorchLean.TensorPack.cast (α := SpecScalar) (ss₁ := (Γ ++ ssPrev) ++ [τ]) (ss₂ := Γ ++ (ssPrev ++ [τ]))
         hAssoc
-        (TList.snoc (α := SpecScalar) (ss := Γ ++ ssPrev) ctx y)
+        (_root_.TorchLean.TensorPack.snoc (α := SpecScalar) (ss := Γ ++ ssPrev) ctx y)
 
 /--
 Evaluate a forward graph in the **runtime** semantics.
 
 This mirrors `evalSpec`, but uses the backend `α` tensors and the node runtime closures.
 -/
-def evalRuntime {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α) toSpec Γ ss) (x : TList α
+def evalRuntime {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α) toSpec Γ ss) (x : _root_.TorchLean.TensorPack α
   Γ) :
-    TList α (Γ ++ ss) :=
+    _root_.TorchLean.TensorPack α (Γ ++ ss) :=
   match g with
   | .nil =>
       let h : Γ = Γ ++ [] := (List.append_nil Γ).symm
-      TList.cast (α := α) (ss₁ := Γ) (ss₂ := Γ ++ []) h x
+      _root_.TorchLean.TensorPack.cast (α := α) (ss₁ := Γ) (ss₂ := Γ ++ []) h x
   | .snoc (ss := ssPrev) (τ := τ) g node =>
       let ctx := evalRuntime (Γ := Γ) (ss := ssPrev) g x
       let y := node.forwardRuntime ctx
       let hAssoc : (Γ ++ ssPrev) ++ [τ] = Γ ++ (ssPrev ++ [τ]) := List.append_assoc Γ ssPrev [τ]
-      TList.cast (α := α) (ss₁ := (Γ ++ ssPrev) ++ [τ]) (ss₂ := Γ ++ (ssPrev ++ [τ])) hAssoc
-        (TList.snoc (α := α) (ss := Γ ++ ssPrev) ctx y)
+      _root_.TorchLean.TensorPack.cast (α := α) (ss₁ := (Γ ++ ssPrev) ++ [τ]) (ss₂ := Γ ++ (ssPrev ++ [τ])) hAssoc
+        (_root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ssPrev) ctx y)
 
 /--
 Propagate an input error list `epsIn` through the whole graph, producing output bounds for
@@ -507,7 +507,7 @@ Each node can compute its own output bound from the current context bounds and t
 `evalBounds` just composes those local transformers over the snoc-list DAG.
 -/
 def evalBounds {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α) toSpec Γ ss)
-    (epsIn : EList Γ) (xR : TList α Γ) : EList (Γ ++ ss) :=
+    (epsIn : EList Γ) (xR : _root_.TorchLean.TensorPack α Γ) : EList (Γ ++ ss) :=
   match g with
   | .nil =>
       let h : Γ = Γ ++ [] := (List.append_nil Γ).symm
@@ -532,7 +532,7 @@ Proof idea: induction over the snoc-list graph; at each step, apply the node's l
 lemma (`FwdNode.sound`) and then extend the context approximation via `approxCtx_snoc`.
 -/
 theorem eval_approx {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α) toSpec Γ ss) :
-    ∀ (xS : TList SpecScalar Γ) (xR : TList α Γ) (epsIn : EList Γ),
+    ∀ (xS : _root_.TorchLean.TensorPack SpecScalar Γ) (xR : _root_.TorchLean.TensorPack α Γ) (epsIn : EList Γ),
       approxCtx (α := α) toSpec xS xR epsIn →
         approxCtx (α := α) toSpec
           (evalSpec (Γ := Γ) (ss := ss) g xS)
@@ -568,8 +568,8 @@ theorem eval_approx {Γ : List Shape} {ss : List Shape} (g : FwdGraph (α := α)
       -- Extend the context approximation with the new node output.
       have hSnoc :
           approxCtx (α := α) toSpec
-            (TList.snoc (α := SpecScalar) (ss := Γ ++ ssPrev) ctxS (node.forwardSpec ctxS))
-            (TList.snoc (α := α) (ss := Γ ++ ssPrev) ctxR (node.forwardRuntime ctxR))
+            (_root_.TorchLean.TensorPack.snoc (α := SpecScalar) (ss := Γ ++ ssPrev) ctxS (node.forwardSpec ctxS))
+            (_root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ssPrev) ctxR (node.forwardRuntime ctxR))
             (EList.snoc (ss := Γ ++ ssPrev) (τ := τ) epsPrev (node.bound epsPrev ctxR)) :=
         approxCtx_snoc (α := α) (toSpec := toSpec) (hx := by simpa [ctxS, ctxR, epsPrev] using
           hPrev) hy

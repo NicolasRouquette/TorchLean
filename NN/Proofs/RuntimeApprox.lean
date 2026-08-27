@@ -8,6 +8,7 @@ module
 
 public import NN.Proofs.RuntimeApprox.Core
 public import NN.Proofs.RuntimeApprox.FP32
+public import NN.Proofs.RuntimeApprox.FP32.CROWN
 public import NN.Proofs.RuntimeApprox.Graph
 public import NN.Proofs.RuntimeApprox.NF
 public import NN.Proofs.RuntimeApprox.Optimizer

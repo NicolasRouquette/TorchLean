@@ -35,7 +35,7 @@ discrete-time systems ($x_{t+1}=f(x_t)$).
 All routines in this file are **runtime diagnostics**:
 
 - they compute concrete trajectories and check concrete inequalities, and
-- they return `Bool` for convenience in scripts/CLIs.
+- they return `Except String` so absent or non-finite evidence cannot pass vacuously.
 
 They are factually correct as *computations*: “this inequality held on these sampled points for
 this many steps.” The corresponding theorem statements live in the `Prop` definitions in
@@ -43,11 +43,28 @@ this many steps.” The corresponding theorem statements live in the `Prop` defi
 
 In other words:
 
-- `true` means the sampled runtime diagnostic passed;
-- `false` means “found a counterexample to the tested condition”.
+- `.ok true` means the sampled runtime diagnostic passed;
+- `.ok false` means “found a counterexample to the tested condition”; and
+- `.error _` means the evidence was empty, non-finite, or otherwise inconclusive.
 -/
 
 open NN.MLTheory.Robustness.Runtime
+
+/--
+Generate the first `steps` iterates of a discrete-time system $x_{t+1}=f(x_t)$, starting at $x_0$.
+
+The returned array includes the initial state $x_0$ as its first element.
+-/
+def generateTrajectory {s : Shape}
+    (f : Tensor Float s → Tensor Float s)
+    (x₀ : Tensor Float s)
+    (steps : Nat) : Array (Tensor Float s) := Id.run do
+  let mut trajectory := #[x₀]
+  let mut x := x₀
+  for _ in [0:steps] do
+    x := f x
+    trajectory := trajectory.push x
+  return trajectory
 
 /--
 Empirical Lyapunov stability test:
@@ -60,27 +77,23 @@ This is a **bounded-time** and **finite-set** check; it does not certify Lyapuno
 def testLyapunovStability {s : Shape}
     (f : Tensor Float s → Tensor Float s)
     (equilibrium : Tensor Float s)
-    (initial_points : List (Tensor Float s))
+    (initial_points : Array (Tensor Float s))
     (max_iterations : Nat)
-    (tolerance : Float) : Bool :=
-  initial_points.all (fun x₀ =>
-    test_trajectory_bounded f equilibrium x₀ max_iterations tolerance)
-where
-  test_trajectory_bounded (f : Tensor Float s → Tensor Float s)
-      (eq : Tensor Float s) (x₀ : Tensor Float s) (max_iter : Nat) (tol : Float) : Bool :=
-    let trajectory := List.range max_iter |>.scanl (fun x _ => f x) x₀
-    trajectory.all (fun x => tensorL2DistanceFloat eq x ≤ tol)
-
-/--
-Generate the first `steps` iterates of a discrete-time system $x_{t+1}=f(x_t)$, starting at $x_0$.
-
-The returned list includes the initial state $x_0$ as the first element (because we use `scanl`).
--/
-def generateTrajectory {s : Shape}
-    (f : Tensor Float s → Tensor Float s)
-    (x₀ : Tensor Float s)
-    (steps : Nat) : List (Tensor Float s) :=
-  List.range steps |>.scanl (fun x _ => f x) x₀
+    (tolerance : Float) : Except String Bool := do
+  if initial_points.isEmpty then
+    throw "Lyapunov diagnostic requires at least one initial point"
+  unless tolerance.isFinite && 0.0 ≤ tolerance do
+    throw "Lyapunov diagnostic requires a finite nonnegative tolerance"
+  let mut passed := true
+  for x₀ in initial_points do
+    let trajectory := generateTrajectory f x₀ max_iterations
+    for x in trajectory do
+      let distance := tensorL2DistanceFloat equilibrium x
+      unless distance.isFinite do
+        throw "Lyapunov diagnostic encountered a non-finite distance"
+      if !(distance ≤ tolerance) then
+        passed := false
+  pure passed
 
 /--
 Empirical asymptotic stability test (finite-horizon):
@@ -93,13 +106,23 @@ This is a very coarse check: it only inspects the *last* iterate and does not qu
 def testAsymptoticStability {s : Shape}
     (f : Tensor Float s → Tensor Float s)
     (equilibrium : Tensor Float s)
-    (initial_points : List (Tensor Float s))
+    (initial_points : Array (Tensor Float s))
     (max_iterations : Nat)
-    (convergence_threshold : Float) : Bool :=
-  initial_points.all (fun x₀ =>
+    (convergence_threshold : Float) : Except String Bool := do
+  if initial_points.isEmpty then
+    throw "asymptotic-stability diagnostic requires at least one initial point"
+  unless convergence_threshold.isFinite && 0.0 ≤ convergence_threshold do
+    throw "asymptotic-stability diagnostic requires a finite nonnegative threshold"
+  let mut passed := true
+  for x₀ in initial_points do
     let trajectory := generateTrajectory f x₀ max_iterations
-    let final_distance := tensorL2DistanceFloat equilibrium (trajectory.getLast!)
-    final_distance ≤ convergence_threshold)
+    let finalState := trajectory.getD (trajectory.size - 1) x₀
+    let final_distance := tensorL2DistanceFloat equilibrium finalState
+    unless final_distance.isFinite do
+      throw "asymptotic-stability diagnostic encountered a non-finite distance"
+    if !(final_distance ≤ convergence_threshold) then
+      passed := false
+  pure passed
 
 /--
 Empirical exponential decay test:
@@ -122,17 +145,26 @@ def testExponentialStability {s : Shape}
     (equilibrium : Tensor Float s)
     (x₀ : Tensor Float s)
     (expected_decay_rate : Float)
-    (max_iterations : Nat) : Bool :=
+    (max_iterations : Nat) : Except String Bool := do
+  if max_iterations = 0 then
+    throw "exponential-stability diagnostic requires at least one transition"
+  unless expected_decay_rate.isFinite && 0.0 ≤ expected_decay_rate do
+    throw "exponential-stability diagnostic requires a finite nonnegative decay rate"
   let trajectory := generateTrajectory f x₀ max_iterations
   let distances := trajectory.map (tensorL2DistanceFloat equilibrium)
-  test_exponential_decay distances expected_decay_rate
-where
-  test_exponential_decay (distances : List Float) (rate : Float) : Bool :=
-    match distances with
-    | [] => true
-    | d₀ :: rest =>
-      rest.zip (List.range rest.length) |>.all (fun (d, n) =>
-        d ≤ d₀ * Float.exp (-rate * Float.ofNat (n + 1)))
+  let some d₀ := distances[0]?
+    | throw "exponential-stability diagnostic requires a nonempty trajectory"
+  unless d₀.isFinite do
+    throw "exponential-stability diagnostic encountered a non-finite distance"
+  let mut passed := true
+  for n in [1:distances.size] do
+    let distance := distances[n]!
+    let bound := d₀ * Float.exp (-expected_decay_rate * Float.ofNat n)
+    unless distance.isFinite && bound.isFinite do
+      throw "exponential-stability diagnostic encountered a non-finite value"
+    if !(distance ≤ bound) then
+      passed := false
+  pure passed
 
 /--
 Empirical contractivity test on a finite list of input pairs.
@@ -144,18 +176,36 @@ $$
 \leq \mathrm{expected\_contraction\_factor}
 $$
 
-for each pair `(x,y)` in `test_pairs`, ignoring pairs with zero input distance.
+for each pair `(x,y)`. Zero-distance pairs are ignored, but at least one positive-distance pair is
+required.
 -/
 def testContractivity {s : Shape}
     (f : Tensor Float s → Tensor Float s)
-    (test_pairs : List (Tensor Float s × Tensor Float s))
-    (expected_contraction_factor : Float) : Bool :=
-  test_pairs.all (fun (x, y) =>
+    (test_pairs : Array (Tensor Float s × Tensor Float s))
+    (expected_contraction_factor : Float) : Except String Bool := do
+  if test_pairs.isEmpty then
+    throw "contractivity diagnostic requires at least one input pair"
+  unless expected_contraction_factor.isFinite do
+    throw "contractivity diagnostic requires a finite contraction factor"
+  let mut foundInformative := false
+  let mut passed := true
+  for (x, y) in test_pairs do
     let input_dist := tensorL2DistanceFloat x y
     let output_dist := tensorL2DistanceFloat (f x) (f y)
+    unless input_dist.isFinite && output_dist.isFinite do
+      throw "contractivity diagnostic encountered a non-finite distance"
     if input_dist > 0.0 then
-      output_dist / input_dist ≤ expected_contraction_factor
-    else true)
+      let ratio := output_dist / input_dist
+      unless ratio.isFinite do
+        throw "contractivity diagnostic overflowed to a non-finite ratio"
+      foundInformative := true
+      if !(ratio ≤ expected_contraction_factor) then
+        passed := false
+    else if input_dist < 0.0 then
+      throw "contractivity diagnostic encountered a negative input distance"
+  unless foundInformative do
+    throw "contractivity diagnostic requires a pair with positive input distance"
+  pure passed
 
 /--
 Empirical BIBO stability test on a finite list of inputs.
@@ -165,49 +215,76 @@ $\lVert f(x)\rVert_2\leq\mathrm{output\_bound}$.
 -/
 def testBiboStability {s₁ s₂ : Shape}
     (f : Tensor Float s₁ → Tensor Float s₂)
-    (test_inputs : List (Tensor Float s₁))
+    (test_inputs : Array (Tensor Float s₁))
     (input_bound : Float)
-    (output_bound : Float) : Bool :=
-  test_inputs.all (fun x =>
+    (output_bound : Float) : Except String Bool := do
+  if test_inputs.isEmpty then
+    throw "BIBO diagnostic requires at least one test input"
+  unless input_bound.isFinite && output_bound.isFinite &&
+      0.0 ≤ input_bound && 0.0 ≤ output_bound do
+    throw "BIBO diagnostic requires finite nonnegative bounds"
+  let mut passed := true
+  for x in test_inputs do
     let input_norm := tensorL2NormFloat x
     let output_norm := tensorL2NormFloat (f x)
-    input_norm ≤ input_bound → output_norm ≤ output_bound)
+    unless input_norm.isFinite && output_norm.isFinite do
+      throw "BIBO diagnostic encountered a non-finite norm"
+    if input_norm ≤ input_bound && !(output_norm ≤ output_bound) then
+      passed := false
+  pure passed
 
 /--
 Empirical monotonic-loss check for a training log.
 
-Returns `true` if each consecutive loss satisfies
-$\ell_{t+1}\leq\ell_t+\mathrm{tolerance}$.
+Returns `.ok true` if each consecutive loss satisfies
+$\ell_{t+1}\leq\ell_t+\mathrm{tolerance}$. Fewer than two losses and non-finite values are
+inconclusive errors.
 -/
 def testTrainingStability
-    (loss_sequence : List Float)
-    (tolerance : Float) : Bool :=
-  match loss_sequence with
-  | [] => true
-  | [_] => true
-  | l₁ :: l₂ :: rest =>
-    (l₂ ≤ l₁ + tolerance) ∧ testTrainingStability (l₂ :: rest) tolerance
+    (loss_sequence : Array Float)
+    (tolerance : Float) : Except String Bool := do
+  if loss_sequence.size < 2 then
+    throw "training-stability diagnostic requires at least two loss values"
+  unless tolerance.isFinite && 0.0 ≤ tolerance do
+    throw "training-stability diagnostic requires a finite nonnegative tolerance"
+  let mut passed := true
+  for i in [1:loss_sequence.size] do
+    let previous := loss_sequence[i - 1]!
+    let current := loss_sequence[i]!
+    let bound := previous + tolerance
+    unless previous.isFinite && current.isFinite && bound.isFinite do
+      throw "training-stability diagnostic encountered a non-finite loss or bound"
+    if !(current ≤ bound) then
+      passed := false
+  pure passed
 
 /--
 Empirical estimate of a Lyapunov-style stability margin.
 
 For each candidate radius `r` in `test_radii`, we generate a small finite set of points on a
 synthetic “sphere” of radius `r` around `equilibrium` and check a bounded-horizon Lyapunov test.
-The result is the maximum radius that passes these finite checks.
+The result is `some` maximum radius when at least one radius passes, and `none` when valid evidence
+was collected but every radius failed. Empty or non-finite radius sets are errors.
 -/
 def estimateStabilityMargin {s : Shape}
     (f : Tensor Float s → Tensor Float s)
     (equilibrium : Tensor Float s)
-    (test_radii : List Float)
-    (max_iterations : Nat) : Float :=
-  let stable_radii := test_radii.filter (fun r =>
+    (test_radii : Array Float)
+    (max_iterations : Nat) : Except String (Option Float) := do
+  if test_radii.isEmpty then
+    throw "stability-margin diagnostic requires at least one candidate radius"
+  let mut best : Option Float := none
+  for r in test_radii do
+    unless r.isFinite && 0.0 ≤ r do
+      throw "stability-margin diagnostic requires finite nonnegative radii"
     let test_points := generate_points_on_sphere equilibrium r 8
-    testLyapunovStability f equilibrium test_points max_iterations r)
-  stable_radii.foldl max 0.0
+    if ← testLyapunovStability f equilibrium test_points max_iterations r then
+      best := some (best.elim r (max r))
+  pure best
 where
   generate_points_on_sphere {s : Shape} (center : Tensor Float s) (radius : Float) (count : Nat) :
-    List (Tensor Float s) :=
-    List.range count |>.map (fun i =>
+    Array (Tensor Float s) :=
+    Array.range count |>.map (fun i =>
       let angle := Float.ofNat i * 2.0 * 3.14159 / Float.ofNat count
       add_spherical_perturbation center radius angle)
 
@@ -231,9 +308,9 @@ structure StabilityAnalysisResult where
   /-- Result of a BIBO check (`test_bibo_stability`). -/
   isBiboStable : Bool
   /-- Empirical stability margin estimate (`estimate_stability_margin`). -/
-  stabilityMargin : Float
+  stabilityMargin : Option Float
   /-- Empirical convergence-rate estimate (see `analyze_stability`). -/
-  convergence_rate : Float
+  convergence_rate : Option Float
 
 /--
 Run a small collection of empirical stability diagnostics and summarize the results.
@@ -241,34 +318,43 @@ Run a small collection of empirical stability diagnostics and summarize the resu
 def analyzeStability {s : Shape}
     (f : Tensor Float s → Tensor Float s)
     (equilibrium : Tensor Float s)
-    (test_points : List (Tensor Float s))
-    (max_iterations : Nat) : StabilityAnalysisResult :=
-  match test_points with
-  | [] =>
-      { isLyapunovStable := true
-        isAsymptoticallyStable := true
-        isContractive := true
-        isBiboStable := true
-        stabilityMargin := estimateStabilityMargin f equilibrium [0.01, 0.05, 0.1, 0.2]
-          max_iterations
-        convergence_rate := 0.0 }
-  | x0 :: rest =>
-      let test_pairs := List.zip (x0 :: rest) (rest ++ [x0])
-      { isLyapunovStable := testLyapunovStability f equilibrium (x0 :: rest) max_iterations 0.1
-        isAsymptoticallyStable := testAsymptoticStability f equilibrium (x0 :: rest)
-          max_iterations 0.01
-        isContractive := testContractivity f test_pairs 0.9
-        isBiboStable := testBiboStability (fun x => f x) (x0 :: rest) 1.0 1.0
-        stabilityMargin := estimateStabilityMargin f equilibrium [0.01, 0.05, 0.1, 0.2]
-          max_iterations
-        convergence_rate := estimate_convergence_rate f equilibrium x0 max_iterations }
+    (test_points : Array (Tensor Float s))
+    (max_iterations : Nat) : Except String StabilityAnalysisResult := do
+  let some x0 := test_points[0]?
+    | throw "stability analysis requires at least one test point"
+  let testPairs := test_points.mapIdx fun i x =>
+    (x, test_points.getD ((i + 1) % test_points.size) x)
+  let isLyapunovStable ← testLyapunovStability f equilibrium test_points max_iterations 0.1
+  let isAsymptoticallyStable ←
+    testAsymptoticStability f equilibrium test_points max_iterations 0.01
+  let isContractive ← testContractivity f testPairs 0.9
+  let isBiboStable ← testBiboStability (fun x => f x) test_points 1.0 1.0
+  let stabilityMargin ←
+    estimateStabilityMargin f equilibrium #[0.01, 0.05, 0.1, 0.2] max_iterations
+  let convergence_rate ← estimate_convergence_rate f equilibrium x0 max_iterations
+  pure
+    { isLyapunovStable
+      isAsymptoticallyStable
+      isContractive
+      isBiboStable
+      stabilityMargin
+      convergence_rate }
 where
   estimate_convergence_rate (f : Tensor Float s → Tensor Float s)
-      (eq : Tensor Float s) (x₀ : Tensor Float s) (steps : Nat) : Float :=
+      (eq : Tensor Float s) (x₀ : Tensor Float s) (steps : Nat) : Except String (Option Float) := do
     let trajectory := generateTrajectory f x₀ steps
     let distances := trajectory.map (tensorL2DistanceFloat eq)
-    match distances with
-    | d₀ :: d₁ :: _ => if d₀ > 0.0 ∧ d₁ > 0.0 then -Float.log (d₁ / d₀) else 0.0
-    | _ => 0.0
+    match distances[0]?, distances[1]? with
+    | some d₀, some d₁ =>
+        unless d₀.isFinite && d₁.isFinite do
+          throw "convergence-rate estimate encountered a non-finite distance"
+        if d₀ > 0.0 && d₁ > 0.0 then
+          let rate := -Float.log (d₁ / d₀)
+          unless rate.isFinite do
+            throw "convergence-rate estimate produced a non-finite rate"
+          pure (some rate)
+        else
+          pure none
+    | _, _ => pure none
 
 end NN.MLTheory.Stability.Runtime

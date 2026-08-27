@@ -76,7 +76,7 @@ end NeuralConversionResult
 /--
 Convert an annotated float to its real semantics while retaining its conversion metadata.
 
-In words: the returned `value` is exactly `neural_to_real f`.
+In words: the returned `value` is exactly `neuralToReal f`.
 The `errorBound` field is the metadata stored in the input record; it is not recomputed here.
 -/
 noncomputable def neuralFloatToReal (f : AnnotatedNeuralFloat β) : NeuralConversionResult ℝ :=
@@ -90,9 +90,9 @@ noncomputable def neuralFloatToReal (f : AnnotatedNeuralFloat β) : NeuralConver
 Round a real number `x` onto the `(β,fexp,rnd)` grid and attach conversion metadata.
 
 In words:
-The returned payload is the same one used by `neural_round` (it uses
-`mantissa := rnd (scaled_mantissa x)` and `exponent := cexp x`), and
-`errorBound = |neural_to_real(value) - x|` is the actual absolute error for this rounding step.
+The returned payload is the same one used by `neuralRound` (it uses
+`mantissa := rnd (neuralScaledMantissa β fexp x)` and `exponent := neuralCexp β fexp x`), and
+`errorBound = |neuralToReal(value) - x|` is the actual absolute error for this rounding step.
 
 If you additionally assume round-to-nearest (`NeuralValidRndToNearest`), the theorem
 `neural_error_bound_ulp` bounds this error by `ulp(x)/2`.
@@ -120,11 +120,10 @@ noncomputable def realToNeuralFloat (precision : NeuralPrecision) (rnd : ℝ →
       ulpScale := some (neuralUlp β fexp x)
       phase := some phase }
 
-/-- Convert list of reals to neural floats -/
-noncomputable def listToNeuralFloats (precision : NeuralPrecision) (rnd : ℝ → ℤ)
-    [NeuralValidRnd rnd] (values : List ℝ) (phase : TrainingPhase := TrainingPhase.forward) :
-    NeuralConversionResult
-      (List (AnnotatedNeuralFloat β)) := by
+/-- Convert an array of real values to annotated neural floats. -/
+noncomputable def arrayToNeuralFloats (precision : NeuralPrecision) (rnd : ℝ → ℤ)
+    [NeuralValidRnd rnd] (values : Array ℝ) (phase : TrainingPhase := TrainingPhase.forward) :
+    NeuralConversionResult (Array (AnnotatedNeuralFloat β)) := by
   let conv := values.map (fun x =>
     realToNeuralFloat (β := β) (fexp := fexp) precision rnd x phase)
   let converted := conv.map (·.value)
@@ -138,11 +137,11 @@ noncomputable def listToNeuralFloats (precision : NeuralPrecision) (rnd : ℝ �
       ulpScale := some maxUlp
       phase := some phase }
 
-/-- Convert neural floats back to reals -/
-noncomputable def neuralFloatsToList (neural_floats : List (AnnotatedNeuralFloat β)) :
-  NeuralConversionResult (List ℝ) := by
-  let converted := neural_floats.map AnnotatedNeuralFloat.toReal
-  let maxError := (neural_floats.map (·.metadata.errorBound)).foldl max 0
+/-- Convert an array of annotated neural floats back to real values. -/
+noncomputable def neuralFloatsToArray (neuralFloats : Array (AnnotatedNeuralFloat β)) :
+    NeuralConversionResult (Array ℝ) := by
+  let converted := neuralFloats.map AnnotatedNeuralFloat.toReal
+  let maxError := (neuralFloats.map (·.metadata.errorBound)).foldl max 0
   let errorBound := max 0 maxError
   exact {
     value := converted,

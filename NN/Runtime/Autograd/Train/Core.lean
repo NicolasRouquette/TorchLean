@@ -38,18 +38,18 @@ def tagError (tag msg : String) : String :=
 /-!
 ## Typed extraction helpers
 
-The autograd engine stores values and gradients as `Spec.PackedTensor` (shape tag + tensor).
+The autograd engine stores values and gradients as `Spec.SomeTensor` (shape tag + tensor).
 These helpers check shapes and give you back a typed tensor or a scalar value.
 -/
 
 /--
 Read a typed gradient tensor `Tensor a s` from a gradient map keyed by node id.
 
-The eager tape engine stores gradients in a shape-erased form (`Spec.PackedTensor a`), so this
+The eager tape engine stores gradients in a shape-erased form (`Spec.SomeTensor a`), so this
 helper performs the dynamic shape check and returns a typed tensor on success.
 -/
 def requireGradTensor {a : Type} [DecidableEq Shape] {s : Shape}
-  (tag : String) (grads : Std.HashMap Nat (Spec.PackedTensor a)) (id : Nat) :
+  (tag : String) (grads : Std.HashMap Nat (Spec.SomeTensor a)) (id : Nat) :
   Result (Tensor a s) := by
   match grads.get? id with
   | none =>
@@ -84,7 +84,7 @@ This is a common pattern in training scripts where the loss is a scalar node.
 -/
 def requireScalarValue {a : Type} [DecidableEq Shape]
   (tag : String) (t : Tape a) (id : Nat) : Result a := do
-  let tScalar : Tensor a Shape.scalar ←
+  let tScalar : Tensor a .scalar ←
     requireValueTensor (tag := tag) (s := Shape.scalar) t id
   pure (Tensor.item tScalar)
 

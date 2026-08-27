@@ -58,7 +58,7 @@ def residualIdxX {n dModel numHeads headDim : Nat} :
 /--
 The final output of `mhaDGraph`, i.e. the projected attention result.
 
-The literal index is intentional: `MultiHeadAttention.ssMHA` is a fixed 14-entry saved-tensor list, and the final
+The literal index is intentional: `MultiHeadAttention.ssMHA` is a fixed 14-entry saved-value pack, and the final
 entry is the attention output with the same shape as the input sequence.
 -/
 def residualIdxAttnOut {n dModel numHeads headDim : Nat} :

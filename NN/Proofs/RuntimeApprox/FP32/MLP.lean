@@ -38,7 +38,7 @@ noncomputable section
 def tanhMlp3ErrorBudget {d0 d1 d2 d3 : Nat}
     (e0W e0b e1W e1b e2W e2b ex : ℝ)
     (L0R : LinearSpec R d0 d1) (L1R : LinearSpec R d1 d2)
-    (L2R : LinearSpec R d2 d3) (xR : Tensor R (.dim d0 .scalar)) : ℝ :=
+    (L2R : LinearSpec R d2 d3) (xR : Tensor R [d0]) : ℝ :=
   let z0R := Spec.linearSpec (α := R) L0R xR
   let eZ0 := linearErrorBudget e0W e0b ex L0R xR
   let a0R := mapSpec MathFunctions.tanh z0R
@@ -63,7 +63,7 @@ backend's matrix-vector, activation, and addition bounds.
 theorem approxTensor_tanhMlp3_fp32 {d0 d1 d2 d3 : Nat}
     {L0S : LinearSpec ℝ d0 d1} {L1S : LinearSpec ℝ d1 d2} {L2S : LinearSpec ℝ d2 d3}
     {L0R : LinearSpec R d0 d1} {L1R : LinearSpec R d1 d2} {L2R : LinearSpec R d2 d3}
-    {xS : SpecTensor (.dim d0 .scalar)} {xR : Tensor R (.dim d0 .scalar)}
+    {xS : SpecTensor [d0]} {xR : Tensor R [d0]}
     {e0W e0b e1W e1b e2W e2b ex : ℝ}
     (h0W : approxTensor (α := R) (toSpec := toSpec) L0S.weights L0R.weights e0W)
     (h0b : approxTensor (α := R) (toSpec := toSpec) L0S.bias L0R.bias e0b)
@@ -175,7 +175,7 @@ approximation framework (apply `max · 0` in $\mathbb R$, then round once).
 def reluTwoLayerMlpErrorBudget {d0 d1 d2 : Nat}
     (e0W e0b e1W e1b ex : ℝ)
     (L0R : LinearSpec R d0 d1) (L1R : LinearSpec R d1 d2)
-    (xR : Tensor R (.dim d0 .scalar)) : ℝ :=
+    (xR : Tensor R [d0]) : ℝ :=
   let z0R := Spec.linearSpec (α := R) L0R xR
   let eZ0 := linearErrorBudget e0W e0b ex L0R xR
   let a0R := mapSpec (reluR (β := β) (fexp := fexp) (rnd := rnd)) z0R
@@ -194,7 +194,7 @@ This is the network-level bound consumed by the CROWN/IBP integration in
 theorem approxTensor_reluTwoLayerMlp_float32 {d0 d1 d2 : Nat}
     {L0S : LinearSpec ℝ d0 d1} {L1S : LinearSpec ℝ d1 d2}
     {L0R : LinearSpec R d0 d1} {L1R : LinearSpec R d1 d2}
-    {xS : SpecTensor (.dim d0 .scalar)} {xR : Tensor R (.dim d0 .scalar)}
+    {xS : SpecTensor [d0]} {xR : Tensor R [d0]}
     {e0W e0b e1W e1b ex : ℝ}
     (h0W : approxTensor (α := R) (toSpec := toSpec) L0S.weights L0R.weights e0W)
     (h0b : approxTensor (α := R) (toSpec := toSpec) L0S.bias L0R.bias e0b)

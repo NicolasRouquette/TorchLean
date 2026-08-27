@@ -146,18 +146,18 @@ theorem approx_canonicalAttentionScale (d : Nat)
 
 /-- Error after the rounded score product `Q Kᵀ`. -/
 def scoreErrorBound {nQ nK d : Nat} (epsQ epsK : ℝ)
-    (qR : Tensor R (.dim nQ (.dim d .scalar)))
-    (kR : Tensor R (.dim nK (.dim d .scalar))) : ℝ :=
+    (qR : Tensor R [nQ, d])
+    (kR : Tensor R [nK, d]) : ℝ :=
   linfNorm (NFBackend.matMulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
     (m := nQ) (n := d) (p := nK) epsQ epsK qR
-    (Tensor.matrixTransposeSpec kR))
+    (Tensor.swapAdjacentAxes kR 0))
 
 /-- Error after multiplying scores by an approximate runtime scale. -/
 def scaledScoreErrorBound {nQ nK d : Nat} (epsQ epsK epsScale : ℝ)
     (scaleR : R)
-    (qR : Tensor R (.dim nQ (.dim d .scalar)))
-    (kR : Tensor R (.dim nK (.dim d .scalar))) : ℝ :=
-  let scoresR := matMulSpec qR (Tensor.matrixTransposeSpec kR)
+    (qR : Tensor R [nQ, d])
+    (kR : Tensor R [nK, d]) : ℝ :=
+  let scoresR := matMulSpec qR (Tensor.swapAdjacentAxes kR 0)
   linfNorm (NFBackend.scaleApproxBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
     (scoreErrorBound (β := β) (fexp := fexp) (rnd := rnd) epsQ epsK qR kR)
     epsScale scaleR scoresR)
@@ -169,10 +169,10 @@ natural contract boundary for fused score kernels: a provider may replace the im
 long as it supplies this same approximation statement.
 -/
 theorem approxTensor_scaledAttentionScores {nQ nK d : Nat}
-    {qS : SpecTensor (.dim nQ (.dim d .scalar))}
-    {kS : SpecTensor (.dim nK (.dim d .scalar))}
-    {qR : Tensor R (.dim nQ (.dim d .scalar))}
-    {kR : Tensor R (.dim nK (.dim d .scalar))}
+    {qS : SpecTensor [nQ, d]}
+    {kS : SpecTensor [nK, d]}
+    {qR : Tensor R [nQ, d]}
+    {kR : Tensor R [nK, d]}
     {scaleS : ℝ} {scaleR : R} {epsQ epsK epsScale : ℝ}
     (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) qS qR epsQ)
@@ -182,11 +182,11 @@ theorem approxTensor_scaledAttentionScores {nQ nK d : Nat}
       epsScale) :
     approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
-      (scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS)
-      (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR)
+      (scaleSpec (matMulSpec qS (Tensor.swapAdjacentAxes kS 0)) scaleS)
+      (scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR)
       (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsScale scaleR qR kR) := by
-  have hkT := NFBackend.approxTensor_matrix_transpose_spec
+  have hkT := NFBackend.approxTensor_swapAdjacentAxes (depth := 0)
     (β := β) (fexp := fexp) (rnd := rnd) hk
   have hscores := NFBackend.approxTensor_mat_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hq hkT
@@ -197,9 +197,9 @@ theorem approxTensor_scaledAttentionScores {nQ nK d : Nat}
 /-- Error in the row-wise attention weights. -/
 def weightErrorBound {nQ nK d : Nat} (epsQ epsK epsScale : ℝ)
     (scaleR : R)
-    (qR : Tensor R (.dim nQ (.dim d .scalar)))
-    (kR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))) : ℝ :=
-  let scoresR := matMulSpec qR (Tensor.matrixTransposeSpec kR)
+    (qR : Tensor R [nQ, d])
+    (kR : Tensor R [Nat.succ nK, d]) : ℝ :=
+  let scoresR := matMulSpec qR (Tensor.swapAdjacentAxes kR 0)
   let scaledR := scaleSpec scoresR scaleR
   AxisSoftmax.softmaxRowsErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
@@ -208,11 +208,11 @@ def weightErrorBound {nQ nK d : Nat} (epsQ epsK epsScale : ℝ)
 /-- End-to-end output error for unmasked scaled dot-product attention. -/
 def outputErrorBound {nQ nK d : Nat} (epsQ epsK epsV epsScale : ℝ)
     (scaleR : R)
-    (qR : Tensor R (.dim nQ (.dim d .scalar)))
-    (kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))) : ℝ :=
-  let scoresR := matMulSpec qR (Tensor.matrixTransposeSpec kR)
+    (qR : Tensor R [nQ, d])
+    (kR vR : Tensor R [Nat.succ nK, d]) : ℝ :=
+  let scoresR := matMulSpec qR (Tensor.swapAdjacentAxes kR 0)
   let scaledR := scaleSpec scoresR scaleR
-  let weightsR := Activation.softmaxLastSpec scaledR
+  let weightsR := Activation.softmaxSpec 1 scaledR
   linfNorm (NFBackend.matMulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
     (m := nQ) (n := Nat.succ nK) (p := d)
     (weightErrorBound (β := β) (fexp := fexp) (rnd := rnd)
@@ -223,10 +223,10 @@ def outputErrorBound {nQ nK d : Nat} (epsQ epsK epsV epsScale : ℝ)
 def maskedWeightErrorBound {nQ nK d : Nat}
     (η epsMax : Fin nQ → ℝ) (rowMaxR : Fin nQ → R)
     (epsQ epsK epsScale : ℝ) (scaleR : R)
-    (qR : Tensor R (.dim nQ (.dim d .scalar)))
-    (kR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar)))
-    (mask : Tensor Bool (.dim nQ (.dim (Nat.succ nK) .scalar))) : ℝ :=
-  let scaledR := scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR
+    (qR : Tensor R [nQ, d])
+    (kR : Tensor R [Nat.succ nK, d])
+    (mask : Tensor Bool [nQ, Nat.succ nK]) : ℝ :=
+  let scaledR := scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR
   linfNorm
     (AxisSoftmax.hardMaskedRowsBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
       η
@@ -238,10 +238,10 @@ def maskedWeightErrorBound {nQ nK d : Nat}
 def maskedOutputErrorBound {nQ nK d : Nat}
     (η epsMax : Fin nQ → ℝ) (rowMaxR : Fin nQ → R)
     (epsQ epsK epsV epsScale : ℝ) (scaleR : R)
-    (qR : Tensor R (.dim nQ (.dim d .scalar)))
-    (kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar)))
-    (mask : Tensor Bool (.dim nQ (.dim (Nat.succ nK) .scalar))) : ℝ :=
-  let scaledR := scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR
+    (qR : Tensor R [nQ, d])
+    (kR vR : Tensor R [Nat.succ nK, d])
+    (mask : Tensor Bool [nQ, Nat.succ nK]) : ℝ :=
+  let scaledR := scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR
   let weightsR := Spec.hardMaskedSoftmaxSpec scaledR mask
   linfNorm
     (NFBackend.matMulBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
@@ -258,11 +258,11 @@ The selected allowed-row maxima and denominator margins are explicit certificate
 finite value is ever substituted for negative infinity.
 -/
 theorem approxTensor_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
-    {qS : SpecTensor (.dim nQ (.dim d .scalar))}
-    {kS vS : SpecTensor (.dim (Nat.succ nK) (.dim d .scalar))}
-    {qR : Tensor R (.dim nQ (.dim d .scalar))}
-    {kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))}
-    (mask : Tensor Bool (.dim nQ (.dim (Nat.succ nK) .scalar)))
+    {qS : SpecTensor [nQ, d]}
+    {kS vS : SpecTensor [Nat.succ nK, d]}
+    {qR : Tensor R [nQ, d]}
+    {kR vR : Tensor R [Nat.succ nK, d]}
+    (mask : Tensor Bool [nQ, Nat.succ nK])
     {scaleS : ℝ} {scaleR : R} {epsQ epsK epsV epsScale : ℝ}
     (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) qS qR epsQ)
@@ -273,8 +273,8 @@ theorem approxTensor_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
     (hscale : abs (NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd) scaleR - scaleS) ≤
       epsScale)
     (evidence : AxisSoftmax.HardMaskedRowsEvidence (β := β) (fexp := fexp) (rnd := rnd)
-      (scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS)
-      (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR)
+      (scaleSpec (matMulSpec qS (Tensor.swapAdjacentAxes kS 0)) scaleS)
+      (scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR)
       mask
       (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsScale scaleR qR kR)) :
@@ -282,15 +282,15 @@ theorem approxTensor_hardMaskedScaledDotProductAttentionCore {nQ nK d : Nat}
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (matMulSpec
         (Spec.hardMaskedSoftmaxSpec
-          (scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS) mask) vS)
+          (scaleSpec (matMulSpec qS (Tensor.swapAdjacentAxes kS 0)) scaleS) mask) vS)
       (matMulSpec
         (Spec.hardMaskedSoftmaxSpec
-          (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR) mask) vR)
+          (scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR) mask) vR)
       (maskedOutputErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         evidence.eta evidence.epsMax evidence.rowMaxR
         epsQ epsK epsV epsScale scaleR qR kR vR mask) := by
-  let scaledS := scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS
-  let scaledR := scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR
+  let scaledS := scaleSpec (matMulSpec qS (Tensor.swapAdjacentAxes kS 0)) scaleS
+  let scaledR := scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR
   let epsScaled := scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     epsQ epsK epsScale scaleR qR kR
   let weightsS := Spec.hardMaskedSoftmaxSpec scaledS mask
@@ -324,10 +324,10 @@ only nonlocal side condition introduced by stable softmax; it certifies that the
 denominator error remains below the exact lower bound one.
 -/
 theorem approxTensor_scaledDotProductAttentionCore {nQ nK d : Nat}
-    {qS : SpecTensor (.dim nQ (.dim d .scalar))}
-    {kS vS : SpecTensor (.dim (Nat.succ nK) (.dim d .scalar))}
-    {qR : Tensor R (.dim nQ (.dim d .scalar))}
-    {kR vR : Tensor R (.dim (Nat.succ nK) (.dim d .scalar))}
+    {qS : SpecTensor [nQ, d]}
+    {kS vS : SpecTensor [Nat.succ nK, d]}
+    {qR : Tensor R [nQ, d]}
+    {kR vR : Tensor R [Nat.succ nK, d]}
     {scaleS : ℝ} {scaleR : R} {epsQ epsK epsV epsScale : ℝ}
     (hq : approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd)) qS qR epsQ)
@@ -342,19 +342,19 @@ theorem approxTensor_scaledDotProductAttentionCore {nQ nK d : Nat}
         (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
           epsQ epsK epsScale scaleR qR kR)
         (Spec.get
-          (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR) i) < 1) :
+          (scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR) i) < 1) :
     approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (matMulSpec
-        (Activation.softmaxLastSpec
-          (scaleSpec (matMulSpec qS (Tensor.matrixTransposeSpec kS)) scaleS)) vS)
+        (Activation.softmaxSpec 1
+          (scaleSpec (matMulSpec qS (Tensor.swapAdjacentAxes kS 0)) scaleS)) vS)
       (matMulSpec
-        (Activation.softmaxLastSpec
-          (scaleSpec (matMulSpec qR (Tensor.matrixTransposeSpec kR)) scaleR)) vR)
+        (Activation.softmaxSpec 1
+          (scaleSpec (matMulSpec qR (Tensor.swapAdjacentAxes kR 0)) scaleR)) vR)
       (outputErrorBound (β := β) (fexp := fexp) (rnd := rnd)
         epsQ epsK epsV epsScale scaleR qR kR vR) := by
-  let kTS := Tensor.matrixTransposeSpec kS
-  let kTR := Tensor.matrixTransposeSpec kR
+  let kTS := Tensor.swapAdjacentAxes kS 0
+  let kTR := Tensor.swapAdjacentAxes kR 0
   let scoresS := matMulSpec qS kTS
   let scoresR := matMulSpec qR kTR
   let epsScores := scoreErrorBound (β := β) (fexp := fexp) (rnd := rnd) epsQ epsK qR kR
@@ -362,8 +362,8 @@ theorem approxTensor_scaledDotProductAttentionCore {nQ nK d : Nat}
   let scaledR := scaleSpec scoresR scaleR
   let epsScaled := scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     epsQ epsK epsScale scaleR qR kR
-  let weightsS := Activation.softmaxLastSpec scaledS
-  let weightsR := Activation.softmaxLastSpec scaledR
+  let weightsS := Activation.softmaxSpec 1 scaledS
+  let weightsR := Activation.softmaxSpec 1 scaledR
   let epsWeights := weightErrorBound (β := β) (fexp := fexp) (rnd := rnd)
     epsQ epsK epsScale scaleR qR kR
 
@@ -415,7 +415,7 @@ theorem approxTensor_scaledDotProductAttention_unmasked {nQ nK d : Nat}
             epsQ epsK epsScale (1 / Spec.attentionScaleDenom (α := R) d) ctxR.Q ctxR.K)
           (Spec.get
             (scaleSpec
-              (matMulSpec ctxR.Q (Tensor.matrixTransposeSpec ctxR.K))
+              (matMulSpec ctxR.Q (Tensor.swapAdjacentAxes ctxR.K 0))
               (1 / Spec.attentionScaleDenom (α := R) d)) i) < 1) :
     approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))
@@ -430,7 +430,7 @@ theorem approxTensor_scaledDotProductAttention_unmasked {nQ nK d : Nat}
     (scaleS := 1 / Spec.attentionScaleDenom (α := ℝ) d)
     (scaleR := 1 / Spec.attentionScaleDenom (α := R) d)
     hq hk hv hscale hdenom
-  simpa [Spec.scaledDotProductAttention, hmaskS, hmaskR] using hcore
+  simpa only [Spec.scaledDotProductAttention, hmaskS, hmaskR] using hcore
 
 /-- Canonical TorchLean attention corollary for a shared hard mask.
 
@@ -442,7 +442,7 @@ theorem approxTensor_scaledDotProductAttention_masked {nQ nK d : Nat}
     {hQ : nQ ≠ 0} {hK : Nat.succ nK ≠ 0}
     (ctxS : Spec.AttentionContext ℝ nQ (Nat.succ nK) d hQ hK)
     (ctxR : Spec.AttentionContext R nQ (Nat.succ nK) d hQ hK)
-    (mask : Tensor Bool (.dim nQ (.dim (Nat.succ nK) .scalar)))
+    (mask : Tensor Bool [nQ, Nat.succ nK])
     {epsQ epsK epsV epsScale : ℝ}
     (hmaskS : ctxS.mask = some mask) (hmaskR : ctxR.mask = some mask)
     (hq : approxTensor (α := R)
@@ -460,9 +460,9 @@ theorem approxTensor_scaledDotProductAttention_masked {nQ nK d : Nat}
             (1 / Spec.attentionScaleDenom (α := R) d) -
           (1 / Spec.attentionScaleDenom (α := ℝ) d)) ≤ epsScale)
     (evidence : AxisSoftmax.HardMaskedRowsEvidence (β := β) (fexp := fexp) (rnd := rnd)
-      (scaleSpec (matMulSpec ctxS.Q (Tensor.matrixTransposeSpec ctxS.K))
+      (scaleSpec (matMulSpec ctxS.Q (Tensor.swapAdjacentAxes ctxS.K 0))
         (1 / Spec.attentionScaleDenom (α := ℝ) d))
-      (scaleSpec (matMulSpec ctxR.Q (Tensor.matrixTransposeSpec ctxR.K))
+      (scaleSpec (matMulSpec ctxR.Q (Tensor.swapAdjacentAxes ctxR.K 0))
         (1 / Spec.attentionScaleDenom (α := R) d))
       mask
       (scaledScoreErrorBound (β := β) (fexp := fexp) (rnd := rnd)
@@ -482,7 +482,7 @@ theorem approxTensor_scaledDotProductAttention_masked {nQ nK d : Nat}
     (scaleS := 1 / Spec.attentionScaleDenom (α := ℝ) d)
     (scaleR := 1 / Spec.attentionScaleDenom (α := R) d)
     hq hk hv hscale evidence
-  simpa [Spec.scaledDotProductAttention, hmaskS, hmaskR] using hcore
+  simpa only [Spec.scaledDotProductAttention, hmaskS, hmaskR] using hcore
 
 /-- Fully instantiated unmasked attention theorem for a positive feature dimension.
 
@@ -513,7 +513,7 @@ theorem approxTensor_scaledDotProductAttention_unmasked_canonical {nQ nK d : Nat
             (1 / Spec.attentionScaleDenom (α := R) (Nat.succ d)) ctxR.Q ctxR.K)
           (Spec.get
             (scaleSpec
-              (matMulSpec ctxR.Q (Tensor.matrixTransposeSpec ctxR.K))
+              (matMulSpec ctxR.Q (Tensor.swapAdjacentAxes ctxR.K 0))
               (1 / Spec.attentionScaleDenom (α := R) (Nat.succ d))) i) < 1) :
     approxTensor (α := R)
       (toSpec := NFBackend.toSpec (β := β) (fexp := fexp) (rnd := rnd))

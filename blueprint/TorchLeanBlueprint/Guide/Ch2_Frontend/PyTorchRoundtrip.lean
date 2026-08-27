@@ -73,7 +73,7 @@ numbers become host `Float` values; this format does not preserve exact binary32
 For example, the checked-in MLP expects:
 
 ```
-layers.0.weight : shape![3, 2]
+layers.0.weight : [3, 2]
 ```
 
 If its JSON value has two rows of length three instead of three rows of length two, recursive tensor

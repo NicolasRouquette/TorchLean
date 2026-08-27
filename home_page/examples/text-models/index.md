@@ -2,12 +2,9 @@
 title: Text Models Walkthrough
 ---
 
-The text-model examples run from corpus to continuation. The models are small, but the path is
-complete: read a text file, build next-token training examples, run a training step, save
-parameters, reload them, and sample from the saved model.
-
-The examples make the hidden pieces visible. Tokenization, sequence length, causal windows,
-parameter shapes, generation settings, and saved logs all appear as artifacts the reader can inspect.
+The text-model examples read a corpus, build next-token samples, train, save and reload parameters,
+and generate a continuation. Tokenization, causal windows, parameter shapes, generation settings,
+and logs remain explicit along that path.
 
 ## Data: One Explicit Text File
 
@@ -67,20 +64,21 @@ The training data is represented directly as typed supervised samples. The examp
 For GPT-2, the sample is a one-hot matrix for causal language modeling:
 
 ```lean
-abbrev σ : Shape := shape![batch, seqLen, vocab]
-abbrev τ : Shape := σ
+abbrev σ : List Nat := [batch, seqLen, vocab]
+abbrev τ : List Nat := σ
 ```
 
-The function `Data.CausalLM.oneHotBatch` converts a token window of length
-$\mathtt{seqLen}+1$ into $(x,y)$:
-input tokens and the same window shifted by one position as the target. The trainer consumes those
-typed tensors directly.
+The function `Data.CausalLM.oneHotSample` converts a token tensor whose final axis has length
+$\mathtt{seqLen}+1$ into $(x,y)$: input tokens and the same window shifted by one position as the
+target. The leading shape determines whether the sample is batched.
 
 The Lean sample constructor is explicit:
 
 ```lean
-def mkSampleFromTokenIds (toks : List Nat) : Sample.Supervised Float σ τ :=
-  Data.CausalLM.oneHotBatch (α := Float) batch seqLen vocab toks (padId := 32)
+def mkSampleFromTokenIds (toks : Tensor Nat [seqLen + 1]) :
+    Sample.Supervised Float σ τ :=
+  Data.CausalLM.oneHotSample (α := Float) [batch] seqLen vocab
+    (Tensor.repeatAxis 0 batch (toks.map byteBucket))
 ```
 
 The tutorial keeps the dataloader convention visible: a supervised example is a pair of typed
@@ -105,7 +103,7 @@ def model : nn.Builder (nn.Sequential σ τ) :=
       headDim := headDim
       ffnHidden := ffnHidden
       layers := layers }
-    (.dim batch .scalar)
+    [batch]
 ```
 
 The configuration describes the Transformer itself. The final argument supplies the leading batch
@@ -163,8 +161,6 @@ the model, loading fails before the weights are used.
 compact state-space block. The contrast is sequence modeling without the quadratic attention path,
 using the same autograd and the same logging style.
 
-The contrast shows that the text pipeline is not tied to attention.
-
 Algorithmically, the example replaces “attend over all previous tokens” with a learned recurrent
 state update. Each token updates a compact state, and the model projects the resulting sequence
 states to next-token logits. The surrounding training interface stays the same: corpus windows in,
@@ -173,11 +169,11 @@ logits out, cross-entropy loss, optimizer step, JSON log.
 The Mamba example has the same tutorial shape:
 
 ```lean
-abbrev σ : Shape := nn.models.Mamba.inputShape cfg seqLen
-abbrev τ : Shape := nn.models.Mamba.outputShape cfg seqLen
+abbrev σ : List Nat := nn.models.Mamba.inputShape cfg seqLen
+abbrev τ : List Nat := nn.models.Mamba.outputShape cfg seqLen
 
 def model : nn.Builder (nn.Sequential σ τ) :=
-  nn.models.MambaTextLM cfg seqLen
+  nn.models.Mamba.textLM cfg seqLen
 ```
 
 and the training body is still an ordinary trainer call:

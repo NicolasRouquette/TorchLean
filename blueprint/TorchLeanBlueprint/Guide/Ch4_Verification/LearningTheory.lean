@@ -150,28 +150,29 @@ robustness notebook might compute "max observed ratio" and report it as if it we
 the model. TorchLean names it as an empirical runtime quantity unless a separate proof connects it
 to a certified bound.
 
-The bundled logit-margin artifact makes the difference visible:
+The bundled logit-bound report makes the difference visible:
 
 ```
-lake exe verify -- margin-cert
+lake exe verify -- margin-report
 ```
 
 It reports:
 
 ```
-[margin cert] examples=360
-[margin cert] nominal_ok=349
-[margin cert] certified_ok=318
+[margin report] examples=360
+[margin report] nominal_ok=349
+[margin report] positive_margin=318
 ```
 
-`nominal_ok` counts correctly predicted recorded examples. `certified_ok` counts examples whose
-stored bounds imply the required margin. Neither number is automatically a theorem about unseen
-data, and the second number depends on the soundness and provenance of the bounds in the artifact.
+`nominal_ok` counts correctly predicted recorded examples. `positive_margin` counts entries whose
+stored bounds imply the required margin. This command checks the report's arithmetic; it does not
+prove that the stored bounds enclose the model. That stronger claim depends on the verifier that
+produced the bounds and the theorem connecting its output to model semantics.
 
 # Algorithmic Stability
 
 The [algorithmic stability API](https://github.com/lean-dojo/TorchLean/blob/main/NN/MLTheory/LearningTheory/Stability/Core.lean) uses one
-central representation choice: a dataset of size `n` is a `Spec.Vec n Z`, so its shape is part of
+central representation choice: a dataset of size `n` is a `Spec.Tensor Z [n]`, so its shape is part of
 the type, not an untyped list whose length must be remembered separately. That lets stability definitions quantify over replace one and remove one
 perturbations while keeping the sample size in the type.
 

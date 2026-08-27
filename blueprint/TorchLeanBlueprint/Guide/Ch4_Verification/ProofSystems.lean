@@ -112,7 +112,7 @@ The current proof is split for auditability:
 - The [semantic equivalence common API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceCommon.lean)
   contains helper lemmas used by the recursive proof.
 - The [semantic equivalence op cases API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/SemanticEquivalenceOpCases.lean)
-  contains heavy named cases such as `.linear` and `.conv2d`.
+  contains the larger named cases such as `.linear` and `.conv`.
 - `Correctness/Ops/*` contains smaller branches by op family: activations, constants, elementwise,
   linear algebra, normalization, pooling, permutation, random, reductions, structural ops, and unary
   ops.
@@ -190,23 +190,19 @@ For concatenation on the middle axis, both paths execute and print the same lead
 [concat_middle_axis] forward graph outShape: ... [2,8,4]
 ```
 
-For middle-axis softmax and LayerNorm, the specification path runs but the forward-graph path reports:
+For a middle-axis operation outside the supported lowering fragment, the forward-graph path reports
+the unsupported case instead of silently changing its meaning.
 
-```
-forward graph and denotational semantics agree for every in-bounds softmax axis
-than the spec semantics.
-```
-
-That message is a feature, not an inconvenience to hide. The semantic language can describe more
+This distinction matters. The semantic language can describe more
 programs than a particular lowering theorem or runtime path currently covers. A clean system
 rejects or skips the unsupported lowering; it does not infer correctness from the fact that a
 different implementation happened to return an array of the expected shape.
 
 The executable negative cases in
-[`IR.ShapeContracts`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/IR/ShapeContracts.lean)
-exercise this boundary for malformed axes, incompatible shapes, and unsupported contracts. They
-are useful regression checks that rejection remains fail-closed. They are not a semantic lowering
-theorem: the whole-graph meaning-preservation result is still
+[`IR.ShapeContracts`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Tests/IR/ShapeContracts.lean)
+exercise this boundary for incompatible shapes and unsupported contracts. They are regression
+checks that rejection remains fail-closed, not semantic lowering theorems. The whole-graph
+meaning-preservation result is still
 `denoteAll_eq_of_lowerToForwardGraph` with its explicit fragment hypotheses.
 
 # How The Proof Systems Compose

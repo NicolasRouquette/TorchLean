@@ -13,7 +13,7 @@ public import Lean
 
 This file contains only **general-purpose** syntactic sugar:
 - `seq! a, b, c` for composing TorchLean `Seq` models without chaining `>>>` manually.
-- `TensorPack! x, y, ...` for building `TorchLean.TensorPack` values without
+- `_root_.TorchLean.TensorPack! x, y, ...` for building `TorchLean.TensorPack` values without
   `.cons ... .nil` boilerplate.
 
 The sequential macro expands to the composition helpers defined by `NN.API.Neural.Builders`.
@@ -81,12 +81,12 @@ macro_rules (kind := seqLit)
       `($f $a (seq! $b, $rest,*))
 
 /-- Build a `TorchLean.TensorPack` from comma-separated tensors. -/
-syntax (name := tensorpackLit) "TensorPack!" term,+ : term
+syntax (name := tensorpackLit) "_root_.TorchLean.TensorPack!" term,+ : term
 
 macro_rules (kind := tensorpackLit)
-  | `(TensorPack! $x:term) =>
+  | `(_root_.TorchLean.TensorPack! $x:term) =>
       `(.cons $x .nil)
-  | `(TensorPack! $x:term, $rest:term,*) =>
-      `(.cons $x (TensorPack! $rest,*))
+  | `(_root_.TorchLean.TensorPack! $x:term, $rest:term,*) =>
+      `(.cons $x (_root_.TorchLean.TensorPack! $rest,*))
 
 end TorchLean

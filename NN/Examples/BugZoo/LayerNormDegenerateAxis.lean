@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Tensor
 public import NN.Spec.Layers.Normalization
 
 /-!
@@ -25,8 +26,8 @@ For every finite scalar `x`, the mathematical contract is:
 
 $$
 \begin{aligned}
-\operatorname{mean}([x]) &= x,\\
-\operatorname{var}([x]) &= 0,\\
+\operatorname{mean}[x] &= x,\\
+\operatorname{var}[x] &= 0,\\
 \left(\frac{x-\operatorname{mean}}{\sqrt{\operatorname{var}+\varepsilon}}\right)
   \operatorname{weight}+\operatorname{bias} &= \operatorname{bias}.
 \end{aligned}
@@ -41,16 +42,17 @@ the public TorchLean spec terms used by the Python reproducer notes.
 
 namespace NN.Examples.BugZoo.LayerNormDegenerateAxis
 
+open TorchLean
 open Spec.Tensor
 
-abbrev OneMat (α : Type) := Spec.Tensor α (.dim 1 (.dim 1 .scalar))
-abbrev OneVec (α : Type) := Spec.Tensor α (.dim 1 .scalar)
+abbrev OneMat (α : Type) := Tensor α [1, 1]
+abbrev OneVec (α : Type) := Tensor α [1]
 
 def oneMat {α : Type} (x : α) : OneMat α :=
-  Spec.Tensor.dim (fun _ => Spec.Tensor.dim (fun _ => Spec.Tensor.scalar x))
+  TorchLean.Tensor.generate [1, 1] fun _ => x
 
 def oneVec {α : Type} (x : α) : OneVec α :=
-  Spec.Tensor.dim (fun _ => Spec.Tensor.scalar x)
+  TorchLean.Tensor.generate [1] fun _ => x
 
 /--
 The scalar algebra behind one-feature LayerNorm: normalization contributes zero, so the affine
@@ -85,7 +87,7 @@ def reproLayerNormForward : Float :=
 
 /-- TorchLean spec value for the public PyTorch repro: gradient with respect to `weight`. -/
 def reproLayerNormDWeight : Float :=
-  Spec.Tensor.vecGet
+  Spec.Tensor.item <| Spec.get
     ((Spec.layerNormBackward (α := Float) (seqLen := 1) (embedDim := 1)
       (by decide)
       (by decide)

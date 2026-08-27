@@ -54,7 +54,7 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.Builder (nn.Sequential (shape![2]) (shape![1])) :=
+    nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -105,7 +105,7 @@ rejects an axis outside the output shape. A custom task supplies a checked scala
 The quickstart uses a deterministic grid. A four-point example can be written directly:
 
 ```
-def xs : Tensor Float (shape![4, 2]) :=
+def xs : Tensor Float [4, 2] :=
   tensor! [
     [0.0, 0.0],
     [0.0, 1.0],
@@ -113,11 +113,10 @@ def xs : Tensor Float (shape![4, 2]) :=
     [1.0, 1.0]
   ]
 
-def ys : Tensor Float (shape![4, 1]) :=
+def ys : Tensor Float [4, 1] :=
   tensor! [[0.0], [1.0], [1.0], [0.0]]
 
-def data : Trainer.DataSource (shape![2]) (shape![1]) :=
-  Data.tensorDataset xs ys
+def data := Data.tensorDataset xs ys
 ```
 
 The dataset type matches the model map `[2] → [1]`. A batched model would require a batched dataset
@@ -134,7 +133,7 @@ def run : IO Unit := do
 
   trained.printSummary
 
-  let heldout : Tensor Float (shape![2]) :=
+  let heldout : Tensor Float [2] :=
     tensor! [0.25, -0.75]
   let yhat ← trained.predict heldout
   IO.println s!"prediction={Tensor.pretty yhat}"
@@ -267,8 +266,8 @@ For a true vectorized minibatch, define:
 def batchedModel :
     nn.Builder
       (nn.Sequential
-        (shape![2, 2])
-        (shape![2, 1])) :=
+        [2, 2]
+        [2, 1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -276,7 +275,7 @@ def batchedModel :
   ]
 
 def batchedData :
-    Trainer.DataSource (shape![2, 2]) (shape![2, 1]) :=
+    Trainer.Dataset [2, 2] [2, 1] :=
   Data.batchDataset 2 data
     (shuffle := true)
     (seed := 2026)
@@ -318,24 +317,14 @@ lake exe torchlean quickstart_mlp \
   --device cpu --execution typed-graph --steps 20 --seed 2026
 ```
 
-Eager execution records operations and local reverse rules as they execute. Typed graph execution
-records a typed forward/derivative graph once and reuses it with current parameters and inputs.
-
 The trainer method remains `train`; `execution := .typedGraph` changes how that method runs without
-changing the model's `forward` definition.
+changing the model's `forward` definition. The execution chapter develops the graph reuse and proof
+boundaries in detail.
 
 Typed graph trainer execution is currently CPU-only. A non-CPU typed graph request is rejected rather
 than silently falling back to a different semantics.
 
 # Device Selection Is A Profile
-
-The execution profile records more than a device enum:
-
-- target device and platform;
-- provider preference;
-- numerical and assurance policy;
-- forward and VJP ownership;
-- available kernel capsules.
 
 Programmatically:
 
@@ -360,8 +349,9 @@ lake -R -K cuda=true exe torchlean quickstart_mlp \
   --device cuda --steps 20 --seed 2026 --show-backend
 ```
 
-`--show-backend` prints the selected capsules as operations first execute. This is how a run reports
-which provider owned matmul, ReLU, loss, and their VJPs.
+`--show-backend` prints the selected implementation for each operation. The
+[backend chapter](Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/) explains the
+profile, provider, VJP, and evidence fields in that report.
 
 Named future devices such as Metal, ROCm, TPU, or Trainium may be represented in configuration, but
 `withDevice` fails if the current build has no maintained profile. A name in an enum is not an
@@ -400,7 +390,7 @@ def loadForThisModel (path : System.FilePath) :=
 ```
 
 The result is an `IO` action returning tensors whose dependent shape list is exactly
-`nn.stateShapes (nn.build 2026 model)`. `Checkpoint.toRuntimeState` turns such a checked pack into
+`nn.stateShapes (nn.build 2026 model)`. The runtime checkpoint loader turns such a checked pack into
 runtime state handles, while `Checkpoint.loadModule` and
 `Checkpoint.saveModule` work with an already instantiated runtime module.
 

@@ -38,7 +38,7 @@ import NN.API
 open TorchLean
 
 def model :
-    nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+    nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -94,9 +94,8 @@ Proofs use these definitions rather than reverse-engineering an opaque native bu
 ## The running program
 
 The eager runtime owns autograd tape nodes, parameter and optimizer state, and optional accelerator
-buffers. A backend profile decides which device and provider supply an operation. The checked CPU
-profile, native CUDA profile, and LibTorch-forward profile are execution choices. Selecting one does
-not, by itself, prove its kernels satisfy the mathematical specification.
+buffers. A backend profile selects implementations without changing the source model. The backend
+chapter explains the maintained profiles and what their evidence supports.
 
 ## The operation graph
 
@@ -130,11 +129,11 @@ $$`\operatorname{Tensor}\;\alpha\;s`.
 For example,
 
 ```
-def predictions : Tensor Float (shape![32, 1]) :=
-  tensorOfList! [32, 1] (List.replicate 32 0.0)
+def predictions : Tensor Float [32, 1] :=
+  Tensor.full [32, 1] 0.0
 
-def labels : Tensor Float (shape![32]) :=
-  tensorOfList! [32] (List.replicate 32 0.0)
+def labels : Tensor Float [32] :=
+  Tensor.full [32] 0.0
 ```
 
 These are different types. A loss that expects equal shapes cannot silently broadcast the label
@@ -198,11 +197,9 @@ PyTorch has far broader operator coverage, distributed training, mature compiler
 models, and years of production optimization. Reimplementing all of that inside Lean would be a
 poor use of both systems.
 
-TorchLean can therefore call native CUDA or LibTorch for expensive operations. The source model,
-parameter layout, and graph remain TorchLean objects; a backend profile chooses the implementation.
-For example, LibTorch may compute the forward value of scaled dot-product attention while
-TorchLean records the tape node and applies its own backward rule. Another profile may use native
-TorchLean CUDA for both directions. Later we will inspect the capsule that records this choice.
+TorchLean can call native CUDA or LibTorch for expensive operations while the source model,
+parameter layout, and graph remain TorchLean objects. [Inside The Backend Planner](Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/)
+explains how each operation acquires an implementation and an auditable contract.
 
 This gives the project a practical division of labor: use established kernels where scale matters,
 and use Lean to make the surrounding mathematical claim precise.

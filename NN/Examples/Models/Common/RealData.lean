@@ -68,40 +68,33 @@ instance : NeZero imagenet64Height := ⟨by decide⟩
 instance : NeZero imagenet64Width := ⟨by decide⟩
 instance : NeZero imagenet64Classes := ⟨by decide⟩
 
-/-- Shape of one CIFAR-10 image after conversion to CHW layout. -/
-abbrev CifarImage : Shape :=
-  .dim cifarChannels (.dim cifarHeight (.dim cifarWidth .scalar))
+/-- Shape of one CIFAR-10 image after conversion to channel-first layout. -/
+abbrev CifarImage : List Nat :=
+  [cifarChannels, cifarHeight, cifarWidth]
 
 /-- One-hot CIFAR-10 target shape. -/
-abbrev CifarTarget : Shape :=
-  .dim cifarClasses .scalar
+abbrev CifarTarget : List Nat :=
+  [cifarClasses]
 
 /-- Take the top-left `h × w` view of a CIFAR image batch. -/
 def cropCifarImages (batch h w : Nat)
     (hH : h ≤ cifarHeight) (hW : w ≤ cifarWidth)
-    (x : Tensor Float (.dim batch (.dim cifarChannels (.dim cifarHeight (.dim cifarWidth .scalar))))) :
-    Tensor Float (.dim batch (.dim cifarChannels (.dim h (.dim w .scalar)))) :=
-  Spec.Tensor.dim (fun bi =>
-    let img := Spec.getAtSpec x bi
-    Spec.Tensor.dim (fun ch =>
-      let plane := Spec.getAtSpec img ch
-      Spec.Tensor.dim (fun row =>
-        let srcRow : Fin cifarHeight := ⟨row.val, Nat.lt_of_lt_of_le row.isLt hH⟩
-        let line := Spec.getAtSpec plane srcRow
-        Spec.Tensor.dim (fun col =>
-          let srcCol : Fin cifarWidth := ⟨col.val, Nat.lt_of_lt_of_le col.isLt hW⟩
-          Spec.getAtSpec line srcCol))))
+    (x : Tensor Float [batch, cifarChannels, cifarHeight, cifarWidth]) :
+    Tensor Float [batch, cifarChannels, h, w] :=
+  let croppedRows : Tensor Float [batch, cifarChannels, h, cifarWidth] :=
+    Tensor.take x 2 h hH
+  Tensor.take croppedRows 3 w hW
 
 /-- Crop a CIFAR minibatch while leaving the one-hot class labels unchanged. -/
 def cropCifarBatch (batch h w : Nat)
     (hH : h ≤ cifarHeight) (hW : w ≤ cifarWidth)
     (sample : Sample.Batch Float batch CifarImage CifarTarget) :
-    Sample.Supervised Float (.dim batch (.dim cifarChannels (.dim h (.dim w .scalar)))) (.dim batch (.dim cifarClasses .scalar)) :=
+    Sample.Supervised Float [batch, cifarChannels, h, w] [batch, cifarClasses] :=
   Sample.mk (cropCifarImages batch h w hH hW (Sample.x sample)) (Sample.y sample)
 
 /-- ImageNet-style converted image shape used by the higher-resolution diffusion example. -/
-abbrev ImageNet64Image : Shape :=
-  .dim imagenet64Channels (.dim imagenet64Height (.dim imagenet64Width .scalar))
+abbrev ImageNet64Image : List Nat :=
+  [imagenet64Channels, imagenet64Height, imagenet64Width]
 
 /--
 One-hot target shape for ImageNet-style folders.
@@ -109,8 +102,8 @@ One-hot target shape for ImageNet-style folders.
 The diffusion example ignores labels, but reusing `Data.LabeledSource` keeps the data path identical
 to the supervised examples and lets class-directory conversion catch malformed labels early.
 -/
-abbrev ImageNet64Target : Shape :=
-  .dim imagenet64Classes .scalar
+abbrev ImageNet64Target : List Nat :=
+  [imagenet64Classes]
 
 /-- Error message shown when a CIFAR-backed example cannot find the prepared arrays. -/
 def missingCifarHint : String :=
@@ -296,7 +289,7 @@ end HouseholdPowerModelTrainFlags
 
 def loadCifarLoader
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
-    IO (Data.BatchLoader Float batch CifarImage CifarTarget) := do
+    IO (Data.SupervisedEpochs Float batch CifarImage CifarTarget) := do
   Data.requirePairedFiles
     exeName
     "CIFAR-10 images" xPath
@@ -318,12 +311,12 @@ def loadCifarLoader
         throw <| IO.userError hint
   -- Return the typed minibatch loader. Callers can take one batch for a fixed-sample check or pass
   -- the loader to the shared training code for shuffled multi-step training.
-  let dl := Data.batchLoader ds batch (shuffle := true) (seed := seed) (dropLast := true)
+  let dl := Data.supervisedEpochs ds batch (shuffle := true) (seed := seed) (dropLast := true)
   pure dl
 
 /-- Public trainer dataset for prepared CIFAR-10 NPY image/label arrays. -/
 def cifarDataset (nRows : Nat) (xPath yPath : System.FilePath) :
-    Trainer.DataSource CifarImage CifarTarget :=
+    Trainer.Dataset CifarImage CifarTarget :=
   let src := Data.LabeledSource.ofPaths .npy xPath yPath nRows
     [cifarChannels, cifarHeight, cifarWidth] cifarClasses
   Data.labeledDataset src
@@ -362,14 +355,19 @@ def cifarCurve
     (fun opts flags curve =>
       ModelZoo.writeCurveTrainLog flags.log title curve seriesName
         (notes := cifarTrainNotes opts flags (extraNotes opts flags)))
+    (usage? := some <| TrainCommand.runOptionsUsage exeName #[
+      "  --x PATH           CIFAR image NPY file",
+      "  --y PATH           CIFAR label NPY file",
+      "  --n-total N        rows to load"
+    ])
 
 /-- Load one shuffled epoch of full CIFAR-10 minibatches from prepared `.npy` arrays. -/
 def loadCifarBatches
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
-    IO (List (Sample.Batch Float batch CifarImage CifarTarget)) := do
+    IO (Array (Sample.Batch Float batch CifarImage CifarTarget)) := do
   let dl ← loadCifarLoader exeName batch nRows seed xPath yPath
   let (_dl', batches) ← ModelZoo.orThrow exeName <|
-    Data.BatchLoader.nonemptyEpoch exeName dl
+    Data.SupervisedEpochs.nonemptyEpoch exeName dl
   pure batches
 
 /-- Load the first full CIFAR-10 minibatch from the shared CIFAR loader. -/
@@ -377,7 +375,7 @@ def loadCifarBatch
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
     IO (Sample.Batch Float batch CifarImage CifarTarget) := do
   let dl ← loadCifarLoader exeName batch nRows seed xPath yPath
-  ModelZoo.orThrow exeName <| Data.BatchLoader.firstFullBatch exeName dl
+  ModelZoo.orThrow exeName <| Data.SupervisedEpochs.firstFullBatch exeName dl
 
 /--
 Load a user-prepared ImageNet-style `64x64` minibatch.
@@ -388,7 +386,7 @@ and class range before handing the batch to examples.
 -/
 def loadImageNet64Loader
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
-    IO (Data.BatchLoader Float batch ImageNet64Image ImageNet64Target) := do
+    IO (Data.SupervisedEpochs Float batch ImageNet64Image ImageNet64Target) := do
   unless (← xPath.pathExists) do
     throw <| IO.userError s!"{exeName}: missing ImageNet64 images: {xPath}\n{missingImageNet64Hint}"
   unless (← yPath.pathExists) do
@@ -408,16 +406,16 @@ def loadImageNet64Loader
         throw <| IO.userError hint
   -- Same convention as CIFAR: this is the reusable loader for full-dataset loops.
   -- `loadImageNet64Batch` is for call sites that need a single fixed minibatch.
-  let dl := Data.batchLoader ds batch (shuffle := true) (seed := seed) (dropLast := true)
+  let dl := Data.supervisedEpochs ds batch (shuffle := true) (seed := seed) (dropLast := true)
   pure dl
 
 /-- Load one shuffled epoch of full ImageNet64-style minibatches from prepared `.npy` arrays. -/
 def loadImageNet64Batches
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
-    IO (List (Sample.Batch Float batch ImageNet64Image ImageNet64Target)) := do
+    IO (Array (Sample.Batch Float batch ImageNet64Image ImageNet64Target)) := do
   let dl ← loadImageNet64Loader exeName batch nRows seed xPath yPath
   let (_dl', batches) ← ModelZoo.orThrow exeName <|
-    Data.BatchLoader.nonemptyEpoch exeName dl
+    Data.SupervisedEpochs.nonemptyEpoch exeName dl
   pure batches
 
 /-- Load the first full ImageNet64-style minibatch from the shared ImageNet64 loader. -/
@@ -425,7 +423,7 @@ def loadImageNet64Batch
     (exeName : String) (batch nRows seed : Nat) (xPath yPath : System.FilePath) :
     IO (Sample.Batch Float batch ImageNet64Image ImageNet64Target) := do
   let dl ← loadImageNet64Loader exeName batch nRows seed xPath yPath
-  ModelZoo.orThrow exeName <| Data.BatchLoader.firstFullBatch exeName dl
+  ModelZoo.orThrow exeName <| Data.SupervisedEpochs.firstFullBatch exeName dl
 
 /--
 Load a CIFAR minibatch and expose it as a compact flattened vector batch.
@@ -435,29 +433,29 @@ shape-general operation from the public tensor API, so the data path does not re
 image-specific model helper.
 -/
 def loadCifarFeatureBatch (batch : Nat) (cfg : nn.models.DenseGenerative.Config)
-    (hData : cfg.dataDim ≤ Spec.Shape.size CifarImage)
+    (hData : cfg.dataDim ≤ CifarImage.prod)
     (exeName : String) (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    IO (Tensor Float (cfg.dataShape (.dim batch .scalar))) := do
+    IO (Tensor Float (cfg.dataShape [batch])) := do
   let batchSample ← loadCifarBatch exeName batch nRows seed xPath yPath
-  pure (Tensor.flattenPrefix (.dim batch .scalar) cfg.dataDim hData (Sample.x batchSample))
+  pure (Tensor.flattenThenTake [batch] cfg.dataDim hData (Sample.x batchSample))
 
 /--
 Public singleton dataset for compact vector generative examples over flattened CIFAR batches.
 
-Autoencoder, VAE, and VQ-VAE examples all load one real CIFAR batch, flatten it to the compact
-vector boundary, build one supervised sample, and hand that sample to the public trainer API. The
+Autoencoder and supervised latent-bottleneck examples load one real CIFAR batch, flatten it to the
+compact vector boundary, build one supervised sample, and hand that sample to the public trainer API. The
 sample itself may be Float-specific; this dataset constructor casts it into the runtime-selected scalar so the
 command still works across the ordinary public runtime backends.
 -/
-def cifarFeatureDataset {τ : Shape}
+def cifarFeatureDataset {τ : List Nat}
     (batch : Nat)
     (cfg : nn.models.DenseGenerative.Config)
-    (hData : cfg.dataDim ≤ Spec.Shape.size CifarImage)
+    (hData : cfg.dataDim ≤ CifarImage.prod)
     (exeName : String)
-    (mkSample : Tensor Float (cfg.dataShape (.dim batch .scalar)) →
-      Sample.Supervised Float (cfg.dataShape (.dim batch .scalar)) τ)
+    (mkSample : Tensor Float (cfg.dataShape [batch]) →
+      Sample.Supervised Float (cfg.dataShape [batch]) τ)
     (xPath yPath : System.FilePath) (nRows seed : Nat) :
-    Trainer.DataSource (cfg.dataShape (.dim batch .scalar)) τ :=
+    Trainer.Dataset (cfg.dataShape [batch]) τ :=
   Data.singletonFloatIO do
     let x ← loadCifarFeatureBatch batch cfg hData exeName xPath yPath nRows seed
     pure (mkSample x)
@@ -468,8 +466,8 @@ abbrev TextCorpusFlags := text.TextCorpusPathOptions
 namespace TextCorpusFlags
 
 /-- Command-line options shared by local text-corpus examples. -/
-def help : List String :=
-  [ "  --data-file PATH      read a local UTF-8 text corpus"
+def help : Array String :=
+  #[ "  --data-file PATH      read a local UTF-8 text corpus"
   , "  --tiny-shakespeare    use data/real/tinyshakespeare/input.txt"
   ]
 

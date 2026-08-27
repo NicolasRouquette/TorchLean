@@ -332,8 +332,8 @@ def attention : KernelCapsule :=
     notes := "This is the CPU/reference attention contract." }
 
 /-- Cross-platform reference capsules. -/
-def capsules : List KernelCapsule :=
-  [ matmul
+def capsules : Array KernelCapsule :=
+  #[ matmul
   , linear
   , mseLoss
   , relu

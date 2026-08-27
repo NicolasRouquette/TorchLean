@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Training.Log
-public import NN.Runtime.Autograd.Train.Dataset
 
 @[expose] public section
 
@@ -21,7 +20,6 @@ namespace TorchLean.Training
 
 export _root_.Runtime.Training
   (Curve TrainLog ExperimentLog LogDestination MetricHistory)
-export _root_.Runtime.Autograd.Train (Dataset DataLoader)
 
 namespace MetricHistory
 

@@ -12,14 +12,18 @@ public import NN.Verification.Util.Array
 public import NN.Verification.Util.Json
 
 /-!
-# Margin Certificate Checker
+# Logit-Bound Report Checker
 
-Reusable checker for per-example logit-margin certificates (`robust_margin_cert_v0_1`).
+Reusable consistency checker for exported per-example logit bounds (`robust_margin_cert_v0_1`).
 
 The checker reads exported output bounds and recomputes the strict top-label margin:
 
 $\mathrm{logits}_{\mathrm{hi}}[j]<\mathrm{logits}_{\mathrm{lo}}[\mathrm{label}]$ for every
 $j\neq\mathrm{label}$.
+
+This module does not establish that the bounds enclose a model on an input region. That requires a
+separate verifier or a TorchLean propagation theorem. The checker validates only the internal
+arithmetic and summary fields of the supplied report.
 -/
 
 @[expose] public section
@@ -33,10 +37,10 @@ open Lean
 open Data
 open NN.Verification.Json
 
-/-- Certificate format tag expected at the top level of margin certificate JSON files. -/
+/-- Format tag expected at the top level of exported logit-bound reports. -/
 def formatTag : String := "robust_margin_cert_v0_1"
 
-/-- Running counters for nominal and certified accuracy reports. -/
+/-- Running counters for nominal accuracy and margin outcomes. -/
 structure Counters where
   /-- Number of examples checked. -/
   total : Nat := 0
@@ -57,7 +61,7 @@ def push (counts : Counters) (nominalOk cert : Bool) : Counters :=
 
 end Counters
 
-/-- Check one JSON example object and return `(nominalOk, certifiedOk)`. -/
+/-- Check one report entry and return `(nominalOk, positiveMargin)`. -/
 def checkOneExample (numClasses : Nat) (ex : Json) : IO (Bool × Bool) := do
   let exObj ← expectObj ex "example"
   let label ← expectFieldNat exObj "label" "example"
@@ -83,7 +87,7 @@ def checkOneExample (numClasses : Nat) (ex : Json) : IO (Bool × Bool) := do
   pure (nominalOk, cert)
 
 /--
-Check a `robust_margin_cert_v0_1` JSON certificate file.
+Check the internal consistency of a `robust_margin_cert_v0_1` JSON report.
 
 If `timing = true`, prints per-example timings every `timingEvery` examples.
 -/
@@ -92,6 +96,8 @@ def checkWithTiming (path : String) (timing : Bool) (timingEvery : Nat) : IO Uni
   expectFormat topObj formatTag
   let numClasses ← expectFieldNat topObj "num_classes" "top-level"
   let examples ← expectFieldArray topObj "examples" "top-level"
+  if examples.isEmpty then
+    throw <| IO.userError "margin report contains no examples"
 
   let timeMs {α : Type} (act : IO α) : IO (α × Float) := do
     let t0 ← IO.monoNanosNow
@@ -111,17 +117,17 @@ def checkWithTiming (path : String) (timing : Bool) (timingEvery : Nat) : IO Uni
       if ms > maxMs then
         maxMs := ms
       if timingEvery > 0 && counts.total % timingEvery == 0 then
-        IO.println s!"[margin cert] example {counts.total}: {ms} ms"
+        IO.println s!"[margin report] example {counts.total}: {ms} ms"
     else
       let (nominalOk, cert) ← checkOneExample numClasses ex
       counts := counts.push nominalOk cert
 
-  IO.println s!"[margin cert] examples={counts.total}"
-  IO.println s!"[margin cert] nominal_ok={counts.nominalOk} (requires 'pred' in examples)"
-  IO.println s!"[margin cert] certified_ok={counts.certifiedOk}"
+  IO.println s!"[margin report] examples={counts.total}"
+  IO.println s!"[margin report] nominal_ok={counts.nominalOk} (requires 'pred' in examples)"
+  IO.println s!"[margin report] positive_margin={counts.certifiedOk}"
   if timing then
     let avgMs := if counts.total == 0 then 0.0 else totalMs / counts.total.toFloat
-    IO.println s!"[margin cert] timing avg_ms={avgMs} max_ms={maxMs}"
+    IO.println s!"[margin report] timing avg_ms={avgMs} max_ms={maxMs}"
 
   match ← optionalField? topObj "summary" "top-level" with
   | none => pure ()
@@ -137,20 +143,20 @@ def checkWithTiming (path : String) (timing : Bool) (timingEvery : Nat) : IO Uni
       checkNatField "nominal_ok" counts.nominalOk
       checkNatField "certified_ok" counts.certifiedOk
 
-/-- Check a margin certificate file with timing disabled. -/
+/-- Check a logit-bound report with timing disabled. -/
 def check (path : String) : IO Unit :=
   checkWithTiming path false 0
 
-/-- Parsed CLI flags for a margin-certificate run. -/
+/-- Parsed CLI flags for a logit-bound report run. -/
 structure RunArgs where
-  /-- Certificate JSON path. -/
+  /-- Report JSON path. -/
   path : String
   /-- Print per-example checker timings. -/
   timing : Bool := false
   /-- Print every `timingEvery` examples when timing is enabled; `0` disables periodic lines. -/
   timingEvery : Nat := 0
 
-/-- Parse shared margin-certificate CLI flags. -/
+/-- Parse shared margin-report CLI flags. -/
 def parseRunArgs (defaultPath : String) (args : List String) : Except String RunArgs := do
   let args := TorchLean.CLI.dropDashDash args
   let (timing, args) ← TorchLean.CLI.takeBoolFlagOnce args "timing"
@@ -159,7 +165,7 @@ def parseRunArgs (defaultPath : String) (args : List String) : Except String Run
   TorchLean.CLI.checkNoArgs args
   pure { path := path, timing := timing, timingEvery := timingEvery }
 
-/-- Run the checker with a caller-provided default certificate path. -/
+/-- Run the checker with a caller-provided default report path. -/
 def runWithDefault (defaultPath : String) (args : List String) : IO Unit := do
   let parsed ←
     match parseRunArgs defaultPath args with

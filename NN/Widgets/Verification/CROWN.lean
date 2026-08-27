@@ -164,18 +164,20 @@ private def nodeStateHtml {α : Type} [Context α] [ToString α]
     </div>
   </details>
 
-/-- Render a short list preview, clipping with `...` when the list is long. -/
-private def listPreview {α : Type} [ToString α] (maxElems : Nat) (xs : List α) : String :=
-  let head := xs.take maxElems
-  let clipped : Bool := decide (xs.length > maxElems)
-  "[" ++ String.intercalate ", " (head.map toString) ++ (if clipped then ", ..." else "") ++ "]"
+/-- Render a short array preview, clipping with `...` when the array is long. -/
+private def arrayPreview {α : Type} [ToString α] (maxElems : Nat) (xs : Array α) : String :=
+  let head := xs.extract 0 (min maxElems xs.size)
+  let body := head.foldl (fun acc x =>
+    if acc.isEmpty then toString x else acc ++ ", " ++ toString x) ""
+  let suffix := if xs.size > maxElems then ", ..." else ""
+  "[" ++ body ++ suffix ++ "]"
 
 /-- Produce a compact one-line preview of a flat interval box. -/
 private def flatBoxPreview {α : Type} [Context α] [ToString α] (b : FlatBox α) (maxElems : Nat := 4)
   : String :=
-  let lo := toList (α := α) (s := .dim b.dim .scalar) b.lo
-  let hi := toList (α := α) (s := .dim b.dim .scalar) b.hi
-  s!"lo={listPreview (α := α) maxElems lo}, hi={listPreview (α := α) maxElems hi}"
+  let lo := Spec.Tensor.toArray b.lo
+  let hi := Spec.Tensor.toArray b.hi
+  s!"lo={arrayPreview (α := α) maxElems lo}, hi={arrayPreview (α := α) maxElems hi}"
 
 /-- Build a DOT graph for compact visualization of state coverage across nodes. -/
 private def crownDot {α : Type} [Context α] [ToString α] (g : Graph) (ps : PropState α)
@@ -218,7 +220,7 @@ private def crownDot {α : Type} [Context α] [ToString α] (g : Graph) (ps : Pr
     (List.range n).foldl (fun acc nid =>
       match g.nodes[nid]? with
       | none => acc
-      | some nd => acc ++ (nd.parents.map (fun p => s!"  n{p} -> n{nid};"))) []
+      | some nd => acc ++ (nd.parents.map (fun p => s!"  n{p} -> n{nid};")).toList) []
   header ++ String.intercalate "\n" (nodes ++ edges) ++ "\n}\n"
 
 /-- Render a compact table summary of per-node state availability and previews. -/
@@ -359,19 +361,17 @@ interval widths $\mathrm{hi}-\mathrm{lo}$ node-by-node.
 This viewer computes width summaries per node and highlights missing IBP coverage.
 -/
 
-/-- Compute `(min, max, mean)` for a nonempty list. -/
-private def listStats {α : Type} [Context α] (xs : List α) : Option (α × α × α) :=
-  match xs with
-  | [] => none
-  | x :: rest =>
-      let mn := rest.foldl (fun acc y => min acc y) x
-      let mx := rest.foldl (fun acc y => max acc y) x
-      let sum := rest.foldl (fun acc y => acc + y) x
-      let mean := sum / (↑((x :: rest).length) : α)
-      some (mn, mx, mean)
+/-- Compute `(min, max, mean)` for a nonempty array. -/
+private def arrayStats {α : Type} [Context α] (xs : Array α) : Option (α × α × α) :=
+  xs[0]?.map fun x =>
+    let rest := xs.extract 1 xs.size
+    let mn := rest.foldl (fun acc y => min acc y) x
+    let mx := rest.foldl (fun acc y => max acc y) x
+    let sum := rest.foldl (fun acc y => acc + y) x
+    let mean := sum / (↑xs.size : α)
+    (mn, mx, mean)
 
-private def flatBoxWidthTensor {α : Type} [Context α] (b : FlatBox α) : Tensor α (.dim b.dim
-  .scalar) :=
+private def flatBoxWidthTensor {α : Type} [Context α] (b : FlatBox α) : Tensor α [b.dim] :=
   -- Width per flattened component.
   Tensor.subSpec (α := α) b.hi b.lo
 
@@ -469,8 +469,8 @@ def boundsTightnessHtml {α : Type} [Context α] [ToString α]
                     </tr>
                 | some b =>
                     let wT := flatBoxWidthTensor (α := α) b
-                    let ws : List α := toList (α := α) (s := .dim b.dim .scalar) wT
-                    let stats := listStats (α := α) ws
+                    let ws : Array α := Spec.Tensor.toArray wT
+                    let stats := arrayStats (α := α) ws
                     let mxS := match stats with | none => "?" | some s => toString s.2.1
                     let meanS := match stats with | none => "?" | some s => toString s.2.2
                     ;

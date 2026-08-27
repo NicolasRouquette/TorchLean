@@ -172,15 +172,16 @@ theorem cert_encloses_semantics
               -- `castDimScalar rfl.symm` is definitional; use the point-box lemma.
               simpa [encloses, castDimScalar] using encloses_point_self_real (n := v.n) (x := v.v)
         case detach =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               -- With no parents, `certStepNode?` is `none`, contradicting `some B`.
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' : some B = getBox? cert p1 := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' : some v = getVal? vals p1 := by
@@ -199,7 +200,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       have hB_eq : B = B1 := by
                         have : some B = some B1 := by simpa [hgb] using hcertStep'
@@ -214,539 +215,537 @@ theorem cert_encloses_semantics
                       simpa using hpar'
         case add =>
           -- Extract parents.
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.binaryParents? (g.nodes[k]!).parents with
+          | none =>
               -- `certStepNode?` would be `none`, contradicting `cert[k] = some`.
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 rest =>
-              cases rest with
-              | nil =>
-                  simp [certStepNode?, hkKind, hparents] at hcertStep
-              | cons p2 _ =>
-                  -- From the certificate step: B = boxAdd Bp1 Bp2.
-                  have hp1c : p1 < cert.size :=
-                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
-                  have hp2c : p2 < cert.size :=
-                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
-                  have hcertStep' := by
-                      simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
-                  -- From the semantics step: v = x + y (and dims match).
-                  have hp1v : p1 < vals.size :=
-                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-                  have hp2v : p2 < vals.size :=
-                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-                  have hvalStep' := by
-                      simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
-                  -- Extract concrete parent boxes/values (they must exist since this node produced
-                  -- `some`).
-                  cases hgb1 : getBox? cert p1 with
+          | some parents =>
+              rcases parents with ⟨p1, p2⟩
+              have hp1mem := NN.IR.fst_mem_of_binaryParents?_eq_some hparents
+              have hp2mem := NN.IR.snd_mem_of_binaryParents?_eq_some hparents
+              -- From the certificate step: B = boxAdd Bp1 Bp2.
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
+              have hp2c : p2 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk hp2mem
+              have hcertStep' := by
+                  simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
+              -- From the semantics step: v = x + y (and dims match).
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
+              have hp2v : p2 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk hp2mem
+              have hvalStep' := by
+                  simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
+              -- Extract concrete parent boxes/values (they must exist since this node produced
+              -- `some`).
+              cases hgb1 : getBox? cert p1 with
+              | none =>
+                  simp [hgb1] at hcertStep'
+              | some B1 =>
+                  cases hgb2 : getBox? cert p2 with
                   | none =>
-                      simp [hgb1] at hcertStep'
-                  | some B1 =>
-                      cases hgb2 : getBox? cert p2 with
+                      simp [hgb1, hgb2] at hcertStep'
+                  | some B2 =>
+                      cases hgv1 : getVal? vals p1 with
                       | none =>
-                          simp [hgb1, hgb2] at hcertStep'
-                      | some B2 =>
-                          cases hgv1 : getVal? vals p1 with
+                          simp [hgv1] at hvalStep'
+                      | some v1 =>
+                          cases hgv2 : getVal? vals p2 with
                           | none =>
-                              simp [hgv1] at hvalStep'
-                          | some v1 =>
-                              cases hgv2 : getVal? vals p2 with
+                              simp [hgv1, hgv2] at hvalStep'
+                          | some v2 =>
+                              have hB1 : cert[p1]! = some B1 := by
+                                simpa [getBox?, hp1c] using hgb1
+                              have hB2 : cert[p2]! = some B2 := by
+                                simpa [getBox?, hp2c] using hgb2
+                              have hv1 : vals[p1]! = some v1 := by
+                                simpa [getVal?, hp1v] using hgv1
+                              have hv2 : vals[p2]! = some v2 := by
+                                simpa [getVal?, hp2v] using hgv2
+                              have hpar1' : EnclosesBox B1 v1 := by
+                                have h := parentIH p1 hp1mem
+                                simpa [hB1, hv1] using h
+                              have hpar2' : EnclosesBox B2 v2 := by
+                                have h := parentIH p2 hp2mem
+                                simpa [hB2, hv2] using h
+                              rcases hpar1' with ⟨hDim1, hxEnc⟩
+                              rcases hpar2' with ⟨hDim2, hyEnc⟩
+                              by_cases hxy : v1.n = v2.n
+                              ·
+                              -- Dimensions agree; prove enclosure using `box_add_sound` plus
+                              -- casts.
+                                have hBB : B1.dim = B2.dim :=
+                                  Eq.trans hDim1 (Eq.trans hxy (Eq.symm hDim2))
+                                have hcertStep'' := hcertStep'
+                                simp [hgb1, hgb2, hBB] at hcertStep''
+                                cases hcertStep''
+                                have hvalStep'' := hvalStep'
+                                simp [hgv1, hgv2, hxy] at hvalStep''
+                                cases hvalStep''
+                                -- Make `boxAdd` reducible by destructing the boxes and using
+                                -- the equal-dimension branch.
+                                cases B1 with
+                                | mk n1 lo1 hi1 =>
+                                  cases B2 with
+                                  | mk n2 lo2 hi2 =>
+                                    have hBB' : n1 = n2 := by
+                                      simpa using hBB
+                                    cases hBB'
+                                    let x : Tensor ℝ [n1] :=
+                                      castDimScalar (α := ℝ) hDim1.symm v1.v
+                                    let y : Tensor ℝ [n1] :=
+                                      castDimScalar (α := ℝ) hDim2.symm v2.v
+                                    have hEncl :
+                                        encloses
+                                          { dim := n1
+                                            lo := Tensor.addSpec (α := ℝ) lo1 lo2
+                                            hi := Tensor.addSpec (α := ℝ) hi1 hi2 }
+                                          (Tensor.addSpec (α := ℝ) x y) :=
+                                      NN.MLTheory.CROWN.Graph.Theorems.Semantics.box_add_sound
+                                        (α := ℝ) (n := n1)
+                                        (lo1 := lo1) (hi1 := hi1) (lo2 := lo2) (hi2 := hi2)
+                                        (add_mono := add_mono_real)
+                                        (x := x) (y := y)
+                                        (hx := by simpa [x] using hxEnc)
+                                        (hy := by simpa [y] using hyEnc)
+                                    have hBoxEq := by
+                                      letI : BoundOps ℝ := instBoundOpsReal
+                                      exact
+                                        (NN.MLTheory.CROWN.Graph.Theorems.box_add_on_eq (α := ℝ)
+                                          n1 lo1 hi1 lo2 hi2)
+                                    have hProof :
+                                        Eq.trans hxy.symm hDim1.symm = hDim2.symm := by
+                                      apply Subsingleton.elim
+                                    have hValEq :
+                                        castDimScalar (α := ℝ) hDim1.symm
+                                            (Tensor.addSpec (α := ℝ) v1.v
+                                              (castDimScalar (α := ℝ) hxy.symm v2.v))
+                                          = Tensor.addSpec (α := ℝ) x y := by
+                                      have h1 :
+                                          castDimScalar (α := ℝ) hDim1.symm
+                                            (Tensor.addSpec (α := ℝ) v1.v
+                                              (castDimScalar (α := ℝ) hxy.symm v2.v))
+                                            =
+                                              Tensor.addSpec (α := ℝ)
+                                                (castDimScalar (α := ℝ) hDim1.symm v1.v)
+                                                (castDimScalar (α := ℝ) hDim1.symm
+                                                  (castDimScalar (α := ℝ) hxy.symm v2.v)) := by
+                                        simpa using
+                                          castDimScalar_add_spec (h := hDim1.symm) (x := v1.v)
+                                            (y := castDimScalar (α := ℝ) hxy.symm v2.v)
+                                      have h2 :
+                                          castDimScalar (α := ℝ) hDim1.symm
+                                            (castDimScalar (α := ℝ) hxy.symm v2.v)
+                                            = y := by
+                                        have := (castDimScalar_trans (h₁ := hxy.symm) (h₂ :=
+                                          hDim1.symm) (t := v2.v)).symm
+                                        simp [y] at this ⊢
+                                      simpa [x, y, h2] using h1
+                                    -- Prove enclosure for the canonical “equal-dimension”
+                                    -- result box,
+                                    -- then rewrite the goal box (`boxAdd …`) using `hBoxEq`.
+                                    have hCanon :
+                                        EnclosesBox
+                                          { dim := n1
+                                            lo := Tensor.addSpec (α := ℝ) lo1 lo2
+                                            hi := Tensor.addSpec (α := ℝ) hi1 hi2 }
+                                          { n := v1.n
+                                            v :=
+                                              Tensor.addSpec (α := ℝ) v1.v
+                                                (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
+                                      refine ⟨hDim1, ?_⟩
+                                      have : encloses
+                                          { dim := n1
+                                            lo := Tensor.addSpec (α := ℝ) lo1 lo2
+                                            hi := Tensor.addSpec (α := ℝ) hi1 hi2 }
+                                          (Tensor.addSpec (α := ℝ) x y) := hEncl
+                                      simpa [hValEq] using this
+                                    have hCanon' :
+                                            EnclosesBox
+                                              { dim := n1,
+                                                  lo := Tensor.map2Spec
+                                                    (@BoundOps.addDown ℝ inferInstance
+                                                      instBoundOpsReal) lo1 lo2,
+                                                  hi := Tensor.map2Spec
+                                                    (@BoundOps.addUp ℝ inferInstance
+                                                      instBoundOpsReal) hi1 hi2 }
+                                          { n := v1.n
+                                            v :=
+                                              Tensor.addSpec (α := ℝ) v1.v
+                                                  (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
+                                        have hdown :
+                                            (@BoundOps.addDown ℝ inferInstance instBoundOpsReal) =
+                                              (fun x y : ℝ => x + y) := rfl
+                                        have hup :
+                                            (@BoundOps.addUp ℝ inferInstance instBoundOpsReal) =
+                                              (fun x y : ℝ => x + y) := rfl
+                                        simpa [Tensor.addSpec, Tensor.map2Spec, hdown, hup] using hCanon
+                                    simpa [hBoxEq] using hCanon'
+                              ·
+                                simp [hgv1, hgv2, hxy] at hvalStep'
+
+        case mul_elem =>
+          cases hparents : NN.IR.binaryParents? (g.nodes[k]!).parents with
+          | none =>
+              simp [certStepNode?, hkKind, hparents] at hcertStep
+          | some parents =>
+              rcases parents with ⟨p1, p2⟩
+              have hp1mem := NN.IR.fst_mem_of_binaryParents?_eq_some hparents
+              have hp2mem := NN.IR.snd_mem_of_binaryParents?_eq_some hparents
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
+              have hp2c : p2 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk hp2mem
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
+              have hp2v : p2 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk hp2mem
+              have hcertStep' := by
+                  simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
+              have hvalStep' := by
+                  simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
+              cases hgb1 : getBox? cert p1 with
+              | none =>
+                  simp [hgb1] at hcertStep'
+              | some B1 =>
+                  cases hgb2 : getBox? cert p2 with
+                  | none =>
+                      simp [hgb1, hgb2] at hcertStep'
+                  | some B2 =>
+                      cases hgv1 : getVal? vals p1 with
+                      | none =>
+                          simp [hgv1] at hvalStep'
+                      | some v1 =>
+                          cases hgv2 : getVal? vals p2 with
+                          | none =>
+                              simp [hgv1, hgv2] at hvalStep'
+                          | some v2 =>
+                              have hB1 : cert[p1]! = some B1 := by
+                                simpa [getBox?, hp1c] using hgb1
+                              have hB2 : cert[p2]! = some B2 := by
+                                simpa [getBox?, hp2c] using hgb2
+                              have hv1 : vals[p1]! = some v1 := by
+                                simpa [getVal?, hp1v] using hgv1
+                              have hv2 : vals[p2]! = some v2 := by
+                                simpa [getVal?, hp2v] using hgv2
+                              have hpar1 : EnclosesBox B1 v1 := by
+                                have h := parentIH p1 hp1mem
+                                simpa [hB1, hv1] using h
+                              have hpar2 : EnclosesBox B2 v2 := by
+                                have h := parentIH p2 hp2mem
+                                simpa [hB2, hv2] using h
+                              rcases hpar1 with ⟨hDim1, hx1⟩
+                              rcases hpar2 with ⟨hDim2, hx2⟩
+                              have hcertStep'' : some B = boxMulElem (α := ℝ) B1 B2 := by
+                                simpa [hgb1, hgb2] using hcertStep'
+                              cases hmul : boxMulElem (α := ℝ) B1 B2 with
                               | none =>
-                                  simp [hgv1, hgv2] at hvalStep'
-                              | some v2 =>
-                                  have hB1 : cert[p1]! = some B1 := by
-                                    simpa [getBox?, hp1c] using hgb1
-                                  have hB2 : cert[p2]! = some B2 := by
-                                    simpa [getBox?, hp2c] using hgb2
-                                  have hv1 : vals[p1]! = some v1 := by
-                                    simpa [getVal?, hp1v] using hgv1
-                                  have hv2 : vals[p2]! = some v2 := by
-                                    simpa [getVal?, hp2v] using hgv2
-                                  have hpar1' : EnclosesBox B1 v1 := by
-                                    have h := parentIH p1 (by simp [hparents])
-                                    simpa [hB1, hv1] using h
-                                  have hpar2' : EnclosesBox B2 v2 := by
-                                    have h := parentIH p2 (by simp [hparents])
-                                    simpa [hB2, hv2] using h
-                                  rcases hpar1' with ⟨hDim1, hxEnc⟩
-                                  rcases hpar2' with ⟨hDim2, hyEnc⟩
+                                  simp [hmul] at hcertStep''
+                              | some Bmul =>
+                                  have hB_eq : B = Bmul := by
+                                    have h := hcertStep''
+                                    simp [hmul] at h
+                                    cases h
+                                    rfl
+                                  subst B
                                   by_cases hxy : v1.n = v2.n
-                                  ·
-                                  -- Dimensions agree; prove enclosure using `box_add_sound` plus
-                                  -- casts.
-                                    have hBB : B1.dim = B2.dim :=
-                                      Eq.trans hDim1 (Eq.trans hxy (Eq.symm hDim2))
-                                    have hcertStep'' := hcertStep'
-                                    simp [hgb1, hgb2, hBB] at hcertStep''
-                                    cases hcertStep''
-                                    have hvalStep'' := hvalStep'
-                                    simp [hgv1, hgv2, hxy] at hvalStep''
-                                    cases hvalStep''
-                                    -- Make `boxAdd` reducible by destructing the boxes and using
-                                    -- the equal-dimension branch.
+                                  · -- Unfold the value step under the `dims match` branch.
+                                    have hvEq :
+                                        v =
+                                          ⟨v1.n,
+                                            Tensor.mulSpec (α := ℝ) v1.v
+                                              (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)⟩ := by
+                                      have : (some v : Option Val) =
+                                          some
+                                            ⟨v1.n,
+                                              Tensor.mulSpec (α := ℝ) v1.v
+                                                (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)⟩ :=
+                                                  by
+                                        simpa [hgv1, hgv2, hxy] using hvalStep'
+                                      cases this
+                                      rfl
+                                    subst hvEq
+                                    -- Reduce to tensors at dimension `Bmul.dim` and apply
+                                    -- `box_mul_elem_sound_real`.
                                     cases B1 with
                                     | mk n1 lo1 hi1 =>
                                       cases B2 with
                                       | mk n2 lo2 hi2 =>
-                                        have hBB' : n1 = n2 := by
-                                          simpa using hBB
-                                        cases hBB'
-                                        let x : Tensor ℝ (.dim n1 .scalar) :=
+                                        -- `Bmul` coming from `boxMulElem` forces equal
+                                        -- dimensions.
+                                        have hn12 : n1 = n2 := by
+                                          by_contra hne
+                                          have : boxMulElem (α := ℝ)
+                                              { dim := n1, lo := lo1, hi := hi1 }
+                                              { dim := n2, lo := lo2, hi := hi2 } = none := by
+                                            unfold boxMulElem
+                                            simp [hne]
+                                          have : False := by
+                                            simp [this] at hmul
+                                          exact this.elim
+                                        cases hn12
+                                        let x : Tensor ℝ [n1] :=
                                           castDimScalar (α := ℝ) hDim1.symm v1.v
-                                        let y : Tensor ℝ (.dim n1 .scalar) :=
+                                        let y : Tensor ℝ [n1] :=
                                           castDimScalar (α := ℝ) hDim2.symm v2.v
-                                        have hEncl :
-                                            encloses
-                                              { dim := n1
-                                                lo := Tensor.addSpec (α := ℝ) lo1 lo2
-                                                hi := Tensor.addSpec (α := ℝ) hi1 hi2 }
-                                              (Tensor.addSpec (α := ℝ) x y) :=
-                                          NN.MLTheory.CROWN.Graph.Theorems.Semantics.box_add_sound
-                                            (α := ℝ) (n := n1)
+                                        have hx : encloses { dim := n1, lo := lo1, hi := hi1 } x
+                                          := by
+                                          simpa [x] using hx1
+                                        have hy : encloses { dim := n1, lo := lo2, hi := hi2 } y
+                                          := by
+                                          simpa [y] using hx2
+                                        have hMulEncl :
+                                            EnclosesBox Bmul ⟨n1, Tensor.mulSpec (α := ℝ) x y⟩
+                                              :=
+                                          box_mul_elem_sound_real (n := n1)
                                             (lo1 := lo1) (hi1 := hi1) (lo2 := lo2) (hi2 := hi2)
-                                            (add_mono := add_mono_real)
-                                            (x := x) (y := y)
-                                            (hx := by simpa [x] using hxEnc)
-                                            (hy := by simpa [y] using hyEnc)
-                                        have hBoxEq := by
-                                          letI : BoundOps ℝ := instBoundOpsReal
-                                          exact
-                                            (NN.MLTheory.CROWN.Graph.Theorems.box_add_on_eq (α := ℝ)
-                                              n1 lo1 hi1 lo2 hi2)
-                                        have hProof :
-                                            Eq.trans hxy.symm hDim1.symm = hDim2.symm := by
-                                          apply Subsingleton.elim
-                                        have hValEq :
+                                              (x := x) (y := y) hx hy
+                                            (B := Bmul) (by simpa using hmul)
+                                        rcases hMulEncl with ⟨hDimMul, hEncMul⟩
+                                        -- We need enclosure for the semantic value `v`, whose
+                                        -- dimension is `v1.n`.
+                                        -- Use `hDimMul : Bmul.dim = n1` and `hDim1 : n1 =
+                                        -- v1.n`.
+                                        let hW : Bmul.dim = v1.n := Eq.trans hDimMul hDim1
+                                        refine ⟨hW, ?_⟩
+                                        -- Rewrite the value cast into the `x*y` cast used by
+                                        -- `hEncMul`.
+                                        have hvCast0 :
                                             castDimScalar (α := ℝ) hDim1.symm
-                                                (Tensor.addSpec (α := ℝ) v1.v
-                                                  (castDimScalar (α := ℝ) hxy.symm v2.v))
-                                              = Tensor.addSpec (α := ℝ) x y := by
-                                          have h1 :
+                                                (Tensor.mulSpec (α := ℝ) v1.v
+                                                  (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v))
+                                              =
+                                              Tensor.mulSpec (α := ℝ) x y := by
+                                          -- Commute the cast with multiplication and rewrite
+                                          -- the second input cast into `y`.
+                                          have hyCast :
                                               castDimScalar (α := ℝ) hDim1.symm
-                                                (Tensor.addSpec (α := ℝ) v1.v
-                                                  (castDimScalar (α := ℝ) hxy.symm v2.v))
-                                                =
-                                                  Tensor.addSpec (α := ℝ)
-                                                    (castDimScalar (α := ℝ) hDim1.symm v1.v)
-                                                    (castDimScalar (α := ℝ) hDim1.symm
-                                                      (castDimScalar (α := ℝ) hxy.symm v2.v)) := by
-                                            simpa using
-                                              castDimScalar_add_spec (h := hDim1.symm) (x := v1.v)
-                                                (y := castDimScalar (α := ℝ) hxy.symm v2.v)
-                                          have h2 :
-                                              castDimScalar (α := ℝ) hDim1.symm
-                                                (castDimScalar (α := ℝ) hxy.symm v2.v)
+                                                  (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)
                                                 = y := by
-                                            have := (castDimScalar_trans (h₁ := hxy.symm) (h₂ :=
-                                              hDim1.symm) (t := v2.v)).symm
-                                            simp [y] at this ⊢
-                                          simpa [x, y, h2] using h1
-                                        -- Prove enclosure for the canonical “equal-dimension”
-                                        -- result box,
-                                        -- then rewrite the goal box (`boxAdd …`) using `hBoxEq`.
-                                        have hCanon :
-                                            EnclosesBox
-                                              { dim := n1
-                                                lo := Tensor.addSpec (α := ℝ) lo1 lo2
-                                                hi := Tensor.addSpec (α := ℝ) hi1 hi2 }
-                                              { n := v1.n
-                                                v :=
-                                                  Tensor.addSpec (α := ℝ) v1.v
-                                                    (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
-                                          refine ⟨hDim1, ?_⟩
-                                          have : encloses
-                                              { dim := n1
-                                                lo := Tensor.addSpec (α := ℝ) lo1 lo2
-                                                hi := Tensor.addSpec (α := ℝ) hi1 hi2 }
-                                              (Tensor.addSpec (α := ℝ) x y) := hEncl
-                                          simpa [hValEq] using this
-                                        have hCanon' :
-                                                EnclosesBox
-                                                  { dim := n1,
-                                                      lo := Tensor.map2Spec
-                                                        (@BoundOps.addDown ℝ inferInstance
-                                                          instBoundOpsReal) lo1 lo2,
-                                                      hi := Tensor.map2Spec
-                                                        (@BoundOps.addUp ℝ inferInstance
-                                                          instBoundOpsReal) hi1 hi2 }
-                                              { n := v1.n
-                                                v :=
-                                                  Tensor.addSpec (α := ℝ) v1.v
-                                                      (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
-                                            have hdown :
-                                                (@BoundOps.addDown ℝ inferInstance instBoundOpsReal) =
-                                                  (fun x y : ℝ => x + y) := rfl
-                                            have hup :
-                                                (@BoundOps.addUp ℝ inferInstance instBoundOpsReal) =
-                                                  (fun x y : ℝ => x + y) := rfl
-                                            simpa [Tensor.addSpec, Tensor.map2Spec, hdown, hup] using hCanon
-                                        simpa [hBoxEq] using hCanon'
+                                            -- Both sides are casts of `v2.v` to dimension `n1`.
+                                            have hEq :
+                                                Eq.trans (Eq.symm hxy) hDim1.symm = hDim2.symm
+                                                  := by
+                                              apply Subsingleton.elim
+                                            -- Reassociate casts and rewrite.
+                                            have hnest :
+                                                castDimScalar (α := ℝ) hDim1.symm
+                                                    (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)
+                                                  =
+                                                  castDimScalar (α := ℝ) (Eq.trans (Eq.symm hxy)
+                                                    hDim1.symm) v2.v := by
+                                              simp
+                                            simp [y] at hnest ⊢
+                                          -- Now simplify using `x` and `hyCast`.
+                                          simp [x, castDimScalar_mul_spec, hyCast]
+                                        have hvCast :
+                                            castDimScalar (α := ℝ) hW.symm
+                                                (Tensor.mulSpec (α := ℝ) v1.v
+                                                  (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v))
+                                              =
+                                              castDimScalar (α := ℝ) hDimMul.symm
+                                                (Tensor.mulSpec (α := ℝ) x y) := by
+                                          -- `hW.symm` and `hDim1.symm.trans hDimMul.symm` are
+                                          -- both proofs of `v1.n = Bmul.dim`.
+                                          have hts : hW.symm = Eq.trans hDim1.symm hDimMul.symm
+                                            := by
+                                            apply Subsingleton.elim
+                                          -- Expand `hW.symm` into a composite cast, then use
+                                          -- `hvCast0`.
+                                          calc
+                                            castDimScalar (α := ℝ) hW.symm
+                                                (Tensor.mulSpec (α := ℝ) v1.v
+                                                  (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v))
+                                                =
+                                                castDimScalar (α := ℝ) hDimMul.symm
+                                                  (castDimScalar (α := ℝ) hDim1.symm
+                                                    (Tensor.mulSpec (α := ℝ) v1.v
+                                                      (castDimScalar (α := ℝ) (Eq.symm hxy)
+                                                        v2.v))) := by
+                                                  -- Reassociate casts along `hDim1.symm` then
+                                                  -- `hDimMul.symm`.
+                                                  simp
+                                            _ = castDimScalar (α := ℝ) hDimMul.symm
+                                              (Tensor.mulSpec (α := ℝ) x y) := by
+                                                  simpa using
+                                                    congrArg (fun t => castDimScalar (α := ℝ)
+                                                      hDimMul.symm t) hvCast0
+                                        -- `hEncMul` is already phrased using `hDimMul`.
+                                        simpa [hvCast] using hEncMul
                                   ·
                                     simp [hgv1, hgv2, hxy] at hvalStep'
-
-        case mul_elem =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
-              simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 rest =>
-              cases rest with
-              | nil =>
-                  simp [certStepNode?, hkKind, hparents] at hcertStep
-              | cons p2 _ =>
-                  have hp1c : p1 < cert.size :=
-                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
-                  have hp2c : p2 < cert.size :=
-                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
-                  have hp1v : p1 < vals.size :=
-                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-                  have hp2v : p2 < vals.size :=
-                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-                  have hcertStep' := by
-                      simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
-                  have hvalStep' := by
-                      simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
-                  cases hgb1 : getBox? cert p1 with
-                  | none =>
-                      simp [hgb1] at hcertStep'
-                  | some B1 =>
-                      cases hgb2 : getBox? cert p2 with
-                      | none =>
-                          simp [hgb1, hgb2] at hcertStep'
-                      | some B2 =>
-                          cases hgv1 : getVal? vals p1 with
-                          | none =>
-                              simp [hgv1] at hvalStep'
-                          | some v1 =>
-                              cases hgv2 : getVal? vals p2 with
-                              | none =>
-                                  simp [hgv1, hgv2] at hvalStep'
-                              | some v2 =>
-                                  have hB1 : cert[p1]! = some B1 := by
-                                    simpa [getBox?, hp1c] using hgb1
-                                  have hB2 : cert[p2]! = some B2 := by
-                                    simpa [getBox?, hp2c] using hgb2
-                                  have hv1 : vals[p1]! = some v1 := by
-                                    simpa [getVal?, hp1v] using hgv1
-                                  have hv2 : vals[p2]! = some v2 := by
-                                    simpa [getVal?, hp2v] using hgv2
-                                  have hpar1 : EnclosesBox B1 v1 := by
-                                    have h := parentIH p1 (by simp [hparents])
-                                    simpa [hB1, hv1] using h
-                                  have hpar2 : EnclosesBox B2 v2 := by
-                                    have h := parentIH p2 (by simp [hparents])
-                                    simpa [hB2, hv2] using h
-                                  rcases hpar1 with ⟨hDim1, hx1⟩
-                                  rcases hpar2 with ⟨hDim2, hx2⟩
-                                  have hcertStep'' : some B = boxMulElem (α := ℝ) B1 B2 := by
-                                    simpa [hgb1, hgb2] using hcertStep'
-                                  cases hmul : boxMulElem (α := ℝ) B1 B2 with
-                                  | none =>
-                                      simp [hmul] at hcertStep''
-                                  | some Bmul =>
-                                      have hB_eq : B = Bmul := by
-                                        have h := hcertStep''
-                                        simp [hmul] at h
-                                        cases h
-                                        rfl
-                                      subst B
-                                      by_cases hxy : v1.n = v2.n
-                                      · -- Unfold the value step under the `dims match` branch.
-                                        have hvEq :
-                                            v =
-                                              ⟨v1.n,
-                                                Tensor.mulSpec (α := ℝ) v1.v
-                                                  (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)⟩ := by
-                                          have : (some v : Option Val) =
-                                              some
-                                                ⟨v1.n,
-                                                  Tensor.mulSpec (α := ℝ) v1.v
-                                                    (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)⟩ :=
-                                                      by
-                                            simpa [hgv1, hgv2, hxy] using hvalStep'
-                                          cases this
-                                          rfl
-                                        subst hvEq
-                                        -- Reduce to tensors at dimension `Bmul.dim` and apply
-                                        -- `box_mul_elem_sound_real`.
-                                        cases B1 with
-                                        | mk n1 lo1 hi1 =>
-                                          cases B2 with
-                                          | mk n2 lo2 hi2 =>
-                                            -- `Bmul` coming from `boxMulElem` forces equal
-                                            -- dimensions.
-                                            have hn12 : n1 = n2 := by
-                                              by_contra hne
-                                              have : boxMulElem (α := ℝ)
-                                                  { dim := n1, lo := lo1, hi := hi1 }
-                                                  { dim := n2, lo := lo2, hi := hi2 } = none := by
-                                                unfold boxMulElem
-                                                simp [hne]
-                                              have : False := by
-                                                simp [this] at hmul
-                                              exact this.elim
-                                            cases hn12
-                                            let x : Tensor ℝ (.dim n1 .scalar) :=
-                                              castDimScalar (α := ℝ) hDim1.symm v1.v
-                                            let y : Tensor ℝ (.dim n1 .scalar) :=
-                                              castDimScalar (α := ℝ) hDim2.symm v2.v
-                                            have hx : encloses { dim := n1, lo := lo1, hi := hi1 } x
-                                              := by
-                                              simpa [x] using hx1
-                                            have hy : encloses { dim := n1, lo := lo2, hi := hi2 } y
-                                              := by
-                                              simpa [y] using hx2
-                                            have hMulEncl :
-                                                EnclosesBox Bmul ⟨n1, Tensor.mulSpec (α := ℝ) x y⟩
-                                                  :=
-                                              box_mul_elem_sound_real (n := n1)
-                                                (lo1 := lo1) (hi1 := hi1) (lo2 := lo2) (hi2 := hi2)
-                                                  (x := x) (y := y) hx hy
-                                                (B := Bmul) (by simpa using hmul)
-                                            rcases hMulEncl with ⟨hDimMul, hEncMul⟩
-                                            -- We need enclosure for the semantic value `v`, whose
-                                            -- dimension is `v1.n`.
-                                            -- Use `hDimMul : Bmul.dim = n1` and `hDim1 : n1 =
-                                            -- v1.n`.
-                                            let hW : Bmul.dim = v1.n := Eq.trans hDimMul hDim1
-                                            refine ⟨hW, ?_⟩
-                                            -- Rewrite the value cast into the `x*y` cast used by
-                                            -- `hEncMul`.
-                                            have hvCast0 :
-                                                castDimScalar (α := ℝ) hDim1.symm
-                                                    (Tensor.mulSpec (α := ℝ) v1.v
-                                                      (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v))
-                                                  =
-                                                  Tensor.mulSpec (α := ℝ) x y := by
-                                              -- Commute the cast with multiplication and rewrite
-                                              -- the second input cast into `y`.
-                                              have hyCast :
-                                                  castDimScalar (α := ℝ) hDim1.symm
-                                                      (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)
-                                                    = y := by
-                                                -- Both sides are casts of `v2.v` to dimension `n1`.
-                                                have hEq :
-                                                    Eq.trans (Eq.symm hxy) hDim1.symm = hDim2.symm
-                                                      := by
-                                                  apply Subsingleton.elim
-                                                -- Reassociate casts and rewrite.
-                                                have hnest :
-                                                    castDimScalar (α := ℝ) hDim1.symm
-                                                        (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v)
-                                                      =
-                                                      castDimScalar (α := ℝ) (Eq.trans (Eq.symm hxy)
-                                                        hDim1.symm) v2.v := by
-                                                  simp
-                                                simp [y] at hnest ⊢
-                                              -- Now simplify using `x` and `hyCast`.
-                                              simp [x, castDimScalar_mul_spec, hyCast]
-                                            have hvCast :
-                                                castDimScalar (α := ℝ) hW.symm
-                                                    (Tensor.mulSpec (α := ℝ) v1.v
-                                                      (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v))
-                                                  =
-                                                  castDimScalar (α := ℝ) hDimMul.symm
-                                                    (Tensor.mulSpec (α := ℝ) x y) := by
-                                              -- `hW.symm` and `hDim1.symm.trans hDimMul.symm` are
-                                              -- both proofs of `v1.n = Bmul.dim`.
-                                              have hts : hW.symm = Eq.trans hDim1.symm hDimMul.symm
-                                                := by
-                                                apply Subsingleton.elim
-                                              -- Expand `hW.symm` into a composite cast, then use
-                                              -- `hvCast0`.
-                                              calc
-                                                castDimScalar (α := ℝ) hW.symm
-                                                    (Tensor.mulSpec (α := ℝ) v1.v
-                                                      (castDimScalar (α := ℝ) (Eq.symm hxy) v2.v))
-                                                    =
-                                                    castDimScalar (α := ℝ) hDimMul.symm
-                                                      (castDimScalar (α := ℝ) hDim1.symm
-                                                        (Tensor.mulSpec (α := ℝ) v1.v
-                                                          (castDimScalar (α := ℝ) (Eq.symm hxy)
-                                                            v2.v))) := by
-                                                      -- Reassociate casts along `hDim1.symm` then
-                                                      -- `hDimMul.symm`.
-                                                      simp
-                                                _ = castDimScalar (α := ℝ) hDimMul.symm
-                                                  (Tensor.mulSpec (α := ℝ) x y) := by
-                                                      simpa using
-                                                        congrArg (fun t => castDimScalar (α := ℝ)
-                                                          hDimMul.symm t) hvCast0
-                                            -- `hEncMul` is already phrased using `hDimMul`.
-                                            simpa [hvCast] using hEncMul
-                                      ·
-                                        simp [hgv1, hgv2, hxy] at hvalStep'
 
         case sub =>
           -- Similar to `.add`, using `Theorems.Semantics.box_sub_sound`.
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.binaryParents? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 rest =>
-              cases rest with
-              | nil =>
-                  simp [certStepNode?, hkKind, hparents] at hcertStep
-              | cons p2 _ =>
-                  have hp1c : p1 < cert.size :=
-                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
-                  have hp2c : p2 < cert.size :=
-                    parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
-                  have hp1v : p1 < vals.size :=
-                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-                  have hp2v : p2 < vals.size :=
-                    parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
-                  have hcertStep' := by
-                    simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
-                  have hvalStep' := by
-                    simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
-                  cases hgb1 : getBox? cert p1 with
+          | some parents =>
+              rcases parents with ⟨p1, p2⟩
+              have hp1mem := NN.IR.fst_mem_of_binaryParents?_eq_some hparents
+              have hp2mem := NN.IR.snd_mem_of_binaryParents?_eq_some hparents
+              have hp1c : p1 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
+              have hp2c : p2 < cert.size :=
+                parent_lt_array_size cert hcertSz htopo hk hp2mem
+              have hp1v : p1 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
+              have hp2v : p2 < vals.size :=
+                parent_lt_array_size vals hvalsSz htopo hk hp2mem
+              have hcertStep' := by
+                simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
+              have hvalStep' := by
+                simpa [evalNode?, hkKind, hparents] using (Eq.symm hvalStep)
+              cases hgb1 : getBox? cert p1 with
+                | none =>
+                    simp [hgb1] at hcertStep'
+                | some B1 =>
+                    cases hgb2 : getBox? cert p2 with
                     | none =>
-                        simp [hgb1] at hcertStep'
-                    | some B1 =>
-                        cases hgb2 : getBox? cert p2 with
+                        simp [hgb1, hgb2] at hcertStep'
+                    | some B2 =>
+                        cases hgv1 : getVal? vals p1 with
                         | none =>
-                            simp [hgb1, hgb2] at hcertStep'
-                        | some B2 =>
-                            cases hgv1 : getVal? vals p1 with
+                            simp [hgv1] at hvalStep'
+                        | some v1 =>
+                            cases hgv2 : getVal? vals p2 with
                             | none =>
-                                simp [hgv1] at hvalStep'
-                            | some v1 =>
-                                cases hgv2 : getVal? vals p2 with
-                                | none =>
-                                    simp [hgv1, hgv2] at hvalStep'
-                                | some v2 =>
-                                  have hB1 : cert[p1]! = some B1 := by
-                                    simpa [getBox?, hp1c] using hgb1
-                                  have hB2 : cert[p2]! = some B2 := by
-                                    simpa [getBox?, hp2c] using hgb2
-                                  have hv1 : vals[p1]! = some v1 := by
-                                    simpa [getVal?, hp1v] using hgv1
-                                  have hv2 : vals[p2]! = some v2 := by
-                                    simpa [getVal?, hp2v] using hgv2
-                                  have hpar1' : EnclosesBox B1 v1 := by
-                                    have h := parentIH p1 (by simp [hparents])
-                                    simpa [hB1, hv1] using h
-                                  have hpar2' : EnclosesBox B2 v2 := by
-                                    have h := parentIH p2 (by simp [hparents])
-                                    simpa [hB2, hv2] using h
-                                  rcases hpar1' with ⟨hDim1, hxEnc⟩
-                                  rcases hpar2' with ⟨hDim2, hyEnc⟩
-                                  by_cases hxy : v1.n = v2.n
-                                  ·
-                                    have hBB : B1.dim = B2.dim :=
-                                      Eq.trans hDim1 (Eq.trans hxy (Eq.symm hDim2))
-                                    have hcertStep'' := hcertStep'
-                                    simp [hgb1, hgb2, hBB] at hcertStep''
-                                    cases hcertStep''
-                                    have hvalStep'' := hvalStep'
-                                    simp [hgv1, hgv2, hxy] at hvalStep''
-                                    cases hvalStep''
-                                    cases B1 with
-                                    | mk n1 lo1 hi1 =>
-                                      cases B2 with
-                                      | mk n2 lo2 hi2 =>
-                                        have hBB' : n1 = n2 := by
-                                          simpa using hBB
-                                        cases hBB'
-                                        let x : Tensor ℝ (.dim n1 .scalar) :=
-                                          castDimScalar (α := ℝ) hDim1.symm v1.v
-                                        let y : Tensor ℝ (.dim n1 .scalar) :=
-                                          castDimScalar (α := ℝ) hDim2.symm v2.v
-                                        have hEncl :
-                                            encloses
-                                              { dim := n1
-                                                lo := Tensor.subSpec (α := ℝ) lo1 hi2
-                                                hi := Tensor.subSpec (α := ℝ) hi1 lo2 }
-                                              (Tensor.subSpec (α := ℝ) x y) :=
-                                          NN.MLTheory.CROWN.Graph.Theorems.Semantics.box_sub_sound
-                                            (α := ℝ) (n := n1)
-                                            (lo1 := lo1) (hi1 := hi1) (lo2 := lo2) (hi2 := hi2)
-                                            (sub_mono := sub_mono_real)
-                                            (x := x) (y := y)
-                                            (hx := by simpa [x] using hxEnc)
-                                            (hy := by simpa [y] using hyEnc)
-                                        have hBoxEq := by
-                                          letI : BoundOps ℝ := instBoundOpsReal
-                                          exact
-                                            (NN.MLTheory.CROWN.Graph.Theorems.box_sub_on_eq (α := ℝ)
-                                              n1 lo1 hi1 lo2 hi2)
-                                        have hProof :
-                                            Eq.trans hxy.symm hDim1.symm = hDim2.symm := by
-                                          apply Subsingleton.elim
-                                        have hValEq :
-                                            castDimScalar (α := ℝ) hDim1.symm
-                                                (Tensor.subSpec (α := ℝ) v1.v
-                                                  (castDimScalar (α := ℝ) hxy.symm v2.v))
-                                              = Tensor.subSpec (α := ℝ) x y := by
-                                          have h1 :
-                                              castDimScalar (α := ℝ) hDim1.symm
-                                                (Tensor.subSpec (α := ℝ) v1.v
-                                                  (castDimScalar (α := ℝ) hxy.symm v2.v))
-                                                =
-                                                  Tensor.subSpec (α := ℝ)
-                                                    (castDimScalar (α := ℝ) hDim1.symm v1.v)
-                                                    (castDimScalar (α := ℝ) hDim1.symm
-                                                      (castDimScalar (α := ℝ) hxy.symm v2.v)) := by
-                                            simpa using
-                                              castDimScalar_sub_spec (h := hDim1.symm) (x := v1.v)
-                                                (y := castDimScalar (α := ℝ) hxy.symm v2.v)
-                                          have h2 :
-                                              castDimScalar (α := ℝ) hDim1.symm
-                                                (castDimScalar (α := ℝ) hxy.symm v2.v)
-                                                = y := by
-                                            have := (castDimScalar_trans (h₁ := hxy.symm) (h₂ :=
-                                              hDim1.symm) (t := v2.v)).symm
-                                            simp [y] at this ⊢
-                                          simpa [x, y, h2] using h1
-                                        have hCanon :
+                                simp [hgv1, hgv2] at hvalStep'
+                            | some v2 =>
+                              have hB1 : cert[p1]! = some B1 := by
+                                simpa [getBox?, hp1c] using hgb1
+                              have hB2 : cert[p2]! = some B2 := by
+                                simpa [getBox?, hp2c] using hgb2
+                              have hv1 : vals[p1]! = some v1 := by
+                                simpa [getVal?, hp1v] using hgv1
+                              have hv2 : vals[p2]! = some v2 := by
+                                simpa [getVal?, hp2v] using hgv2
+                              have hpar1' : EnclosesBox B1 v1 := by
+                                have h := parentIH p1 hp1mem
+                                simpa [hB1, hv1] using h
+                              have hpar2' : EnclosesBox B2 v2 := by
+                                have h := parentIH p2 hp2mem
+                                simpa [hB2, hv2] using h
+                              rcases hpar1' with ⟨hDim1, hxEnc⟩
+                              rcases hpar2' with ⟨hDim2, hyEnc⟩
+                              by_cases hxy : v1.n = v2.n
+                              ·
+                                have hBB : B1.dim = B2.dim :=
+                                  Eq.trans hDim1 (Eq.trans hxy (Eq.symm hDim2))
+                                have hcertStep'' := hcertStep'
+                                simp [hgb1, hgb2, hBB] at hcertStep''
+                                cases hcertStep''
+                                have hvalStep'' := hvalStep'
+                                simp [hgv1, hgv2, hxy] at hvalStep''
+                                cases hvalStep''
+                                cases B1 with
+                                | mk n1 lo1 hi1 =>
+                                  cases B2 with
+                                  | mk n2 lo2 hi2 =>
+                                    have hBB' : n1 = n2 := by
+                                      simpa using hBB
+                                    cases hBB'
+                                    let x : Tensor ℝ [n1] :=
+                                      castDimScalar (α := ℝ) hDim1.symm v1.v
+                                    let y : Tensor ℝ [n1] :=
+                                      castDimScalar (α := ℝ) hDim2.symm v2.v
+                                    have hEncl :
+                                        encloses
+                                          { dim := n1
+                                            lo := Tensor.subSpec (α := ℝ) lo1 hi2
+                                            hi := Tensor.subSpec (α := ℝ) hi1 lo2 }
+                                          (Tensor.subSpec (α := ℝ) x y) :=
+                                      NN.MLTheory.CROWN.Graph.Theorems.Semantics.box_sub_sound
+                                        (α := ℝ) (n := n1)
+                                        (lo1 := lo1) (hi1 := hi1) (lo2 := lo2) (hi2 := hi2)
+                                        (sub_mono := sub_mono_real)
+                                        (x := x) (y := y)
+                                        (hx := by simpa [x] using hxEnc)
+                                        (hy := by simpa [y] using hyEnc)
+                                    have hBoxEq := by
+                                      letI : BoundOps ℝ := instBoundOpsReal
+                                      exact
+                                        (NN.MLTheory.CROWN.Graph.Theorems.box_sub_on_eq (α := ℝ)
+                                          n1 lo1 hi1 lo2 hi2)
+                                    have hProof :
+                                        Eq.trans hxy.symm hDim1.symm = hDim2.symm := by
+                                      apply Subsingleton.elim
+                                    have hValEq :
+                                        castDimScalar (α := ℝ) hDim1.symm
+                                            (Tensor.subSpec (α := ℝ) v1.v
+                                              (castDimScalar (α := ℝ) hxy.symm v2.v))
+                                          = Tensor.subSpec (α := ℝ) x y := by
+                                      have h1 :
+                                          castDimScalar (α := ℝ) hDim1.symm
+                                            (Tensor.subSpec (α := ℝ) v1.v
+                                              (castDimScalar (α := ℝ) hxy.symm v2.v))
+                                            =
+                                              Tensor.subSpec (α := ℝ)
+                                                (castDimScalar (α := ℝ) hDim1.symm v1.v)
+                                                (castDimScalar (α := ℝ) hDim1.symm
+                                                  (castDimScalar (α := ℝ) hxy.symm v2.v)) := by
+                                        simpa using
+                                          castDimScalar_sub_spec (h := hDim1.symm) (x := v1.v)
+                                            (y := castDimScalar (α := ℝ) hxy.symm v2.v)
+                                      have h2 :
+                                          castDimScalar (α := ℝ) hDim1.symm
+                                            (castDimScalar (α := ℝ) hxy.symm v2.v)
+                                            = y := by
+                                        have := (castDimScalar_trans (h₁ := hxy.symm) (h₂ :=
+                                          hDim1.symm) (t := v2.v)).symm
+                                        simp [y] at this ⊢
+                                      simpa [x, y, h2] using h1
+                                    have hCanon :
+                                        EnclosesBox
+                                          { dim := n1
+                                            lo := Tensor.subSpec (α := ℝ) lo1 hi2
+                                            hi := Tensor.subSpec (α := ℝ) hi1 lo2 }
+                                          { n := v1.n
+                                            v :=
+                                              Tensor.subSpec (α := ℝ) v1.v
+                                                (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
+                                      refine ⟨hDim1, ?_⟩
+                                      have : encloses
+                                          { dim := n1
+                                            lo := Tensor.subSpec (α := ℝ) lo1 hi2
+                                            hi := Tensor.subSpec (α := ℝ) hi1 lo2 }
+                                          (Tensor.subSpec (α := ℝ) x y) := hEncl
+                                      simpa [hValEq] using this
+                                    have hCanon' :
                                             EnclosesBox
-                                              { dim := n1
-                                                lo := Tensor.subSpec (α := ℝ) lo1 hi2
-                                                hi := Tensor.subSpec (α := ℝ) hi1 lo2 }
-                                              { n := v1.n
-                                                v :=
-                                                  Tensor.subSpec (α := ℝ) v1.v
-                                                    (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
-                                          refine ⟨hDim1, ?_⟩
-                                          have : encloses
-                                              { dim := n1
-                                                lo := Tensor.subSpec (α := ℝ) lo1 hi2
-                                                hi := Tensor.subSpec (α := ℝ) hi1 lo2 }
-                                              (Tensor.subSpec (α := ℝ) x y) := hEncl
-                                          simpa [hValEq] using this
-                                        have hCanon' :
-                                                EnclosesBox
-                                                  { dim := n1,
-                                                      lo := Tensor.map2Spec
-                                                        (@BoundOps.subDown ℝ inferInstance
-                                                          instBoundOpsReal) lo1 hi2,
-                                                      hi := Tensor.map2Spec
-                                                        (@BoundOps.subUp ℝ inferInstance
-                                                          instBoundOpsReal) hi1 lo2 }
-                                              { n := v1.n
-                                                v :=
-                                                  Tensor.subSpec (α := ℝ) v1.v
-                                                      (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
-                                            have hdown :
-                                                (@BoundOps.subDown ℝ inferInstance instBoundOpsReal) =
-                                                  (fun x y : ℝ => x - y) := rfl
-                                            have hup :
-                                                (@BoundOps.subUp ℝ inferInstance instBoundOpsReal) =
-                                                  (fun x y : ℝ => x - y) := rfl
-                                            simpa [Tensor.subSpec, Tensor.map2Spec, hdown, hup] using hCanon
-                                        simpa [hBoxEq] using hCanon'
-                                  ·
-                                    simp [hgv1, hgv2, hxy] at hvalStep'
+                                              { dim := n1,
+                                                  lo := Tensor.map2Spec
+                                                    (@BoundOps.subDown ℝ inferInstance
+                                                      instBoundOpsReal) lo1 hi2,
+                                                  hi := Tensor.map2Spec
+                                                    (@BoundOps.subUp ℝ inferInstance
+                                                      instBoundOpsReal) hi1 lo2 }
+                                          { n := v1.n
+                                            v :=
+                                              Tensor.subSpec (α := ℝ) v1.v
+                                                  (castDimScalar (α := ℝ) hxy.symm v2.v) } := by
+                                        have hdown :
+                                            (@BoundOps.subDown ℝ inferInstance instBoundOpsReal) =
+                                              (fun x y : ℝ => x - y) := rfl
+                                        have hup :
+                                            (@BoundOps.subUp ℝ inferInstance instBoundOpsReal) =
+                                              (fun x y : ℝ => x - y) := rfl
+                                        simpa [Tensor.subSpec, Tensor.map2Spec, hdown, hup] using hCanon
+                                    simpa [hBoxEq] using hCanon'
+                              ·
+                                simp [hgv1, hgv2, hxy] at hvalStep'
 
         case relu =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -764,7 +763,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       have hB_eq : B = boxRelu (α := ℝ) B1 := by
                         have : some B = some (boxRelu (α := ℝ) B1) := by
@@ -837,14 +836,15 @@ theorem cert_encloses_semantics
                                   simp
                       simpa [EnclosesBox, hOuter, hReluVal] using hrelu
         case tanh =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -862,7 +862,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
                       have hcertStep'' := hcertStep'
@@ -910,14 +910,15 @@ theorem cert_encloses_semantics
                           houtContains
                       simpa only [toFlatBox, hvCast] using hout
         case sigmoid =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -935,7 +936,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
                       have hcertStep'' := hcertStep'
@@ -984,14 +985,15 @@ theorem cert_encloses_semantics
                           houtContains
                       simpa only [toFlatBox, hvCast] using hout
         case sin =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -1009,7 +1011,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
                       have hcertStep'' := hcertStep'
@@ -1057,14 +1059,15 @@ theorem cert_encloses_semantics
                           (by simpa [castDimScalar] using houtContains)
                       simpa only [toFlatBox, hvCast] using hout
         case cos =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -1082,7 +1085,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
                       have hcertStep'' := hcertStep'
@@ -1129,14 +1132,15 @@ theorem cert_encloses_semantics
                           (by simpa [castDimScalar] using houtContains)
                       simpa only [toFlatBox, hvCast] using hout
         case linear =>
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               -- Certificate step delegates to `ibpLinear`.
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
@@ -1156,7 +1160,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
                       -- Unfold `ibpLinear` and use the already-proved `IBP.linear` soundness
@@ -1244,14 +1248,15 @@ theorem cert_encloses_semantics
                             simp [ibpLinearParams, hXin] at hcertStep'
         case matmul =>
           -- Same as `.linear`, but bias is zero and params come from `ParamStore.matmulW`.
-          cases hparents : (g.nodes[k]!).parents with
-          | nil =>
+          cases hparents : NN.IR.unaryParent? (g.nodes[k]!).parents with
+          | none =>
               simp [certStepNode?, hkKind, hparents] at hcertStep
-          | cons p1 _ =>
+          | some p1 =>
+              have hp1mem := NN.IR.mem_of_unaryParent?_eq_some hparents
               have hp1c : p1 < cert.size :=
-                parent_lt_array_size cert hcertSz htopo hk (by simp [hparents])
+                parent_lt_array_size cert hcertSz htopo hk hp1mem
               have hp1v : p1 < vals.size :=
-                parent_lt_array_size vals hvalsSz htopo hk (by simp [hparents])
+                parent_lt_array_size vals hvalsSz htopo hk hp1mem
               have hcertStep' := by
                 simpa [certStepNode?, hkKind, hparents] using (Eq.symm hcertStep)
               have hvalStep' := by
@@ -1269,7 +1274,7 @@ theorem cert_encloses_semantics
                       have hv1 : vals[p1]! = some v1 := by
                         simpa [getVal?, hp1v] using hgv
                       have hpar' : EnclosesBox B1 v1 := by
-                        have h := parentIH p1 (by simp [hparents])
+                        have h := parentIH p1 hp1mem
                         simpa [hB1, hv1] using h
                       rcases hpar' with ⟨hDim, hxEnc⟩
                       unfold ibpMatmul at hcertStep'
@@ -1314,7 +1319,7 @@ theorem cert_encloses_semantics
                                     (castDimScalar (α := ℝ) hxDim' v1.v) := by
                                 rw [hxCastEq]
                                 exact hxContains1
-                              let z : Tensor ℝ (.dim p.m .scalar) :=
+                              let z : Tensor ℝ [p.m] :=
                                 Spec.fill (α := ℝ) 0 (.dim p.m .scalar)
                               have hz : Box.contains (α := ℝ) (Box.point (α := ℝ) z) z := by
                                 cases z with

@@ -97,19 +97,37 @@ def relu_interval(lo: list[float], hi: list[float]) -> tuple[list[float], list[f
     return [max(0.0, x) for x in lo], [max(0.0, x) for x in hi]
 
 
-def softmax_interval(lo: list[float], hi: list[float]) -> tuple[list[float], list[float]]:
-    """Compute conservative elementwise bounds for softmax over one vector interval."""
+def softmax_range_interval(length: int) -> tuple[list[float], list[float]]:
+    """Mirror TorchLean's format-independent softmax range enclosure.
 
-    elo = [math.exp(x) for x in lo]
-    ehi = [math.exp(x) for x in hi]
-    total_lo = sum(elo)
-    total_hi = sum(ehi)
-    out_lo: list[float] = []
-    out_hi: list[float] = []
-    for i in range(len(lo)):
-        out_lo.append(elo[i] / (elo[i] + (total_hi - ehi[i])))
-        out_hi.append(ehi[i] / (ehi[i] + (total_lo - elo[i])))
-    return out_lo, out_hi
+    The executable checker does not use host ``exp`` calls as directed interval operations.  A
+    singleton softmax is exactly one; every coordinate of a longer vector lies in ``[0, 1]``.
+    """
+
+    if length == 1:
+        return [1.0], [1.0]
+    return [0.0] * length, [1.0] * length
+
+
+def layernorm_range_interval(length: int) -> tuple[list[float], list[float]]:
+    """Mirror TorchLean's uniform last-axis LayerNorm enclosure."""
+
+    if length <= 1:
+        return [0.0] * length, [0.0] * length
+    radius = round_up(math.sqrt(float(length)))
+    return [-radius] * length, [radius] * length
+
+
+def sigmoid_range_interval(length: int) -> tuple[list[float], list[float]]:
+    """Mirror TorchLean's format-independent sigmoid enclosure."""
+
+    return [0.0] * length, [1.0] * length
+
+
+def tanh_range_interval(length: int) -> tuple[list[float], list[float]]:
+    """Mirror TorchLean's format-independent hyperbolic-tangent enclosure."""
+
+    return [-1.0] * length, [1.0] * length
 
 
 def write_json(path: str | Path, payload: dict[str, Any]) -> Path:

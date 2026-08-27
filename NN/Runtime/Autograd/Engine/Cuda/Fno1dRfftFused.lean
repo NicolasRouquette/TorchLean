@@ -16,14 +16,14 @@ public import NN.Runtime.Autograd.Engine.Cuda.Ops
 # CUDA FNO1D (real RFFT fused path)
 
 This file provides a CUDA-only forward + VJP wrapper for a small real-valued FNO1D model whose
-spectral convolution is implemented by the fused cuFFT-backed primitive `Tape.spectralConv1dRfft`.
+spectral convolution is implemented by the fused cuFFT-backed internal tape primitive.
 
 Why this is not a `TorchLean.NN.Layer`:
 - `Layer` is execution-polymorphic and runs through the `Torch.Ops` interface.
 - The fused `spectralConv1dRfft` op is implemented only for the CUDA tape backend.
 
 This module is meant to be called by runnable examples that want the performance path, while the
-portable reference path lives in `NN.Runtime.Autograd.TorchLean.Fno1d`.
+portable arbitrary-rank reference path lives in `NN.Runtime.Autograd.TorchLean.Fno`.
 -/
 
 @[expose] public section
@@ -75,7 +75,7 @@ namespace Forward
 
 /-- Number of CUDA buffer handles owned by a completed forward tape. -/
 def ownedBufferCount (fw : Forward) : Nat :=
-  fw.tape.nodes.foldl (fun n node => n + 1 + node.cleanup.length) 0
+  fw.tape.nodes.foldl (fun n node => n + 1 + node.cleanup.size) 0
 
 /--
 Release every forward value and saved workspace owned by a completed tape.
@@ -221,7 +221,8 @@ def forwardWithBuffers (grid width modes blocks : Nat)
   let (t1, paramIds1, wInId) ← addParamLeaf t0 ps paramBuffers paramIds0 0
   let (t2, paramIds2, bInId) ← addParamLeaf t1 ps paramBuffers paramIds1 1
   let mut paramIds := paramIds2
-  let (t3, h0Id) ← Tape.matmul (t := t2) (m := grid) (n := 1) (p := width) xId wInId
+  let (t3, h0Id) ←
+    Tape.Internal.matmul (t := t2) (m := grid) (n := 1) (p := width) xId wInId
   let (t4, bInBId) ← broadcastVecToMat (grid := grid) (cols := width) t3 bInId
   let (t5, hId0) ← Tape.add (t := t4) (s := hiddenShape) h0Id bInBId
 
@@ -237,9 +238,11 @@ def forwardWithBuffers (grid width modes blocks : Nat)
     t := tC; paramIds := idsC
     let (tD, idsD, bSkipId) ← addParamLeaf t ps paramBuffers paramIds (base + 3)
     t := tD; paramIds := idsD
-    let (tSpec, ySpecId) ← Tape.spectralConv1dRfft (t := t) (grid := grid) (width := width) (modes := modes)
+    let (tSpec, ySpecId) ← Tape.Internal.spectralConv1dRfft (t := t) (grid := grid)
+      (width := width) (modes := modes)
       hId wReId wImId
-    let (tSkip0, ySkip0Id) ← Tape.matmul (t := tSpec) (m := grid) (n := width) (p := width) hId wSkipId
+    let (tSkip0, ySkip0Id) ← Tape.Internal.matmul (t := tSpec) (m := grid) (n := width)
+      (p := width) hId wSkipId
     let (tBias, bSkipBId) ← broadcastVecToMat (grid := grid) (cols := width) tSkip0 bSkipId
     let (tSkip, ySkipId) ← Tape.add (t := tBias) (s := hiddenShape) ySkip0Id bSkipBId
     let (tSum, yId) ← Tape.add (t := tSkip) (s := hiddenShape) ySpecId ySkipId
@@ -252,7 +255,8 @@ def forwardWithBuffers (grid width modes blocks : Nat)
   t := tOutW; paramIds := idsOutW
   let (tOutB, idsOutB, bOutId) ← addParamLeaf t ps paramBuffers paramIds (outBase + 1)
   t := tOutB; paramIds := idsOutB
-  let (tPred0, pred0Id) ← Tape.matmul (t := t) (m := grid) (n := width) (p := 1) hId wOutId
+  let (tPred0, pred0Id) ←
+    Tape.Internal.matmul (t := t) (m := grid) (n := width) (p := 1) hId wOutId
   let (tPredB, bOutBId) ← Tape.broadcastTo (t := tPred0) (s₁ := vec 1) (s₂ := yMatShape)
     Shape.BroadcastTo.proof bOutId
   let (tPred, predId) ← Tape.add (t := tPredB) (s := yMatShape) pred0Id bOutBId
@@ -318,9 +322,9 @@ def predFromTape (grid : Nat) (t : Tape) (id : Nat) : IO (Result (Tensor Float (
       | some y => pure <| .ok y
       | none => pure <| .error "autograd: fused-fno: prediction shape mismatch"
 
-/-- Mean MSE loss over a host-side list of `(input,target)` samples. -/
+/-- Mean MSE loss over a host-side array of `(input,target)` samples. -/
 def meanLoss (grid width modes blocks : Nat)
-    (ps : Array Param) (samples : List (Tensor Float (vec grid) × Tensor Float (vec grid))) :
+    (ps : Array Param) (samples : Array (Tensor Float (vec grid) × Tensor Float (vec grid))) :
     IO (Result Float) := do
   if samples.isEmpty then
     pure <| .ok (0.0 / 0.0)
@@ -338,7 +342,7 @@ def meanLoss (grid width modes blocks : Nat)
           match result with
           | .error msg => return .error msg
           | .ok loss => acc := acc + loss
-    pure <| .ok (acc / Float.ofNat samples.length)
+    pure <| .ok (acc / Float.ofNat samples.size)
 
 /--
 Host-side Adam update for one flattened parameter array.

@@ -49,8 +49,7 @@ namespace Autograd
 namespace TorchLean
 
 export _root_.Runtime.Autograd.Torch
-  (TList
-   TensorRef Param AnyParam
+  (TensorRef Param AnyParam
    ParamList ScalarTrainer scalarTrainer)
 
 -- Unified imperative session (choose eager or typed graph execution at `new` time):
@@ -69,7 +68,7 @@ end Init
 namespace ScalarTrainer
 
 export _root_.Runtime.Autograd.Torch.ScalarTrainer
-  (lossPacked lossAndGradStatePacked gradStatePacked stepPacked)
+  (runLoss runLossAndGradState runGradState runStep)
 
 end ScalarTrainer
 
@@ -77,18 +76,6 @@ end ScalarTrainer
 export _root_.Runtime.Autograd.TorchLean.Optim (StateList Optimizer)
 export _root_.Runtime.Autograd.TorchLean.Optim
   (sgd momentumSGD adagrad rmsprop adam adamw adadelta projectedSGD muon)
-
-/-! ## Module wrappers (PyTorch-style) -/
-export _root_.Runtime.Autograd.TorchLean.Module
-  (ObjectiveDef Objective)
-namespace RuntimeInit
-export _root_.Runtime.Autograd.TorchLean.Module.RuntimeInit
-  (FloatInit Plan xavierUniformForShape kaimingUniformForShape)
-end RuntimeInit
-export _root_.Runtime.Autograd.TorchLean.Module.Objective
-  (create loss lossAndGradState gradState sgdStep initOptimizer optimizerStep state loadState)
-export _root_.Runtime.Autograd.TorchLean.Module.ObjectiveDef
-  (instantiate instantiateWithPlan instantiateWithInit)
 
 end TorchLean
 end Autograd

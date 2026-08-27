@@ -51,7 +51,7 @@ theorem relu_mlp_exact_on_uniform_grid {a b : ℝ} (h_ab : a < b) :
     ∀ {N : ℕ}, 0 < N → ∀ y : Fin (N + 1) → ℝ,
       ∃ (l1 : LinearSpec ℝ 1 N) (l2 : LinearSpec ℝ N 1),
         ∀ k : Fin (N + 1),
-          mlpEval1d N l1 l2 (a + (k.1 : ℝ) * ((b - a) / (N : ℝ))) = y k := by
+          mlpEvalScalar N l1 l2 (a + (k.1 : ℝ) * ((b - a) / (N : ℝ))) = y k := by
   intro N hN y
   classical
   have hba : 0 < b - a := sub_pos.mpr h_ab
@@ -228,9 +228,9 @@ theorem relu_mlp_exact_on_uniform_grid {a b : ℝ} (h_ab : a < b) :
   refine ⟨hingeLayer1 N t, hingeLayer2 N c (yAt 0), ?_⟩
   intro k
   have hnet :
-      mlpEval1d N (hingeLayer1 N t) (hingeLayer2 N c (yAt 0)) (grid k.1) =
+      mlpEvalScalar N (hingeLayer1 N t) (hingeLayer2 N c (yAt 0)) (grid k.1) =
         hingeFun N t c (yAt 0) (grid k.1) := by
-    simpa using (mlp_eval_1d_hinge N t c (yAt 0) (grid k.1))
+    simpa using (mlp_eval_scalar_hinge N t c (yAt 0) (grid k.1))
   have hhinge : hingeFun N t c (yAt 0) (grid k.1) = g (grid k.1) := by
     -- Convert the `Fin` sum in `hinge_fun` to a `Finset.range N` sum.
     unfold hingeFun g t c
@@ -242,7 +242,7 @@ theorem relu_mlp_exact_on_uniform_grid {a b : ℝ} (h_ab : a < b) :
   have hyAt : yAt k.1 = y k := by
     simp [yAt, hk_leN]
   calc
-    mlpEval1d N (hingeLayer1 N t) (hingeLayer2 N c (yAt 0)) (grid k.1)
+    mlpEvalScalar N (hingeLayer1 N t) (hingeLayer2 N c (yAt 0)) (grid k.1)
         = hingeFun N t c (yAt 0) (grid k.1) := hnet
     _ = g (grid k.1) := hhinge
     _ = yAt k.1 := g_grid_eq_yAt k.1 hk_leN
@@ -263,12 +263,12 @@ noncomputable section
 open TorchLean.Floats
 
 /-- Extract scalar from a length-1 tensor (FP32). -/
-def extractScalarOutputFp32 (t : Tensor FP32 (.dim 1 .scalar)) : FP32 :=
+def extractScalarOutputFp32 (t : Tensor FP32 [1]) : FP32 :=
   match t with
   | .dim f => item (f ⟨0, by norm_num⟩)
 
 /-- Evaluate a 2-layer ReLU MLP on a scalar FP32 input (returns an FP32 scalar). -/
-noncomputable def mlpEval1dFp32 (hidDim : ℕ)
+noncomputable def mlpEvalScalarFP32 (hidDim : ℕ)
     (l1 : LinearSpec FP32 1 hidDim) (l2 : LinearSpec FP32 hidDim 1) (x : FP32) : FP32 :=
   extractScalarOutputFp32 (Examples.mlpForward l1 l2 (Tensor.singleton x))
 
@@ -342,12 +342,12 @@ lemma relu_lipschitz (u v : ℝ) : |relu u - relu v| ≤ |u - v| := by
 /-- First FP32 hinge layer: hidden unit $i$ computes $x-t_i$ before ReLU. -/
   noncomputable def hingeLayer1Fp32 (n : ℕ) (t : Fin n → FP32) : LinearSpec FP32 1 n :=
   { weights := Tensor.matrix (m := n) (n := 1) (fun _ _ => (1 : FP32))
-    bias := Tensor.vector (n := n) (fun i => -t i) }
+    bias := Tensor.ofFn (n := n) (fun i => -t i) }
 
 /-- Second FP32 hinge layer: sum hidden activations with coefficients $c_i$ and bias $b$. -/
   noncomputable def hingeLayer2Fp32 (n : ℕ) (c : Fin n → FP32) (b : FP32) : LinearSpec FP32 n 1 :=
   { weights := Tensor.matrix (m := 1) (n := n) (fun _ j => c j)
-    bias := Tensor.vector (n := 1) (fun _ => b) }
+    bias := Tensor.ofFn (n := 1) (fun _ => b) }
 
 /-- One rounded hinge term $c_i\operatorname{ReLU}_{32}(x-t_i)$ in the FP32 model. -/
   noncomputable def hingeTermFp32 {n : ℕ} (c t : Fin n → FP32) (x : FP32) (i : Fin n) : FP32 :=

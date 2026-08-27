@@ -22,11 +22,11 @@ Files:
   semantics and VJPs.
 - `FlashAttention.lean`: FlashAttention style tiling metadata/specs tied back to the same attention
   semantics.
-- `Conv.lean`: 1D/2D convolution and transposed convolution specs plus explicit backward rules.
+- `Conv.lean`: rank-polymorphic convolution and transposed-convolution specs with explicit
+  backward rules.
 - `Pooling.lean`: max/avg pooling, padded pooling, adaptive pooling, and smooth max pooling
   surrogates, including backward/JVP rules.
-- `Pooling/`: two-dimensional, padded, and N-dimensional helpers used by the main pooling
-  umbrella.
+- `Pooling/ND.lean`: shared sliding-window geometry for arbitrary spatial rank.
 - `GlobalPooling.lean`: global avg/max pooling and backward rules.
 - `Normalization.lean`: LayerNorm and BatchNorm style utilities with explicit backward specs.
 - `Embedding.lean`: one-hot embeddings (`oneHot @ W`) and the corresponding VJP.

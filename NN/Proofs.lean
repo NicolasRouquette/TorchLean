@@ -23,15 +23,13 @@ public import NN.Proofs.Autograd.Tape.Core.Soundness
 public import NN.Proofs.Autograd.Tape.Nodes
 public import NN.Proofs.Autograd.Tape.Ops.Attention.MultiHeadSelfAttention
 public import NN.Proofs.Autograd.Tape.Ops.Attention.ScaledDotProduct
-public import NN.Proofs.Autograd.Tape.Ops.Conv.BackwardDot
 public import NN.Proofs.Autograd.Tape.Ops.Conv.FDeriv
 public import NN.Proofs.Autograd.Tape.Ops.Embedding.GatherRows
-public import NN.Proofs.Autograd.Tape.Ops.Norm.BatchNormChannelFirst
+public import NN.Proofs.Autograd.Tape.Ops.Norm.BatchNorm
 public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNorm
 public import NN.Proofs.Autograd.Training.StepAlgebra
 public import NN.Proofs.Gradients.Activation
 public import NN.Proofs.Gradients.Linear
-public import NN.Proofs.IR
 public import NN.Proofs.Models
 public import NN.Proofs.Probability
 public import NN.Proofs.RuntimeApprox

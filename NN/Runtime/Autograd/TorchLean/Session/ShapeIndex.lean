@@ -147,7 +147,7 @@ being strictly positive.
 PyTorch analogy: `torch.log(torch.nn.functional.softplus(x) + eps)`.
 -/
 def safeLog {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) (ε : α := Numbers.epsilon) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.state with
@@ -176,7 +176,7 @@ PyTorch analogy: `torch.flatten(x)` or `x.reshape(-1)`.
 -/
 def flatten {α : Type} (s : Session α) [Inhabited α] [Zero α] [DecidableEq Shape] {sh : Shape}
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim (Spec.Shape.size sh) .scalar)) := do
+  IO (_root_.Runtime.Autograd.Torch.TensorRef α [Spec.Shape.size sh]) := do
   match s.state with
   | .eager sess => EagerSession.flatten (α := α) sess (sh := sh) x
   | .typedGraph sess =>
@@ -198,61 +198,6 @@ def reshape {α : Type} (s : Session α) [Inhabited α] [Zero α] [DecidableEq S
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.reshape (α := α) sess
         (sh1 := sh1) (sh2 := sh2) x h
-
-/--
-Transpose a rank-2 tensor (matrix transpose): `m×n → n×m`.
-
-PyTorch analogy: `x.transpose(0, 1)` (or `x.T` for 2D tensors).
--/
-def transpose2d {α : Type} (s : Session α) [Zero α] [DecidableEq Shape] {m n : Nat}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim m (.dim n .scalar))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim m .scalar))) := do
-  match s.state with
-  | .eager sess => EagerSession.transpose2d (α := α) sess (m := m) (n := n) x
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.transpose2d (α := α) sess (m := m) (n := n) x
-
-/--
-Permute a rank-3 tensor by moving the first axis to the end: `(a, b, c) → (b, c, a)`.
-
-PyTorch analogy: `x.permute(1, 2, 0)`.
--/
-def transpose3dFirstToLast {α : Type} (s : Session α) [Zero α] [DecidableEq Shape] {a b c : Nat}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim a (.dim b (.dim c .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim b (.dim c (.dim a .scalar)))) := do
-  match s.state with
-  | .eager sess => EagerSession.transpose3dFirstToLast (α := α) sess (a := a) (b := b) (c := c) x
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.transpose3dFirstToLast (α := α) sess
-        (a := a) (b := b) (c := c) x
-
-/--
-Permute a rank-3 tensor by moving the last axis to the front: `(a, b, c) → (c, a, b)`.
-
-PyTorch analogy: `x.permute(2, 0, 1)`.
--/
-def transpose3dLastToFirst {α : Type} (s : Session α) [Zero α] [DecidableEq Shape] {a b c : Nat}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim a (.dim b (.dim c .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim c (.dim a (.dim b .scalar)))) := do
-  match s.state with
-  | .eager sess => EagerSession.transpose3dLastToFirst (α := α) sess (a := a) (b := b) (c := c) x
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.transpose3dLastToFirst (α := α) sess
-        (a := a) (b := b) (c := c) x
-
-/--
-Swap the last two axes of a rank-3 tensor: `(a, b, c) → (a, c, b)`.
-
-PyTorch analogy: `x.permute(0, 2, 1)`.
--/
-def transpose3dLastTwo {α : Type} (s : Session α) [Zero α] [DecidableEq Shape] {a b c : Nat}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim a (.dim b (.dim c .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim a (.dim c (.dim b .scalar)))) := do
-  match s.state with
-  | .eager sess => EagerSession.transpose3dLastTwo (α := α) sess (a := a) (b := b) (c := c) x
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.transpose3dLastTwo (α := α) sess (a := a)
-        (b := b) (c := c) x
 
 /--
 Generic "swap adjacent axes" view operation.
@@ -281,8 +226,8 @@ def broadcastTo {α : Type} (s : Session α) [Inhabited α] [Add α] [Zero α] [
 
 /-- Reduce-sum along an axis (dispatches by execution mode). -/
 def reduceSum {α : Type} (s : Session α) [Add α] [Zero α] [Inhabited α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
+  {sh : Shape} (axis : Nat) (x : _root_.Runtime.Autograd.Torch.TensorRef α sh)
+  [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh] :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (shapeAfterSum sh axis)) := do
   match s.state with
   | .eager sess => EagerSession.reduceSum (α := α) sess (sh := sh) axis x
@@ -291,137 +236,50 @@ def reduceSum {α : Type} (s : Session α) [Add α] [Zero α] [Inhabited α] [De
 
 /-- Reduce-mean along an axis (dispatches by execution mode). -/
 def reduceMean {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {sh : Shape} (axis : Nat) [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh]
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
+  {sh : Shape} (axis : Nat) (x : _root_.Runtime.Autograd.Torch.TensorRef α sh)
+  [valid : Shape.HasNonemptyAxis axis sh] [wf : Shape.WellFormed sh] :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α (shapeAfterSum sh axis)) := do
   match s.state with
   | .eager sess => EagerSession.reduceMean (α := α) sess (sh := sh) axis x
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.reduceMean (α := α) sess (sh := sh) axis x
 
-/-- Gather a scalar from a vector at a `Fin` index (dispatches by execution mode). -/
-def gatherScalar {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
-  {n : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (i : Fin n) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) := do
+/-- Select one bounded coordinate from an arbitrary tensor axis. -/
+def select {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
+    {shape : Shape} (axis : Nat) (x : _root_.Runtime.Autograd.Torch.TensorRef α shape)
+    [Shape.AxisInBounds axis shape]
+    (index : Fin (Shape.axisSize shape axis)) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α (shape.eraseAxis axis)) := do
   match s.state with
-  | .eager sess => EagerSession.gatherScalar (α := α) sess (n := n) x i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherScalar (α := α) sess (n := n) x i
+  | .eager session => EagerSession.select (α := α) session axis x index
+  | .typedGraph session =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.select
+        (α := α) session axis x index
 
-/-- Gather a row from a matrix at a `Fin` index (dispatches by execution mode). -/
-def gatherRow {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
-  {rows cols : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols .scalar)))
-    (i : Fin rows) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim cols .scalar)) := do
+/-- Select several bounded coordinates from an arbitrary tensor axis. -/
+def indexSelect {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
+    {shape : Shape} (axis count : Nat) (x : _root_.Runtime.Autograd.Torch.TensorRef α shape)
+    [Shape.AxisInBounds axis shape]
+    (indices : Tensor (Fin (Shape.axisSize shape axis)) [count]) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α (shape.replaceAxis axis count)) := do
   match s.state with
-  | .eager sess => EagerSession.gatherRow (α := α) sess (rows := rows) (cols := cols) x i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherRow (α := α) sess (rows := rows)
-        (cols := cols) x i
+  | .eager session => EagerSession.indexSelect (α := α) session axis count x indices
+  | .typedGraph session =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.indexSelect
+        (α := α) session axis count x indices
 
-/-- Gather a scalar from a vector using a `NatRef` index (dispatches by execution mode).
-  -/
-def gatherScalarRefOrZero {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
-  {n : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (i :
-    _root_.Runtime.Autograd.Torch.NatRef) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) := do
+/-- Add source slices into an arbitrary tensor axis at bounded coordinates. -/
+def scatterAdd {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
+    {shape : Shape} (axis count : Nat) (base : _root_.Runtime.Autograd.Torch.TensorRef α shape)
+    [Shape.AxisInBounds axis shape]
+    (source : _root_.Runtime.Autograd.Torch.TensorRef α (shape.replaceAxis axis count))
+    (indices : Tensor (Fin (Shape.axisSize shape axis)) [count]) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α shape) := do
   match s.state with
-  | .eager sess => EagerSession.gatherScalarRefOrZero (α := α) sess (n := n) x i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherScalarRefOrZero (α := α) sess (n := n) x i
-
-/-- Gather a row from a matrix using a `NatRef` index (dispatches by execution mode). -/
-def gatherRowRefOrZero {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-  {rows cols : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols .scalar)))
-    (i : _root_.Runtime.Autograd.Torch.NatRef) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim cols .scalar)) := do
-  match s.state with
-  | .eager sess => EagerSession.gatherRowRefOrZero (α := α) sess (rows := rows) (cols := cols) x i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherRowRefOrZero (α := α) sess (rows := rows)
-        (cols := cols) x i
-
-/-- Gather a scalar using a raw `Nat` index (dispatches by execution mode). -/
-def gatherScalarNatOrZero {α : Type} (s : Session α) [Zero α] [DecidableEq Shape]
-  {n : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (i : Nat) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) := do
-  match s.state with
-  | .eager sess => EagerSession.gatherScalarNatOrZero (α := α) sess (n := n) x i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherScalarNatOrZero (α := α) sess (n := n) x i
-
-/-- Gather a vector of entries using an index tensor (dispatches by execution mode). -/
-def gatherVecNatOrZero {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  {n k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) (idx : Tensor Nat
-    (.dim k .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k .scalar)) := do
-  match s.state with
-  | .eager sess => EagerSession.gatherVecNatOrZero (α := α) sess (n := n) (k := k) x idx
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherVecNatOrZero (α := α) sess
-        (n := n) (k := k) x idx
-
-/-- Gather multiple rows using an index tensor (dispatches by execution mode). -/
-def gatherRowsNatOrZero {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  {rows cols k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols
-    .scalar)))
-  (idx : Tensor Nat (.dim k .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k (.dim cols .scalar))) := do
-  match s.state with
-  | .eager sess =>
-      EagerSession.gatherRowsNatOrZero (α := α) sess (rows := rows) (cols := cols) (k := k) x idx
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherRowsNatOrZero (α := α) sess
-        (rows := rows) (cols := cols) (k := k) x idx
-
-/-- `gather_vec_nat_or_zero`, but indices are stored in a `NatVecRef` leaf (dispatches to eager vs typed graph
-  backend). -/
-def gatherVecRefOrZero {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  {n k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar))
-  (idx : _root_.Runtime.Autograd.Torch.NatVecRef k) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k .scalar)) := do
-  match s.state with
-  | .eager sess => EagerSession.gatherVecRefOrZero (α := α) sess (n := n) (k := k) x idx
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherVecRefOrZero (α := α) sess
-        (n := n) (k := k) x idx
-
-/-- `gather_rows_nat_or_zero`, but indices are stored in a `NatVecRef` leaf (dispatches to eager vs typed graph
-  backend). -/
-def gatherRowsRefOrZero {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  {rows cols k : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols
-    .scalar)))
-  (idx : _root_.Runtime.Autograd.Torch.NatVecRef k) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim k (.dim cols .scalar))) := do
-  match s.state with
-  | .eager sess =>
-      EagerSession.gatherRowsRefOrZero (α := α) sess (rows := rows) (cols := cols) (k := k) x idx
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.gatherRowsRefOrZero (α := α) sess (rows := rows)
-        (cols := cols) (k := k) x idx
-
-/-- Scatter-add into a vector at a `Fin` index (dispatches by execution mode). -/
-def scatterAddVec {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  {n : Nat} (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar))
-  (v : _root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) (i : Fin n) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim n .scalar)) := do
-  match s.state with
-  | .eager sess => EagerSession.scatterAddVec (α := α) sess (n := n) x v i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.scatterAddVec (α := α) sess (n := n) x v i
-
-/-- Scatter-add into a matrix row at a `Fin` index (dispatches by execution mode). -/
-def scatterAddRow {α : Type} (s : Session α) [Add α] [Zero α] [DecidableEq Shape]
-  {rows cols : Nat}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols .scalar)))
-  (v : _root_.Runtime.Autograd.Torch.TensorRef α (.dim cols .scalar)) (i : Fin rows) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim rows (.dim cols .scalar))) := do
-  match s.state with
-  | .eager sess => EagerSession.scatterAddRow (α := α) sess (rows := rows) (cols := cols) x v i
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.scatterAddRow (α := α) sess (rows := rows)
-        (cols := cols) x v i
+  | .eager session => EagerSession.scatterAdd (α := α) session axis count base source indices
+  | .typedGraph session =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.scatterAdd
+        (α := α) session axis count base source indices
 
 end Session
 

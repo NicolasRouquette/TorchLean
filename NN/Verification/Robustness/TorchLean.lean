@@ -11,6 +11,8 @@ public import NN.MLTheory.CROWN.Core
 public import NN.MLTheory.CROWN.Graph
 public import NN.Verification.TorchLean.Lowering
 
+public import NN.API.Verification
+
 /-!
 # TorchLean Robustness Workflow
 
@@ -73,16 +75,16 @@ def paramShapes : List Spec.Shape := [hiddenWeightShape, hiddenBiasShape, output
 $\mathrm{lo}_0-\mathrm{hi}_1$ from logit bounds. -/
 def margin {α : Type} [Context α]
     (lo hi : Spec.Tensor α yShape) : α :=
-  let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
-  let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
+  let lo0 := _root_.Spec.Tensor.getScalar lo ⟨0, by decide⟩
+  let hi1 := _root_.Spec.Tensor.getScalar hi ⟨1, by decide⟩
   lo0 - hi1
 
 /-- Decide if the output bounds certify
 $\operatorname{logit}_0>\operatorname{logit}_1$. -/
 def certifiedMargin {α : Type} [Context α]
     (lo hi : Spec.Tensor α yShape) : Bool :=
-  let lo0 := _root_.Spec.Tensor.vecGet lo fin0!
-  let hi1 := _root_.Spec.Tensor.vecGet hi fin1!
+  let lo0 := _root_.Spec.Tensor.getScalar lo ⟨0, by decide⟩
+  let hi1 := _root_.Spec.Tensor.getScalar hi ⟨1, by decide⟩
   Context.gtBool lo0 hi1
 
 /-- TorchLean program for a 2-layer ReLU MLP producing two logits. -/
@@ -91,10 +93,14 @@ def classifier {α : Type} [Context α] [DecidableEq Spec.Shape] :
   fun {m} _ _ =>
     fun w1 hiddenBias w2 outputBias x =>
       (do
-        let z1 ← Ops.linear (m := m) (α := α) (inDim := inDim) (outDim := hidDim) w1 hiddenBias x
-        let h ← Ops.relu (m := m) (α := α) (s := hiddenBiasShape) z1
-        Ops.linear (m := m) (α := α) (inDim := hidDim) (outDim := outDim) w2 outputBias h
-        : m (Ops.RefTy (m := m) (α := α) yShape))
+        let z1 ← Runtime.linear
+          (m := m) (α := α)
+          (leading := []) (inDim := inDim) (outDim := hidDim) w1 hiddenBias x
+        let h ← Runtime.relu (m := m) (α := α) (s := hiddenBiasShape) z1
+        Runtime.linear
+          (m := m) (α := α)
+          (leading := []) (inDim := hidDim) (outDim := outDim) w2 outputBias h
+        : m (Runtime.ValueRef (m := m) (α := α) yShape))
 
 /--
 Run the robustness check once under a chosen scalar backend `α`.
@@ -112,16 +118,16 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   -- The chosen weights keep the hidden pre-activation positive over the whole ε-box, so the ReLU
   -- stays linear and the expected certified margin is easy to inspect by hand.
   let hiddenWeight : Spec.Tensor α hiddenWeightShape :=
-    NN.Tensor.ofListOfLength (α := α) [1, 2] [cast 1.0, cast 1.0] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1, 2] #[1.0, 1.0])
   let hiddenBias : Spec.Tensor α hiddenBiasShape :=
-    NN.Tensor.ofListOfLength (α := α) [1] [cast 0.0] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1] #[0.0])
   let outputWeight : Spec.Tensor α outputWeightShape :=
-    NN.Tensor.ofListOfLength (α := α) [2, 1] [cast 1.0, cast (-1.0)] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2, 1] #[1.0, -1.0])
   let outputBias : Spec.Tensor α outputBiasShape :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 0.0, cast 0.0] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.0, 0.0])
 
-  let params : TensorPack α paramShapes :=
-    TensorPack! hiddenWeight, hiddenBias, outputWeight, outputBias
+  let params : _root_.TorchLean.TensorPack α paramShapes :=
+    _root_.TorchLean.TensorPack! hiddenWeight, hiddenBias, outputWeight, outputBias
 
   let lowered ←
     match Verification.lowerProgramToIR
@@ -131,9 +137,9 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
     | .error e => throw <| IO.userError e
 
   let x0 : Spec.Tensor α xShape :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 1.0, cast 1.0] (by rfl)
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[1.0, 1.0])
   let eps : α := Runtime.ofFloat 0.1
-  let xB : FlatBox α := Verification.lInfBall (α := α) x0 eps
+  let xB : FlatBox α := NN.Verification.TorchLean.lInfBall (α := α) x0 eps
   let ps : ParamStore α := lowered.seedInputBox xB
 
   IO.println s!"lowered IR nodes: {lowered.graph.nodes.size}"
@@ -163,7 +169,11 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
   | .ok outAff =>
       if hIn : outAff.inDim = inDim then
         if hOut : outAff.outDim = outDim then
-          let outC := outAff.evalOnFlatBoxAsDim xB hIn.symm hOut
+          have hBoxDim : xB.dim = inDim := by
+            change (NN.Verification.TorchLean.lInfBall x0 eps).dim = inDim
+            rw [NN.Verification.TorchLean.lInfBall_dim]
+            rfl
+          let outC := outAff.evalOnFlatBoxAsDim xB (hBoxDim.trans hIn.symm) hOut
           let loY : Spec.Tensor α yShape := by
             simpa [yShape] using outC.lo
           let hiY : Spec.Tensor α yShape := by
@@ -181,9 +191,9 @@ def runOnce {α : Type} [_root_.Context α] [DecidableEq Spec.Shape] [ToString �
           s!"[CROWN] unexpected input dim {outAff.inDim} (expected {inDim}); skipping affine eval"
 
   -- Backward/dual CROWN (objective-dependent) for the margin: logit0 - logit1.
-  let objV : Spec.Tensor α (.dim outDim .scalar) :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 1.0, cast (-1.0)] (by rfl)
-  let obj : FlatVec α := { n := outDim, v := objV }
+  let objV : Spec.Tensor α [outDim] :=
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[1.0, -1.0])
+  let obj : FlatTensor α := { n := outDim, v := objV }
   match lowered.backwardObjectiveBox? ps ibp xB obj with
   | .ok outC =>
       let loM : α := getAtOrZero outC.lo [0]

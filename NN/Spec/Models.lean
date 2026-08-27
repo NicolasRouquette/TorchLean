@@ -27,9 +27,7 @@ public import NN.Spec.Models.S4
 public import NN.Spec.Models.Seq2seq
 public import NN.Spec.Models.Svm
 public import NN.Spec.Models.Transformer
-public import NN.Spec.Models.Unet
 public import NN.Spec.Models.Vae
-public import NN.Spec.Models.Vit
 public import NN.Spec.Models.VqVae
 
 /-!

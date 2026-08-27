@@ -81,7 +81,7 @@ def propagateReluBounds
 /-- Propagate ReLU bounds with externally supplied α slopes for crossing neurons. -/
 def propagateReluBoundsWithAlpha
   (preB : FlatBox α) (xB : FlatAffineBounds α) (hout : xB.outDim = preB.dim)
-  (alpha : Tensor α (.dim preB.dim .scalar)) : FlatAffineBounds α := by
+  (alpha : Tensor α [preB.dim]) : FlatAffineBounds α := by
   -- Upper relaxation: standard secant/tight bounds (independent of α).
   let relaxHi0 := NN.MLTheory.CROWN.Runtime.Ops.ReLU.relaxVector (α:=α) (n:=preB.dim) preB.lo
     preB.hi
@@ -90,7 +90,7 @@ def propagateReluBoundsWithAlpha
   let clamp01 (x : α) : α :=
     let x0 := if x > Numbers.zero then x else Numbers.zero
     if x0 > Numbers.one then Numbers.one else x0
-  let relaxLo0 : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) (.dim preB.dim .scalar) :=
+  let relaxLo0 : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [preB.dim] :=
     match preB.lo, preB.hi, alpha with
     | .dim lF, .dim uF, .dim aF =>
       Tensor.dim (fun i =>
@@ -128,7 +128,7 @@ def propagateExpBounds
   -- Per-component [l,u]
   let flo := getDimScalarFn (α:=α) preB.lo
   let fhi := getDimScalarFn (α:=α) preB.hi
-  let slopes_hi : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -137,7 +137,7 @@ def propagateExpBounds
           if den > Numbers.epsilon then (MathFunctions.exp u - MathFunctions.exp l) / den
           else MathFunctions.exp l
         Tensor.scalar a)
-  let bias_hi : Tensor α (.dim preB.dim .scalar) :=
+  let bias_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -148,12 +148,12 @@ def propagateExpBounds
         let b := MathFunctions.exp l - a * l
         Tensor.scalar b)
   -- Lower: tangent at l
-  let slopes_lo : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i with
       | .scalar l =>
         Tensor.scalar (MathFunctions.exp l))
-  let bias_lo : Tensor α (.dim preB.dim .scalar) :=
+  let bias_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i with
       | .scalar l =>
@@ -174,29 +174,29 @@ def propagateLogBounds
   let flo := getDimScalarFn (α:=α) preB.lo
   let fhi := getDimScalarFn (α:=α) preB.hi
   -- Clamp to positive domain.
-  let loSafe : Tensor α (.dim preB.dim .scalar) :=
+  let loSafe : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i with
       | .scalar v => Tensor.scalar (if v > Numbers.epsilon then v else Numbers.epsilon))
-  let hiSafe : Tensor α (.dim preB.dim .scalar) :=
+  let hiSafe : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match fhi i with
       | .scalar v => Tensor.scalar (if v > Numbers.epsilon then v else Numbers.epsilon))
   let floS := getDimScalarFn (α:=α) loSafe
   let fhiS := getDimScalarFn (α:=α) hiSafe
   -- Upper: tangent at loSafe (concave ⇒ tangent is over-approx).
-  let slopes_hi : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match floS i with
       | .scalar l => Tensor.scalar (Numbers.one / l))
-  let bias_hi : Tensor α (.dim preB.dim .scalar) :=
+  let bias_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match floS i with
       | .scalar l =>
         let a := Numbers.one / l
         Tensor.scalar (MathFunctions.log l - a * l))
   -- Lower: secant on [loSafe, hiSafe] (concave ⇒ secant is under-approx).
-  let slopes_lo : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match floS i, fhiS i with
       | .scalar l, .scalar u =>
@@ -205,7 +205,7 @@ def propagateLogBounds
           if den > Numbers.epsilon then (MathFunctions.log u - MathFunctions.log l) / den
           else Numbers.one / l
         Tensor.scalar a)
-  let bias_lo : Tensor α (.dim preB.dim .scalar) :=
+  let bias_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match floS i, fhiS i with
       | .scalar l, .scalar u =>
@@ -231,7 +231,7 @@ def propagateSigmoidBounds
   let fhi := getDimScalarFn (α:=α) preB.hi
   let σ (x : α) := Activation.Math.sigmoidSpec (α:=α) x
   let σ' (x : α) := Activation.Math.sigmoidDerivSpec (α:=α) x
-  let slopes_hi : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -245,7 +245,7 @@ def propagateSigmoidBounds
           else
             Numbers.zero
         Tensor.scalar a)
-  let bias_hi : Tensor α (.dim preB.dim .scalar) :=
+  let bias_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -261,7 +261,7 @@ def propagateSigmoidBounds
             -- Crossing: constant upper bound = σ(u)
             σ u
         Tensor.scalar b)
-  let slopes_lo : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -274,7 +274,7 @@ def propagateSigmoidBounds
           else
             Numbers.zero
         Tensor.scalar a)
-  let bias_lo : Tensor α (.dim preB.dim .scalar) :=
+  let bias_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -306,7 +306,7 @@ def propagateTanhBounds
   let fhi := getDimScalarFn (α:=α) preB.hi
   let t (x : α) := Activation.Math.tanhSpec (α:=α) x
   let t' (x : α) := Activation.Math.tanhDerivSpec (α:=α) x
-  let slopes_hi : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -319,7 +319,7 @@ def propagateTanhBounds
           else
             Numbers.zero
         Tensor.scalar a)
-  let bias_hi : Tensor α (.dim preB.dim .scalar) :=
+  let bias_hi : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -334,7 +334,7 @@ def propagateTanhBounds
           else
             t u
         Tensor.scalar b)
-  let slopes_lo : Tensor α (.dim preB.dim .scalar) :=
+  let slopes_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>
@@ -347,7 +347,7 @@ def propagateTanhBounds
           else
             Numbers.zero
         Tensor.scalar a)
-  let bias_lo : Tensor α (.dim preB.dim .scalar) :=
+  let bias_lo : Tensor α [preB.dim] :=
     Tensor.dim (fun i =>
       match flo i, fhi i with
       | .scalar l, .scalar u =>

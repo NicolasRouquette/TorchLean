@@ -39,7 +39,7 @@ namespace IBP
 
 /-- Linear IBP bounds computed via sign-splitting (`W⁺/W⁻`). -/
 def linearSignSplit {m n : Nat}
-    (W : Tensor α (.dim m (.dim n .scalar)))
+    (W : Tensor α [m, n])
     (xB : Box α (.dim n .scalar))
     (bB : Box α (.dim m .scalar)) : Box α (.dim m .scalar) :=
   let Wpos := matPos (α := α) (m := m) (n := n) W

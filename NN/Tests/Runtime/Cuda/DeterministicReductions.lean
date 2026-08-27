@@ -59,7 +59,7 @@ def runScatterAddTwice : IO Unit := do
   let x := Buffer.zeros n
   let big := Buffer.full one 1.0e8
   let ones := Buffer.full (k - one) 1.0
-  let values := Buffer.concatVectorBuffers big ones one (k - one)
+  let values := Buffer.concatBuffers big ones one (k - one)
 
   let idx : Array Nat := Array.replicate k.toNat 0
   let y1 := Buffer.scatterAdd x values n idx k
@@ -71,8 +71,8 @@ def runScatterAddTwice : IO Unit := do
 def outDim (inDim k stride padding : Nat) : Nat :=
   Spec.Shape.slidingWindowOutDim inDim k stride padding
 
-def runAvgPool2dBwdTwice : IO Unit := do
-  IO.println "== deterministic avgpool2d_bwd: exact repeatability =="
+def runAvgPoolBwdTwice : IO Unit := do
+  IO.println "== deterministic avg_pool backward: exact repeatability =="
 
   let enabled := Buffer.setDeterministicReductionsChecked true
   if !enabled then
@@ -80,29 +80,27 @@ def runAvgPool2dBwdTwice : IO Unit := do
 
   -- A small overlapping-window case (stride=1) so the backward pass needs accumulation.
   let inC : UInt32 := 1
-  let inH : UInt32 := 17
-  let inW : UInt32 := 17
-  let kH : UInt32 := 3
-  let kW : UInt32 := 3
-  let stride : UInt32 := 1
-  let padding : UInt32 := 1
+  let inSpatial : Array Nat := #[17, 17]
+  let kernel : Array Nat := #[3, 3]
+  let stride : Array Nat := #[1, 1]
+  let padding : Array Nat := #[1, 1]
 
-  let outH : Nat := outDim inH.toNat kH.toNat stride.toNat padding.toNat
-  let outW : Nat := outDim inW.toNat kW.toNat stride.toNat padding.toNat
+  let outH : Nat := outDim 17 3 1 1
+  let outW : Nat := outDim 17 3 1 1
   let outElems : UInt32 := UInt32.ofNat (inC.toNat * outH * outW)
 
   let gradOutput := Buffer.randUniform outElems 12345
-  let y1 := torchleanAvgPool2dBwdCuda gradOutput inC inH inW kH kW stride padding
-  let y2 := torchleanAvgPool2dBwdCuda gradOutput inC inH inW kH kW stride padding
+  let y1 := torchleanAvgPoolBwdCuda gradOutput inSpatial kernel stride padding inC
+  let y2 := torchleanAvgPoolBwdCuda gradOutput inSpatial kernel stride padding inC
 
-  assertFloatArrayEq "avgpool2d_bwd deterministic run1 vs run2"
+  assertFloatArrayEq "avg_pool backward deterministic run1 vs run2"
     (Buffer.toFloatArray y1) (Buffer.toFloatArray y2)
 
 /-- Entry point called by the CUDA runtime suite. -/
 def run : IO Unit := do
   IO.println "== CUDA deterministic reductions =="
   runScatterAddTwice
-  runAvgPool2dBwdTwice
+  runAvgPoolBwdTwice
   let _ := Buffer.setDeterministicReductionsChecked false
   IO.println "== CUDA deterministic reductions: OK =="
 

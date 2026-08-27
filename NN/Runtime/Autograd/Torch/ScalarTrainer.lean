@@ -9,14 +9,13 @@ module
 public import NN.Runtime.Autograd.Torch.Core
 
 /-!
-# Scalar trainer operations
+# Scalar Trainer Operations
 
-Adapters and small training loops for `Runtime.Autograd.Torch.ScalarTrainer`. A scalar trainer
-stores curried functions indexed by the input shapes. The `*Packed` operations accept the same
-inputs as a heterogeneous `TList`, which is more convenient for runtime callers.
+Packed operations and small training loops for `Runtime.Autograd.Torch.ScalarTrainer`.
 
-Stateful optimizers live under `Runtime.Autograd.TorchLean.Optim`; this module only exposes the SGD
-step already carried by `ScalarTrainer`.
+The trainer keeps differentiable tensors of scalar type `α` separate from non-differentiable data
+tensors of type `δ`. The latter may contain bounded token identifiers, class labels, masks, or any
+other values consumed by an `Ops.DataRef`; they are not encoded through natural numbers.
 -/
 
 @[expose] public section
@@ -27,91 +26,95 @@ namespace Torch
 
 open Spec
 open Tensor
-open Proofs.Autograd.Algebra
 
 namespace ScalarTrainer
 
-/-- Evaluate the curried scalar loss on packed tensor and natural-number inputs. -/
-def lossPacked {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes natInputShapes)
-    (inputs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
-    IO (Tensor α Shape.scalar) :=
-  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
-    (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar))) trainer.loss inputs
-  Curried.uncurry (α := Nat) (ss := natInputShapes)
-    (β := IO (Tensor α Shape.scalar)) withNat natInputs
+/-- Evaluate the scalar loss on packed differentiable and non-differentiable inputs. -/
+def runLoss {α δ : Type} {paramShapes inputShapes dataInputShapes : List Shape}
+    (trainer : ScalarTrainer α δ paramShapes inputShapes dataInputShapes)
+    (inputs : _root_.TorchLean.TensorPack α inputShapes)
+    (dataInputs : _root_.TorchLean.TensorPack δ dataInputShapes) : IO (Tensor α .scalar) :=
+  let withData := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) trainer.loss inputs
+  Curried.uncurry (α := δ) (ss := dataInputShapes)
+    (β := IO (Tensor α .scalar)) withData dataInputs
 
-/-- Evaluate the loss and parameter gradients from one tape traversal. -/
-def lossAndGradStatePacked {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes natInputShapes)
-    (inputs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
-    IO (Tensor α Shape.scalar × TList α paramShapes) :=
-  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
-    (β := Curried.Fn Nat natInputShapes
-      (IO (Tensor α Shape.scalar × TList α paramShapes))) trainer.lossAndGradState inputs
-  Curried.uncurry (α := Nat) (ss := natInputShapes)
-    (β := IO (Tensor α Shape.scalar × TList α paramShapes)) withNat natInputs
+/-- Evaluate one loss and its parameter gradients from the same tape. -/
+def runLossAndGradState {α δ : Type}
+    {paramShapes inputShapes dataInputShapes : List Shape}
+    (trainer : ScalarTrainer α δ paramShapes inputShapes dataInputShapes)
+    (inputs : _root_.TorchLean.TensorPack α inputShapes)
+    (dataInputs : _root_.TorchLean.TensorPack δ dataInputShapes) :
+    IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes) :=
+  let withData := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn δ dataInputShapes
+      (IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes)))
+    trainer.lossAndGradState inputs
+  Curried.uncurry (α := δ) (ss := dataInputShapes)
+    (β := IO (Tensor α .scalar × _root_.TorchLean.TensorPack α paramShapes))
+    withData dataInputs
 
-/-- Evaluate the parameter gradients on packed inputs. -/
-def gradStatePacked {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes natInputShapes)
-    (inputs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
-    IO (TList α paramShapes) :=
-  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
-    (β := Curried.Fn Nat natInputShapes (IO (TList α paramShapes))) trainer.gradState inputs
-  Curried.uncurry (α := Nat) (ss := natInputShapes)
-    (β := IO (TList α paramShapes)) withNat natInputs
+/-- Evaluate parameter gradients on packed inputs. -/
+def runGradState {α δ : Type} {paramShapes inputShapes dataInputShapes : List Shape}
+    (trainer : ScalarTrainer α δ paramShapes inputShapes dataInputShapes)
+    (inputs : _root_.TorchLean.TensorPack α inputShapes)
+    (dataInputs : _root_.TorchLean.TensorPack δ dataInputShapes) :
+    IO (_root_.TorchLean.TensorPack α paramShapes) :=
+  let withData := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn δ dataInputShapes
+      (IO (_root_.TorchLean.TensorPack α paramShapes))) trainer.gradState inputs
+  Curried.uncurry (α := δ) (ss := dataInputShapes)
+    (β := IO (_root_.TorchLean.TensorPack α paramShapes)) withData dataInputs
 
 /-- Apply the trainer's SGD update to packed inputs. -/
-def stepPacked {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes natInputShapes)
-    (learningRate : α) (inputs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
-    IO Unit :=
-  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
-    (β := Curried.Fn Nat natInputShapes (IO Unit)) (trainer.step learningRate) inputs
-  Curried.uncurry (α := Nat) (ss := natInputShapes) (β := IO Unit) withNat natInputs
+def runStep {α δ : Type} {paramShapes inputShapes dataInputShapes : List Shape}
+    (trainer : ScalarTrainer α δ paramShapes inputShapes dataInputShapes)
+    (learningRate : α) (inputs : _root_.TorchLean.TensorPack α inputShapes)
+    (dataInputs : _root_.TorchLean.TensorPack δ dataInputShapes) : IO Unit :=
+  let withData := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn δ dataInputShapes (IO Unit)) (trainer.step learningRate) inputs
+  Curried.uncurry (α := δ) (ss := dataInputShapes) (β := IO Unit) withData dataInputs
 
 /-- Apply the trainer's SGD update and return the loss used for the update. -/
-def stepWithLossPacked {α : Type} {paramShapes inputShapes natInputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes natInputShapes)
-    (learningRate : α) (inputs : TList α inputShapes) (natInputs : TList Nat natInputShapes) :
-    IO (Tensor α Shape.scalar) :=
-  let withNat := Curried.uncurry (α := α) (ss := inputShapes)
-    (β := Curried.Fn Nat natInputShapes (IO (Tensor α Shape.scalar)))
+def runStepWithLoss {α δ : Type}
+    {paramShapes inputShapes dataInputShapes : List Shape}
+    (trainer : ScalarTrainer α δ paramShapes inputShapes dataInputShapes)
+    (learningRate : α) (inputs : _root_.TorchLean.TensorPack α inputShapes)
+    (dataInputs : _root_.TorchLean.TensorPack δ dataInputShapes) : IO (Tensor α .scalar) :=
+  let withData := Curried.uncurry (α := α) (ss := inputShapes)
+    (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))
     (trainer.stepWithLoss learningRate) inputs
-  Curried.uncurry (α := Nat) (ss := natInputShapes)
-    (β := IO (Tensor α Shape.scalar)) withNat natInputs
+  Curried.uncurry (α := δ) (ss := dataInputShapes)
+    (β := IO (Tensor α .scalar)) withData dataInputs
 
 end ScalarTrainer
 
-/-- Apply `steps` SGD updates while cycling through `samples`. -/
-def trainCycleSGD
-    {α : Type} [ToString α] {paramShapes inputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes)
-    (learningRate : α) (steps : Nat) (samples : List (TList α inputShapes))
+/-- Apply `steps` SGD updates while cycling through samples without auxiliary data tensors. -/
+def trainCycleSGD {α : Type} [ToString α] {paramShapes inputShapes : List Shape}
+    (trainer : ScalarTrainer α Unit paramShapes inputShapes)
+    (learningRate : α) (steps : Nat)
+    (samples : List (_root_.TorchLean.TensorPack α inputShapes))
     (logEvery : Nat := 1) : IO Unit := do
   match samples with
-  | [] =>
-      throw <| IO.userError "trainCycleSGD: empty dataset"
+  | [] => throw <| IO.userError "trainCycleSGD: empty dataset"
   | first :: _ =>
       for step in [0:steps] do
         let inputs := samples.getD (step % samples.length) first
-        let loss ← ScalarTrainer.lossPacked trainer inputs .nil
+        let loss ← ScalarTrainer.runLoss trainer inputs .nil
         if logEvery != 0 && step % logEvery = 0 then
           IO.println s!"step {step}: loss={loss.item}"
-        ScalarTrainer.stepPacked trainer learningRate inputs .nil
+        ScalarTrainer.runStep trainer learningRate inputs .nil
 
-/-- Evaluate the arithmetic mean of the scalar losses over `samples`. -/
-def meanLoss
-    {α : Type} [ToString α] [Add α] [Div α] [Zero α] [Coe Nat α]
+/-- Evaluate the arithmetic mean loss over samples without auxiliary data tensors. -/
+def meanLoss {α : Type} [ToString α] [Add α] [Div α] [Zero α] [Coe Nat α]
     {paramShapes inputShapes : List Shape}
-    (trainer : ScalarTrainer α paramShapes inputShapes)
-    (samples : List (TList α inputShapes)) : IO α := do
+    (trainer : ScalarTrainer α Unit paramShapes inputShapes)
+    (samples : List (_root_.TorchLean.TensorPack α inputShapes)) : IO α := do
   if samples.isEmpty then
     throw <| IO.userError "meanLoss: empty dataset"
   let mut total : α := 0
   for inputs in samples do
-    let loss ← ScalarTrainer.lossPacked trainer inputs .nil
+    let loss ← ScalarTrainer.runLoss trainer inputs .nil
     total := total + loss.item
   pure (total / (samples.length : α))
 

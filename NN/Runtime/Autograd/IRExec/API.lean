@@ -31,7 +31,7 @@ Lower an op-tagged IR graph into an executable `ForwardGraph`.
 Requirements:
 - Node id 0 must be `.input`.
 - The graph must satisfy `Graph.checkWellFormed`.
-- The external payload must contain entries for every `.const`/`.linear`/`.conv2d` node id.
+- The external payload must contain entries for every `.const`/`.linear`/`.conv` node id.
 
 This returns a `ForwardGraph` whose `eval` computes all node values in topological order. The
 artifact is intentionally forward-only; it is distinct from the differentiable `Torch.TypedGraph`

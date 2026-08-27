@@ -37,7 +37,7 @@ namespace NN.Examples.RL.GymnasiumRolloutView
 def rolloutPath : System.FilePath :=
   ("data/rl/gym_cartpole_rollout.json" : System.FilePath)
 
-def obsShape : Shape := shape![4]
+def obsShape : List Nat := [4]
 def nActions : Nat := 2
 
 def contract : Runtime.RL.Boundary.Contract obsShape nActions :=

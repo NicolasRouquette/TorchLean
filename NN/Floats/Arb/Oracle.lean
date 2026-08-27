@@ -439,12 +439,12 @@ Run an `expr` request and parse the output interval.
 In words: evaluate an expression AST over a box of interval variables using Arb ball
 arithmetic, returning an enclosure of the result.
 -/
-def runExpr (vars : List (String × (String × String))) (expr : Json)
+def runExpr (vars : Array (String × (String × String))) (expr : Json)
     (precBits : Nat := 200) (digits : Nat := 50) (pythonCmd : String := "python3") : IO ExprResult
       := do
   let varsObj : List (String × Json) :=
-    vars.map (fun (name, (lo, hi)) =>
-      (name, Json.mkObj [("lo", Json.str lo), ("hi", Json.str hi)]))
+    (vars.map fun (name, (lo, hi)) =>
+      (name, Json.mkObj [("lo", Json.str lo), ("hi", Json.str hi)])).toList
   let req :=
     Json.mkObj [
       ("kind", Json.str "expr"),

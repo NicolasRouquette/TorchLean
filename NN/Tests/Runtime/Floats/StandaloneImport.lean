@@ -135,9 +135,9 @@ def run : IO Unit := do
 
   -- Exercise argument reduction from small values through both signs of the largest finite input.
   let trigTolerance : Float := 1e-5
-  let trigSamples : List UInt32 :=
-    [0x3F800000, 0x42C80000, 0x501502F9, 0x60AD78EC, 0x7F7FFFFF,
-     0xBF800000, 0xC2C80000, 0xD01502F9, 0xE0AD78EC, 0xFF7FFFFF]
+  let trigSamples : Array UInt32 :=
+    #[0x3F800000, 0x42C80000, 0x501502F9, 0x60AD78EC, 0x7F7FFFFF,
+      0xBF800000, 0xC2C80000, 0xD01502F9, 0xE0AD78EC, 0xFF7FFFFF]
   for bits in trigSamples do
     let input := ofBits bits
     let resultSin := sin input

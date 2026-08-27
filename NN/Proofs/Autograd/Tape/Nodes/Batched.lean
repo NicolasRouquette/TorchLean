@@ -227,7 +227,7 @@ def matmul {Γ : List Shape} {h m n p : Nat}
     fun x =>
       (Bmul.precompR (CtxVec Γ) (fA x) (CtxVec.getCLM (Γ := Γ) (s := sB) B)) +
         (Bmul.precompL (CtxVec Γ) (CtxVec.getCLM (Γ := Γ) (s := sA) A) (fB x))
-  Node.ofVec (Γ := Γ) (τ := sOut)
+  Node.ofFn (Γ := Γ) (τ := sOut)
     (f := fun x => (Bmul (fA x)) (fB x))
     (jvp := fun x dx => (deriv0 x) dx)
     (vjp := fun x δ => (deriv0 x).adjoint δ)
@@ -279,12 +279,12 @@ def matmulFderiv {Γ : List Shape} {h m n p : Nat}
           =
         (fun x : CtxVec Γ => (Bmul (fA x)) (fB x)) := by
       funext x
-      simp [matmul, Node.forwardVec_ofVec, Bmul, fA, fB]
+      simp [matmul, Node.forwardVec_ofFn, Bmul, fA, fB]
     exact hbilin.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     ext ip
     -- First unfold the node JVP (LHS) into the explicit bilinear JVP formula.
-    simp [matmul, Node.jvpVec_ofVec, Bmul, fA, fB]
+    simp [matmul, Node.jvpVec_ofFn, Bmul, fA, fB]
 
 -- ---------------------------------------------------------------------------
 -- Batched row-wise softmax on matrices
@@ -322,7 +322,7 @@ def softmaxLast {Γ : List Shape} {h m n : Nat}
         ((deriv0 (castVec hsz (CtxVec.get (Γ := Γ) (s := s) idx xV))).comp
           ((Graph.castCLM (h := hsz)).comp (CtxVec.getCLM (Γ := Γ) (s := s) idx)))
 
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun xV =>
       castVec hsz.symm (forward0 (castVec hsz (CtxVec.get (Γ := Γ) (s := s) idx xV))))
     (jvp := fun xV dxV => (D xV) dxV)
@@ -449,12 +449,12 @@ def softmaxLastFderiv {Γ : List Shape} {h m n : Nat}
         (fun x : CtxVec Γ =>
           castVec hsz.symm (forward0 (castVec hsz (CtxVec.get (Γ := Γ) (s := s) idx x)))) := by
       funext x
-      simp [softmaxLast, forward0, Node.forwardVec_ofVec]
+      simp [softmaxLast, forward0, Node.forwardVec_ofFn]
     exact hcomp.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     ext ip
     -- First compute the node's JVP (the explicit headwise derivative formula).
-    simp [softmaxLast, Node.jvpVec_ofVec, Graph.castCLM,
+    simp [softmaxLast, Node.jvpVec_ofFn, Graph.castCLM,
       ContinuousLinearMap.comp_apply, ContinuousLinearMap.proj_apply,
       CtxVec.getCLM_apply, headsCLM_apply, unheadsCLM_apply, heads, unheads]
     -- Then show the `D`-based JVP reduces to the same expression.

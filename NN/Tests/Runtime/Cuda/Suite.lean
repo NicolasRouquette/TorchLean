@@ -17,7 +17,7 @@ public import NN.Tests.Runtime.Cuda.GatherScatter
 public import NN.Tests.Runtime.Cuda.DeterministicReductions
 public import NN.Tests.Runtime.Cuda.SelectiveScan
 public import NN.Tests.Runtime.Cuda.PositionalEncoding
-public import NN.Tests.Runtime.Cuda.MatmulBmm
+public import NN.Tests.Runtime.Cuda.Matmul
 public import NN.Tests.Runtime.Cuda.Fft
 public import NN.Tests.Runtime.Cuda.ViewsBroadcastReduce
 public import NN.Tests.Runtime.Cuda.LinearMseConcatSliceGather
@@ -52,7 +52,7 @@ def run : IO Unit := do
   DeterministicReductions.run
   SelectiveScan.run
   PositionalEncoding.run
-  MatmulBmm.run
+  Matmul.run
   Fft.run
   ViewsBroadcastReduce.run
   LinearMseConcatSliceGather.run

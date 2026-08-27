@@ -28,9 +28,9 @@ Omni3D/Cube R-CNN conversion issue `#60`; and BlenderProc projected-3D-bbox issu
 TorchLean's checked boundary is not "the neural detector is correct."  The detector is an
 untrusted producer.  The checked contract is:
 
-> Given exported tensors `P : Tensor [3,4]`, `corners : Tensor [8,3]`, and a claimed 2D box, Lean
-> recomputes the projection, checks positive depth, image bounds, bbox enclosure, and optional
-> interval robustness.
+> Given exported tensors `P : Tensor α [3, 4]` and `corners : Tensor α [8, 3]`, plus a claimed
+> 2D box, Lean recomputes the projection, checks positive depth, image bounds, bbox enclosure, and
+> optional interval robustness.
 
 The visual companion script
 `scripts/verification/geometry3d/render_box3d_cert_overlay.py` renders the same contract for humans:
@@ -75,7 +75,7 @@ theorem homogeneous_projection_uncertainty_stays_inside_bbox
     (hzPos : 0 < zI.lo)
     (hinside :
       PixelIntervalInsideBBox cert
-        (homogeneousProjectionInterval uNumI vNumI zI))
+        (homogeneousProjectionIntervalNonnegative uNumI vNumI zI))
     (huNum : InInterval uNumI uNum)
     (hvNum : InInterval vNumI vNum)
     (hz : InInterval zI z) :
@@ -83,7 +83,7 @@ theorem homogeneous_projection_uncertainty_stays_inside_bbox
       uNum / z ≤ xmax cert ∧
       ymin cert ≤ vNum / z ∧
       vNum / z ≤ ymax cert :=
-  homogeneous_projection_interval_inside_bbox_sound
+  homogeneous_projection_nonnegative_interval_inside_bbox_sound
     huNumNonneg hvNumNonneg hzPos hinside huNum hvNum hz
 
 end NN.Examples.BugZoo.Geometry3DProjection

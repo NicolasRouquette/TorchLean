@@ -35,7 +35,7 @@ def inDim : Nat := 2
 def outDim : Nat := 1
 
 def model :
-    nn.Builder (nn.Sequential (.dim inDim .scalar) (.dim outDim .scalar)) :=
+    nn.Builder (nn.Sequential [inDim] [outDim]) :=
   nn.Sequential![
     nn.linear inDim 8,
     nn.relu,
@@ -44,7 +44,7 @@ def model :
 ```
 
 Read the type before the body. `nn.Builder` says that model construction consumes a deterministic seed
-stream. `nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)` says that the initialized model will map a
+stream. `nn.Sequential [2] [1]` says that the initialized model will map a
 length-two tensor to a length-one tensor. The hidden width `8` is checked through composition: the
 first linear layer produces length eight, ReLU preserves the shape, and the second linear layer
 expects length eight.
@@ -94,12 +94,12 @@ def target (x1 x2 : Float) : Float :=
     (0.4 * relu (x2 - x1)) + 0.2
 ```
 
-The example samples five positions on each input axis, giving 25 examples. `Tensor.mapLeading`
+The example samples five positions on each input axis, giving 25 examples. `Tensor.mapEach`
 applies the target function to each row without fixing the operation to vectors or regression:
 
 ```
 let inputs := Data.Synthetic.squareGrid (-1.0) 1.0 5
-let targets := Tensor.mapLeading targetTensor inputs
+let targets := Tensor.mapEach [25] targetTensor inputs
 Data.tensorDataset inputs targets
 ```
 

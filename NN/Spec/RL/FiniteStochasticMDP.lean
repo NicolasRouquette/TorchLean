@@ -60,7 +60,7 @@ structure MDP (nStates nActions : Nat) where
   /-- Canonical reset state. -/
   initialState : Fin nStates
   /-- Transition probabilities $P(\mathord{\cdot}\mid s,a)$ over the finite next-state space. -/
-  transitionProb : Fin nStates → Fin nActions → Tensor ℝ (.dim nStates .scalar)
+  transitionProb : Fin nStates → Fin nActions → Tensor ℝ [nStates]
   /-- Immediate reward `r(s, a)`. -/
   reward : Fin nStates → Fin nActions → ℝ
   /-- Task-defined terminal flag for `(s, a)`. -/
@@ -72,12 +72,12 @@ structure MDP (nStates nActions : Nat) where
 structure Valid {nStates nActions : Nat} (mdp : MDP nStates nActions) : Prop where
   /-- Transition probabilities are nonnegative. -/
   transition_nonneg :
-    ∀ state action nextState, 0 ≤ Tensor.vecGet (mdp.transitionProb state action) nextState
+    ∀ state action nextState, 0 ≤ Tensor.getScalar (mdp.transitionProb state action) nextState
   /-- Each transition row sums to `1`. -/
   transition_sums_to_one :
     ∀ state action,
       (Finset.univ : Finset (Fin nStates)).sum
-        (fun nextState => Tensor.vecGet (mdp.transitionProb state action) nextState) = 1
+        (fun nextState => Tensor.getScalar (mdp.transitionProb state action) nextState) = 1
   /-- Discount factor is nonnegative. -/
   discount_nonneg : 0 ≤ mdp.discount
   /-- Discount factor is strictly less than `1`. -/
@@ -91,7 +91,7 @@ def expectedNextValue
     (action : Fin nActions) : ℝ :=
   (Finset.univ : Finset (Fin nStates)).sum
     (fun nextState =>
-      Tensor.vecGet (mdp.transitionProb state action) nextState * valueAt values nextState)
+      Tensor.getScalar (mdp.transitionProb state action) nextState * valueAt values nextState)
 
 /-- Bellman-style state-action value induced by a candidate value function. -/
 def actionValue
@@ -110,7 +110,7 @@ function. -/
 def actionValues
     (mdp : MDP nStates nActions)
     (values : ValueFunction ℝ nStates)
-    (state : Fin nStates) : Tensor ℝ (.dim nActions .scalar) :=
+    (state : Fin nStates) : Tensor ℝ [nActions] :=
   Tensor.dim (fun action => Tensor.scalar (actionValue mdp values state action))
 
 /-- Bellman expectation operator for a deterministic policy. -/

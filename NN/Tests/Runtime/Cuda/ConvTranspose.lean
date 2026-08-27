@@ -14,9 +14,8 @@ public import NN.Tests.Runtime.Cuda.Utils
 /-!
 # CUDA Kernel Coverage: Transposed Convolution
 
-Compares CPU eager tape vs CUDA eager tape for `conv_transpose`:
-- a 2D case (`d = 2`), and
-- a non-2D case (`d = 3`).
+Compares CPU eager tape with CUDA eager tape for the same rank-polymorphic `conv_transpose`
+operation at spatial ranks two and three.
 
 Both cases check forward output and gradients (including `dInput`) via `backwardDenseAll`.
 Inputs are small so stub-mode remains lightweight and float64/float32 roundoff differences stay
@@ -37,10 +36,10 @@ open Runtime.Autograd
 example : Spec.convTransposeOutDim 1 3 1 1 = 1 := by decide
 
 /-!
-## 2D case ($d=2$)
+## Planar fixture ($d=2$)
 -/
 
-/-- Spatial rank for the 2D transposed-convolution coverage case. -/
+/-- Spatial rank for the planar transposed-convolution fixture. -/
 abbrev d2 : Nat := 2
 
 abbrev inC2 : Nat := 1
@@ -54,23 +53,23 @@ abbrev inW2 : Nat := 3
 
 theorem hInC2 : inC2 ≠ 0 := by decide
 
-def kernel2Dims : Vector Nat d2 :=
-  #v[kH, kW]
+def kernel2Dims : Spec.Tensor Nat [d2] :=
+  tensor! [kH, kW]
 
-def stride2Dims : Vector Nat d2 :=
-  #v[stride2, stride2]
+def stride2Dims : Spec.Tensor Nat [d2] :=
+  tensor! [stride2, stride2]
 
-def padding2Dims : Vector Nat d2 :=
-  #v[padding2, padding2]
+def padding2Dims : Spec.Tensor Nat [d2] :=
+  tensor! [padding2, padding2]
 
-def inSpatial2Dims : Vector Nat d2 :=
-  #v[inH2, inW2]
+def inSpatial2Dims : Spec.Tensor Nat [d2] :=
+  tensor! [inH2, inW2]
 
-theorem hKernel2 : ∀ i : Fin d2, kernel2Dims.get i ≠ 0 := by
+theorem hKernel2 : ∀ i : Fin d2, kernel2Dims.getScalar i ≠ 0 := by
   intro i
-  fin_cases i <;> simp [kernel2Dims, Vector.get]
+  fin_cases i <;> simp [kernel2Dims]
 
-def outSpatial2Dims : Vector Nat d2 :=
+def outSpatial2Dims : Spec.Tensor Nat [d2] :=
   Spec.convTransposeOutSpatial inSpatial2Dims kernel2Dims stride2Dims padding2Dims
 
 def outShape2 : Shape :=
@@ -83,22 +82,22 @@ def inputShape2 : Shape :=
   Shape.ofList (inC2 :: inSpatial2Dims.toList)
 
 def kernel2 : Tensor Float kernelShape2 :=
-  tensorOfList! [inC2, outC2, kH, kW] [
+  tensorOfArray! [inC2, outC2, kH, kW] #[
     0.2, -0.1,
     0.3, 0.4
   ]
 
-def bias2 : Tensor Float (shape![outC2]) :=
-  tensorOfList! [outC2] [0.05]
+def bias2 : Tensor Float [outC2] :=
+  tensorOfArray! [outC2] #[0.05]
 
 def input2 : Tensor Float inputShape2 :=
-  tensorOfList! [inC2, inH2, inW2] [
+  tensorOfArray! [inC2, inH2, inW2] #[
     1.0, 2.0, 3.0,
     4.0, 5.0, 6.0,
     7.0, 8.0, 9.0
   ]
 
-def runConvTranspose2 : IO Unit := do
+def runPlanarFixture : IO Unit := do
   IO.println "== conv_transpose (d=2) =="
 
   -- CPU tape
@@ -113,10 +112,10 @@ def runConvTranspose2 : IO Unit := do
       (inSpatial := inSpatial2Dims)
       kId bId xId (name := "conv_transpose[d=2]"))
   let yCpu ← Utils.cpuValue (s := outShape2) t4 yId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape2)
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (fill (1.0 : Float) outShape2)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dKCpu ← Utils.cpuGrad (s := kernelShape2) gradsCpu kId
-  let dBCpu ← Utils.cpuGrad (s := shape![outC2]) gradsCpu bId
+  let dBCpu ← Utils.cpuGrad (s := [outC2]) gradsCpu bId
   let dXCpu ← Utils.cpuGrad (s := inputShape2) gradsCpu xId
 
   -- CUDA tape
@@ -140,16 +139,16 @@ def runConvTranspose2 : IO Unit := do
   let gradsCuda ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t4c) yIdc seedCuda)
   let dKCuda ← Utils.cudaGrad (s := kernelShape2) gradsCuda kIdc
-  let dBCuda ← Utils.cudaGrad (s := shape![outC2]) gradsCuda bIdc
+  let dBCuda ← Utils.cudaGrad (s := [outC2]) gradsCuda bIdc
   let dXCuda ← Utils.cudaGrad (s := inputShape2) gradsCuda xIdc
 
   Utils.assertTensorApprox (s := outShape2) "conv_transpose[d=2] forward" yCuda yCpu (tol := 5e-3)
   Utils.assertTensorApprox (s := kernelShape2) "conv_transpose[d=2] dKernel" dKCuda dKCpu (tol := 5e-3)
-  Utils.assertTensorApprox (s := shape![outC2]) "conv_transpose[d=2] dBias" dBCuda dBCpu (tol := 5e-3)
+  Utils.assertTensorApprox (s := [outC2]) "conv_transpose[d=2] dBias" dBCuda dBCpu (tol := 5e-3)
   Utils.assertTensorApprox (s := inputShape2) "conv_transpose[d=2] dInput" dXCuda dXCpu (tol := 5e-3)
 
 /-!
-## 3D case ($d=3$)
+## Volumetric fixture ($d=3$)
 -/
 
 abbrev d3 : Nat := 3
@@ -167,23 +166,23 @@ abbrev k2 : Nat := 2
 
 theorem hInC3 : inC3 ≠ 0 := by decide
 
-def kernel3Dims : Vector Nat d3 :=
-  #v[k0, k1, k2]
+def kernel3Dims : Spec.Tensor Nat [d3] :=
+  tensor! [k0, k1, k2]
 
-def stride3Dims : Vector Nat d3 :=
-  #v[1, 1, 1]
+def stride3Dims : Spec.Tensor Nat [d3] :=
+  tensor! [1, 1, 1]
 
-def padding3Dims : Vector Nat d3 :=
-  #v[0, 0, 0]
+def padding3Dims : Spec.Tensor Nat [d3] :=
+  tensor! [0, 0, 0]
 
-def inSpatial3Dims : Vector Nat d3 :=
-  #v[inD0, inD1, inD2]
+def inSpatial3Dims : Spec.Tensor Nat [d3] :=
+  tensor! [inD0, inD1, inD2]
 
-theorem hKernel3 : ∀ i : Fin d3, kernel3Dims.get i ≠ 0 := by
+theorem hKernel3 : ∀ i : Fin d3, kernel3Dims.getScalar i ≠ 0 := by
   intro i
-  fin_cases i <;> simp [kernel3Dims, Vector.get]
+  fin_cases i <;> simp [kernel3Dims]
 
-def outSpatial3Dims : Vector Nat d3 :=
+def outSpatial3Dims : Spec.Tensor Nat [d3] :=
   Spec.convTransposeOutSpatial inSpatial3Dims kernel3Dims stride3Dims padding3Dims
 
 def outShape3 : Shape :=
@@ -196,18 +195,18 @@ def inputShape3 : Shape :=
   Shape.ofList (inC3 :: inSpatial3Dims.toList)
 
 def kernel3 : Tensor Float kernelShape3 :=
-  tensorOfList! [inC3, outC3, k0, k1, k2] [
+  tensorOfArray! [inC3, outC3, k0, k1, k2] #[
     0.2, -0.1,
     0.3, 0.4,
     -0.25, 0.15,
     0.05, -0.35
   ]
 
-def bias3 : Tensor Float (shape![outC3]) :=
-  tensorOfList! [outC3] [0.01]
+def bias3 : Tensor Float [outC3] :=
+  tensorOfArray! [outC3] #[0.01]
 
 def input3 : Tensor Float inputShape3 :=
-  tensorOfList! [inC3, inD0, inD1, inD2] [
+  tensorOfArray! [inC3, inD0, inD1, inD2] #[
     1.0, 2.0,
     3.0, 4.0,
 
@@ -215,7 +214,7 @@ def input3 : Tensor Float inputShape3 :=
     7.0, 8.0
   ]
 
-def runConvTranspose3 : IO Unit := do
+def runVolumetricFixture : IO Unit := do
   IO.println "== conv_transpose (d=3) =="
 
   -- CPU tape
@@ -230,10 +229,10 @@ def runConvTranspose3 : IO Unit := do
       (inSpatial := inSpatial3Dims)
       kId bId xId (name := "conv_transpose[d=3]"))
   let yCpu ← Utils.cpuValue (s := outShape3) t4 yId
-  let seedCpu : Spec.PackedTensor Float := Spec.PackedTensor.ofTensor (fill (1.0 : Float) outShape3)
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (fill (1.0 : Float) outShape3)
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t4) yId seedCpu)
   let dKCpu ← Utils.cpuGrad (s := kernelShape3) gradsCpu kId
-  let dBCpu ← Utils.cpuGrad (s := shape![outC3]) gradsCpu bId
+  let dBCpu ← Utils.cpuGrad (s := [outC3]) gradsCpu bId
   let dXCpu ← Utils.cpuGrad (s := inputShape3) gradsCpu xId
 
   -- CUDA tape
@@ -257,64 +256,71 @@ def runConvTranspose3 : IO Unit := do
   let gradsCuda ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t4c) yIdc seedCuda)
   let dKCuda ← Utils.cudaGrad (s := kernelShape3) gradsCuda kIdc
-  let dBCuda ← Utils.cudaGrad (s := shape![outC3]) gradsCuda bIdc
+  let dBCuda ← Utils.cudaGrad (s := [outC3]) gradsCuda bIdc
   let dXCuda ← Utils.cudaGrad (s := inputShape3) gradsCuda xIdc
 
   Utils.assertTensorApprox (s := outShape3) "conv_transpose[d=3] forward" yCuda yCpu (tol := 1e-2)
   Utils.assertTensorApprox (s := kernelShape3) "conv_transpose[d=3] dKernel" dKCuda dKCpu (tol := 1e-2)
-  Utils.assertTensorApprox (s := shape![outC3]) "conv_transpose[d=3] dBias" dBCuda dBCpu (tol := 1e-2)
+  Utils.assertTensorApprox (s := [outC3]) "conv_transpose[d=3] dBias" dBCuda dBCpu (tol := 1e-2)
   Utils.assertTensorApprox (s := inputShape3) "conv_transpose[d=3] dInput" dXCuda dXCpu (tol := 1e-2)
 
 /-- Excessive padding saturates transpose-convolution output size only after adding the kernel. -/
 def runSaturatedOutputGeometry : IO Unit := do
   IO.println "== conv_transpose saturated output geometry =="
-  let input : Tensor Float (shape![1, 1, 1]) := tensorOfList! [1, 1, 1] [2.0]
-  let kernel : Tensor Float (shape![1, 1, 3, 3]) :=
-    tensorOfList! [1, 1, 3, 3] [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  let bias : Tensor Float (shape![1]) := tensorOfList! [1] [0.0]
+  let input : Tensor Float [1, 1, 1] := tensorOfArray! [1, 1, 1] #[2.0]
+  let kernel : Tensor Float [1, 1, 3, 3] :=
+    tensorOfArray! [1, 1, 3, 3] #[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  let bias : Tensor Float [1] := tensorOfArray! [1] #[0.0]
   let (t1, kernelId) := Runtime.Autograd.Cuda.Tape.empty.leaf (Utils.tensorToAnyBuffer kernel)
   let (t2, biasId) := t1.leaf (Utils.tensorToAnyBuffer bias)
   let (t3, inputId) := t2.leaf (Utils.tensorToAnyBuffer input)
+  let inSpatial : Spec.Tensor Nat [2] := tensor! [1, 1]
+  let kernelDims : Spec.Tensor Nat [2] := tensor! [3, 3]
+  let strideDims : Spec.Tensor Nat [2] := tensor! [1, 1]
+  let paddingDims : Spec.Tensor Nat [2] := tensor! [2, 2]
+  let hKernel : ∀ i : Fin 2, kernelDims.getScalar i ≠ 0 := by
+    intro i
+    fin_cases i <;> simp [kernelDims]
   let (t4, outputId) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.convTranspose2d (t := t3)
-      (inC := 1) (outC := 1) (kH := 3) (kW := 3) (stride := 1) (padding := 2)
-      (inH := 1) (inW := 1) (h1 := by decide) (h2 := by decide) (h3 := by decide)
-      kernelId biasId inputId)
-  let empty2dShape : Shape := shape![1, 0, 0]
+    (Runtime.Autograd.Cuda.Tape.convTranspose (t := t3)
+      (d := 2) (inC := 1) (outC := 1) (inSpatial := inSpatial)
+      (kernel := kernelDims) (stride := strideDims) (padding := paddingDims)
+      kernelId biasId inputId (hInC := by decide) (hKernel := hKernel))
+  let emptyShape : Shape := [1, 0, 0]
   let output ← Utils.okOrThrow <|
-    Runtime.Autograd.Cuda.Tape.requireValue t4 outputId empty2dShape
+    Runtime.Autograd.Cuda.Tape.requireValue t4 outputId emptyShape
   unless Runtime.Autograd.Cuda.Buffer.size output = 0 do
-    throw <| IO.userError "conv_transpose2d excessive padding produced a nonempty buffer"
+    throw <| IO.userError "conv_transpose excessive padding produced a nonempty buffer"
 
-  let inSpatial : Vector Nat 1 := #v[1]
-  let kernelDims : Vector Nat 1 := #v[3]
-  let strideDims : Vector Nat 1 := #v[1]
-  let paddingDims : Vector Nat 1 := #v[2]
-  let hKernel : ∀ i : Fin 1, kernelDims.get i ≠ 0 := by
+  let inSpatial1 : Spec.Tensor Nat [1] := tensor! [1]
+  let kernelDims1 : Spec.Tensor Nat [1] := tensor! [3]
+  let strideDims1 : Spec.Tensor Nat [1] := tensor! [1]
+  let paddingDims1 : Spec.Tensor Nat [1] := tensor! [2]
+  let hKernel1 : ∀ i : Fin 1, kernelDims1.getScalar i ≠ 0 := by
     intro i
     fin_cases i
-    simp [kernelDims, Vector.get]
-  let inputNd : Tensor Float (Shape.ofList [1, 1]) := tensorOfList! [1, 1] [2.0]
-  let kernelNd : Tensor Float (Shape.ofList [1, 1, 3]) := tensorOfList! [1, 1, 3] [1.0, 1.0, 1.0]
+    simp [kernelDims1]
+  let inputNd : Tensor Float [1, 1] := tensorOfArray! [1, 1] #[2.0]
+  let kernelNd : Tensor Float [1, 1, 3] := tensorOfArray! [1, 1, 3] #[1.0, 1.0, 1.0]
   let (tn1, kernelNdId) :=
     Runtime.Autograd.Cuda.Tape.empty.leaf (Utils.tensorToAnyBuffer kernelNd)
   let (tn2, biasNdId) := tn1.leaf (Utils.tensorToAnyBuffer bias)
   let (tn3, inputNdId) := tn2.leaf (Utils.tensorToAnyBuffer inputNd)
   let (tn4, outputNdId) ← Utils.okOrThrow
     (Runtime.Autograd.Cuda.Tape.convTranspose (t := tn3)
-      (d := 1) (inC := 1) (outC := 1) (inSpatial := inSpatial) (kernel := kernelDims)
-      (stride := strideDims) (padding := paddingDims) kernelNdId biasNdId inputNdId
-      (hInC := by decide) (hKernel := hKernel))
+      (d := 1) (inC := 1) (outC := 1) (inSpatial := inSpatial1) (kernel := kernelDims1)
+      (stride := strideDims1) (padding := paddingDims1) kernelNdId biasNdId inputNdId
+      (hInC := by decide) (hKernel := hKernel1))
   let emptyNdShape : Shape := Shape.ofList [1, 0]
   let outputNd ← Utils.okOrThrow <|
     Runtime.Autograd.Cuda.Tape.requireValue tn4 outputNdId emptyNdShape
   unless Runtime.Autograd.Cuda.Buffer.size outputNd = 0 do
-    throw <| IO.userError "N-D conv_transpose excessive padding produced a nonempty buffer"
+    throw <| IO.userError "spatial conv_transpose excessive padding produced a nonempty buffer"
 
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: conv_transpose ==="
-  runConvTranspose2
-  runConvTranspose3
+  runPlanarFixture
+  runVolumetricFixture
   runSaturatedOutputGeometry
 
 end ConvTranspose

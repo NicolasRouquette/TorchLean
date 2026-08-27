@@ -17,7 +17,7 @@ This file stays on the *mathematical* side of training:
 
 - `Graph.scalarLoss_grad_correct` specializes the tape/DAG backprop theorem to the scalar-loss
   convention used by training loops.
-- `SGD.step` lifts the single-tensor SGD equation to a heterogeneous `TList` of parameters.
+- `SGD.step` lifts the single-tensor SGD equation to a heterogeneous `_root_.TorchLean.TensorPack` of parameters.
 
 It is not another runtime optimizer implementation. Runtime files such as
 `Runtime.Autograd.Torch.ParamList.sgdStep{,Fast}` and CUDA eager `sgdStepAllCuda` mutate `IO.Ref`s or
@@ -57,12 +57,12 @@ nodes, and the final scalar loss. Reverse-mode training seeds all non-output cot
 and the scalar-loss output cotangent with `1`, matching `loss.backward()` in PyTorch.
 -/
 def seedScalarLoss {ss : List Shape} (_g : Graph (α := α) Δ Γ (ss ++ [Shape.scalar]))
-    (_x : TList α Γ) : TList α (Γ ++ (ss ++ [Shape.scalar])) :=
-  let zPrev : TList α (Γ ++ ss) := TList.zero (α := α) (ss := Γ ++ ss)
-  let one : Tensor α Shape.scalar := Tensor.scalar (1 : α)
-  let seed' : TList α ((Γ ++ ss) ++ [Shape.scalar]) := TList.snoc (α := α) (ss := Γ ++ ss) (τ :=
+    (_x : _root_.TorchLean.TensorPack α Γ) : _root_.TorchLean.TensorPack α (Γ ++ (ss ++ [Shape.scalar])) :=
+  let zPrev : _root_.TorchLean.TensorPack α (Γ ++ ss) := _root_.TorchLean.TensorPack.zero (α := α) (ss := Γ ++ ss)
+  let one : Tensor α .scalar := Tensor.scalar (1 : α)
+  let seed' : _root_.TorchLean.TensorPack α ((Γ ++ ss) ++ [Shape.scalar]) := _root_.TorchLean.TensorPack.snoc (α := α) (ss := Γ ++ ss) (τ :=
     Shape.scalar) zPrev one
-  TList.cast (α := α) (h := List.append_assoc Γ ss [Shape.scalar]) seed'
+  _root_.TorchLean.TensorPack.cast (α := α) (h := List.append_assoc Γ ss [Shape.scalar]) seed'
 
 /--
 Scalar-loss specialization of `Graph.backprop_correct`.
@@ -75,10 +75,10 @@ backprop is the cotangent for the scalar loss”.
 theorem scalarLoss_grad_correct {ss : List Shape} (g : Graph (α := α) Δ Γ (ss ++ [Shape.scalar])) :
     ∀ x dx d,
       let seed := seedScalarLoss (α := α) (Γ := Γ) (ss := ss) g x
-      TList.dotList (α := α) (jvpCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ss ++ [Shape.scalar]) g x dx
+      TensorPack.dotList (α := α) (jvpCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ss ++ [Shape.scalar]) g x dx
         d) seed
         =
-      TList.dotList (α := α) dx (backpropCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ss ++ [Shape.scalar])
+      TensorPack.dotList (α := α) dx (backpropCtx (α := α) (Δ := Δ) (Γ := Γ) (ss := ss ++ [Shape.scalar])
         g x d seed) := by
   intro x dx d seed
   simpa using (Graph.backprop_correct (α := α) (Δ := Δ) (Γ := Γ) (ss := ss ++ [Shape.scalar]) g x dx
@@ -100,12 +100,12 @@ This is the context-level version of the ordinary tensor update
 references, materializing tensors eagerly, or launching CUDA kernels; this definition is the
 side-effect-free algebraic target those implementations are meant to realize.
 -/
-def step {Γ : List Shape} (params grads : TList α Γ) (lr : α) : TList α Γ :=
-  TList.sub (α := α) (ss := Γ) params (TList.scale (α := α) (ss := Γ) lr grads)
+def step {Γ : List Shape} (params grads : _root_.TorchLean.TensorPack α Γ) (lr : α) : _root_.TorchLean.TensorPack α Γ :=
+  _root_.TorchLean.TensorPack.sub (α := α) (ss := Γ) params (_root_.TorchLean.TensorPack.scale (α := α) (ss := Γ) lr grads)
 
 /-- The empty parameter context is unchanged by an SGD step. -/
 @[simp] theorem step_nil (lr : α) :
-    step (α := α) (Γ := []) TList.nil TList.nil lr = TList.nil := by
+    step (α := α) (Γ := []) _root_.TorchLean.TensorPack.nil _root_.TorchLean.TensorPack.nil lr = _root_.TorchLean.TensorPack.nil := by
   rfl
 
 /--
@@ -115,9 +115,9 @@ This lemma is compact but useful as documentation: the head tensor update is exa
 `subSpec p (scaleSpec g lr)`, and the tail recursively receives the same learning rate.
 -/
 @[simp] theorem step_cons {s : Shape} {Γ : List Shape} (p g : Tensor α s)
-    (ps gs : TList α Γ) (lr : α) :
-    step (α := α) (Γ := s :: Γ) (TList.cons p ps) (TList.cons g gs) lr =
-      TList.cons (subSpec (α := α) p (scaleSpec (α := α) g lr))
+    (ps gs : _root_.TorchLean.TensorPack α Γ) (lr : α) :
+    step (α := α) (Γ := s :: Γ) (_root_.TorchLean.TensorPack.cons p ps) (_root_.TorchLean.TensorPack.cons g gs) lr =
+      _root_.TorchLean.TensorPack.cons (subSpec (α := α) p (scaleSpec (α := α) g lr))
         (step (α := α) (Γ := Γ) ps gs lr) := by
   rfl
 

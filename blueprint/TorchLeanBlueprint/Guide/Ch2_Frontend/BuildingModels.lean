@@ -59,8 +59,8 @@ but does not run a forward pass or optimizer update.
 
 # What A Layer Definition Contains
 
-When I add a layer, I check more than its input and output shape. `nn.Layer σ τ` stores the
-pieces that have to remain aligned as the layer moves from model construction to execution:
+An `nn.Layer σ τ` stores the pieces that must remain aligned from model construction through
+execution:
 
 :::table +header
 *
@@ -70,17 +70,17 @@ pieces that have to remain aligned as the layer moves from model construction to
   * `kind`
   * the name printed in model summaries
 *
-  * `paramShapes`
+  * `stateShapes`
   * the ordered shapes of parameters and persistent buffers
 *
-  * `initParams`
+  * `initState`
   * reproducible Float-authored initial values for that shape list
 *
   * `runtimeInit`
   * an optional storage-first initializer for executable Float runtimes
 *
-  * `paramRequiresGrad`
-  * one gradient flag for each entry of `paramShapes`
+  * `requiresGrad`
+  * one gradient flag for each entry of `stateShapes`
 *
   * `updateBuffers`
   * an optional train/eval-dependent update for state such as running statistics
@@ -89,9 +89,9 @@ pieces that have to remain aligned as the layer moves from model construction to
   * the execution-polymorphic tensor program from `σ` to `τ`
 :::
 
-The forward program receives the parameters followed by the layer input. Its input shape list is
-`paramShapes ++ [σ]`, and its result has shape `τ`. A new layer cannot provide an initializer in one
-order and quietly read parameters in another; both uses share the same dependent shape list.
+The forward program receives model state followed by the layer input. Its input shape list is
+`stateShapes ++ [σ]`, and its result has shape `τ`. A new layer cannot provide an initializer in one
+order and quietly read state in another; both uses share the same dependent shape list.
 
 Sequential composition is correspondingly small. The internal type is `Seq`, exported to
 application code as `nn.Sequential`:
@@ -136,13 +136,16 @@ Token models use the same split without turning indices into floating-point tens
 
 ```
 let table := nn.build 2026 <| nn.embedding vocab embedDim
+let tokenShape := [batch, seqLen]
+let tokenIds ← Tensor.checkIndices vocab rawTokenIds
 let module ← nn.IndexedModule.instantiate (table.model tokenShape) { device := .cpu }
 let vectors ← module.predict tokenIds
 ```
 
-The input is `Tensor Nat tokenShape`, and the output shape is
-`tokenShape.appendDim embedDim`. Repeated IDs select the same row and therefore accumulate into the
-same weight gradient. An index outside the vocabulary is rejected before the backend gather runs.
+`rawTokenIds` is a `Tensor Nat [batch, seqLen]` at the untrusted boundary. After
+`Tensor.checkIndices`, `tokenIds` is a bounded `Tensor (Fin vocab) [batch, seqLen]`. The output
+shape is `[batch, seqLen, embedDim]`. Repeated IDs
+select the same row and therefore accumulate into the same weight gradient.
 Fresh tables use independent standard-normal entries, as `torch.nn.Embedding` does. Architectures
 may replace that default, and GPT-2 uses its smaller initialization scale.
 
@@ -172,7 +175,7 @@ def hidden : Nat := 8
 def outDim : Nat := 1
 
 def model :
-    nn.Builder (nn.Sequential (shape![inDim]) (shape![outDim])) :=
+    nn.Builder (nn.Sequential [inDim] [outDim]) :=
   nn.Sequential![
     nn.linear inDim hidden,
     nn.relu,
@@ -306,8 +309,8 @@ to a fixed batch:
 def batchedModel {batch : Nat} :
     nn.Builder
       (nn.Sequential
-        (shape![batch, 2])
-        (shape![batch, 1])) :=
+        [batch, 2]
+        [batch, 1]) :=
   nn.Sequential![
     nn.linear 2 8,
     nn.relu,
@@ -345,9 +348,11 @@ $$`
 [\mathrm{batch},\mathrm{channels},\mathrm{length}].
 `
 
-The `nn.conv` constructor handles both. Pooling is rank-generic for the same reason. A helper
-such as `nn.models.cnn` composes convolution, activation, pooling, flattening, and classification,
-but the component layers remain ordinary checked maps.
+The public layer surface uses `nn.conv`, `nn.convTranspose`, `nn.maxPool`, `nn.avgPool`,
+`nn.globalAvgPool`, and the rank-polymorphic channel-normalization constructors. The length of each
+spatial tensor determines the rank. A helper such as `nn.models.cnn` composes convolution,
+activation, pooling, flattening, and classification, but the component layers remain ordinary
+checked maps.
 
 Run the small convolutional example:
 
@@ -391,7 +396,7 @@ The block constructor is:
 
 ```
 nn.transformerEncoderBlock
-  (.dim batch .scalar)
+  [batch]
   (n := sequenceLength)
   (dModel := dModel)
   { numHeads := 2
@@ -461,11 +466,11 @@ and reconstruct the readings that were hidden:
 import NN.API
 open TorchLean
 
-def signal : Tensor Float (shape![8]) :=
+def signal : Tensor Float [8] :=
   tensor! [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
 
-def maskedSignal : Tensor Float (shape![8]) :=
-  ssl.BlockMask.apply #v[8] #v[some 2] 2 0 signal
+def maskedSignal : Tensor Float [8] :=
+  ssl.BlockMask.apply (tensor! [some 2]) 2 0 signal
 
 #eval Tensor.pretty maskedSignal
 ```
@@ -479,7 +484,7 @@ The result is:
 `some 2` divides the participating axis into blocks of width two. The period `2` and offset `0`
 hide block indices congruent to zero modulo two, hence the first and third blocks. An axis marked
 `none` is left out of the block index; an image policy such as
-`#v[none, some 4, some 4]` therefore repeats the same 4-by-4 spatial mask across channels.
+`tensor! [none, some 4, some 4]` therefore repeats the same 4-by-4 spatial mask across channels.
 
 For training, `ssl.BlockMAE.sample` pairs a masked batch with a row-major prefix of the original,
 unmasked batch. The reconstruction width appears in the target shape, and Lean requires a proof
@@ -512,18 +517,18 @@ B:\operatorname{Tensor}\;\alpha\;[\mathrm{rank},\mathrm{outDim}],
 `
 
 and contributes $`\mathrm{scale}\cdot(AB)` to the base weight. For example, this function applies a
-rank-two adapter to a batch of four eight-dimensional inputs:
+matrix adapter to a batch of four eight-dimensional inputs:
 
 ```
 import NN.API
 open TorchLean
 
 def adaptedProjection
-    (x : Spec.Tensor Float (.dim 4 (.dim 8 .scalar)))
-    (base : Spec.Tensor Float (.dim 8 (.dim 16 .scalar)))
-    (A : Spec.Tensor Float (.dim 8 (.dim 2 .scalar)))
-    (B : Spec.Tensor Float (.dim 2 (.dim 16 .scalar))) :
-    Spec.Tensor Float (.dim 4 (.dim 16 .scalar)) :=
+    (x : Tensor Float [4, 8])
+    (base : Tensor Float [8, 16])
+    (A : Tensor Float [8, 2])
+    (B : Tensor Float [2, 16]) :
+    Tensor Float [4, 16] :=
   let adapter : Adapters.LoRA.Params Float 8 2 16 := { A := A, B := B }
   Adapters.LoRA.linear x base adapter (0.5 : Float)
 ```

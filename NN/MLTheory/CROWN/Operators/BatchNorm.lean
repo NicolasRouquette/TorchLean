@@ -49,18 +49,18 @@ structure BatchNormParams (α : Type) [Context α] where
   /-- Number of channels/features -/
   dim : Nat
   /-- Running mean μ -/
-  running_mean : Tensor α (.dim dim .scalar)
+  running_mean : Tensor α [dim]
   /-- Running variance σ² -/
-  running_var : Tensor α (.dim dim .scalar)
+  running_var : Tensor α [dim]
   /-- Learnable scale γ -/
-  gamma : Tensor α (.dim dim .scalar)
+  gamma : Tensor α [dim]
   /-- Learnable bias β -/
-  beta : Tensor α (.dim dim .scalar)
+  beta : Tensor α [dim]
   /-- Small constant for numerical stability -/
   eps : α
 
 /-- Compute the equivalent affine scale: `γ / sqrt(max(σ², 0) + ε)`. -/
-def computeScale (params : BatchNormParams α) : Tensor α (.dim params.dim .scalar) :=
+def computeScale (params : BatchNormParams α) : Tensor α [params.dim] :=
   match params.running_var, params.gamma with
   | .dim var, .dim gam =>
     Tensor.dim (fun i =>
@@ -70,7 +70,7 @@ def computeScale (params : BatchNormParams α) : Tensor α (.dim params.dim .sca
         Tensor.scalar (g / denom))
 
 /-- Compute the equivalent affine offset: `β - γ * μ / sqrt(max(σ², 0) + ε)`. -/
-def computeOffset (params : BatchNormParams α) : Tensor α (.dim params.dim .scalar) :=
+def computeOffset (params : BatchNormParams α) : Tensor α [params.dim] :=
   match params.running_mean, params.running_var, params.gamma, params.beta with
   | .dim mu, .dim var, .dim gam, .dim bet =>
     Tensor.dim (fun i =>

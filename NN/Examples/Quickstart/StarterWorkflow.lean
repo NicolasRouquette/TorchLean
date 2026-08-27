@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API
+public import NN.API.Verification
 
 /-!
 # Quickstart: Starter Workflow
@@ -14,7 +15,7 @@ public import NN.API
 The smallest useful TorchLean training setup is ordinary model code:
 
 ```lean
-public import NN.API
+import NN.API
 open TorchLean
 
 def model :=
@@ -25,8 +26,8 @@ def model :=
   ]
 ```
 
-No subsystem-specific imports are needed here. Model construction, data, training, prediction, and
-the public robustness-checking entry point all come from `import NN.API`. Lower-level certificate
+Model construction, data, training, and prediction come from `NN.API`. This example also imports
+`NN.API.Verification` because it retains an IBP verifier after training. Lower-level certificate
 formats and proof developments use the focused `NN.Verification` and `NN.Proofs` imports.
 -/
 
@@ -43,14 +44,6 @@ def model :=
     nn.linear 8 1
   ]
 
-/-- Checks that KAN constructors are available from `NN.API`. -/
-def kanModel : nn.Builder (nn.Sequential (.dim 4 (.dim 2 .scalar)) (.dim 4 (.dim 1 .scalar))) :=
-  nn.models.kan
-    { inDim := 2
-      hidden := [8]
-      outDim := 1 }
-    (.dim 4 .scalar)
-
 def target (x1 x2 : Float) : Float :=
   let relu (x : Float) := if x < 0.0 then 0.0 else x
   relu (x1 + x2) + 0.25
@@ -58,31 +51,21 @@ def target (x1 x2 : Float) : Float :=
 /--
 Tiny in-memory regression dataset.
 
-The important bit is the last line: `Data.tensorDataset xs ys` turns ordinary `Float` tensors into a
-runtime-polymorphic dataset, so the trainer can still choose `Float`, executable IEEE32, CPU, CUDA,
-eager or typed graph execution later.
+`Data.tensorDataset` infers the input and target shapes from the two tensors. The trainer remains
+free to choose the scalar semantics and execution device later.
 -/
-def data : Trainer.DataSource (.dim 2 .scalar) (.dim 1 .scalar) :=
-  let xs : Tensor Float (shape![4, 2]) :=
-    tensorOfList! [4, 2] [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]
-  let ys : Tensor Float (shape![4, 1]) :=
-    tensorOfList! [4, 1] [target 0.0 0.0, target 0.0 1.0, target 1.0 0.0, target 1.0 1.0]
+def data :=
+  let xs : Tensor Float [4, 2] :=
+    tensor! [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
+  let ys : Tensor Float [4, 1] :=
+    tensor! [[target 0.0 0.0], [target 0.0 1.0], [target 1.0 0.0], [target 1.0 1.0]]
   Data.tensorDataset xs ys
 
-def probes : List (Trainer.Probe (.dim 2 .scalar)) :=
-  [ Trainer.Probe.ofFloatTensor "origin" (Tensor.vector (α := Float) [0.0, 0.0])
+def probes : Array (Trainer.Probe [2]) :=
+  #[ Trainer.Probe.ofFloatTensor "origin" (tensor! (ty := Float) [0.0, 0.0])
       "x=(0.0,0.0)" (some (toString (target 0.0 0.0)))
-  , Trainer.Probe.ofFloatTensor "heldout" (Tensor.vector (α := Float) [0.5, -0.25])
+  , Trainer.Probe.ofFloatTensor "heldout" (tensor! (ty := Float) [0.5, -0.25])
       "x=(0.5,-0.25)" (some (toString (target 0.5 (-0.25)))) ]
-
-/-- Select an optimizer through the public API. -/
-def optimizerChoiceExample : Except String (String × optim.Optimizer) := do
-  let kind ← optim.Kind.parse "adamw"
-  pure (kind.name, kind.toOptimizer 0.01)
-
-/-- A LoRA parameter type exposed by the public adapter API. -/
-def loraParamsExample : Type :=
-  Adapters.LoRA.Params Float 2 1 1
 
 /--
 Run the public API example from another command or from `#eval` while developing.
@@ -92,8 +75,8 @@ The shape below is the user-facing training path:
 - build the trainer from the model,
 - attach optimizer, execution, and device choices once,
 - call `trainer.predict` for initial prediction,
-- call `trainer.train`,
-- use the returned training result for prediction.
+- call `trainer.trainVerified`,
+- use the returned verified training result for prediction,
 - call `trained.verifyRobustLInf` on a small $\ell_\infty$ box.
 
 The quickstart build only checks that these declarations typecheck; it does not train during
@@ -107,10 +90,10 @@ def run (_args : List String := []) : IO Unit := do
         execution := .typedGraph
         device := .cpu
         scalar := .ieee32Exec }
-  let heldout : Tensor Float (.dim 2 .scalar) := tensorOfList! [2] [0.5, -0.25]
+  let heldout : Tensor Float [2] := tensor! [0.5, -0.25]
   let initial ← trainer.predict heldout
   IO.println s!"initial(heldout) = {Tensor.pretty initial}"
-  let trained ← trainer.train data { steps := 25, batchSize := 4, logEvery := 10 } probes
+  let trained ← trainer.trainVerified data { steps := 25, batchSize := 4, logEvery := 10 } probes
   trained.printSummary
   trained.printPrediction "predict(heldout)" heldout
   let cert ← trained.verifyRobustLInf heldout 0.05

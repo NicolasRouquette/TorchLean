@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.RL.Cli
-public import NN.API.RL.Definitions
+public import NN.API.RL.Core
 public import NN.API.RL.Runtime
 
 /-!

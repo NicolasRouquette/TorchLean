@@ -149,7 +149,7 @@ This is mathematically the same sigmoid function as `sigmoidSpec`; we keep it as
 because several scalar approximation proofs reason about this `exp(x)` numerator form directly.
 
 Important naming choice: this is **not** called scalar softmax. A one-entry softmax is always `1`;
-the real softmax API in TorchLean is the tensor-level `Activation.softmaxLastSpec` below.
+the real softmax API in TorchLean is the axis-parametric tensor operation `Activation.softmaxSpec`.
 -/
 def logisticSpec (x : α) : α :=
   MathFunctions.exp x / (MathFunctions.exp x + 1)
@@ -343,7 +343,7 @@ The fold is seeded by the first coordinate rather than by a numeric sentinel. Co
 result is one of the input coordinates for every linearly ordered scalar type. Softmax and
 log-softmax share this definition so their range-reduction convention cannot drift apart.
 -/
-def maxVecSpec {n : Nat} (t : Tensor α (.dim (Nat.succ n) .scalar)) : Tensor α .scalar :=
+def maxVecSpec {n : Nat} (t : Tensor α [Nat.succ n]) : Tensor α .scalar :=
   match t with
   | Tensor.dim values =>
       let first : α := Tensor.item (values ⟨0, Nat.succ_pos n⟩)
@@ -355,7 +355,7 @@ def maxVecSpec {n : Nat} (t : Tensor α (.dim (Nat.succ n) .scalar)) : Tensor α
 
 /-- Max-shifted exponentials shared by stable softmax and log-softmax. -/
 def maxShiftedExpVecSpec {n : Nat}
-    (t : Tensor α (.dim (Nat.succ n) .scalar)) : Tensor α (.dim (Nat.succ n) .scalar) :=
+    (t : Tensor α [Nat.succ n]) : Tensor α [Nat.succ n] :=
   expSpec (subSpec t (replicate (maxVecSpec t)))
 
 /-- Softmax on a length-`n` vector.
@@ -369,7 +369,7 @@ $\operatorname{softmax}(x)_i=\exp(x_i-m)/\sum_j\exp(x_j-m)$, where
 $m=\max_i x_i$. Subtracting the max avoids overflow in typical floating-point backends, and it is
 also a nice canonical form to reference in proofs.
 -/
-def softmaxVecSpec {n : Nat} (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
+def softmaxVecSpec {n : Nat} (t : Tensor α [n]) : Tensor α [n] :=
   match n with
   | 0 => t
   | Nat.succ _ =>
@@ -384,11 +384,11 @@ PyTorch analogy: `torch.softmax(x, dim=-1)`.
 For `s = .scalar` we return `1` (there is only one coordinate). For higher-rank tensors we keep
 the outer structure and apply `softmaxVecSpec` at the last axis.
 -/
-def softmaxLastSpec : {s : Shape} → Tensor α s → Tensor α s
+def Internal.softmaxInnermostSpec : {s : Shape} → Tensor α s → Tensor α s
   | .scalar, _ => Tensor.scalar 1
   | .dim n .scalar, t => softmaxVecSpec (α := α) (n := n) t
   | .dim n inner, Tensor.dim f =>
-      Tensor.dim (fun i : Fin n => softmaxLastSpec (s := inner) (f i))
+      Tensor.dim (fun i : Fin n => Internal.softmaxInnermostSpec (s := inner) (f i))
 
 /-- Backward/VJP for last-axis softmax.
 
@@ -406,47 +406,37 @@ $$
 This is the standard Jacobian-vector product for softmax, written in a way that avoids materializing
 the full `n×n` Jacobian.
 -/
-def softmaxLastBackwardSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor α s
+def Internal.softmaxInnermostBackwardSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor α s
   | .scalar, _x, _dY => Tensor.scalar 0
   | .dim n .scalar, x, dY =>
       let y := softmaxVecSpec (α := α) (n := n) x
       let s : α := sumSpec (mulSpec dY y)
       mulSpec y (subSpec dY (replicate (Tensor.scalar s)))
   | .dim n inner, Tensor.dim xF, Tensor.dim dF =>
-      Tensor.dim (fun i : Fin n => softmaxLastBackwardSpec (s := inner) (xF i) (dF i))
+      Tensor.dim (fun i : Fin n =>
+        Internal.softmaxInnermostBackwardSpec (s := inner) (xF i) (dF i))
 
 /-- Numerically stable softmax along any tensor dimension.
 
-The selected dimension is moved to the innermost position, where `softmaxLastSpec` computes each
+The selected dimension is moved to the innermost position, where a private kernel computes each
 one-dimensional slice, and is then restored. This definition covers outer and interior dimensions
 without imposing a memory-layout convention on the mathematical tensor.
 -/
 def softmaxSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (x : Tensor α s) : Tensor α s :=
-  let swaps := Shape.moveAxisToLastSwaps s.rank axis
+  let swaps := Shape.moveAxisToInnermostSwaps s.rank axis
   let moved := Tensor.permuteByAdjacentSwaps x swaps
-  let y := softmaxLastSpec moved
+  let y := Internal.softmaxInnermostSpec moved
   let restored := Tensor.permuteByAdjacentSwaps y swaps.reverse
   Shape.applyAdjacentSwaps_reverse s swaps ▸ restored
-
-/-- The general softmax API specializes to row-wise softmax on the innermost dimension. -/
-@[simp] theorem softmaxSpec_last {s : Shape} (hRank : 0 < s.rank) (x : Tensor α s) :
-    @softmaxSpec α _ s (s.rank - 1) (Shape.axisInBoundsLast hRank) x =
-      softmaxLastSpec x := by
-  have hSwaps : Shape.moveAxisToLastSwaps s.rank (s.rank - 1) = [] := by
-    rw [Shape.moveAxisToLastSwaps, Nat.sub_add_cancel hRank]
-    simp
-  unfold softmaxSpec
-  rw [hSwaps]
-  rfl
 
 /-- Backward/VJP for softmax along any tensor dimension. -/
 def softmaxBackwardSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (x dY : Tensor α s) : Tensor α s :=
-  let swaps := Shape.moveAxisToLastSwaps s.rank axis
+  let swaps := Shape.moveAxisToInnermostSwaps s.rank axis
   let movedX := Tensor.permuteByAdjacentSwaps x swaps
   let movedDY := Tensor.permuteByAdjacentSwaps dY swaps
-  let dX := softmaxLastBackwardSpec movedX movedDY
+  let dX := Internal.softmaxInnermostBackwardSpec movedX movedDY
   let restored := Tensor.permuteByAdjacentSwaps dX swaps.reverse
   Shape.applyAdjacentSwaps_reverse s swaps ▸ restored
 
@@ -462,23 +452,23 @@ directly to avoid ever computing `log(0)` when `exp` underflows.
 -/
 
 /-- Log-softmax on a length-`n` vector. -/
-def logSoftmaxVecSpec {n : Nat} (t : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar) :=
+def logSoftmaxVecSpec {n : Nat} (t : Tensor α [n]) : Tensor α [n] :=
   match n with
   | 0 => t
   | Nat.succ n' =>
       let maxT : Tensor α .scalar := maxVecSpec t
-      let shifted : Tensor α (.dim (Nat.succ n') .scalar) := subSpec t (replicate maxT)
+      let shifted : Tensor α [Nat.succ n'] := subSpec t (replicate maxT)
       let ex := maxShiftedExpVecSpec t
       let denom : α := sumSpec ex
       let logDenom : α := MathFunctions.log denom
       subSpec shifted (replicate (Tensor.scalar logDenom))
 
 /-- Log-softmax along the last axis (recurses over outer dimensions). -/
-def logSoftmaxLastSpec : {s : Shape} → Tensor α s → Tensor α s
+def Internal.logSoftmaxInnermostSpec : {s : Shape} → Tensor α s → Tensor α s
   | .scalar, _ => Tensor.scalar 0
   | .dim n .scalar, t => logSoftmaxVecSpec (α := α) (n := n) t
   | .dim n inner, Tensor.dim f =>
-      Tensor.dim (fun i : Fin n => logSoftmaxLastSpec (s := inner) (f i))
+      Tensor.dim (fun i : Fin n => Internal.logSoftmaxInnermostSpec (s := inner) (f i))
 
 /-- Forward-mode JVP for last-axis log-softmax.
 
@@ -490,14 +480,15 @@ Unlike the VJP below, the subtracted scalar is replicated uniformly across the s
 softmax probabilities occur only inside the dot product. Taking the already-computed output `y`
 also avoids recomputing the stable forward pass.
 -/
-def logSoftmaxLastJvpSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor α s
+def Internal.logSoftmaxInnermostJvpSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor α s
   | .scalar, _y, _dx => Tensor.scalar 0
   | .dim _n .scalar, y, dx =>
       let probs := expSpec y
       let directionalMean : α := dotSpec probs dx
       subSpec dx (replicate (Tensor.scalar directionalMean))
   | .dim n inner, Tensor.dim yF, Tensor.dim dF =>
-      Tensor.dim (fun i : Fin n => logSoftmaxLastJvpSpec (s := inner) (yF i) (dF i))
+      Tensor.dim (fun i : Fin n =>
+        Internal.logSoftmaxInnermostJvpSpec (s := inner) (yF i) (dF i))
 
 /-- Backward/VJP for last-axis log-softmax.
 
@@ -514,52 +505,43 @@ This is the same formula used by PyTorch's stable `log_softmax` backward path.  
 already-computed output `y` rather than the logits `x`, so runtime backends can avoid recomputing
 the max-shifted forward pass during backprop.
 -/
-def logSoftmaxLastBackwardSpec : {s : Shape} → Tensor α s → Tensor α s → Tensor α s
+def Internal.logSoftmaxInnermostBackwardSpec :
+    {s : Shape} → Tensor α s → Tensor α s → Tensor α s
   | .scalar, _y, _dY => Tensor.scalar 0
   | .dim _n .scalar, y, dY =>
       let probs := expSpec y
       let rowSum : α := sumSpec dY
       subSpec dY (mulSpec probs (replicate (Tensor.scalar rowSum)))
   | .dim n inner, Tensor.dim yF, Tensor.dim dF =>
-      Tensor.dim (fun i : Fin n => logSoftmaxLastBackwardSpec (s := inner) (yF i) (dF i))
+      Tensor.dim (fun i : Fin n =>
+        Internal.logSoftmaxInnermostBackwardSpec (s := inner) (yF i) (dF i))
 
 /-- Numerically stable log-softmax along any tensor dimension. -/
 def logSoftmaxSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (x : Tensor α s) : Tensor α s :=
-  let swaps := Shape.moveAxisToLastSwaps s.rank axis
+  let swaps := Shape.moveAxisToInnermostSwaps s.rank axis
   let moved := Tensor.permuteByAdjacentSwaps x swaps
-  let y := logSoftmaxLastSpec moved
+  let y := Internal.logSoftmaxInnermostSpec moved
   let restored := Tensor.permuteByAdjacentSwaps y swaps.reverse
   Shape.applyAdjacentSwaps_reverse s swaps ▸ restored
-
-/-- The general log-softmax API specializes to row-wise log-softmax on the innermost dimension. -/
-@[simp] theorem logSoftmaxSpec_last {s : Shape} (hRank : 0 < s.rank) (x : Tensor α s) :
-    @logSoftmaxSpec α _ s (s.rank - 1) (Shape.axisInBoundsLast hRank) x =
-      logSoftmaxLastSpec x := by
-  have hSwaps : Shape.moveAxisToLastSwaps s.rank (s.rank - 1) = [] := by
-    rw [Shape.moveAxisToLastSwaps, Nat.sub_add_cancel hRank]
-    simp
-  unfold logSoftmaxSpec
-  rw [hSwaps]
-  rfl
 
 /-- Forward-mode derivative of log-softmax along any tensor dimension. -/
 def logSoftmaxJvpSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (y dx : Tensor α s) : Tensor α s :=
-  let swaps := Shape.moveAxisToLastSwaps s.rank axis
+  let swaps := Shape.moveAxisToInnermostSwaps s.rank axis
   let movedY := Tensor.permuteByAdjacentSwaps y swaps
   let movedDX := Tensor.permuteByAdjacentSwaps dx swaps
-  let dy := logSoftmaxLastJvpSpec movedY movedDX
+  let dy := Internal.logSoftmaxInnermostJvpSpec movedY movedDX
   let restored := Tensor.permuteByAdjacentSwaps dy swaps.reverse
   Shape.applyAdjacentSwaps_reverse s swaps ▸ restored
 
 /-- Backward/VJP for log-softmax along any tensor dimension. -/
 def logSoftmaxBackwardSpec {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
     (y dY : Tensor α s) : Tensor α s :=
-  let swaps := Shape.moveAxisToLastSwaps s.rank axis
+  let swaps := Shape.moveAxisToInnermostSwaps s.rank axis
   let movedY := Tensor.permuteByAdjacentSwaps y swaps
   let movedDY := Tensor.permuteByAdjacentSwaps dY swaps
-  let dX := logSoftmaxLastBackwardSpec movedY movedDY
+  let dX := Internal.logSoftmaxInnermostBackwardSpec movedY movedDY
   let restored := Tensor.permuteByAdjacentSwaps dX swaps.reverse
   Shape.applyAdjacentSwaps_reverse s swaps ▸ restored
 

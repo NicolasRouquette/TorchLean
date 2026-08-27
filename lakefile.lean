@@ -194,25 +194,9 @@ lean_lib NN where
   moreLinkObjs :=
     if cudaEnabled && libtorchEnabled then #[torchlean_libtorch_sdpa_so]
     else #[torchlean_libtorch_sdpa_stub]
-  -- The reusable library has one canonical root. Examples, tests, CI aggregators, documentation,
-  -- and executable targets have separate targets below.
+  -- The reusable library follows its canonical umbrella. Examples, tests, CI-only modules,
+  -- documentation, and executable roots have separate targets below.
   roots := #[`NN]
-  globs := #[
-    .one `NN,
-    .submodules `NN.API,
-    .submodules `NN.Backend,
-    .submodules `NN.Core,
-    .submodules `NN.Floats,
-    .submodules `NN.GraphSpec,
-    .submodules `NN.IR,
-    .submodules `NN.MLTheory,
-    .submodules `NN.Proofs,
-    .submodules `NN.Runtime,
-    .submodules `NN.Spec,
-    .submodules `NN.Tensor,
-    .submodules `NN.Verification,
-    .submodules `NN.Widgets
-  ]
 
 /-- Runnable and narrative examples, kept out of the reusable `NN` library target. -/
 lean_lib NNExamples where
@@ -224,15 +208,17 @@ lean_lib NNTests where
   roots := #[`NN.Tests.Suite]
   globs := #[.submodules `NN.Tests]
 
-/-- Broad CI-only import aggregators. -/
+/-- Ordinary CI-only imports omitted from the downstream `NN` umbrella. -/
 lean_lib NNCI where
   roots := #[`NN.CI.All]
-  globs := #[.submodules `NN.CI]
+
+/-- Proof-heavy modules typechecked by the docs build or an explicit local target. -/
+lean_lib NNSlowProofs where
+  roots := #[`NN.CI.SlowProofs]
 
 /-- Complete maintained API documentation surface. -/
 lean_lib TorchLeanDocs where
   roots := #[`NN.Docs]
-  globs := #[.one `NN.Docs]
 
 /-- Build one native backend library for the current Lake configuration. -/
 private def buildNativeBackendLib (pkg : Package) (spec : NativeBackendLib) := do

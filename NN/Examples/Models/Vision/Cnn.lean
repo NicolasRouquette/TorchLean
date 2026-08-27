@@ -65,26 +65,26 @@ def outDim : Nat := RealData.cifarClasses
 /-- Shared CNN configuration used by shapes and the reusable public model constructor. -/
 def cfg : nn.models.CnnConfig 2 :=
   { inChannels := inC
-    spatial := #v[inH, inW]
+    spatial := tensor! [inH, inW]
     outDim := outDim
     conv :=
       { outChannels := 4
-        kernel := #v[3, 3]
-        stride := #v[2, 2]
-        padding := #v[1, 1]
+        kernel := tensor! [3, 3]
+        stride := tensor! [2, 2]
+        padding := tensor! [1, 1]
         kernelNonzero := by intro i; fin_cases i <;> decide
         strideNonzero := by intro i; fin_cases i <;> decide }
     pool :=
-      { kernel := #v[2, 2]
-        stride := #v[2, 2]
+      { kernel := tensor! [2, 2]
+        stride := tensor! [2, 2]
         kernelNonzero := by intro i; fin_cases i <;> decide
         strideNonzero := by intro i; fin_cases i <;> decide } }
 
 /-- Input shape: a minibatch of CIFAR images in channel-first layout. -/
-abbrev σ : Shape := .dim batch (.dim inC (.dim inH (.dim inW .scalar)))
+abbrev σ : List Nat := [batch, inC, inH, inW]
 
 /-- Output shape: one row of class logits per image. -/
-abbrev τ : Shape := .dim batch (.dim outDim .scalar)
+abbrev τ : List Nat := [batch, outDim]
 
 /--
 Small convolutional classifier from the public model API.
@@ -96,7 +96,7 @@ def model : nn.Builder (nn.Sequential σ τ) :=
   by
     simpa [σ, τ, cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
       Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
-      nn.models.cnn cfg (.dim batch .scalar)
+      nn.models.cnn cfg [batch]
 
 /-- Train the CIFAR CNN with the public `Trainer` surface. -/
 def train (opts : Options) (flags : RealData.CifarModelTrainFlags) :

@@ -57,16 +57,16 @@ theorem evalAt_axisReduction_eq
     Graph.evalAt (α := α)
         (g := unaryGraphOut (op.toOpKind axis) s (Tensor.shapeAfterSum s axis))
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s x)
-        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
+        (input := Spec.SomeTensor.mk (α := α) s x)
+        (vals := #[Spec.SomeTensor.mk (α := α) s x]) (i := 1)
       =
       Except.ok
-        (Spec.PackedTensor.mk (α := α) (Tensor.shapeAfterSum s axis)
+        (Spec.SomeTensor.mk (α := α) (Tensor.shapeAfterSum s axis)
           (op.denote axis x hAxis.down)) := by
   cases op <;>
     simp [AxisReductionOperation.toOpKind, AxisReductionOperation.denote, Graph.evalAt, Graph.evalNode, Graph.normalizeNodeOutput,
       unaryGraphOut, unaryNodeOut, Graph.getNode, Graph.getNode?, hAxisLookup, Bind.bind,
-      Except.bind, Pure.pure, Except.pure]
+      Graph.unaryParentId, unaryParent?, Except.bind, Pure.pure, Except.pure]
 
 /-- Local IR semantics for `reduce_sum` along a valid axis. -/
 theorem evalAt_reduceSum_eq
@@ -76,11 +76,11 @@ theorem evalAt_reduceSum_eq
     (hAxisLookup : Spec.Shape.nonemptyAxis? (axis := axis) s = some hAxis) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.reduceSum axis) s (Tensor.shapeAfterSum s axis))
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s x)
-        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
+        (input := Spec.SomeTensor.mk (α := α) s x)
+        (vals := #[Spec.SomeTensor.mk (α := α) s x]) (i := 1)
       =
       Except.ok
-        (Spec.PackedTensor.mk (α := α) (Tensor.shapeAfterSum s axis)
+        (Spec.SomeTensor.mk (α := α) (Tensor.shapeAfterSum s axis)
           (Tensor.reduceSum (α := α) (s := s) axis x
             (hAxis.down))) := by
   exact evalAt_axisReduction_eq .sum axis x hAxis hAxisLookup
@@ -93,11 +93,11 @@ theorem evalAt_reduceMean_eq
     (hAxisLookup : Spec.Shape.nonemptyAxis? (axis := axis) s = some hAxis) :
     Graph.evalAt (α := α) (g := unaryGraphOut (.reduceMean axis) s (Tensor.shapeAfterSum s axis))
         (payload := {})
-        (input := Spec.PackedTensor.mk (α := α) s x)
-        (vals := #[Spec.PackedTensor.mk (α := α) s x]) (i := 1)
+        (input := Spec.SomeTensor.mk (α := α) s x)
+        (vals := #[Spec.SomeTensor.mk (α := α) s x]) (i := 1)
       =
       Except.ok
-        (Spec.PackedTensor.mk (α := α) (Tensor.shapeAfterSum s axis)
+        (Spec.SomeTensor.mk (α := α) (Tensor.shapeAfterSum s axis)
           (Tensor.reduceMean (α := α) (s := s) axis x
             (hAxis.down))) := by
   exact evalAt_axisReduction_eq .mean axis x hAxis hAxisLookup

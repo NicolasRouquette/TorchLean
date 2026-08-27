@@ -24,6 +24,19 @@ variable {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)
 Flatten, unflatten, reshape, and small construction helpers for shape-indexed tensors.
 -/
 
+/-- Reverse the coordinates of an arbitrary statically valid axis. -/
+def reverseAxis : (axis : Nat) → {shape : Shape} → Tensor α shape →
+    [_h : Shape.AxisInBounds axis shape] → Tensor α shape
+  | 0, .dim length _, .dim values, _ =>
+      .dim fun i => values ⟨length - 1 - i.val, by grind⟩
+  | axis + 1, .dim _ rest, .dim values, h =>
+      have innerAxis : Shape.AxisInBounds axis rest :=
+        ⟨by
+          have := h.proof
+          simp only [Shape.rank] at this
+          grind⟩
+      .dim fun i => @reverseAxis axis rest (values i) innerAxis
+
 
 /-- Flatten a tensor into a 1‑D vector (length = `Spec.Shape.size s`).
 
@@ -34,8 +47,8 @@ Why this exists: a lot of shape-changing ops are easiest to specify as "flatten,
 and this is also the bridge we use for some runtime interop where we want a plain sequence of
 scalars (e.g. importing weights or serializing test vectors).
 -/
-def flattenSpec {α : Type} [Inhabited α] : ∀ {s : Shape}, Tensor α s → Tensor α (.dim (Spec.Shape.size
-  s) .scalar)
+def flattenSpec {α : Type} [Inhabited α] : ∀ {s : Shape}, Tensor α s → Tensor α [Spec.Shape.size
+  s]
 | Shape.scalar, Tensor.scalar x =>
   Tensor.dim (fun i =>
     have _ : i.val < 1 := i.isLt
@@ -63,7 +76,7 @@ def flattenSpec {α : Type} [Inhabited α] : ∀ {s : Shape}, Tensor α s → Te
 
 PyTorch analogy: `flat.view(shape)` (assuming the element count matches).
 This is the inverse of `flattenSpec` up to the ordering convention. -/
-def unflattenSpec {α : Type} [Inhabited α] : ∀ (s : Shape), Tensor α (.dim (Spec.Shape.size s) .scalar)
+def unflattenSpec {α : Type} [Inhabited α] : ∀ (s : Shape), Tensor α [Spec.Shape.size s]
   → Tensor α s
 | Shape.scalar, Tensor.dim f =>
   -- `Spec.Shape.size Shape.scalar = 1`, so the input always has an element at index `0`.
@@ -74,7 +87,7 @@ def unflattenSpec {α : Type} [Inhabited α] : ∀ (s : Shape), Tensor α (.dim 
   Tensor.dim (fun i =>
     -- For each position i in the outer dimension, extract a sub-tensor
     let startIdx := i.val * (Spec.Shape.size s')
-    let subTensor : Tensor α (.dim (Spec.Shape.size s') .scalar) :=
+    let subTensor : Tensor α [Spec.Shape.size s'] :=
       Tensor.dim (fun j =>
         let globalIdx := startIdx + j.val
         if h : globalIdx < n * (Spec.Shape.size s') then
@@ -109,7 +122,7 @@ Helper lemma: `flattenSpec` on an outer `Tensor.dim` agrees with flattening a ch
 This is used to prove `unflattenSpec s (flattenSpec t) = t` by reducing the statement to the
 induction hypothesis on each slice.
 -/
-private lemma flattenSpec_dim_apply {α : Type} [Inhabited α] {n : Nat} {s : Shape}
+lemma flattenSpec_dim_apply {α : Type} [Inhabited α] {n : Nat} {s : Shape}
     (f : Fin n → Tensor α s) (i : Fin n) (j : Fin (Spec.Shape.size s))
     (hmpos : 0 < Spec.Shape.size s)
     (hidx : i.val * Spec.Shape.size s + j.val < n * Spec.Shape.size s) :
@@ -245,7 +258,7 @@ Round-trip `flatten ∘ unflatten = id`.
 This is the spec-layer analogue of flattening a reshaped/viewed tensor in PyTorch.
 -/
 theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
-    ∀ {s : Shape}, (v : Tensor α (.dim (Spec.Shape.size s) .scalar)) → flattenSpec (unflattenSpec s v)
+    ∀ {s : Shape}, (v : Tensor α [Spec.Shape.size s]) → flattenSpec (unflattenSpec s v)
       = v
   | .scalar, v => by
       cases v with
@@ -289,7 +302,7 @@ theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
                 unflattenSpec (Shape.dim n s) (Tensor.dim g) =
                   Tensor.dim (fun i : Fin n =>
                     let startIdx := i.val * m
-                    let subTensor : Tensor α (.dim m .scalar) :=
+                    let subTensor : Tensor α [m] :=
                       Tensor.dim (fun j : Fin m =>
                         let globalIdx := startIdx + j.val
                         if h : globalIdx < n * m then
@@ -304,7 +317,7 @@ theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
                     flattenSpec
                         (Tensor.dim (fun i : Fin n =>
                           let startIdx := i.val * m
-                          let subTensor : Tensor α (.dim m .scalar) :=
+                          let subTensor : Tensor α [m] :=
                             Tensor.dim (fun j : Fin m =>
                               let globalIdx := startIdx + j.val
                               if h : globalIdx < n * m then
@@ -338,7 +351,7 @@ theorem unflatten_flatten_inverse {α : Type} [Inhabited α] :
                     (α := α)
                     (f := fun i : Fin n =>
                       let startIdx := i.val * m
-                      let subTensor : Tensor α (.dim m .scalar) :=
+                      let subTensor : Tensor α [m] :=
                         Tensor.dim (fun j : Fin m =>
                           let globalIdx := startIdx + j.val
                           if h : globalIdx < n * m then
@@ -409,15 +422,36 @@ theorem flatten_unflatten_inverse_wf {α : Type} [Inhabited α] {s : Shape}
 def reshapeSpec {α : Type} [Inhabited α]
   {s₁ s₂ : Shape} (t : Tensor α s₁) (h : s₁.size = s₂.size) : Tensor α s₂ :=
   let flattened := flattenSpec t
-  let retyped : Tensor α (.dim (Spec.Shape.size s₂) .scalar) :=
+  let retyped : Tensor α [Spec.Shape.size s₂] :=
     Eq.recOn h flattened
   unflattenSpec s₂ retyped
+
+/-- Flattening a reshape returns the original flat data, transported across the size equality. -/
+theorem flatten_reshapeSpec {α : Type} [Inhabited α] {s₁ s₂ : Shape}
+    (tensor : Tensor α s₁) (h : s₁.size = s₂.size) :
+    flattenSpec (reshapeSpec tensor h) = h ▸ flattenSpec tensor := by
+  simp [reshapeSpec, unflatten_flatten_inverse]
+
+private theorem cast_flat_tensor_cancel {α : Type} {n m : Nat} (h : n = m)
+    (tensor : Tensor α [n]) : h.symm ▸ (h ▸ tensor) = tensor := by
+  subst m
+  rfl
+
+/-- Reshaping to an equal-size shape and back preserves every tensor entry. -/
+theorem reshapeSpec_roundtrip {α : Type} [Inhabited α] {s₁ s₂ : Shape}
+    (tensor : Tensor α s₁) (h : s₁.size = s₂.size) :
+    reshapeSpec (reshapeSpec tensor h) h.symm = tensor := by
+  simp only [reshapeSpec]
+  rw [unflatten_flatten_inverse]
+  change unflattenSpec s₁ (h.symm ▸ (h ▸ flattenSpec tensor)) = tensor
+  rw [cast_flat_tensor_cancel]
+  exact flatten_unflatten_inverse tensor
 
 /-- Reshape with an explicit equality rewrite (sometimes easier for the elaborator). -/
 def reshapeExplicitSpec {α : Type} [Inhabited α] {s₁ s₂ : Shape} (t : Tensor α s₁)
   (h : s₁.size = s₂.size) : Tensor α s₂ :=
   let flattened := flattenSpec t
-  let retyped : Tensor α (.dim (Spec.Shape.size s₂) .scalar) :=
+  let retyped : Tensor α [Spec.Shape.size s₂] :=
     by rw [h.symm]; exact flattened
   unflattenSpec s₂ retyped
 

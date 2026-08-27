@@ -38,7 +38,7 @@ useful for round-trip examples.
 def generateTransformerEncoderPyTorchClass (seqLen embedDim headCount hiddenDim numLayers : Nat)
   (className : String := "TransformerEncoder") : String :=
   joinLines <|
-  [generatePyTorchImports, "import math", ""] ++ [
+  #[generatePyTorchImports, "import math", ""] ++ #[
     "class MultiHeadAttention(nn.Module):",
     indentTwo s!"def __init__(self, embed_dim={embedDim}, num_heads={headCount}):",
     indentFour "super().__init__()",
@@ -131,14 +131,14 @@ PyTorch `state_dict`.
 -/
 def generateTransformerEncoderWithWeights (seqLen embedDim headCount hiddenDim : Nat)
   (queryWeight keyWeight valueWeight outputWeight :
-    Tensor Float (.dim embedDim (.dim embedDim .scalar)))
-  (feedForwardInputWeight : Tensor Float (.dim embedDim (.dim hiddenDim .scalar)))
-  (feedForwardOutputWeight : Tensor Float (.dim hiddenDim (.dim embedDim .scalar)))
-  (feedForwardInputBias : Tensor Float (.dim hiddenDim .scalar))
+    Tensor Float [embedDim, embedDim])
+  (feedForwardInputWeight : Tensor Float [embedDim, hiddenDim])
+  (feedForwardOutputWeight : Tensor Float [hiddenDim, embedDim])
+  (feedForwardInputBias : Tensor Float [hiddenDim])
   (feedForwardOutputBias norm1Scale norm1Bias norm2Scale norm2Bias :
-    Tensor Float (.dim embedDim .scalar))
+    Tensor Float [embedDim])
   (className : String := "TransformerEncoder") : String :=
-  joinLines [
+  joinLines #[
     generateTransformerEncoderPyTorchClass seqLen embedDim headCount hiddenDim 1 className,
     "",
     "# Weight initialization helpers",
@@ -149,13 +149,13 @@ def generateTransformerEncoderWithWeights (seqLen embedDim headCount hiddenDim :
     indentTwo s!"state_dict['layers.0.mha.v_proj.weight'] = torch.tensor({transposedMatrixTensorToPy valueWeight})",
     indentTwo s!"state_dict['layers.0.mha.out_proj.weight'] = torch.tensor({transposedMatrixTensorToPy outputWeight})",
     indentTwo s!"state_dict['layers.0.ffn.fc1.weight'] = torch.tensor({transposedMatrixTensorToPy feedForwardInputWeight})",
-    indentTwo s!"state_dict['layers.0.ffn.fc1.bias'] = torch.tensor({vectorTensorToPy feedForwardInputBias})",
+    indentTwo s!"state_dict['layers.0.ffn.fc1.bias'] = torch.tensor({tensorToPyString feedForwardInputBias})",
     indentTwo s!"state_dict['layers.0.ffn.fc2.weight'] = torch.tensor({transposedMatrixTensorToPy feedForwardOutputWeight})",
-    indentTwo s!"state_dict['layers.0.ffn.fc2.bias'] = torch.tensor({vectorTensorToPy feedForwardOutputBias})",
-    indentTwo s!"state_dict['layers.0.norm1.weight'] = torch.tensor({vectorTensorToPy norm1Scale})",
-    indentTwo s!"state_dict['layers.0.norm1.bias'] = torch.tensor({vectorTensorToPy norm1Bias})",
-    indentTwo s!"state_dict['layers.0.norm2.weight'] = torch.tensor({vectorTensorToPy norm2Scale})",
-    indentTwo s!"state_dict['layers.0.norm2.bias'] = torch.tensor({vectorTensorToPy norm2Bias})",
+    indentTwo s!"state_dict['layers.0.ffn.fc2.bias'] = torch.tensor({tensorToPyString feedForwardOutputBias})",
+    indentTwo s!"state_dict['layers.0.norm1.weight'] = torch.tensor({tensorToPyString norm1Scale})",
+    indentTwo s!"state_dict['layers.0.norm1.bias'] = torch.tensor({tensorToPyString norm1Bias})",
+    indentTwo s!"state_dict['layers.0.norm2.weight'] = torch.tensor({tensorToPyString norm2Scale})",
+    indentTwo s!"state_dict['layers.0.norm2.bias'] = torch.tensor({tensorToPyString norm2Bias})",
     indentTwo "return state_dict",
     indentTwo "",
     "def load_transformer_weights(model):",

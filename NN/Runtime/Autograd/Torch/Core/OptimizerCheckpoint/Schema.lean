@@ -24,15 +24,15 @@ namespace Runtime.Autograd.Torch.Internal.OptimizerCheckpoint
 /-- Ordered parameter metadata shared by backend-owned optimizer checkpoints. -/
 structure ParameterSchema where
   /-- Parameter shapes in module order. -/
-  shapes : List Spec.Shape
+  shapes : Array Spec.Shape
   /-- Whether each corresponding parameter is trainable. -/
-  requiresGrad : List Bool
+  requiresGrad : Array Bool
 
 namespace ParameterSchema
 
-/-- Whether the shape list and mutability mask describe the same number of parameters. -/
+/-- Whether the shape array and mutability mask describe the same number of parameters. -/
 def isWellFormed (schema : ParameterSchema) : Bool :=
-  schema.shapes.length == schema.requiresGrad.length
+  schema.shapes.size == schema.requiresGrad.size
 
 /-- Number of parameters for which an optimizer state entry is expected. -/
 def trainableCount (schema : ParameterSchema) : Nat :=
@@ -43,8 +43,14 @@ def write
     (format : CheckpointIO.Format) (handle : IO.FS.Handle) (schema : ParameterSchema) : IO Unit := do
   unless schema.isWellFormed do
     throw <| IO.userError s!"{format.name}: malformed in-memory parameter schema"
-  CheckpointIO.writeNat64 format.name handle schema.shapes.length
-  for (shape, requiresGrad) in List.zip schema.shapes schema.requiresGrad do
+  CheckpointIO.writeNat64 format.name handle schema.shapes.size
+  for index in [0:schema.shapes.size] do
+    let shape ← match schema.shapes[index]? with
+      | some shape => pure shape
+      | none => throw <| IO.userError s!"{format.name}: internal shape index error"
+    let requiresGrad ← match schema.requiresGrad[index]? with
+      | some flag => pure flag
+      | none => throw <| IO.userError s!"{format.name}: internal mutability index error"
     let dims := Spec.Shape.toList shape
     CheckpointIO.writeNat64 format.name handle dims.length
     for dim in dims do
@@ -58,10 +64,10 @@ def readAndCheck
   unless expected.isWellFormed do
     throw <| IO.userError s!"{format.name}: malformed expected parameter schema"
   let parameterCount ← CheckpointIO.readNat64 format.name handle
-  if parameterCount != expected.shapes.length then
+  if parameterCount != expected.shapes.size then
     throw <| IO.userError <|
       s!"{format.name}: parameter count mismatch " ++
-        s!"(file={parameterCount}, expected={expected.shapes.length})"
+        s!"(file={parameterCount}, expected={expected.shapes.size})"
   for index in [0:parameterCount] do
     let shape ← match expected.shapes[index]? with
       | some shape => pure shape
@@ -70,15 +76,14 @@ def readAndCheck
       | some flag => pure flag
       | none => throw <| IO.userError s!"{format.name}: internal mutability index error"
     let rank ← CheckpointIO.readNat64 format.name handle
-    let expectedDims := Spec.Shape.toList shape
-    if rank != expectedDims.length then
+    let expectedDims := Spec.Shape.toList shape |>.toArray
+    if rank != expectedDims.size then
       throw <| IO.userError <|
         s!"{format.name}: rank mismatch for parameter {index} " ++
-          s!"(file={rank}, expected={expectedDims.length})"
-    let mut reversedDims := []
+          s!"(file={rank}, expected={expectedDims.size})"
+    let mut dims := Array.mkEmpty rank
     for _ in [0:rank] do
-      reversedDims := (← CheckpointIO.readNat64 format.name handle) :: reversedDims
-    let dims := reversedDims.reverse
+      dims := dims.push (← CheckpointIO.readNat64 format.name handle)
     if dims != expectedDims then
       throw <| IO.userError <|
         s!"{format.name}: shape mismatch for parameter {index} " ++

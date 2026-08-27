@@ -20,9 +20,9 @@ reproducible without pulling in large benchmark dumps.
   Trains a fresh sklearn digits linear classifier with the local Python producer, exports weights
   and a test split, then immediately lowers and certifies those artifacts inside Lean.
 
-- `lake exe verify -- margin-cert`
-  Checks the exported digits logit margin certificate. This recomputes the margin predicate from
-  the JSON bounds and checks the summary fields.
+- `lake exe verify -- margin-report`
+  Recomputes the margin predicate and summary fields in an exported digits logit-bound report.
+  The command does not establish that the supplied bounds enclose the model.
 
 - `lake exe verify -- torchlean-robustness`
   Builds a small TorchLean classifier, lowers it to verifier IR, and checks the margin with
@@ -58,11 +58,12 @@ reproducible without pulling in large benchmark dumps.
   Python or external tools may produce candidate JSON artifacts, but Lean still parses and checks
   the artifact before accepting it.
 
-- Certificate checkers: `LiRPA/*`, `AbCrown/*`,
+- Artifact checkers: `LiRPA/*`, `AbCrown/*`,
   `NN.Verification.Robustness.MarginCert`, and `NN.Verification.Splines.PiecewiseLinearCLI` parse
-  external artifacts and recompute the relevant certificate condition inside Lean. Classifier
-  margin checks share `NN.Verification.Robustness.TopLabel`, so JSON certificates and in-memory
-  IBP/CROWN bounds use the same top-label rule.
+  external artifacts and recompute their declared conditions inside Lean. The margin-report
+  checker validates only report consistency. Classifier margin checks share
+  `NN.Verification.Robustness.TopLabel`, so JSON reports and in-memory IBP/CROWN bounds use the same
+  top-label rule.
 
 - Data-backed robustness: `lake exe verify -- digits` runs `NN.Verification.Robustness.Digits`,
   which loads the exported sklearn digits weights and test data stored in `Robustness/`.

@@ -55,10 +55,12 @@ reload a shape-indexed parameter pack and fail before sampling if the saved shap
 the model architecture.
 
 The causal-transformer training command uses `CausalTransformer.Indexed`. Its batches contain
-`Tensor Nat` token IDs, the embedding layer gathers table rows directly, and repeated IDs
-scatter-add into the same weight-gradient row. It does not allocate one-hot token vectors. The
-separate `oneHot` constructor remains available for proofs and small examples whose inputs are
-already one-hot tensors.
+bounded `Tensor (Fin vocab) [batch, seqLen]` token IDs. Tokenizers may first produce
+`Tensor Nat [batch, seqLen]`; `Tensor.checkIndices` validates that boundary before the model runs.
+The embedding layer gathers table rows directly, and
+repeated IDs scatter-add into the same weight-gradient row without allocating one-hot token
+vectors. The separate `oneHot` constructor remains available for proofs and small examples whose
+inputs are already one-hot tensors.
 
 Useful commands:
 

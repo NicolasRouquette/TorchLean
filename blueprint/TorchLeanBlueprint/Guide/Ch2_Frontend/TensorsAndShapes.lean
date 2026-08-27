@@ -39,7 +39,7 @@ Expected failure printing Tensor ℝ:
   cast to `Float`/`Float32`/`IEEE32Exec`/`ℚ` to display.
 ```
 
-The first five vectors have the same shape but different scalar meanings. `ℚ` displays exact
+The first five tensors have the same shape but different scalar meanings. `ℚ` displays exact
 fractions. `Float32` uses Lean's native binary32 operations, while `IEEE32Exec` stores and executes
 explicit binary32 bit patterns. `Float` is Lean's host binary64 type. The final attempted tensor
 over `ℝ` is a mathematical object; arbitrary real numbers are not executable data, so printing it
@@ -55,65 +55,66 @@ The canonical specification type is:
 
 $$`\operatorname{Spec.Tensor}\;\alpha\;s`.
 
-The application-facing spelling is `Tensor α s`. The first parameter is the scalar type and the second is the
-shape. A shape is recursively built from:
+The application-facing spelling for concrete dimensions is `Tensor α [dims...]`. The first
+parameter is the scalar type; the second is the dimension list:
 
 ```
-inductive Shape
-  | scalar
-  | dim (size : Nat) (rest : Shape)
+Tensor Float      [4, 2]  -- Lean `Float` values
+Tensor ℝ          [4, 2]  -- mathematical real numbers
+Tensor IEEE32Exec [4, 2]  -- explicit binary32 bit-level execution
 ```
 
-Thus a matrix of shape `[3,2]` is represented by:
+Shape-polymorphic code may use a variable for the complete shape, as in `Tensor α s`. This is the
+same tensor type, with `s` standing for the dimension list rather than writing its entries out.
 
-$$`
-\operatorname{dim}(3,\operatorname{dim}(2,\operatorname{scalar})).
-`
+Public tensor annotations use list syntax. Shape operations such as concatenation, axis lookup, and
+size calculation preserve that representation in application code.
 
-The `shape!` macro gives the familiar notation:
+`[4, 2]` says only that the tensor has four rows and two columns. It does not carry or infer a
+dtype. Lean obtains the element type from `Tensor`'s first argument, or infers it from the value on
+the right-hand side when the annotation is omitted.
+
+The trainer's scalar mode chooses the instantiated tensor element type and arithmetic semantics.
+For example, `scalar := .float32` instantiates the model at Lean 4.33's native `Float32`; it does not
+reinterpret an already constructed `Tensor Float [4, 2]`. Device storage is a further backend
+contract: TorchLean's CUDA path stores native `Float32` model values as contiguous binary32 data.
+Keeping shape, scalar semantics, and device representation distinct prevents a shape annotation
+from silently deciding numerical behavior.
+
+Shape literals are written from the outermost dimension to the innermost one:
 
 ```
 import NN.API
 open TorchLean
 
-def scalarShape : Shape := .scalar
-def vectorShape : Shape := shape![4]
-def matrixShape : Shape := shape![3, 2]
-def rankFourShape : Shape := shape![8, 3, 32, 32]
+def vectorShape : Shape := [4]
+def matrixShape : Shape := [3, 2]
+def rankFourShape : Shape := [8, 3, 32, 32]
 ```
 
-At the type level, `rankFourShape` is an ordinary rank-four tensor. NCHW, NHWC, sequence, and
-feature conventions come from operations and models rather than separate tensor datatypes. The
-same tensor core can therefore represent language tokens, PDE grids, volumetric data, batched
-matrices, or an unusual scientific coordinate system.
+At the type level, `rankFourShape` is an ordinary rank-four tensor. Axis meanings come from the
+operation or model: `[batch, channel, height, width]` and `[batch, height, width, channel]` are two
+layout conventions over the same tensor type. The same tensor core can represent language tokens,
+PDE grids, volumetric data, batched matrices, or an unusual scientific coordinate system.
 
 # The Logical Representation
 
-The definition of `Spec.Tensor` follows the definition of `Shape`:
-
-```
-inductive Tensor (α : Type) : Shape → Type
-  | scalar : α → Tensor α .scalar
-  | dim : ∀ {n s}, (Fin n → Tensor α s) → Tensor α (.dim n s)
-```
-
-A scalar tensor contains one `α`. Adding an outer dimension of length `n` gives a total function
-from `Fin n` to the tensor stored at each position. A value of shape `[2, 3]` is therefore a
-function selecting one of two rows, where each row is a function selecting one of three scalars.
-
-This representation was chosen for the specification layer, not because nested functions are the
-fastest way to store a minibatch. It gives us three useful facts directly from the type:
+The specification tensor mirrors the recursive shape internally: a scalar stores one value, and
+each tensor dimension is a total function from an in-bounds `Fin` index to the remaining tensor.
+Ordinary model code does not construct that representation directly; list-shaped constructors and
+tensor literals do it. The recursive definition matters in proofs because it gives us three facts
+from the type:
 
 - every axis has the length written in the shape;
 - every legal index carries its own bounds proof;
 - definitions and proofs can recurse over the shape and tensor together.
 
-For example, `Spec.mapTensor` changes the scalar type while preserving every dimension:
+For example, `Tensor.map` changes the scalar type while preserving every dimension:
 
 ```
-#check Spec.mapTensor
+#check Tensor.map
 
--- Spec.mapTensor : (α → β) → Spec.Tensor α s → Spec.Tensor β s
+-- Tensor.map : (α → β) → Tensor α s → Tensor β s
 ```
 
 The result shape is fixed before any values are evaluated. The definition recurses through
@@ -125,13 +126,13 @@ every rank.
 The `tensor!` macro reads a rectangular nested literal and infers its shape:
 
 ```
-def x : Tensor Float (shape![2, 2]) :=
+def x : Tensor Float [2, 2] :=
   tensor! [[1.0, 2.0], [3.0, 4.0]]
 
-def y : Tensor Float (shape![2, 2]) :=
+def y : Tensor Float [2, 2] :=
   tensor! [[0.2, -0.1], [0.0, 0.3]]
 
-def z : Tensor Float (shape![2, 2]) :=
+def z : Tensor Float [2, 2] :=
   x + y
 ```
 
@@ -144,7 +145,7 @@ Try either of these deliberate mistakes in a scratch Lean file:
 def ragged :=
   tensor! [[1.0, 2.0], [3.0]]
 
-def wrongAnnotation : Tensor Float (shape![4]) :=
+def wrongAnnotation : Tensor Float [4] :=
   tensor! [[1.0, 2.0], [3.0, 4.0]]
 ```
 
@@ -155,16 +156,19 @@ shape.
 When the scalar type is ambiguous, make it explicit:
 
 ```
-def q : Tensor Rat (shape![2, 2]) :=
+def q : Tensor Rat [2, 2] :=
   tensor! (ty := Rat) [[1, 2], [3, 4]]
 ```
 
-For a flat literal, `tensorOfList!` proves the length obligation:
+One-dimensional literals use the same notation:
 
 ```
-def v : Tensor Float (shape![4]) :=
-  tensorOfList! [4] [0.0, 1.0, 2.0, 3.0]
+def v : Tensor Float [4] :=
+  tensor! [0.0, 1.0, 2.0, 3.0]
 ```
+
+When values arrive as a computed flat array rather than a literal, `Tensor.ofArray` checks that its
+size agrees with the supplied dimensions before returning a typed tensor.
 
 In scalar-polymorphic runtime code, `tensorF! cast dims values` authors constants as `Float` and
 maps a supplied `Float → α` conversion over them. The conversion remains visible because scalar
@@ -172,31 +176,13 @@ semantics affect more than storage metadata.
 
 # Indexing Is Total
 
-The recursive representation of a tensor mirrors its shape:
+Specification-level indices use `Fin`, so every index includes a proof that it lies inside its
+axis. Indexing therefore does not return `Option` or throw an out-of-range exception. The result
+type also records which axis was removed. Runtime APIs that receive an unchecked natural-number
+index validate it at the boundary before constructing the corresponding typed operation.
 
-```
-Tensor α (.dim n rest)
-```
-
-contains a function from `Fin n` to `Tensor α rest`. An index has both a natural number and a proof
-that it is smaller than the dimension. Consequently, indexing does not return `Option α` and does
-not throw an out-of-range exception: an invalid index cannot be constructed without supplying a
-false proof.
-
-For the matrix above, the first row can be written:
-
-```
-def firstRow : Tensor Float (shape![2]) :=
-  match x with
-  | .dim rows => rows ⟨0, by decide⟩
-```
-
-The output shape is visible in the function type. Indexing once removed the outer dimension; it did
-not flatten or reinterpret the remaining data.
-
-This representation is particularly pleasant in proofs. A theorem about a rank-$`n+1` tensor can
-introduce an arbitrary `i : Fin size` and apply the induction hypothesis to the smaller tensor at
-that index.
+This is useful in proofs: a theorem about a tensor with one or more dimensions introduces an
+arbitrary valid index and applies its induction hypothesis to the smaller tensor selected there.
 
 # Runtime Data Must Earn A Shape
 
@@ -204,24 +190,24 @@ A file or network payload arrives as bytes and runtime dimensions. Lean cannot k
 before reading it. The correct boundary is therefore a checked constructor:
 
 ```
-def loadVector4 (xs : List Float) :
-    Except String (Tensor Float (shape![4])) :=
-  Tensor.ofList [4] xs
+def loadTensor4 (xs : Array Float) :
+    Except String (Tensor Float [4]) :=
+  Tensor.ofArray [4] xs
 ```
 
-`Tensor.ofList` checks that the list length equals the product of the dimensions. Only the success
+`Tensor.ofArray` checks that the array size equals the product of the dimensions. Only the success
 branch returns the typed tensor.
 
 For dimensions that are themselves known only at runtime:
 
 ```
-def loadDynamic (dims : List Nat) (xs : List Float) :=
-  NN.Tensor.someTensorOfList dims xs
+def loadDynamic (dims : Array Nat) (xs : Array Float) :=
+  Tensor.ofArray dims.toList xs
 ```
 
-the result packages an existential shape together with the corresponding tensor. A caller may
-inspect the dimensions, establish that they equal the shape required by a model, and then cross
-into the statically typed API.
+the result is still an ordinary `Tensor Float dims.toList`. Lean permits a result type to depend on
+the runtime `dims` value. A caller may inspect those dimensions, establish that they equal the shape
+required by a model, and then cast the tensor using that equality.
 
 This is a recurring TorchLean pattern:
 
@@ -271,7 +257,7 @@ host-`Float` readback path. The executable binary32 constructor is:
 
 ```
 def x32 :
-    Tensor TorchLean.Floats.IEEE32Exec (shape![3]) :=
+    Tensor TorchLean.Floats.IEEE32Exec [3] :=
   tensor32! [0.1, 0.2, 0.3]
 ```
 
@@ -286,6 +272,47 @@ parameters, activations, and outputs. Scalar polymorphism means the same definit
 interpreted again at another `α`. Integer indices and boolean masks use dedicated operation
 interfaces so they are not silently treated as differentiable numeric tensors.
 
+# Tensors And Arrays
+
+TorchLean uses two ordinary containers for numerical data. A statically shaped value is a
+`Tensor`; a runtime-sized homogeneous collection is an `Array`. In particular, a length-$`n`
+value has type `Tensor α [n]`. It is not wrapped in Lean's `Vector` type, because the tensor shape
+already records the length.
+
+Lists still appear in types such as `Tensor α [batch, width]`: there they are shape syntax, not
+storage. They also index dependent parameter packs whose tensors have different shapes. Runtime
+samples, token buffers, coordinates, trainability flags, and collections of predictions use
+arrays. This leaves one numerical representation at the specification boundary and one compact
+container at dynamic boundaries.
+
+# What The Runtime Stores
+
+The pure tensor is also the CPU reference representation. Users still write and receive
+`Tensor α shape`. A CPU eager node internally stores `SomeTensor α`, which pairs one runtime shape
+with a `Tensor α shape`. This shape erasure lets one autograd tape contain activations and gradients
+of different shapes in a single array. Recovering a typed tensor requires checking the stored
+shape. The theorem `Spec.SomeTensor.materialize_eq` records that rebuilding the internal tensor
+closure into its compact materialized form preserves the tensor exactly.
+
+`TensorPack α shapes` solves a different problem. It is a statically heterogeneous tuple: the full
+list of member shapes remains in its type. Model parameters, gradients, and typed graph contexts use
+it when a fixed collection contains tensors of different shapes. It does not erase shapes, and it
+is not an alternative input or output tensor type.
+
+A model program does not pass those values around directly while it records a computation. It uses
+`Runtime.ValueRef m α shape`, a shape-indexed handle owned by one session. Reading the handle
+returns the corresponding tensor value. It has no meaning in another session and is not a second
+tensor datatype. Session-backed runtime handles carry an owner token and recording generation;
+operations reject handles from another session and handles retained across `resetTape`.
+
+CUDA execution is the one place where the physical representation must differ. An `AnyBuffer`
+contains a runtime shape and a native device buffer in contiguous row-major order. Upload and
+download functions connect it to `Tensor`; CUDA tape operations validate the stored shape and buffer
+size before dispatch. Proofs about graph evaluation and explicit kernel contracts cover the
+operations for which TorchLean has established a bridge. The native CUDA compiler, driver, and
+hardware remain named external boundaries rather than being treated as consequences of the tensor
+definition.
+
 # Linear Layers Preserve Prefix Dimensions
 
 PyTorch's `Linear(in_features, out_features)` acts on the last axis. TorchLean follows that useful
@@ -298,9 +325,9 @@ nn.linear 2 8
 can occur in:
 
 ```
-shape![2]              -> shape![8]
-shape![batch, 2]       -> shape![batch, 8]
-shape![batch, time, 2] -> shape![batch, time, 8]
+[2]              -> [8]
+[batch, 2]       -> [batch, 8]
+[batch, time, 2] -> [batch, time, 8]
 ```
 
 Any leading shape can serve as the prefix; it need not mean “batch” or “time.” One linear
@@ -350,35 +377,19 @@ a representation change used to keep repeated updates from accumulating runtime 
 visits every scalar once, so its work is linear in `Shape.size s`; callers should place it at a
 deliberate boundary rather than inside every small tensor operation.
 
-The deep-dive file
-[`Tensors/Basic.lean`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/DeepDives/Tensors/Basic.lean)
-shows both:
+The checked boundary is small. An array arriving from a file or native library becomes a tensor
+only after its size is shown to equal the shape's element count:
 
 ```
-def matrixArray : TensorArray.Tensor Float [2, 3] :=
-  TensorArray.ofArray
+def matrix : Tensor Float [2, 3] :=
+  Tensor.ofFlatArrayExact [2, 3]
     #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    [2, 3]
-    (by simp)
-
-def matrixSpec : Spec.Tensor Float (Spec.Shape.ofList [2, 3]) :=
-  toTensor matrixArray
+    (by decide)
 ```
 
-`TensorArray` makes row-major storage explicit. `Spec.Tensor` makes shape recursion explicit.
-Conversion theorems and runtime checks connect them.
-
-The runtime-oriented `TensorArray.Tensor α dims` stores:
-
-```
-data        : Array α
-shape_valid : data.size = TensorArray.shapeProd dims
-```
-
-Its `get?` operation accepts a runtime list of indices. It returns `none` when the rank differs or
-an index is outside its dimension. This is a different interface from indexing `Spec.Tensor` with
-`Fin`: external indices are checked dynamically, while an index already inside a proof uses the
-total specification interface.
+From that point onward, model and specification code use `Tensor`. Calling `matrix.toArray`
+materializes row-major storage when serialization or a kernel boundary needs it. The array does not
+carry a second numerical semantics.
 
 # Cost And Representation Notes
 
@@ -426,20 +437,20 @@ These are the names I reach for most often when reading or writing a small examp
   * Declaration
   * Use
 *
-  * `shape![d₀, ..., dₙ]`
+  * `[d₀, ..., dₙ]`
   * build a shape known while Lean elaborates the file
 *
   * `tensor!`
   * construct a rectangular nested literal and infer its shape
 *
-  * `tensorOfList!`
+  * `tensorOfArray!`
   * construct a statically shaped tensor from a flat literal
 *
-  * `Tensor.ofList`
+  * `Tensor.ofArray`
   * check runtime data against a requested static shape
 *
-  * `NN.Tensor.someTensorOfList`
-  * retain an existential shape when dimensions are known only at runtime
+  * `Tensor.ofArray dims xs`
+  * construct the same `Tensor` type when `dims` is known only at runtime
 *
   * `Spec.Tensor.castShape`
   * transport a tensor along a proved equality of shapes
@@ -447,11 +458,11 @@ These are the names I reach for most often when reading or writing a small examp
   * `Spec.Tensor.materialize`
   * normalize the pure representation without changing its value
 *
-  * `TensorArray.ofArray`
-  * pair a flat array with runtime dimensions and a size proof
+  * `Tensor.ofFlatArrayExact`
+  * check flat storage against a shape and construct the canonical tensor
 *
-  * `TensorArray.get?`
-  * check a runtime multi-index before reading array-backed storage
+  * `Tensor.toArray`
+  * materialize row-major storage for serialization or native execution
 :::
 
 The generated API reference gives the complete signatures. This table is the smaller working set
@@ -464,13 +475,12 @@ Open
 in VS Code with the Lean extension. Place the cursor on:
 
 ```
-#tensor_view matrixSpecView
-#tensor_stats_view matrixSpecView
+#tensor_view matrix
+#tensor_stats_view matrix
 ```
 
-The first widget renders the matrix; the second summarizes its values. Move the cursor to
-`firstRowSpecView` to see the shape change after indexing. The widget declarations are `meta`
-because the editor evaluates them for display. Ordinary model code continues to use plain `def`.
+The first widget renders a tensor; the second summarizes its values. Move the cursor to
+`#tensor_view firstRow` to see the shape change after indexing.
 
 # What Shape Safety Proves
 
@@ -494,8 +504,8 @@ without saying which property was established.
 The next chapter turns shape maps into layers and model architectures. The most useful sources to
 keep nearby are:
 
-- [NN/Tensor/API.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Tensor/API.lean) for
-  constructors and operations;
+- [NN/Tensor.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Tensor.lean) for the public
+  tensor surface and its focused constructor, syntax, printing, and operation modules;
 - [NN/Spec/Core/Tensor.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Spec/Core/Tensor.lean)
   for the recursive specification representation;
 - [NN/Proofs/Tensor/Basic.lean](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Tensor/Basic.lean)

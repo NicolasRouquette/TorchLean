@@ -7,8 +7,8 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Runtime
-public import NN.API.Tensor
-public import NN.API.TensorPack
+public import NN.Tensor
+import NN.API.Sample
 public import NN.API.Trainer.FixedSample
 public import NN.API.Trainer.Reporting
 public import NN.Examples.ModelZoo.Command

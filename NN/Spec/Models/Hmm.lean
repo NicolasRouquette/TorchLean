@@ -21,8 +21,9 @@ The model parameters are:
 - transition matrix $A$, and
 - emission matrix $B$.
 
-We represent observations as `List (Fin nObservations)` to keep the observation alphabet explicit
-and avoid mixing “probabilities” with “indices” in the scalar type `α`.
+We represent a length-`T` observation sequence as a `Tensor (Fin nObservations) [T]`. The element
+type keeps observation symbols distinct from probabilities, while the tensor shape records the
+sequence length.
 
 ## Notation and shapes
 
@@ -75,14 +76,15 @@ until you feed them to a distribution or a loss.
 -/
 structure HMMSpec (α : Type) (nStates nObservations : Nat) where
   /-- Initial distribution $\pi$. -/
-  initial : Tensor α (.dim nStates .scalar)
+  initial : Tensor α [nStates]
   /-- Transition matrix $A$. -/
-  transition : Tensor α (.dim nStates (.dim nStates .scalar))
+  transition : Tensor α [nStates, nStates]
   /-- Emission matrix $B$. -/
-  emission : Tensor α (.dim nStates (.dim nObservations .scalar))
+  emission : Tensor α [nStates, nObservations]
 
-/-- Observation sequence as a list of discrete symbols (indices into the observation alphabet). -/
-abbrev ObservationSeq (nObservations : Nat) := List (Fin nObservations)
+/-- A fixed-length sequence of symbols from the discrete observation alphabet. -/
+abbrev ObservationSeq (nObservations length : Nat) :=
+  Tensor (Fin nObservations) [length]
 
 /-! ## Basic helpers -/
 
@@ -142,7 +144,7 @@ Uniform distribution vector of length `n`.
 This is used to keep posterior messages total after an impossible observation has already been
 recorded by a zero scaling factor.
 -/
-private def uniformVec {n : Nat} : Tensor α (.dim n .scalar) :=
+private def uniformVec {n : Nat} : Tensor α [n] :=
   match n with
   | 0 => Tensor.dim (fun k => nomatch k)
   | Nat.succ _ => Tensor.dim (fun _ => Tensor.scalar (1 / (n : α)))
@@ -154,7 +156,7 @@ If the sum is $0$, the normalized message is totalized to a uniform vector, whil
 scale remains $0$. The zero scale is essential: it records that the observation prefix has
 probability zero.
 -/
-def normalizeVec {n : Nat} (v : Tensor α (.dim n .scalar)) : (Tensor α (.dim n .scalar) × α) :=
+def normalizeVec {n : Nat} (v : Tensor α [n]) : (Tensor α [n] × α) :=
   let s := sumSpec v
   if s > 0 then
     (scaleSpec v (1 / s), s)
@@ -162,8 +164,8 @@ def normalizeVec {n : Nat} (v : Tensor α (.dim n .scalar)) : (Tensor α (.dim n
     (uniformVec (α := α) (n := n), 0)
 
 /-- Sum logarithms of positive scale factors. A nonpositive factor represents zero likelihood. -/
-private def logScales? (scales : List α) : Option α :=
-  scales.foldl
+private def logScales? {length : Nat} (scales : Tensor α [length]) : Option α :=
+  scales.toArray.foldl
     (fun acc c =>
       match acc with
       | none => none
@@ -172,7 +174,7 @@ private def logScales? (scales : List α) : Option α :=
 
 /-- Emission probabilities $B_{\mathord{:},\mathtt{obs}}$ as a vector over states. -/
 def emissionVec {nStates nObservations : Nat}
-  (m : HMMSpec α nStates nObservations) (obs : Fin nObservations) : Tensor α (.dim nStates .scalar)
+  (m : HMMSpec α nStates nObservations) (obs : Fin nObservations) : Tensor α [nStates]
     :=
   Tensor.dim (fun s => Tensor.scalar (getEmissionProbDiscrete m s obs))
 
@@ -184,8 +186,8 @@ the next unnormalized message `alphaTilde`.
 -/
 private def forwardStep {nStates nObservations : Nat}
   (m : HMMSpec α nStates nObservations)
-  (prev_alpha : Tensor α (.dim nStates .scalar))
-  (obs : Fin nObservations) : Tensor α (.dim nStates .scalar) :=
+  (prev_alpha : Tensor α [nStates])
+  (obs : Fin nObservations) : Tensor α [nStates] :=
   -- One forward update (without scaling): apply transitions, then reweight by emissions.
   let emission_probs := emissionVec (α := α) m obs
   Tensor.dim (fun s =>
@@ -203,22 +205,9 @@ structure HMMForwardStep (α : Type) (nStates nObservations : Nat) where
   /-- Observation consumed at this timestep. -/
   observation : Fin nObservations
   /-- Normalized forward message $\alpha_t$. -/
-  message : Tensor α (.dim nStates .scalar)
+  message : Tensor α [nStates]
   /-- Normalization constant $c_t$. -/
   scale : α
-
-private def hmmForwardScaledFrom
-    {nStates nObservations : Nat}
-    (m : HMMSpec α nStates nObservations) :
-    (previous : Tensor α (.dim nStates .scalar)) →
-    (observations : ObservationSeq nObservations) →
-      Vector (HMMForwardStep α nStates nObservations) observations.length
-  | _, [] => #v[]
-  | previous, observation :: observations =>
-      let raw := forwardStep (α := α) m previous observation
-      let (message, scale) := normalizeVec (α := α) raw
-      let remaining := hmmForwardScaledFrom m message observations
-      ⟨#[{ observation, message, scale }] ++ remaining.toArray, by simp [Nat.add_comm]⟩
 
 /-- Scaled forward pass, returning the observation, $\alpha_t$, and $c_t$ at each timestep.
 
@@ -229,18 +218,17 @@ If you need the total likelihood, multiply the scales:
 $p(o_{0:T-1})=\prod_t c_t$.
 -/
 def hmmForwardScaled
-  {nStates nObservations : Nat}
+  {nStates nObservations length : Nat}
   (m : HMMSpec α nStates nObservations)
-  (observations : ObservationSeq nObservations) :
-  Vector (HMMForwardStep α nStates nObservations) observations.length :=
-  match observations with
-  | [] => #v[]
-  | o0 :: os =>
-      let alpha0_raw := mulSpec m.initial (emissionVec (α := α) m o0)
-      let (alpha0, c0) := normalizeVec (α := α) alpha0_raw
-      let remaining := hmmForwardScaledFrom m alpha0 os
-      ⟨#[{ observation := o0, message := alpha0, scale := c0 }] ++ remaining.toArray,
-        by simp [Nat.add_comm]⟩
+  (observations : ObservationSeq nObservations length) :
+  Tensor (HMMForwardStep α nStates nObservations) [length] :=
+  (Sequence.mapAccum length (none : Option (Tensor α [nStates])) fun t previous =>
+    let observation := observations.getScalar t
+    let raw := match previous with
+      | none => mulSpec m.initial (emissionVec (α := α) m observation)
+      | some message => forwardStep (α := α) m message observation
+    let (message, scale) := normalizeVec (α := α) raw
+    (some message, { observation, message, scale })).2
 
 /-- Scaled backward pass, producing normalized backward messages $\beta_t$.
 
@@ -257,21 +245,21 @@ well-conditioned.
 private def hmmBackwardScaled
   {nStates nObservations length : Nat}
   (m : HMMSpec α nStates nObservations)
-  (steps : Vector (HMMForwardStep α nStates nObservations) length) :
-  Vector (Tensor α (.dim nStates .scalar)) length :=
-  let betaLast : Tensor α (.dim nStates .scalar) := fill 1 (.dim nStates .scalar)
-  let initial : Option (Tensor α (.dim nStates .scalar) × HMMForwardStep α nStates nObservations) :=
+  (steps : Tensor (HMMForwardStep α nStates nObservations) [length]) :
+  Tensor (Tensor α [nStates]) [length] :=
+  let betaLast : Tensor α [nStates] := fill 1 [nStates]
+  let initial : Option (Tensor α [nStates] × HMMForwardStep α nStates nObservations) :=
     none
   (Sequence.mapAccumRight length initial fun index next =>
-    let current := steps.get index
+    let current := steps.getScalar index
     match next with
     | none =>
         (some (betaLast, current), betaLast)
     | some (betaNext, nextStep) =>
         let emitNext := emissionVec (α := α) m nextStep.observation
-        let betaRaw : Tensor α (.dim nStates .scalar) :=
+        let betaRaw : Tensor α [nStates] :=
           Tensor.dim (fun i =>
-            let sumOverJ : Tensor α (.dim nStates .scalar) :=
+            let sumOverJ : Tensor α [nStates] :=
               Tensor.dim (fun j =>
                 match get (get m.transition i) j, get emitNext j, get betaNext j with
                 | Tensor.scalar aij, Tensor.scalar bj, Tensor.scalar bnext =>
@@ -285,7 +273,7 @@ private def hmmBackwardScaled
         (some (beta, current), beta)).2
 
  /-- Elementwise multiplication for state-probability vectors. -/
-private def elementwiseMul {n : Nat} (a b : Tensor α (.dim n .scalar)) : Tensor α (.dim n .scalar)
+private def elementwiseMul {n : Nat} (a b : Tensor α [n]) : Tensor α [n]
   :=
   mulSpec a b
 
@@ -297,8 +285,8 @@ $$
 $$
  -/
 private def gammaAt {nStates : Nat}
-  (alpha : Tensor α (.dim nStates .scalar)) (beta : Tensor α (.dim nStates .scalar)) : Tensor α
-    (.dim nStates .scalar) :=
+  (alpha : Tensor α [nStates]) (beta : Tensor α [nStates]) : Tensor α
+    [nStates] :=
   -- γ_t(i) ∝ α_t(i) * β_t(i)
   let g := elementwiseMul (α := α) alpha beta
   (normalizeVec (α := α) g).1
@@ -314,9 +302,9 @@ $$
  -/
 private def xiAt {nStates nObservations : Nat}
   (m : HMMSpec α nStates nObservations)
-  (alpha_t : Tensor α (.dim nStates .scalar))
-  (beta_next : Tensor α (.dim nStates .scalar))
-  (obs_next : Fin nObservations) : Tensor α (.dim nStates (.dim nStates .scalar)) :=
+  (alpha_t : Tensor α [nStates])
+  (beta_next : Tensor α [nStates])
+  (obs_next : Fin nObservations) : Tensor α [nStates, nStates] :=
   let emitNext := emissionVec (α := α) m obs_next
   -- Unnormalized ξ(i,j) = α_t(i) * A(i,j) * B(j, obs_{t+1}) * β_{t+1}(j)
   let xiRaw :=
@@ -329,10 +317,10 @@ private def xiAt {nStates nObservations : Nat}
   let s := sumSpec xiRaw
   if s > 0 then scaleSpec xiRaw (1 / s) else xiRaw
 
- /-- Sum $\xi_t(i,j)$ over a list of $\xi$ matrices (expected transition count). -/
+ /-- Sum $\xi_t(i,j)$ over an array of $\xi$ matrices (expected transition count). -/
 private def sumXi
   {nStates : Nat}
-  (xis : List (Tensor α (.dim nStates (.dim nStates .scalar))))
+  (xis : Array (Tensor α [nStates, nStates]))
   (i : Fin nStates) (j : Fin nStates) : α :=
   xis.foldl (fun acc xi =>
     match get (get xi i) j with
@@ -344,13 +332,14 @@ Sum $\gamma_t(\mathtt{state})$ over timesteps where the observation equals a giv
 This yields the expected emission count for $(\mathtt{state},\mathtt{symbol})$.
  -/
 private def sumGammaWhereObs
-  {nStates nObservations : Nat} [DecidableEq (Fin nObservations)]
-  (observations : ObservationSeq nObservations)
-  (gammas : Vector (Tensor α (.dim nStates .scalar)) observations.length)
+  {nStates nObservations length : Nat} [DecidableEq (Fin nObservations)]
+  (observations : ObservationSeq nObservations length)
+  (gammas : Tensor (Tensor α [nStates])
+    [length])
   (state : Fin nStates) (sym : Fin nObservations) : α :=
-  (List.finRange observations.length).foldl (fun acc t =>
-    if observations.get t = sym then
-      match get (gammas.get t) state with
+  (Array.finRange length).foldl (fun acc t =>
+    if observations.getScalar t = sym then
+      match get (gammas.getScalar t) state with
       | Tensor.scalar v => acc + v
     else
       acc) 0
@@ -360,8 +349,8 @@ Normalize each row of a nonnegative matrix to sum to `1`.
 
 Rows with sum `0` fall back to a uniform row (keeps the EM update total).
  -/
-private def normalizeRows {nRows nCols : Nat} (m : Tensor α (.dim nRows (.dim nCols .scalar))) :
-    Tensor α (.dim nRows (.dim nCols .scalar)) :=
+private def normalizeRows {nRows nCols : Nat} (m : Tensor α [nRows, nCols]) :
+    Tensor α [nRows, nCols] :=
   Tensor.dim (fun i =>
     let row := get m i
     let s := sumSpec row
@@ -373,45 +362,41 @@ Compute expected sufficient statistics for one observation sequence.
 Returns `(initCounts, transCounts, emitCounts, loglik)` suitable for a Baum-Welch M-step.
  -/
 private def expectedCounts
-  {nStates nObservations : Nat} [DecidableEq (Fin nObservations)]
+  {nStates nObservations length : Nat} [DecidableEq (Fin nObservations)]
   (m : HMMSpec α nStates nObservations)
-  (observations : ObservationSeq nObservations) :
-  (Tensor α (.dim nStates .scalar) ×
-   Tensor α (.dim nStates (.dim nStates .scalar)) ×
-   Tensor α (.dim nStates (.dim nObservations .scalar)) ×
+  (observations : ObservationSeq nObservations length) :
+  (Tensor α [nStates] ×
+   Tensor α [nStates, nStates] ×
+   Tensor α [nStates, nObservations] ×
    Option α) :=
   -- Returns:
   -- - initial expected occupancies (for π),
   -- - expected transition counts (for A),
   -- - expected emission counts (for B),
   -- - scaled log-likelihood Σ log c_t.
-  match observations with
-  | [] =>
+  if hLength : length = 0 then
       (fill (0 : α) (.dim nStates .scalar),
        fill (0 : α) (.dim nStates (.dim nStates .scalar)),
        fill (0 : α) (.dim nStates (.dim nObservations .scalar)),
        let s := sumSpec m.initial
        if s > 0 then some (MathFunctions.log s) else none)
-  | observation :: observations =>
-      let sequence := observation :: observations
-      let steps := hmmForwardScaled (α := α) m sequence
+  else
+      let steps := hmmForwardScaled (α := α) m observations
       let betas := hmmBackwardScaled (α := α) m steps
-      let gammas : Vector (Tensor α (.dim nStates .scalar)) sequence.length :=
-        Vector.ofFn fun t => gammaAt (α := α) (steps.get t).message (betas.get t)
+      let gammas : Tensor (Tensor α [nStates]) [length] :=
+        Spec.Tensor.ofFn fun t =>
+          gammaAt (α := α) (steps.getScalar t).message (betas.getScalar t)
       let xis :=
-        (List.finRange observations.length).map fun t =>
-          let current : Fin sequence.length :=
-            ⟨t.val, by
-              simp only [sequence, List.length_cons]
-              exact Nat.lt_trans t.isLt (Nat.lt_succ_self observations.length)⟩
-          let next : Fin sequence.length :=
-            ⟨t.val.succ, by
-              simp only [sequence, List.length_cons]
-              exact Nat.succ_lt_succ t.isLt⟩
-          let nextStep := steps.get next
-          xiAt (α := α) m (steps.get current).message (betas.get next) nextStep.observation
-      let first : Fin sequence.length := ⟨0, by simp [sequence]⟩
-      let initCounts := gammas.get first
+        (Array.finRange length).foldl (fun xis current =>
+          if hNext : current.val + 1 < length then
+            let next : Fin length := ⟨current.val + 1, hNext⟩
+            let nextStep := steps.getScalar next
+            xis.push <| xiAt (α := α) m (steps.getScalar current).message
+              (betas.getScalar next) nextStep.observation
+          else
+            xis) #[]
+      let first : Fin length := ⟨0, Nat.pos_of_ne_zero hLength⟩
+      let initCounts := gammas.getScalar first
       let transCounts :=
         Tensor.dim (fun i =>
           Tensor.dim (fun j =>
@@ -419,15 +404,16 @@ private def expectedCounts
       let emitCounts :=
         Tensor.dim (fun i =>
           Tensor.dim (fun o =>
-            Tensor.scalar (sumGammaWhereObs (α := α) sequence gammas i o)))
-      let loglik := logScales? (α := α) (steps.toList.map (·.scale))
+            Tensor.scalar (sumGammaWhereObs (α := α) observations gammas i o)))
+      let scales : Tensor α [length] := steps.map (·.scale)
+      let loglik := logScales? (α := α) scales
       (initCounts, transCounts, emitCounts, loglik)
 
 /-- One Baum–Welch (EM) step on a single sequence. -/
 def baumWelchStepSpec
-  {nStates nObservations : Nat} [DecidableEq (Fin nObservations)]
+  {nStates nObservations length : Nat} [DecidableEq (Fin nObservations)]
   (m : HMMSpec α nStates nObservations)
-  (observations : ObservationSeq nObservations) :
+  (observations : ObservationSeq nObservations length) :
   (HMMSpec α nStates nObservations × Option α) :=
   let (initCounts, transCounts, emitCounts, loglik) := expectedCounts (α := α) m observations
   let initial :=
@@ -439,19 +425,19 @@ def baumWelchStepSpec
 
 /-- One Baum–Welch epoch over a dataset of observation sequences (sums expected counts). -/
 def baumWelchEpochSpec
-  {nStates nObservations : Nat} [DecidableEq (Fin nObservations)]
+  {nStates nObservations batch length : Nat} [DecidableEq (Fin nObservations)]
   (m : HMMSpec α nStates nObservations)
-  (dataset : List (ObservationSeq nObservations)) :
+  (dataset : Tensor (Fin nObservations) [batch, length]) :
   (HMMSpec α nStates nObservations × Option α) :=
   let init0 := fill (0 : α) (.dim nStates .scalar)
   let trans0 := fill (0 : α) (.dim nStates (.dim nStates .scalar))
   let emit0 := fill (0 : α) (.dim nStates (.dim nObservations .scalar))
   let (initSum, transSum, emitSum, ll) :=
-    dataset.foldl (fun (acc : Tensor α (.dim nStates .scalar) ×
-                        Tensor α (.dim nStates (.dim nStates .scalar)) ×
-                        Tensor α (.dim nStates (.dim nObservations .scalar)) × Option α) obs =>
+    (Array.finRange batch).foldl (fun (acc : Tensor α [nStates] ×
+                        Tensor α [nStates, nStates] ×
+                        Tensor α [nStates, nObservations] × Option α) obs =>
       let (accInit, accTrans, accEmit, accLL) := acc
-      let (iC, tC, eC, llik) := expectedCounts (α := α) m obs
+      let (iC, tC, eC, llik) := expectedCounts (α := α) m (get dataset obs)
       let nextLL :=
         match accLL, llik with
         | some a, some b => some (a + b)
@@ -473,22 +459,22 @@ we compute the likelihood from the per-timestep scaling factors produced by
 probabilities directly.
 -/
 def hmmForwardSpec
-  {nStates nObservations : Nat}
+  {nStates nObservations length : Nat}
   (m : HMMSpec α nStates nObservations)
-  (observations : ObservationSeq nObservations) :
+  (observations : ObservationSeq nObservations length) :
   α :=
-  match observations with
-  | [] => sumSpec m.initial
-  | _ =>
+  if length = 0 then
+    sumSpec m.initial
+  else
       let steps := hmmForwardScaled (α := α) m observations
-      steps.toList.foldl (fun acc step => acc * step.scale) 1
+      steps.toArray.foldl (fun acc step => acc * step.scale) 1
 
-/-- Batched forward pass: compute likelihood for each observation sequence in a list. -/
-def hmmBatchedForwardSpec {nStates nObservations : Nat}
+/-- Batched forward pass with statically matched batch and sequence dimensions. -/
+def hmmBatchedForwardSpec {nStates nObservations batch length : Nat}
   (m : HMMSpec α nStates nObservations)
-  (observations : List (ObservationSeq nObservations)) :
-  List α :=
-  observations.map (hmmForwardSpec m)
+  (observations : Tensor (Fin nObservations) [batch, length]) :
+  Tensor α [batch] :=
+  Tensor.dim fun row => Tensor.scalar (hmmForwardSpec m (get observations row))
 
 /--
 Initialize an HMM with uniform (uninformative) parameters.
@@ -498,10 +484,10 @@ statistically meaningful random initialization.
  -/
 def hmmInitSpec {nStates nObservations : Nat} :
   HMMSpec α nStates nObservations :=
-  let initial : Tensor α (.dim nStates .scalar) := uniformVec (α := α) (n := nStates)
-  let transition : Tensor α (.dim nStates (.dim nStates .scalar)) :=
+  let initial : Tensor α [nStates] := uniformVec (α := α) (n := nStates)
+  let transition : Tensor α [nStates, nStates] :=
     Tensor.dim (fun _ => uniformVec (α := α) (n := nStates))
-  let emission : Tensor α (.dim nStates (.dim nObservations .scalar)) :=
+  let emission : Tensor α [nStates, nObservations] :=
     Tensor.dim (fun _ => uniformVec (α := α) (n := nObservations))
   { initial, transition, emission }
 
@@ -514,14 +500,13 @@ $$
 -/
 def hmmLogLikelihoodSpec {nStates nObservations : Nat}
   (m : HMMSpec α nStates nObservations)
-  (observations : ObservationSeq nObservations) :
+  {length : Nat} (observations : ObservationSeq nObservations length) :
   Option α :=
-  match observations with
-  | [] =>
+  if length = 0 then
       let s := sumSpec m.initial
       if s > 0 then some (MathFunctions.log s) else none
-  | _ =>
+  else
       let steps := hmmForwardScaled (α := α) m observations
-      logScales? (α := α) (steps.toList.map (·.scale))
+      logScales? (α := α) (steps.map (·.scale))
 
 end Spec

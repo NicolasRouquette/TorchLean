@@ -29,7 +29,7 @@ The callbacks isolate the four structural operations needed by the recursion. De
 replace this reference traversal with a fused primitive when the fused operation has the same
 per-entry semantics.
 -/
-def mapLeadingAxisWith {m : Type → Type} [Monad m] {Ref : Shape → Type} {σ τ : Shape}
+def mapOuterAxisWith {m : Type → Type} [Monad m] {Ref : Shape → Type} {σ τ : Shape}
     (empty : m (Ref (.dim 0 τ)))
     (slice : ∀ {n : Nat}, Ref (.dim n σ) → (start len : Nat) →
       (h : start + len ≤ n) → m (Ref (.dim len σ)))
@@ -45,7 +45,7 @@ def mapLeadingAxisWith {m : Type → Type} [Monad m] {Ref : Shape → Type} {σ 
       let yHead ← f head
       let yHeadBatch ← reshape (s₁ := τ) (s₂ := .dim 1 τ) yHead (by simp [Shape.size])
       let tail ← slice (n := k + 1) x 1 k (by simp [Nat.add_comm])
-      let yTail ← mapLeadingAxisWith empty slice reshape concat f (n := k) tail
+      let yTail ← mapOuterAxisWith empty slice reshape concat f (n := k) tail
       let y ← concat (n := 1) (k := k) yHeadBatch yTail
       pure (by simpa [Nat.one_add] using y)
 termination_by n

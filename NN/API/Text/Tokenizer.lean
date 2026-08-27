@@ -8,8 +8,8 @@ module
 
 -- shake: keep-all
 
-public import NN.API.Tensor
-public import NN.API.TensorPack
+public import NN.Tensor
+public import NN.API.Sample
 public import NN.Runtime.Autograd.TorchLean.Metrics
 public import NN.Runtime.Autograd.TorchLean.Random
 
@@ -37,7 +37,7 @@ namespace TorchLean
 namespace text
 
 open Spec Spec.Tensor
-open NN.Tensor
+open TorchLean.Tensor
 
 /-! ## Tokenizers -/
 
@@ -45,15 +45,15 @@ open NN.Tensor
 structure Tokenizer where
   /-- Vocabulary size (token ids are expected to be in `[0, vocabSize)`). -/
   vocabSize : Nat
-  /-- Encode a string into token ids. -/
-  encode : String → List Nat
-  /-- Decode token ids back into a string. -/
-  decode : List Nat → String
+  /-- Encode a string into a variable-length token buffer. -/
+  encode : String → Array Nat
+  /-- Decode a variable-length token buffer back into a string. -/
+  decode : Array Nat → String
 
 namespace Tokenizer
 
 /-- Convert token ids to bytes, truncating each id modulo 256. -/
-def byteArrayOfIds (ids : List Nat) : ByteArray :=
+def byteArrayOfIds (ids : Array Nat) : ByteArray :=
   ids.foldl (fun acc n => acc.push (UInt8.ofNat (n % 256))) ByteArray.empty
 
 /--
@@ -62,16 +62,16 @@ byte streams that are not valid UTF-8. For valid UTF-8 strings,
 $\operatorname{decode}(\operatorname{encode}(s))=s$; model
 output remains printable even when the byte stream is invalid UTF-8.
 -/
-def decodeByteIds (ids : List Nat) : String :=
+def decodeByteIds (ids : Array Nat) : String :=
   let bytes := byteArrayOfIds ids
   match String.fromUTF8? bytes with
   | some s => s
-  | none => String.ofList (ids.map (fun n => Char.ofNat (n % 256)))
+  | none => String.ofList (ids.toList.map (fun n => Char.ofNat (n % 256)))
 
 /-- Byte-level UTF-8 tokenizer: each byte is one token in $[0,256)$. -/
 def byte : Tokenizer where
   vocabSize := 256
-  encode := fun s => (s.toByteArray.toList.map (fun b => b.toNat))
+  encode := fun s => s.toByteArray.data.map (fun b => b.toNat)
   decode := decodeByteIds
 
 /--
@@ -89,26 +89,26 @@ def ofAlphabet (alphabet : Array Char) (unkId : Fin alphabet.size) (unkChar : Ch
   let vocabSize := alphabet.size
   { vocabSize := vocabSize
     encode := fun s =>
-      s.toList.map (fun c =>
+      s.toList.toArray.map (fun c =>
         match alphabet.findIdx? (fun a => a = c) with
         | some i => i
         | none => unkId.val)
     decode := fun ids =>
       String.ofList <|
-        ids.map (fun n =>
+        ids.toList.map (fun n =>
           alphabet.getD n unkChar) }
 
 /-- Encode a string and pad or truncate it to exactly `n` token ids. -/
-def encodeFixed (t : Tokenizer) (n : Nat) (s : String) (padId : Nat := 0) : Vector Nat n :=
+def encodeFixed (t : Tokenizer) (n : Nat) (s : String) (padId : Nat := 0) : Tensor Nat [n] :=
   let toks := t.encode s
-  Vector.ofFn (fun i => toks.getD i.val padId)
+  Spec.Tensor.ofFn (fun i => toks.getD i.val padId)
 
 /-- Encode exactly `batch` strings, padding or truncating each row to `seqLen` token ids. -/
-def encodeFixedBatch {batch : Nat} (t : Tokenizer) (seqLen : Nat) (ss : Vector String batch)
-    (padId : Nat := 0) :
-    Vector (Vector Nat seqLen) batch :=
-  Vector.ofFn (fun bi =>
-    encodeFixed t seqLen (ss.get bi) padId)
+def encodeFixedBatch {batch : Nat} (t : Tokenizer) (seqLen : Nat)
+    (ss : Tensor String [batch]) (padId : Nat := 0) :
+    Tensor Nat [batch, seqLen] :=
+  Spec.Tensor.dim fun bi =>
+    encodeFixed t seqLen (ss.getScalar bi) padId
 
 end Tokenizer
 
@@ -133,8 +133,8 @@ Extract a fixed-length byte-token window from a raw corpus.
 hidden UTF-8 slicing assumptions.
 -/
 def byteTokenWindow (bytes : ByteArray) (n : Nat) (offset : Nat := 0)
-    (padId : Nat := 0) : Vector Nat n :=
-  Vector.ofFn (fun i => byteAtOrPad bytes (offset + i.val) padId)
+    (padId : Nat := 0) : Tensor Nat [n] :=
+  Spec.Tensor.ofFn (fun i => byteAtOrPad bytes (offset + i.val) padId)
 
 /-! ## Corpus Helpers -/
 
@@ -226,21 +226,21 @@ def usableTokenStarts (tokenCount seqLen : Nat) : Nat :=
   if tokenCount > seqLen + 1 then tokenCount - seqLen - 1 else 1
 
 /-- Choose deterministic, approximately evenly spaced starts for fixed-width token windows. -/
-def evenlySpacedOffsets (tokenCount seqLen windows : Nat) : List Nat :=
+def evenlySpacedOffsets (tokenCount seqLen windows : Nat) : Array Nat :=
   let usable := usableTokenStarts tokenCount seqLen
   let stride := Nat.max 1 (usable / Nat.max 1 windows)
-  (List.range windows).map fun i => (i * stride) % usable
+  (Array.range windows).map fun i => (i * stride) % usable
 
 /-- Extract a fixed token window from an array-backed token corpus. -/
-def tokenArrayWindow (tokens : Array Nat) (n offset : Nat) (padId : Nat := 0) : Vector Nat n :=
-  Vector.ofFn (fun i => tokens.getD (offset + i.val) padId)
+def tokenArrayWindow (tokens : Array Nat) (n offset : Nat) (padId : Nat := 0) : Tensor Nat [n] :=
+  Spec.Tensor.ofFn (fun i => tokens.getD (offset + i.val) padId)
 
 /--
 Deterministic minGPT-style random offsets for one training batch.
 
 The result is a function `Fin batch → Nat`: one corpus start offset per row.  We derive the random
 key from `(seed, step)` and then draw row offsets by the row index, so the run is reproducible
-without using ambient IO randomness.  This is the text equivalent of a shuffled `DataLoader` epoch.
+without using ambient IO randomness. This is the text equivalent of a shuffled `EpochLoader` epoch.
 -/
 def randomBatchOffsets (tokenCount seqLen batch seed step : Nat) : Fin batch → Nat :=
   let usable := usableTokenStarts tokenCount seqLen
@@ -255,30 +255,9 @@ The helper is token-array based, so byte, character, BPE, and synthetic tokenize
 `Array Nat` and reuse the same batching semantics.
 -/
 def randomBatchTokenWindows (tokens : Array Nat) (batch seqLen seed step : Nat)
-    (padId : Nat := 0) : Fin batch → Vector Nat (seqLen + 1) :=
+    (padId : Nat := 0) : Tensor Nat [batch, seqLen + 1] :=
   let offsetAt := randomBatchOffsets tokens.size seqLen batch seed step
-  fun bi => tokenArrayWindow tokens (seqLen + 1) (offsetAt bi) padId
-
-/-- Check whether `pat` occurs in `xs` at offset `off`. -/
-def startsWithAt (xs pat : Array Nat) (off : Nat) : Bool := Id.run do
-  if off + pat.size > xs.size then
-    return false
-  for j in [0:pat.size] do
-    match xs[off + j]?, pat[j]? with
-    | some x, some p =>
-        if x ≠ p then
-          return false
-    | _, _ => return false
-  return true
-
-/-- Find the first offset where `pat` appears in `xs`. -/
-def findWindow? (xs pat : Array Nat) : Option Nat := Id.run do
-  if pat.isEmpty then
-    return some 0
-  for i in [0:xs.size] do
-    if startsWithAt xs pat i then
-      return some i
-  return none
+  Spec.Tensor.dim fun bi => tokenArrayWindow tokens (seqLen + 1) (offsetAt bi) padId
 
 /--
 Choose training-window offsets, biased toward a prompt occurrence when the corpus contains it.
@@ -286,14 +265,14 @@ Choose training-window offsets, biased toward a prompt occurrence when the corpu
 If the prompt is present in the corpus, a portion of the sampled windows covers nearby text. That
 keeps generation reports tied to text the model actually saw during training.
 -/
-def promptAwareOffsets (tokenCount seqLen windows : Nat) (promptOffset? : Option Nat) : List Nat :=
+def promptAwareOffsets (tokenCount seqLen windows : Nat) (promptOffset? : Option Nat) : Array Nat :=
   let usable := usableTokenStarts tokenCount seqLen
   match promptOffset? with
   | none =>
-      (List.range windows).map (fun i => (i * seqLen) % usable)
+      (Array.range windows).map (fun i => (i * seqLen) % usable)
   | some off =>
       let start := if off > windows / 4 then off - windows / 4 else 0
-      (List.range windows).map (fun i => (start + i) % usable)
+      (Array.range windows).map (fun i => (start + i) % usable)
 
 end Corpus
 

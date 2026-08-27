@@ -46,22 +46,22 @@ open _root_.Spec.Tensor
 /-- Small nonlinear graph exercising `sigmoid`, `tanh`, and `mul_elem`. -/
 def buildGraph : Graph :=
   let n := 3
-  let inputNode : Node := { id := 0, parents := [], kind := .input, outShape := .dim n .scalar }
-  let gateLinearNode : Node := { id := 1, parents := [0], kind := .linear, outShape := .dim n .scalar }
-  let sigmoidGateNode : Node := { id := 2, parents := [1], kind := .sigmoid, outShape := .dim n .scalar }
-  let candidateLinearNode : Node := { id := 3, parents := [0], kind := .linear, outShape := .dim n .scalar }
-  let candidateTanhNode : Node := { id := 4, parents := [3], kind := .tanh, outShape := .dim n .scalar }
+  let inputNode : Node := { id := 0, parents := #[], kind := .input, outShape := .dim n .scalar }
+  let gateLinearNode : Node := { id := 1, parents := #[0], kind := .linear, outShape := .dim n .scalar }
+  let sigmoidGateNode : Node := { id := 2, parents := #[1], kind := .sigmoid, outShape := .dim n .scalar }
+  let candidateLinearNode : Node := { id := 3, parents := #[0], kind := .linear, outShape := .dim n .scalar }
+  let candidateTanhNode : Node := { id := 4, parents := #[3], kind := .tanh, outShape := .dim n .scalar }
   let gatedCandidateNode : Node :=
-    { id := 5, parents := [2, 4], kind := .mul_elem, outShape := .dim n .scalar }
+    { id := 5, parents := #[2, 4], kind := .mul_elem, outShape := .dim n .scalar }
   { nodes := #[inputNode, gateLinearNode, sigmoidGateNode, candidateLinearNode,
       candidateTanhNode, gatedCandidateNode] }
 
 /-- Seed deterministic linear weights for the two `.linear` nodes in `buildGraph`. -/
 def seedParamsFloat : ParamStore Float :=
   let n := 3
-  let weight : Tensor Float (.dim n (.dim n .scalar)) :=
+  let weight : Tensor Float [n, n] :=
     Tensor.dim (fun i => Tensor.dim (fun j => Tensor.scalar (Float.ofNat (1 + (i.val + j.val)))))
-  let bias : Tensor Float (.dim n .scalar) := Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val)))
+  let bias : Tensor Float [n] := Tensor.dim (fun i => Tensor.scalar (Float.ofNat (i.val)))
   let emptyStore : ParamStore Float := {}
   let withGateLinear :=
     { emptyStore with

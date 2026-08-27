@@ -49,16 +49,18 @@ Dispatch an eager operation through its selected CPU or CUDA capsule.
 is bound to the matching handler before any implementation runs. Returning `none` still means that
 the operation has no implementation in this CUDA runtime; there is no per-operation CPU fallback.
 -/
-def dispatchCudaCapsuleOpt {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
-    (cudaProviders : List NN.Backend.Provider) (cpu : IO β)
-    (cuda : NN.Backend.KernelCapsule → IO (Option β)) : IO β := do
-  let cpuHandler : NN.Backend.KernelHandler β :=
+def dispatchCudaCapsuleOpt {α : Type} {sh : Shape} (s : EagerSession α)
+    (op : NN.Backend.BackendOp) (refs : Array (Option RefIdentity))
+    (cudaProviders : Array NN.Backend.Provider) (cpu : IO (TensorRef α sh))
+    (cuda : NN.Backend.KernelCapsule → IO (Option (TensorRef α sh))) : IO (TensorRef α sh) := do
+  s.validateRefIdentities refs
+  let cpuHandler : NN.Backend.KernelHandler (TensorRef α sh) :=
     { name := "TorchLean reference CPU"
       op
       provider := .reference
       device := .cpu
       execute := fun _ => cpu }
-  let cudaHandlers : List (NN.Backend.KernelHandler β) :=
+  let cudaHandlers : Array (NN.Backend.KernelHandler (TensorRef α sh)) :=
     cudaProviders.map fun provider =>
       { name := s!"CUDA executor for {reprStr provider}"
         op
@@ -70,14 +72,16 @@ def dispatchCudaCapsuleOpt {α β : Type} (s : EagerSession α) (op : NN.Backend
           | none =>
               throw <| IO.userError <|
                 s!"torch: cuda: `{op.name}` is unsupported by `{reprStr provider}`" }
-  s.executeSelected op (cpuHandler :: cudaHandlers)
+  let result ← s.executeSelected op (#[cpuHandler] ++ cudaHandlers)
+  pure { result with identity? := some (← s.currentRefIdentity) }
 
 /--
 Dispatch an eager operation implemented by the reference CPU and TorchLean native CUDA runtimes.
 -/
-def dispatchCudaOpt {α β : Type} (s : EagerSession α) (op : NN.Backend.BackendOp)
-    (cpu : IO β) (cuda : IO (Option β)) : IO β :=
-  dispatchCudaCapsuleOpt s op [.nativeCuda] cpu (fun _ => cuda)
+def dispatchCudaOpt {α : Type} {sh : Shape} (s : EagerSession α) (op : NN.Backend.BackendOp)
+    (refs : Array (Option RefIdentity)) (cpu : IO (TensorRef α sh))
+    (cuda : IO (Option (TensorRef α sh))) : IO (TensorRef α sh) :=
+  dispatchCudaCapsuleOpt s op refs #[.nativeCuda] cpu (fun _ => cuda)
 
 end EagerSession
 

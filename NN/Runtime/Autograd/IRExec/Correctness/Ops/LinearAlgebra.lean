@@ -85,11 +85,11 @@ theorem buildFrom_denoteAllFrom_matmul_mm_success
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x))
     (aId bId a0 a1 b1 : Nat)
-    (hp : n.parents = [aId, bId])
+    (hp : binaryParents? n.parents = some (aId, bId))
     (ia : Idx ([inShape] ++ ss) (.dim a0 (.dim a1 .scalar)))
     (hIa : mkIdx (inShape := inShape) (ss := ss) aId
       (.dim a0 (.dim a1 .scalar)) = .ok ia)
@@ -105,18 +105,18 @@ theorem buildFrom_denoteAllFrom_matmul_mm_success
             (mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
               let aT := getIdx (α := α) (xs := ctx) ia
               let bT := getIdx (α := α) (xs := ctx) ib
-              let y : Tensor α (.dim a0 (.dim b1 .scalar)) :=
+              let y : Tensor α [a0, b1] :=
                 Spec.matMulSpec (α := α) (m := a0) (n := a1) (p := b1) aT bT
               hOut ▸ y))⟩ : State α inShape)) = .ok st') :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
   let expected : Shape := .dim a0 (.dim b1 .scalar)
   let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape :=
     mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
@@ -133,7 +133,7 @@ theorem buildFrom_denoteAllFrom_matmul_mm_success
     simpa [expected, nodeData] using hBuildNext
   have hGetA :
       vals0[aId]? = some
-        (Spec.PackedTensor.mk (α := α) (.dim a0 (.dim a1 .scalar))
+        (Spec.SomeTensor.mk (α := α) (.dim a0 (.dim a1 .scalar))
           (getIdx (α := α) (xs := ctx) ia)) := by
     simpa [vals0, ctx] using
       (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
@@ -141,7 +141,7 @@ theorem buildFrom_denoteAllFrom_matmul_mm_success
         (s := .dim a0 (.dim a1 .scalar)) (idx := ia) hIa)
   have hGetB :
       vals0[bId]? = some
-        (Spec.PackedTensor.mk (α := α) (.dim a1 (.dim b1 .scalar))
+        (Spec.SomeTensor.mk (α := α) (.dim a1 (.dim b1 .scalar))
           (getIdx (α := α) (xs := ctx) ib)) := by
     simpa [vals0, ctx] using
       (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
@@ -150,7 +150,7 @@ theorem buildFrom_denoteAllFrom_matmul_mm_success
   have hEval :
       NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
         (input := input) (vals := vals0) (i := i) =
-        .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+        .ok (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
     simpa [nodeData, mkForwardNode] using
       (evalAt_matmul_mm_ok (α := α)
         (g := g) (payload := payload) (input := input) (vals := vals0)
@@ -162,7 +162,7 @@ theorem buildFrom_denoteAllFrom_matmul_mm_success
   have hStep :
       denoteAllState (α := α) inShape
         (st := (⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩ : State α inShape)) x =
-          vals0.push (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+          vals0.push (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
     simpa [vals0, nodeData, ctx] using
       (denoteAllState_snoc (α := α) (inShape := inShape)
         (ss := ss) (τ := n.outShape) (gd := gd)
@@ -192,11 +192,11 @@ theorem buildFrom_denoteAllFrom_matmul_bmm_success
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x))
     (aId bId a0 a1 a2 bP : Nat)
-    (hp : n.parents = [aId, bId])
+    (hp : binaryParents? n.parents = some (aId, bId))
     (ia : Idx ([inShape] ++ ss) (.dim a0 (.dim a1 (.dim a2 .scalar))))
     (hIa : mkIdx (inShape := inShape) (ss := ss) aId
       (.dim a0 (.dim a1 (.dim a2 .scalar))) = .ok ia)
@@ -212,26 +212,28 @@ theorem buildFrom_denoteAllFrom_matmul_bmm_success
             (mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
               let aT := getIdx (α := α) (xs := ctx) ia
               let bT := getIdx (α := α) (xs := ctx) ib
-              let y : Tensor α (.dim a0 (.dim a1 (.dim bP .scalar))) :=
-                Tensor.bmmSpec (α := α) (batch := a0) (m := a1) (n := a2) (p := bP) aT bT
+              let y : Tensor α [a0, a1, bP] :=
+                Tensor.Internal.bmmLikeSpec (α := α) (batch := a0) (m := a1) (n := a2)
+                  (p := bP) aT bT
               hOut ▸ y))⟩ : State α inShape)) = .ok st')
     :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
   let expected : Shape := .dim a0 (.dim a1 (.dim bP .scalar))
   let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape :=
     mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := n.outShape) (fun ctx =>
       let aT := getIdx (α := α) (xs := ctx) ia
       let bT := getIdx (α := α) (xs := ctx) ib
       let y : Tensor α expected :=
-        Tensor.bmmSpec (α := α) (batch := a0) (m := a1) (n := a2) (p := bP) aT bT
+        Tensor.Internal.bmmLikeSpec (α := α) (batch := a0) (m := a1) (n := a2)
+          (p := bP) aT bT
       hOut ▸ y)
   have hRec :
       buildFrom (α := α) (g := g) (payload := payload)
@@ -241,7 +243,7 @@ theorem buildFrom_denoteAllFrom_matmul_bmm_success
     simpa [expected, nodeData] using hBuildNext
   have hGetA :
       vals0[aId]? = some
-        (Spec.PackedTensor.mk (α := α) (.dim a0 (.dim a1 (.dim a2 .scalar)))
+        (Spec.SomeTensor.mk (α := α) (.dim a0 (.dim a1 (.dim a2 .scalar)))
           (getIdx (α := α) (xs := ctx) ia)) := by
     simpa [vals0, ctx] using
       (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
@@ -249,7 +251,7 @@ theorem buildFrom_denoteAllFrom_matmul_bmm_success
         (s := .dim a0 (.dim a1 (.dim a2 .scalar))) (idx := ia) hIa)
   have hGetB :
       vals0[bId]? = some
-        (Spec.PackedTensor.mk (α := α) (.dim a0 (.dim a2 (.dim bP .scalar)))
+        (Spec.SomeTensor.mk (α := α) (.dim a0 (.dim a2 (.dim bP .scalar)))
           (getIdx (α := α) (xs := ctx) ib)) := by
     simpa [vals0, ctx] using
       (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
@@ -258,7 +260,7 @@ theorem buildFrom_denoteAllFrom_matmul_bmm_success
   have hEval :
       NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
         (input := input) (vals := vals0) (i := i) =
-        .ok (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+        .ok (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
     simpa [nodeData, mkForwardNode] using
       (evalAt_matmul_bmm_ok (α := α)
         (g := g) (payload := payload) (input := input) (vals := vals0)
@@ -270,7 +272,7 @@ theorem buildFrom_denoteAllFrom_matmul_bmm_success
   have hStep :
       denoteAllState (α := α) inShape
         (st := (⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩ : State α inShape)) x =
-          vals0.push (Spec.PackedTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
+          vals0.push (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
     simpa [vals0, nodeData, ctx] using
       (denoteAllState_snoc (α := α) (inShape := inShape)
         (ss := ss) (τ := n.outShape) (gd := gd)
@@ -304,204 +306,195 @@ theorem buildFrom_denoteAllFrom_matmul
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
   unfold buildFrom at hBuild
   simp [hi, hN] at hBuild
   simp (config := { failIfUnchanged := false }) [hk] at hBuild
-  cases hp : n.parents with
-  | nil =>
+  cases hp : binaryParents? n.parents with
+  | none =>
       simp [hp] at hBuild
       cases hBuild
-  | cons aId rest =>
-      cases rest with
-      | nil =>
-          simp [hp] at hBuild
-          cases hBuild
-      | cons bId rest2 =>
-          cases rest2 with
-          | cons _ _ =>
-              simp [hp] at hBuild
-              cases hBuild
-          | nil =>
-              cases hA : g.getNode aId with
-              | error msg =>
-                  simp [hp, hA] at hBuild
-              | ok aNode =>
-                  cases hB : g.getNode bId with
-                  | error msg =>
-                      simp [hp, hA, hB] at hBuild
-                  | ok bNode =>
-                      simp (config := { failIfUnchanged := false }) [hp, hA, hB] at hBuild
-                      cases hAS : aNode.outShape with
+  | some parentIds =>
+      rcases parentIds with ⟨aId, bId⟩
+      cases hA : g.getNode aId with
+      | error msg =>
+          simp [hp, hA] at hBuild
+      | ok aNode =>
+          cases hB : g.getNode bId with
+          | error msg =>
+              simp [hp, hA, hB] at hBuild
+          | ok bNode =>
+              simp (config := { failIfUnchanged := false }) [hp, hA, hB] at hBuild
+              cases hAS : aNode.outShape with
+              | scalar =>
+                  simp (config := { failIfUnchanged := false }) [hAS] at hBuild
+                  try cases hBuild
+              | dim a0 aTail =>
+                  cases aTail with
+                  | scalar =>
+                      simp (config := { failIfUnchanged := false }) [hAS] at hBuild
+                      try cases hBuild
+                  | dim a1 aTail2 =>
+                      cases aTail2 with
                       | scalar =>
-                          simp (config := { failIfUnchanged := false }) [hAS] at hBuild
-                          try cases hBuild
-                      | dim a0 aTail =>
-                          cases aTail with
+                          cases hBS : bNode.outShape with
                           | scalar =>
+                              simp (config := { failIfUnchanged := false })
+                                [hAS, hBS] at hBuild
+                              try cases hBuild
+                          | dim b0 bTail =>
+                              cases bTail with
+                              | scalar =>
+                                  simp (config := { failIfUnchanged := false }) [hAS, hBS]
+                                    at hBuild
+                                  try cases hBuild
+                              | dim b1 bTail2 =>
+                                  cases bTail2 with
+                                  | dim _ _ =>
+                                      simp (config := { failIfUnchanged := false }) [hAS,
+                                        hBS] at hBuild
+                                      try cases hBuild
+                                  | scalar =>
+                                      by_cases hn : a1 = b0
+                                      ·
+                                        cases hn
+                                        cases hIa :
+                                            mkIdx (inShape := inShape) (ss := ss) aId
+                                              (.dim a0 (.dim a1 .scalar)) with
+                                        | error msg =>
+                                            simp [hAS, hBS, hIa] at hBuild
+                                        | ok ia =>
+                                            cases hIb :
+                                                mkIdx (inShape := inShape) (ss := ss) bId
+                                                  (.dim a1 (.dim b1 .scalar)) with
+                                            | error msg =>
+                                                simp [hAS, hBS, hIa, hIb] at hBuild
+                                            | ok ib =>
+                                                let expected : Shape :=
+                                                  .dim a0 (.dim b1 .scalar)
+                                                by_cases hOut : expected = n.outShape
+                                                ·
+                                                  have hBuildNext := by
+                                                    simpa
+                                                        [hAS, hBS, hIa, hIb, expected,
+                                                          hOut]
+                                                        using hBuild
+                                                  exact
+                                                    buildFrom_denoteAllFrom_matmul_mm_success
+                                                      (α := α)
+                                                      (g := g) (payload := payload)
+                                                      (gd := gd) (i := i) (st' := st')
+                                                      (x := x) (n := n) hN hk hi ih
+                                                      (aId := aId) (bId := bId)
+                                                      (a0 := a0) (a1 := a1) (b1 := b1)
+                                                      hp (ia := ia) hIa (ib := ib) hIb
+                                                      hOut hBuildNext
+                                                ·
+                                                  exact False.elim <|
+                                                    throw_bind_ne_ok (by
+                                                      simpa [hAS, hBS, hIa, hIb, expected, hOut] using hBuild)
+                                      ·
+                                        exact False.elim <|
+                                          throw_bind_ne_ok (by simpa [hAS, hBS, hn] using hBuild)
+                      | dim a2 aTail3 =>
+                          cases aTail3 with
+                          | dim _ _ =>
                               simp (config := { failIfUnchanged := false }) [hAS] at hBuild
                               try cases hBuild
-                          | dim a1 aTail2 =>
-                              cases aTail2 with
+                          | scalar =>
+                              cases hBS : bNode.outShape with
                               | scalar =>
-                                  cases hBS : bNode.outShape with
+                                  simp (config := { failIfUnchanged := false }) [hAS, hBS]
+                                    at hBuild
+                                  try cases hBuild
+                              | dim bBatch bTail =>
+                                  cases bTail with
                                   | scalar =>
-                                      simp (config := { failIfUnchanged := false })
-                                        [hAS, hBS] at hBuild
+                                      simp (config := { failIfUnchanged := false }) [hAS,
+                                        hBS] at hBuild
                                       try cases hBuild
-                                  | dim b0 bTail =>
-                                      cases bTail with
+                                  | dim bN bTail2 =>
+                                      cases bTail2 with
                                       | scalar =>
-                                          simp (config := { failIfUnchanged := false }) [hAS, hBS]
-                                            at hBuild
+                                          simp (config := { failIfUnchanged := false })
+                                            [hAS, hBS] at hBuild
                                           try cases hBuild
-                                      | dim b1 bTail2 =>
-                                          cases bTail2 with
+                                      | dim bP bTail3 =>
+                                          cases bTail3 with
                                           | dim _ _ =>
-                                              simp (config := { failIfUnchanged := false }) [hAS,
-                                                hBS] at hBuild
+                                              simp (config := { failIfUnchanged := false })
+                                                [hAS, hBS] at hBuild
                                               try cases hBuild
                                           | scalar =>
-                                              by_cases hn : a1 = b0
+                                              by_cases hb : a0 = bBatch
                                               ·
-                                                cases hn
-                                                cases hIa :
-                                                    mkIdx (inShape := inShape) (ss := ss) aId
-                                                      (.dim a0 (.dim a1 .scalar)) with
-                                                | error msg =>
-                                                    simp [hAS, hBS, hIa] at hBuild
-                                                | ok ia =>
-                                                    cases hIb :
-                                                        mkIdx (inShape := inShape) (ss := ss) bId
-                                                          (.dim a1 (.dim b1 .scalar)) with
-                                                    | error msg =>
-                                                        simp [hAS, hBS, hIa, hIb] at hBuild
-                                                    | ok ib =>
-                                                        let expected : Shape :=
-                                                          .dim a0 (.dim b1 .scalar)
-                                                        by_cases hOut : expected = n.outShape
-                                                        ·
-                                                          have hBuildNext := by
-                                                            simpa
-                                                                [hAS, hBS, hIa, hIb, expected,
-                                                                  hOut]
-                                                                using hBuild
-                                                          exact
-                                                            buildFrom_denoteAllFrom_matmul_mm_success
-                                                              (α := α)
-                                                              (g := g) (payload := payload)
-                                                              (gd := gd) (i := i) (st' := st')
-                                                              (x := x) (n := n) hN hk hi ih
-                                                              (aId := aId) (bId := bId)
-                                                              (a0 := a0) (a1 := a1) (b1 := b1)
-                                                              hp (ia := ia) hIa (ib := ib) hIb
-                                                              hOut hBuildNext
-                                                        ·
-                                                          exact False.elim <|
-                                                            throw_bind_ne_ok (by
-                                                              simpa [hAS, hBS, hIa, hIb, expected, hOut] using hBuild)
+                                                by_cases hn : a2 = bN
+                                                ·
+                                                  cases hb
+                                                  cases hn
+                                                  cases hIa :
+                                                      mkIdx (inShape := inShape) (ss := ss)
+                                                        aId
+                                                        (.dim a0 (.dim a1 (.dim a2
+                                                          .scalar))) with
+                                                  | error msg =>
+                                                      simp [hAS, hBS, hIa] at hBuild
+                                                  | ok ia =>
+                                                      cases hIb :
+                                                          mkIdx (inShape := inShape) (ss :=
+                                                            ss) bId
+                                                            (.dim a0 (.dim a2 (.dim bP
+                                                              .scalar))) with
+                                                      | error msg =>
+                                                          simp [hAS, hBS, hIa, hIb] at hBuild
+                                                      | ok ib =>
+                                                          let expected : Shape :=
+                                                            .dim a0
+                                                              (.dim a1 (.dim bP .scalar))
+                                                          by_cases hOut :
+                                                              expected = n.outShape
+                                                          ·
+                                                            have hBuildNext := by
+                                                              simpa
+                                                                  [hAS, hBS, hIa, hIb,
+                                                                    expected, hOut]
+                                                                  using hBuild
+                                                            exact
+                                                              buildFrom_denoteAllFrom_matmul_bmm_success
+                                                                (α := α)
+                                                                (g := g)
+                                                                (payload := payload)
+                                                                (gd := gd) (i := i)
+                                                                (st' := st')
+                                                                (x := x) (n := n) hN hk hi
+                                                                ih
+                                                                (aId := aId) (bId := bId)
+                                                                (a0 := a0) (a1 := a1)
+                                                                (a2 := a2) (bP := bP)
+                                                                hp (ia := ia) hIa (ib := ib)
+                                                                hIb hOut hBuildNext
+                                                          · exact False.elim <|
+                                                              throw_bind_ne_ok (by
+                                                                simpa [hAS, hBS, hIa, hIb, expected, hOut]
+                                                                  using hBuild)
+                                                ·
+                                                  exact False.elim <|
+                                                    throw_bind_ne_ok (by
+                                                      simpa [hAS, hBS, hb, hn] using hBuild)
                                               ·
                                                 exact False.elim <|
-                                                  throw_bind_ne_ok (by simpa [hAS, hBS, hn] using hBuild)
-                              | dim a2 aTail3 =>
-                                  cases aTail3 with
-                                  | dim _ _ =>
-                                      simp (config := { failIfUnchanged := false }) [hAS] at hBuild
-                                      try cases hBuild
-                                  | scalar =>
-                                      cases hBS : bNode.outShape with
-                                      | scalar =>
-                                          simp (config := { failIfUnchanged := false }) [hAS, hBS]
-                                            at hBuild
-                                          try cases hBuild
-                                      | dim bBatch bTail =>
-                                          cases bTail with
-                                          | scalar =>
-                                              simp (config := { failIfUnchanged := false }) [hAS,
-                                                hBS] at hBuild
-                                              try cases hBuild
-                                          | dim bN bTail2 =>
-                                              cases bTail2 with
-                                              | scalar =>
-                                                  simp (config := { failIfUnchanged := false })
-                                                    [hAS, hBS] at hBuild
-                                                  try cases hBuild
-                                              | dim bP bTail3 =>
-                                                  cases bTail3 with
-                                                  | dim _ _ =>
-                                                      simp (config := { failIfUnchanged := false })
-                                                        [hAS, hBS] at hBuild
-                                                      try cases hBuild
-                                                  | scalar =>
-                                                      by_cases hb : a0 = bBatch
-                                                      ·
-                                                        by_cases hn : a2 = bN
-                                                        ·
-                                                          cases hb
-                                                          cases hn
-                                                          cases hIa :
-                                                              mkIdx (inShape := inShape) (ss := ss)
-                                                                aId
-                                                                (.dim a0 (.dim a1 (.dim a2
-                                                                  .scalar))) with
-                                                          | error msg =>
-                                                              simp [hAS, hBS, hIa] at hBuild
-                                                          | ok ia =>
-                                                              cases hIb :
-                                                                  mkIdx (inShape := inShape) (ss :=
-                                                                    ss) bId
-                                                                    (.dim a0 (.dim a2 (.dim bP
-                                                                      .scalar))) with
-                                                              | error msg =>
-                                                                  simp [hAS, hBS, hIa, hIb] at hBuild
-                                                              | ok ib =>
-                                                                  let expected : Shape :=
-                                                                    .dim a0
-                                                                      (.dim a1 (.dim bP .scalar))
-                                                                  by_cases hOut :
-                                                                      expected = n.outShape
-                                                                  ·
-                                                                    have hBuildNext := by
-                                                                      simpa
-                                                                          [hAS, hBS, hIa, hIb,
-                                                                            expected, hOut]
-                                                                          using hBuild
-                                                                    exact
-                                                                      buildFrom_denoteAllFrom_matmul_bmm_success
-                                                                        (α := α)
-                                                                        (g := g)
-                                                                        (payload := payload)
-                                                                        (gd := gd) (i := i)
-                                                                        (st' := st')
-                                                                        (x := x) (n := n) hN hk hi
-                                                                        ih
-                                                                        (aId := aId) (bId := bId)
-                                                                        (a0 := a0) (a1 := a1)
-                                                                        (a2 := a2) (bP := bP)
-                                                                        hp (ia := ia) hIa (ib := ib)
-                                                                        hIb hOut hBuildNext
-                                                                  · exact False.elim <|
-                                                                      throw_bind_ne_ok (by
-                                                                        simpa [hAS, hBS, hIa, hIb, expected, hOut]
-                                                                          using hBuild)
-                                                        ·
-                                                          exact False.elim <|
-                                                            throw_bind_ne_ok (by
-                                                              simpa [hAS, hBS, hb, hn] using hBuild)
-                                                      ·
-                                                        exact False.elim <|
-                                                          throw_bind_ne_ok (by simpa [hAS, hBS, hb] using hBuild)
+                                                  throw_bind_ne_ok (by simpa [hAS, hBS, hb] using hBuild)
 
 
 

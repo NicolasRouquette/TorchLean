@@ -45,39 +45,10 @@ variable {α : Type} [Context α]
 /-!
 ## Recurrent tensor shapes
 
-These names keep recurrent signatures close to the standard mathematical notation without adding
-new tensor representations:
-
-- `Recurrent.InputVector α inputSize` is a length-`inputSize` vector,
-- `Recurrent.HiddenVector α hiddenSize` is a length-`hiddenSize` vector,
-- `Recurrent.WeightMatrix α hiddenSize inputSize` is a `(hiddenSize × inputSize)` matrix,
-- `Recurrent.SequenceTensor α seqLen s` is a time-major sequence of length `seqLen`.
-
-PyTorch note: `torch.nn.RNN` can be configured as batch-first or time-first. In the spec layer we
-standardize on time-major (`seqLen` outermost) because it matches recursive definitions and proofs.
+Recurrent vectors and matrices use ordinary rank-one and rank-two tensors. Sequences are
+time-major, with `seqLen` as the outermost axis, because that layout follows the recursive
+definitions and proofs directly.
 -/
-
-namespace Recurrent
-
-/-- Length-`inputSize` input vector. -/
-abbrev InputVector (α : Type) (inputSize : Nat) := Tensor α (.dim inputSize .scalar)
-
-/-- Length-`hiddenSize` hidden-state vector. -/
-abbrev HiddenVector (α : Type) (hiddenSize : Nat) := Tensor α (.dim hiddenSize .scalar)
-
-/-- `(hiddenSize × inputSize)` dense weight matrix. -/
-abbrev WeightMatrix (α : Type) (hiddenSize inputSize : Nat) :=
-  Tensor α (.dim hiddenSize (.dim inputSize .scalar))
-
-/-- Time-major sequence of length `seqLen` with per-step shape `shape`. -/
-abbrev SequenceTensor (α : Type) (seqLen : Nat) (shape : Shape) := Tensor α (.dim seqLen shape)
-
-/-- Batch of `batchSize` tensors with per-item shape `shape`. -/
-abbrev BatchedTensor (α : Type) (batchSize : Nat) (shape : Shape) := Tensor α (.dim batchSize shape)
-
-end Recurrent
-
-open Recurrent
 
 /--
 RNN cell parameters.
@@ -94,9 +65,9 @@ just packaged to reuse the same tensor primitives elsewhere in TorchLean.
 -/
 structure RNNSpec (α : Type) (inputSize hiddenSize : Nat) where
   /-- Combined input-to-hidden and hidden-to-hidden weight matrix. -/
-  weights : WeightMatrix α hiddenSize (inputSize + hiddenSize)
+  weights : Tensor α [hiddenSize, inputSize + hiddenSize]
   /-- Hidden-state bias vector. -/
-  bias    : HiddenVector α hiddenSize
+  bias    : Tensor α [hiddenSize]
 
 /--
 Single RNN cell forward pass.
@@ -108,11 +79,11 @@ PyTorch analogy: `RNNCell(input, hidden)` with `tanh` nonlinearity.
 -/
 def rnnCellSpec {inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize)
-  (input : InputVector α inputSize)
-  (hidden : HiddenVector α hiddenSize) :
-  HiddenVector α hiddenSize :=
+  (input : Tensor α [inputSize])
+  (hidden : Tensor α [hiddenSize]) :
+  Tensor α [hiddenSize] :=
   -- Concatenate input and hidden state
-  let concat := concatLeadingAxisSpec input hidden
+  let concat := concatAxisSpec .scalar input hidden
   -- Apply linear transformation: Wx + b
   let linear_out := addSpec (matVecMulSpec rnn.weights concat) rnn.bias
   -- Apply tanh activation
@@ -139,13 +110,13 @@ Outputs:
 -/
 def rnnCellBackwardSpec {inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize)
-  (input : InputVector α inputSize)
-  (prev_hidden : HiddenVector α hiddenSize)
-  (hidden : HiddenVector α hiddenSize)
-  (grad_hidden : HiddenVector α hiddenSize) :
-  (InputVector α inputSize × HiddenVector α hiddenSize ×
-    WeightMatrix α hiddenSize (inputSize + hiddenSize) × HiddenVector α hiddenSize) :=
-  let concat := concatLeadingAxisSpec input prev_hidden
+  (input : Tensor α [inputSize])
+  (prev_hidden : Tensor α [hiddenSize])
+  (hidden : Tensor α [hiddenSize])
+  (grad_hidden : Tensor α [hiddenSize]) :
+  (Tensor α [inputSize] × Tensor α [hiddenSize] ×
+    Tensor α [hiddenSize, inputSize + hiddenSize] × Tensor α [hiddenSize]) :=
+  let concat := concatAxisSpec .scalar input prev_hidden
 
   -- tanh'(z) = 1 - tanh(z)^2, and tanh(z) = hidden
   let tanh_deriv := subSpec (fill 1 (.dim hiddenSize .scalar)) (mulSpec hidden hidden)
@@ -169,20 +140,20 @@ Returns the sequence of hidden states `[h_0, ..., h_{seqLen-1}]`.
 -/
 def rnnSequenceSpec {seqLen inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize)
-  (inputs : SequenceTensor α seqLen (.dim inputSize .scalar))
-  (initial_hidden : HiddenVector α hiddenSize) :
-  SequenceTensor α seqLen (.dim hiddenSize .scalar) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (initial_hidden : Tensor α [hiddenSize]) :
+  Tensor α [seqLen, hiddenSize] :=
   let (_, outputs) := Sequence.mapAccum seqLen initial_hidden fun i previous =>
-    let hidden := rnnCellSpec rnn (getAtSpec inputs i) previous
+    let hidden := rnnCellSpec rnn (get inputs i) previous
     (hidden, hidden)
-  Tensor.dim outputs.get
+  Tensor.dim outputs.getScalar
 
 /-- Batched RNN forward pass (maps `rnnSequenceSpec` over the batch dimension). -/
 def rnnBatchedSpec {batchSize seqLen inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize)
-  (inputs : BatchedTensor α batchSize (.dim seqLen (.dim inputSize .scalar)))
-  (initial_hidden : BatchedTensor α batchSize (.dim hiddenSize .scalar)) :
-  BatchedTensor α batchSize (.dim seqLen (.dim hiddenSize .scalar)) :=
+  (inputs : Tensor α [batchSize, seqLen, inputSize])
+  (initial_hidden : Tensor α [batchSize, hiddenSize]) :
+  Tensor α [batchSize, seqLen, hiddenSize] :=
   match inputs, initial_hidden with
   | Tensor.dim batch_inputs, Tensor.dim batch_hidden =>
     Tensor.dim (fun b =>
@@ -198,27 +169,27 @@ This helper is for analyses that already have preactivation gradients. It assume
 For end-to-end BPTT from `dL/dh_t`, prefer `rnnSequenceBackwardSpec`.
 -/
 def rnnWeightsDerivSpec {seqLen inputSize hiddenSize : Nat}
-  (inputs : SequenceTensor α seqLen (.dim inputSize .scalar))
-  (hiddens : SequenceTensor α seqLen (.dim hiddenSize .scalar))
-  (grad_outputs : SequenceTensor α seqLen (.dim hiddenSize .scalar)) :
-  WeightMatrix α hiddenSize (inputSize + hiddenSize) :=
+  (inputs : Tensor α [seqLen, inputSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_outputs : Tensor α [seqLen, hiddenSize]) :
+  Tensor α [hiddenSize, inputSize + hiddenSize] :=
   -- Assumes initial hidden state is 0 (matches the default module wrappers).
   -- Assumes `grad_outputs` is the preactivation gradient at each timestep.
   -- For full BPTT from post-activation gradients, use `rnnSequenceBackwardSpec`.
-  let rec accumulate_grads (t : Nat) (acc : WeightMatrix α hiddenSize (inputSize + hiddenSize)) :
-      WeightMatrix α hiddenSize (inputSize + hiddenSize) :=
+  let rec accumulate_grads (t : Nat) (acc : Tensor α [hiddenSize, inputSize + hiddenSize]) :
+      Tensor α [hiddenSize, inputSize + hiddenSize] :=
     if h : t < seqLen then
-      let input_t := getAtSpec inputs ⟨t, h⟩
+      let input_t := get inputs ⟨t, h⟩
       let hidden_prev :=
         if ht : t > 0 then
           have h_pred : t - 1 < t := by
             simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt ht)
           have h_t' : t - 1 < seqLen := lt_trans h_pred h
-          getAtSpec hiddens ⟨t - 1, h_t'⟩
+          get hiddens ⟨t - 1, h_t'⟩
         else
           fill 0 (.dim hiddenSize .scalar)
-      let grad_preact_t := getAtSpec grad_outputs ⟨t, h⟩
-      let concat_t := concatLeadingAxisSpec input_t hidden_prev
+      let grad_preact_t := get grad_outputs ⟨t, h⟩
+      let concat_t := concatAxisSpec .scalar input_t hidden_prev
       let grad_w_t := outerProductSpec grad_preact_t concat_t
       accumulate_grads (t + 1) (addSpec acc grad_w_t)
     else
@@ -231,9 +202,9 @@ Gradient w.r.t. bias from per-step preactivation gradients.
 This is `sum_t dL/dz_t` over the sequence dimension.
 -/
 def rnnBiasDerivSpec {seqLen hiddenSize : Nat}
-  (grad_outputs : SequenceTensor α seqLen (.dim hiddenSize .scalar))
+  (grad_outputs : Tensor α [seqLen, hiddenSize])
   (h : seqLen ≠ 0) :
-  HiddenVector α hiddenSize :=
+  Tensor α [hiddenSize] :=
   -- Assumes `grad_outputs` is already the preactivation gradient.
   -- For full RNN backprop, prefer `rnnSequenceBackwardSpec`.
   reduceSum 0 grad_outputs (Shape.hasNonemptyAxisZeroOfNe h).proof
@@ -286,14 +257,14 @@ Then we push `total_grad` through the single-step VJP (`rnn_cell_backward_spec`)
 
 def rnnSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
   (rnn : RNNSpec α inputSize hiddenSize)
-  (inputs : SequenceTensor α seqLen (.dim inputSize .scalar))
-  (initial_hidden : HiddenVector α hiddenSize)
-  (hiddens : SequenceTensor α seqLen (.dim hiddenSize .scalar))
-  (grad_hiddens : SequenceTensor α seqLen (.dim hiddenSize .scalar)) :
-  ( WeightMatrix α hiddenSize (inputSize + hiddenSize) ×  -- dW
-    HiddenVector α hiddenSize ×                            -- db
-    SequenceTensor α seqLen (.dim inputSize .scalar) ×     -- dInputs
-    HiddenVector α hiddenSize ) :=                          -- dInitialHidden
+  (inputs : Tensor α [seqLen, inputSize])
+  (initial_hidden : Tensor α [hiddenSize])
+  (hiddens : Tensor α [seqLen, hiddenSize])
+  (grad_hiddens : Tensor α [seqLen, hiddenSize]) :
+  ( Tensor α [hiddenSize, inputSize + hiddenSize] ×  -- dW
+    Tensor α [hiddenSize] ×                            -- db
+    Tensor α [seqLen, inputSize] ×                         -- dInputs
+    Tensor α [hiddenSize] ) :=                          -- dInitialHidden
 
   let initial :=
     (fill 0 (.dim hiddenSize .scalar),
@@ -301,19 +272,19 @@ def rnnSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
       fill 0 (.dim hiddenSize .scalar))
   let (result, dInputs) := Sequence.mapAccumRight seqLen initial fun index state =>
     let (dHiddenNext, accumulatedWeights, accumulatedBias) := state
-    let input := getAtSpec inputs index
-    let hidden := getAtSpec hiddens index
+    let input := get inputs index
+    let hidden := get hiddens index
     let previous :=
       if h : index.val > 0 then
         have hp : index.val - 1 < seqLen := by grind
-        getAtSpec hiddens ⟨index.val - 1, hp⟩
+        get hiddens ⟨index.val - 1, hp⟩
       else
         initial_hidden
-    let totalGradient := addSpec (getAtSpec grad_hiddens index) dHiddenNext
+    let totalGradient := addSpec (get grad_hiddens index) dHiddenNext
     let (dInput, dHidden, dWeights, dBias) :=
       rnnCellBackwardSpec rnn input previous hidden totalGradient
     ((dHidden, addSpec accumulatedWeights dWeights, addSpec accumulatedBias dBias), dInput)
   let (dInitialHidden, dWeights, dBias) := result
-  (dWeights, dBias, Tensor.dim dInputs.get, dInitialHidden)
+  (dWeights, dBias, Tensor.dim dInputs.getScalar, dInitialHidden)
 
 end Spec

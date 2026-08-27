@@ -34,10 +34,10 @@ PyTorch analogue: `torch.nn.functional.linear` (weight shape `(outDim, inDim)`).
 -/
 def linear {α : Type} (s : Session α) [Inhabited α] [Add α] [Mul α] [Zero α] [DecidableEq Shape]
   {inDim outDim : Nat}
-  (w : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outDim (.dim inDim .scalar)))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outDim .scalar))
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inDim .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim outDim .scalar)) := do
+  (w : _root_.Runtime.Autograd.Torch.TensorRef α [outDim, inDim])
+  (b : _root_.Runtime.Autograd.Torch.TensorRef α [outDim])
+  (x : _root_.Runtime.Autograd.Torch.TensorRef α [inDim]) :
+  IO (_root_.Runtime.Autograd.Torch.TensorRef α [outDim]) := do
   match s.state with
   | .eager sess =>
       EagerSession.linear (α := α) sess (inDim := inDim) (outDim := outDim) w b x
@@ -52,7 +52,7 @@ PyTorch analogue: `torch.nn.functional.mse_loss(..., reduction='mean')`.
 -/
 def mseLoss {α : Type} (s : Session α)
   [Inhabited α] [Add α] [Sub α] [Mul α] [Div α] [Zero α] [One α] [Coe Nat α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   {sh : Shape}
   (yhat target : _root_.Runtime.Autograd.Torch.TensorRef α sh) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α Shape.scalar) := do
@@ -68,10 +68,10 @@ PyTorch analogue: `torch.nn.LayerNorm(embedDim)` applied per token.
 -/
 def layerNorm {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0) (h_embed_pos : embedDim > 0)
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim seqLen (.dim embedDim .scalar)))
-  (gamma : _root_.Runtime.Autograd.Torch.TensorRef α (.dim embedDim .scalar))
-  (beta : _root_.Runtime.Autograd.Torch.TensorRef α (.dim embedDim .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim seqLen (.dim embedDim .scalar))) := do
+  (x : _root_.Runtime.Autograd.Torch.TensorRef α [seqLen, embedDim])
+  (gamma : _root_.Runtime.Autograd.Torch.TensorRef α [embedDim])
+  (beta : _root_.Runtime.Autograd.Torch.TensorRef α [embedDim]) :
+  IO (_root_.Runtime.Autograd.Torch.TensorRef α [seqLen, embedDim]) := do
   match s.state with
   | .eager sess =>
       EagerSession.layerNorm (α := α) sess
@@ -84,44 +84,34 @@ def layerNorm {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
           h_embed_pos)
         x gamma beta
 
-/--
-BatchNorm over a CHW tensor (channel-first).
-
-PyTorch analogue: `torch.nn.BatchNorm2d` (in channel-first layout).
--/
-def batchNormChannelFirst {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {channels height width : Nat} (h_c : channels > 0) (h_h : height > 0) (h_w : width > 0)
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels (.dim height (.dim width .scalar))))
-  (gamma : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels .scalar))
-  (beta : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels .scalar)) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim channels (.dim height (.dim width .scalar))))
-    := do
+/-- Batch normalization over every spatial axis of a channel-first tensor. -/
+def batchNorm {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
+    {channels : Nat} {sSpatial : Shape}
+    (hWellFormed : (Shape.dim channels sSpatial).wellFormed)
+  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim channels sSpatial))
+  (gamma : _root_.Runtime.Autograd.Torch.TensorRef α [channels])
+  (beta : _root_.Runtime.Autograd.Torch.TensorRef α [channels]) :
+  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim channels sSpatial)) := do
   match s.state with
   | .eager sess =>
-      EagerSession.batchNormChannelFirst (α := α) sess
-        (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
-          h_w)
-        x gamma beta
+      EagerSession.batchNorm (α := α) sess
+        (channels := channels) (sSpatial := sSpatial) hWellFormed x gamma beta
   | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.batchNormChannelFirst (α := α) sess
-        (channels := channels) (height := height) (width := width) (h_c := h_c) (h_h := h_h) (h_w :=
-          h_w)
-        x gamma beta
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.batchNorm (α := α) sess
+        (channels := channels) (sSpatial := sSpatial) hWellFormed x gamma beta
 
 /--
 N-D convolution over a channels-first tensor `(inC, spatial...)`.
-
-This is the generic counterpart to `conv2d`.
 
 PyTorch analogue: `torch.nn.functional.conv{d}d` specialized to a single sample.
 -/
 def conv {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {d inC outC : Nat}
-  {kernel stride padding : Vector Nat d}
-  {inSpatial : Vector Nat d}
-  (hInC : inC ≠ 0) (hKernel : ∀ i : Fin d, kernel.get i ≠ 0)
+  {kernel stride padding : Spec.Tensor Nat [d]}
+  {inSpatial : Spec.Tensor Nat [d]}
+  (hInC : inC ≠ 0) (hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0)
   (w : _root_.Runtime.Autograd.Torch.TensorRef α (Shape.ofList (outC :: inC :: kernel.toList)))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outC .scalar))
+  (b : _root_.Runtime.Autograd.Torch.TensorRef α [outC])
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (Shape.ofList (inC :: inSpatial.toList))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (Shape.ofList (outC :: (Spec.convOutSpatial inSpatial kernel stride padding).toList))) := do
@@ -146,11 +136,11 @@ PyTorch analogue: `torch.nn.functional.conv_transpose{d}d` specialized to a sing
 -/
 def convTranspose {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
   {d inC outC : Nat}
-  {kernel stride padding : Vector Nat d}
-  {inSpatial : Vector Nat d}
-  (hInC : inC ≠ 0) (hKernel : ∀ i : Fin d, kernel.get i ≠ 0)
+  {kernel stride padding : Spec.Tensor Nat [d]}
+  {inSpatial : Spec.Tensor Nat [d]}
+  (hInC : inC ≠ 0) (hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0)
   (w : _root_.Runtime.Autograd.Torch.TensorRef α (Shape.ofList (inC :: outC :: kernel.toList)))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outC .scalar))
+  (b : _root_.Runtime.Autograd.Torch.TensorRef α [outC])
   (x : _root_.Runtime.Autograd.Torch.TensorRef α (Shape.ofList (inC :: inSpatial.toList))) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α
     (Shape.ofList (outC :: (Spec.convTransposeOutSpatial inSpatial kernel stride padding).toList)))
@@ -170,60 +160,6 @@ def convTranspose {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
         w b x
 
 /--
-2D convolution over a CHW tensor.
-
-PyTorch analogue: `torch.nn.functional.conv2d` (channel-first layout).
--/
-def conv2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {inC outC kH kW stride padding inH inW : Nat}
-  (h1 : inC ≠ 0) (h2 : kH ≠ 0) (h3 : kW ≠ 0)
-  (kernel : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outC (.dim inC (.dim kH (.dim kW
-    .scalar)))))
-  (bias : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outC .scalar))
-  (input : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim outC (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-      (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar)))) := do
-  match s.state with
-  | .eager sess =>
-      EagerSession.conv2d (α := α) sess
-        (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
-        (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
-        kernel bias input
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.conv2d (α := α) sess
-        (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
-        (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
-        kernel bias input
-
-/--
-2D transpose convolution over a CHW tensor.
-
-PyTorch analogue: `torch.nn.functional.conv_transpose2d` (channel-first layout).
--/
-def convTranspose2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {inC outC kH kW stride padding inH inW : Nat}
-  (h1 : inC ≠ 0) (h2 : kH ≠ 0) (h3 : kW ≠ 0)
-  (kernel : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim outC (.dim kH (.dim kW
-    .scalar)))))
-  (bias : _root_.Runtime.Autograd.Torch.TensorRef α (.dim outC .scalar))
-  (input : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim outC (.dim (Spec.convTransposeOutDim inH kH stride padding)
-      (.dim (Spec.convTransposeOutDim inW kW stride padding) .scalar)))) := do
-  match s.state with
-  | .eager sess =>
-      EagerSession.convTranspose2d (α := α) sess
-        (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
-        (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
-        kernel bias input
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.convTranspose2d (α := α) sess
-        (inC := inC) (outC := outC) (kH := kH) (kW := kW) (stride := stride) (padding := padding)
-        (inH := inH) (inW := inW) (h1 := h1) (h2 := h2) (h3 := h3)
-        kernel bias input
-
-/--
 Multi-head self-attention (single sequence, single batch).
 
 This is a convenience op used by the transformer examples; it corresponds approximately to the forward
@@ -232,13 +168,13 @@ pass of `torch.nn.MultiheadAttention` in "self-attention" mode.
 def multiHeadAttention {α : Type} (s : Session α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
-  (wq : _root_.Runtime.Autograd.Torch.TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wk : _root_.Runtime.Autograd.Torch.TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wv : _root_.Runtime.Autograd.Torch.TensorRef α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wo : _root_.Runtime.Autograd.Torch.TensorRef α (.dim (numHeads * headDim) (.dim dModel .scalar)))
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim dModel .scalar)))
-  (mask : Option (Tensor Bool (.dim n (.dim n .scalar))) := none) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim dModel .scalar))) := do
+  (wq : _root_.Runtime.Autograd.Torch.TensorRef α [dModel, numHeads * headDim])
+  (wk : _root_.Runtime.Autograd.Torch.TensorRef α [dModel, numHeads * headDim])
+  (wv : _root_.Runtime.Autograd.Torch.TensorRef α [dModel, numHeads * headDim])
+  (wo : _root_.Runtime.Autograd.Torch.TensorRef α [numHeads * headDim, dModel])
+  (x : _root_.Runtime.Autograd.Torch.TensorRef α [n, dModel])
+  (mask : Option (Tensor Bool [n, n]) := none) :
+  IO (_root_.Runtime.Autograd.Torch.TensorRef α [n, dModel]) := do
   match s.state with
   | .eager sess =>
       EagerSession.multiHeadAttention (α := α) sess

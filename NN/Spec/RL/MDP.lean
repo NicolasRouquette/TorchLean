@@ -54,7 +54,7 @@ variable {α : Type}
 variable {nStates nActions : Nat}
 
 /-- Value function over a finite state space. -/
-abbrev ValueFunction (α : Type) (nStates : Nat) := Tensor α (.dim nStates .scalar)
+abbrev ValueFunction (α : Type) (nStates : Nat) := Tensor α [nStates]
 
 /-- Deterministic policy over a finite state / action space. -/
 abbrev Policy (nStates nActions : Nat) := Fin nStates → Fin nActions
@@ -77,7 +77,7 @@ def FiniteMDP.toEnv (mdp : FiniteMDP α nStates nActions) :
 
 /-- Lookup a state's value. -/
 def valueAt {nStates : Nat} (values : ValueFunction α nStates) (state : Fin nStates) : α :=
-  Tensor.vecGet values state
+  Tensor.getScalar values state
 
 /-- One-step state-action value induced by a candidate value function. -/
 def stateActionValue [Zero α] [One α] [Add α] [Mul α]
@@ -93,7 +93,7 @@ function. -/
 def actionValues [Zero α] [One α] [Add α] [Mul α]
     (mdp : FiniteMDP α nStates nActions)
     (values : ValueFunction α nStates)
-    (state : Fin nStates) : Tensor α (.dim nActions .scalar) :=
+    (state : Fin nStates) : Tensor α [nActions] :=
   Tensor.dim (fun action => Tensor.scalar (stateActionValue (α := α) mdp values state action))
 
 /-- Bellman operator for a deterministic policy. -/

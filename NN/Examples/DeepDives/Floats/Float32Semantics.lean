@@ -90,7 +90,7 @@ def quietNaN32 : IEEE32Exec := IEEE32Exec.canonicalNaN
 #float32_view quietNaN32
 #float32_compare_view one32, quietNaN32
 
-def model : nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar) :=
+def model : nn.Sequential [2] [1] :=
   -- A compact 2-layer MLP with ReLU:
   --   Linear(2 -> 3) -> ReLU -> Linear(3 -> 1)
   --
@@ -104,10 +104,10 @@ def model : nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar) :=
 -- - print everything in one place, and
 -- - compare native Float32 with IEEE32Exec numerically at the end.
 def OutShapes : List Spec.Shape :=
-  [.dim 1 .scalar, .dim 3 (.dim 2 .scalar), .dim 3 .scalar,
-   .dim 1 (.dim 3 .scalar), .dim 1 .scalar, .dim 2 .scalar]
+  [[1], [3, 2], [3],
+   [1, 3], [1], [2]]
 abbrev OutPack (α : Type) :=
-  TensorPack α OutShapes
+  _root_.TorchLean.TensorPack α OutShapes
 
 def runOnce {α : Type}
     [_root_.Context α] [DecidableEq Spec.Shape] [ToString α] [Runtime.FromFloat α]
@@ -128,23 +128,19 @@ def runOnce {α : Type}
       model[2].bias.copy_(torch.tensor([0.4]))
   ```
 
-  `autograd.model.State model α` is a typed tensor pack (`TensorPack`) whose shapes are determined
-  by the model, so the parameter order cannot be silently permuted.
+  `autograd.model.State model α` is a typed tensor pack (`_root_.TorchLean.TensorPack`). The model
+  determines its shapes, so the parameter order cannot be silently permuted.
   -/
   let params : autograd.model.State model α :=
-    TensorPack!
-      (NN.Tensor.ofListOfLength (α := α) [3, 2]
-        [cast 0.1, cast 0.2, cast 0.3, cast 0.4, cast 0.5, cast 0.6]
-        (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [3]
-        [cast 0.1, cast 0.2, cast 0.3] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [1, 3]
-        [cast 0.7, cast 0.8, cast 0.9] (by rfl)),
-      (NN.Tensor.ofListOfLength (α := α) [1] [cast 0.4] (by rfl))
+    _root_.TorchLean.TensorPack!
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3, 2] #[0.1, 0.2, 0.3, 0.4, 0.5, 0.6])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [3] #[0.1, 0.2, 0.3])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1, 3] #[0.7, 0.8, 0.9])),
+      (Spec.Tensor.map cast (tensorOfArray! (ty := Float) [1] #[0.4]))
 
   -- One input vector x in R^2.
-  let x : Spec.Tensor α (.dim 2 .scalar) :=
-    NN.Tensor.ofListOfLength (α := α) [2] [cast 0.5, cast 0.8] (by rfl)
+  let x : Tensor α [2] :=
+    Spec.Tensor.map cast (tensorOfArray! (ty := Float) [2] #[0.5, 0.8])
 
   /-
   ### 2. Forward pass
@@ -160,7 +156,7 @@ def runOnce {α : Type}
   -/
   let graph ← nn.lowerToTypedGraph model (α := α)
   -- Run `y = model(params, x)` (single-example predict; no batching here).
-  let y := graph.forward params x
+  let y := nn.TypedGraphModel.forward graph params x
 
   /-
   ### 3. Reverse-mode VJP
@@ -173,13 +169,13 @@ def runOnce {α : Type}
   inputGrad = x.grad
   ```
 
-  A VJP needs an output cotangent seed. Since the output shape is `Vec 1`, seeding with `[1]`
+  A VJP needs an output cotangent seed. Since the output shape is `[1]`, seeding with `[1]`
   computes the same gradient as differentiating `sum(y)`.
   -/
-  let seedOut : Spec.Tensor α (.dim 1 .scalar) :=
-    Spec.fill (α := α) (cast 1.0) (.dim 1 .scalar)
+  let seedOut : Tensor α [1] :=
+    Spec.fill (α := α) (cast 1.0) [1]
 
-  -- Gradients w.r.t. *parameters* (same `TensorPack` structure/order as `params`).
+  -- Gradients w.r.t. *parameters* (same `_root_.TorchLean.TensorPack` structure/order as `params`).
   let dState ← autograd.model.vjpState (α := α) model params x seedOut
   -- Gradients w.r.t. *inputs* (here: just the input vector `inputGrad`, no tensor-pack noise).
   let inputGrad ← autograd.model.vjpInput (α := α) model params x seedOut
@@ -196,20 +192,20 @@ def runOnce {α : Type}
   IO.println s!"outputBiasGrad = {Spec.pretty outputBiasGrad}"
   IO.println s!"inputGrad  = {Spec.pretty inputGrad}"
 
-  pure (TensorPack! y, hiddenWeightGrad, hiddenBiasGrad, outputWeightGrad, outputBiasGrad, inputGrad)
+  pure (_root_.TorchLean.TensorPack! y, hiddenWeightGrad, hiddenBiasGrad, outputWeightGrad, outputBiasGrad, inputGrad)
 
 def maxAbsDiffTensor {s : Spec.Shape} (a b : Spec.Tensor Float s) : Float :=
   let diffs :=
-    (Spec.toList a).zip (Spec.toList b) |>.map (fun (x, y) => Float.abs (x - y))
+    (Spec.Tensor.toArray a).zip (Spec.Tensor.toArray b) |>.map (fun (x, y) => Float.abs (x - y))
   diffs.foldl max 0.0
 
 def unpackOutPack {α : Type} (p : OutPack α) :
-    Spec.Tensor α (.dim 1 .scalar) ×
-      Spec.Tensor α (.dim 3 (.dim 2 .scalar)) ×
-      Spec.Tensor α (.dim 3 .scalar) ×
-      Spec.Tensor α (.dim 1 (.dim 3 .scalar)) ×
-      Spec.Tensor α (.dim 1 .scalar) ×
-      Spec.Tensor α (.dim 2 .scalar) :=
+    Tensor α [1] ×
+      Tensor α [3, 2] ×
+      Tensor α [3] ×
+      Tensor α [1, 3] ×
+      Tensor α [1] ×
+      Tensor α [2] :=
   match p with
   | .cons y
       (.cons hiddenWeightGrad
@@ -255,12 +251,12 @@ def main (args : List String) : IO Unit := do
   let r32 ← runOnce (α := TorchLean.Floats.IEEE32Exec) "IEEE32Exec"
 
   let rNativeF : OutPack Float :=
-    TensorPack.map (α := Float32) (β := Float)
-      (fun {_s} t => Spec.mapTensor Float32.toFloat t)
+    _root_.TorchLean.TensorPack.map (α := Float32) (β := Float)
+      (fun {_s} t => Tensor.map Float32.toFloat t)
       rNative
   let r32F : OutPack Float :=
-    TensorPack.map (α := TorchLean.Floats.IEEE32Exec) (β := Float)
-      (fun {_s} t => Spec.mapTensor TorchLean.Floats.IEEE754.IEEE32Exec.toFloat t)
+    _root_.TorchLean.TensorPack.map (α := TorchLean.Floats.IEEE32Exec) (β := Float)
+      (fun {_s} t => Tensor.map TorchLean.Floats.IEEE754.IEEE32Exec.toFloat t)
       r32
 
   let diff := maxAbsDiffPack rNativeF r32F

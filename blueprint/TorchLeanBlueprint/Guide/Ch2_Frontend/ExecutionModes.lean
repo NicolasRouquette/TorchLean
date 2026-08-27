@@ -220,18 +220,13 @@ declaration.
 
 # Device And Provider Profiles
 
-A device choice affects more than memory location. The associated profile says which providers the
-planner should prefer, which evidence policy a capsule must satisfy, and whether TorchLean or the
-provider owns each VJP. It also records the target operating system and architecture together with
-the capsule modules available in this build.
+Ordinary code selects a device directly. TorchLean resolves the maintained profile for that device
+and rejects unavailable combinations. Advanced code can select a complete profile with
+`withBackendProfile`; calling `withDevice` later clears that override.
 
-Ordinary code selects a device directly. When the run starts, TorchLean resolves the maintained
-profile for that device and rejects the request if the build does not provide one. Calling
-`RunConfig.withDevice` also clears any earlier advanced profile override, so a stale CPU provider
-policy cannot survive a later CUDA selection.
-
-Custom and optional LibTorch paths use `withBackendProfile`. That method sets both the profile and
-its device, making the larger boundary explicit.
+The next chapter, [Inside The Backend Planner](Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/), explains provider
+preference, capsule evidence, VJP ownership, and report contents. Keeping those details there lets
+the discussion here can stay focused on choosing and comparing execution modes.
 
 # Train And Evaluation Mode
 
@@ -273,18 +268,6 @@ control flow in eager mode, represent the choice as a supported tensor operation
 separate static branches and choose between them explicitly at runtime.
 
 Unsupported typed graph operations are rejected.
-
-# Selecting A LibTorch Provider
-
-LibTorch is an optional provider in the backend profile used by eager execution. The maintained bridge currently
-accelerates scaled-dot-product attention forward while TorchLean retains its tape and local
-backward ownership.
-
-Surrounding operations may still use native CUDA or reference capsules. Provider selection is
-per semantic operation.
-
-The next chapter opens the capsule and its evidence fields. At runtime, training cannot choose a
-forward-only capsule unless the profile also supplies an admissible VJP path.
 
 # Unsupported Means Failure
 

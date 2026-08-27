@@ -8,16 +8,15 @@ module
 
 public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Proofs.RuntimeApprox.NF.FoldLemmas
-public import NN.Proofs.RuntimeApprox.NF.Ops
 public import NN.Spec.Core.TensorReductionShape
 
 /-!
 # NF Reduction Operators
 
-NF (rounded) backend: approximation lemmas for reduction operators used by LayerNorm/attention.
+NF (rounded) backend: approximation lemmas for matrix reductions used by LayerNorm and attention.
 
-These lemmas are specialized to 2D tensors and avoid typeclass inference by using explicit
-`Shape.NonemptyAxis` proofs derived from `m>0`/`n>0`.
+The row and column lemmas use explicit `Shape.NonemptyAxis` evidence derived from positivity of the
+matrix dimensions.
 
 ## PyTorch correspondence / citations
 This file targets reduction patterns used by normalization/attention (sums, means, maxes along an
@@ -26,8 +25,8 @@ https://pytorch.org/docs/stable/generated/torch.sum.html
 https://pytorch.org/docs/stable/generated/torch.mean.html
 https://pytorch.org/docs/stable/generated/torch.max.html
 
-Current scope: 2D axis reductions. That keeps the proofs explicit and avoids hiding shape
-preconditions behind automation; broader-rank reductions can reuse the same pattern later.
+Current scope: row and column reductions on matrices. Broader-rank reductions can reuse the same
+argument after moving the selected axis into a matrix view.
 -/
 
 @[expose] public section
@@ -53,82 +52,76 @@ local notation "R" => TorchLean.Floats.NF β fexp rnd
 
 
 -- ---------------------------------------------------------------------------
--- Definitional unfoldings for 2D reductions (axis 0/1)
+-- Definitional unfoldings for matrix reductions (axis 0/1)
 -- ---------------------------------------------------------------------------
 
 private lemma reduce_sum_by_row_get
     {α : Type} [Add α] [Zero α]
-    {m n : Nat} (x : Tensor α (.dim m (.dim n .scalar)))
+    {m n : Nat} (x : Tensor α [m, n])
     (hRed : Shape.NonemptyAxis 1 (.dim m (.dim n .scalar))) (i : Fin m) :
     (match Spec.Tensor.reduceSum (α := α) (s := .dim m (.dim n .scalar)) 1 x hRed with
       | Tensor.dim f => f i) =
-      Tensor.scalar (sumSpec (α := α) (s := .dim n .scalar) (getAtSpec x i)) := by
+      Tensor.scalar (sumSpec (α := α) (s := [n]) (get x i)) := by
   cases x with
   | dim rows =>
       cases hRed
-      change Spec.Tensor.reduceFirstDim (fun {s} t => sumSpec (s := s) t) (rows i) = _
-      cases hrow : rows i
-      simp [hrow, getAtSpec, Spec.Tensor.reduceFirstDim, sumSpec, tensorFoldlSpec]
+      simp [reduceSum, reduceDim, Internal.reduceOuterAxis_vector]
 
 private lemma reduce_mean_by_row_get
     {α : Type} [Context α]
-    {m n : Nat} (x : Tensor α (.dim m (.dim n .scalar)))
+    {m n : Nat} (x : Tensor α [m, n])
     (hRed : Shape.NonemptyAxis 1 (.dim m (.dim n .scalar))) (i : Fin m) :
     (match Spec.Tensor.reduceMean (α := α) (s := .dim m (.dim n .scalar)) 1 x hRed with
       | Tensor.dim f => f i) =
-      Tensor.scalar (sumSpec (α := α) (s := .dim n .scalar) (getAtSpec x i) / (n : α)) := by
+      Tensor.scalar (sumSpec (α := α) (s := [n]) (get x i) / (n : α)) := by
   cases x with
   | dim rows =>
       cases hRed
-      change mapSpec (fun x => x / (n : α))
-        (Spec.Tensor.reduceFirstDim (fun {s} t => sumSpec (s := s) t) (rows i)) = _
-      cases hrow : rows i
-      simp [hrow, getAtSpec, Spec.Tensor.reduceFirstDim, sumSpec, tensorFoldlSpec]
+      simp [reduceMean, reduceSum, reduceDim, Internal.reduceOuterAxis_vector]
 
 private lemma reduce_sum_by_column_get
     {α : Type} [Add α] [Zero α]
-    {m n : Nat} (x : Tensor α (.dim m (.dim n .scalar)))
+    {m n : Nat} (x : Tensor α [m, n])
     (hRed : Shape.NonemptyAxis 0 (.dim m (.dim n .scalar))) (j : Fin n) :
     (match Spec.Tensor.reduceSum (α := α) (s := .dim m (.dim n .scalar)) 0 x hRed with
       | Tensor.dim f => f j) =
       Tensor.scalar (sumSpec (α := α) (s := .dim m .scalar)
-        (Tensor.dim (fun i : Fin m => sliceSpec (getAtSpec x i) j))) := by
+        (Tensor.dim (fun i : Fin m => get (get x i) j))) := by
   cases x
   cases hRed
   rfl
 
 -- ---------------------------------------------------------------------------
--- Row-wise sum (axis=1) on a 2D tensor
+-- Row-wise matrix sum (axis=1)
 -- ---------------------------------------------------------------------------
 
-theorem approxTensor_reduce_sum_by_row_2d
-    {m n : Nat} (hm : 0 < m) (hn : 0 < n)
-    {xS : SpecTensor (.dim m (.dim n .scalar))}
-    {xR : Tensor R (.dim m (.dim n .scalar))}
+theorem approxTensor_reduce_sum_rows
+    {m n : Nat} (hn : 0 < n)
+    {xS : SpecTensor [m, n]}
+    {xR : Tensor R [m, n]}
     {eps : ℝ}
     (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
     let s : Shape := .dim m (.dim n .scalar)
-    have _hm' : m ≠ 0 := Nat.ne_of_gt hm
-    have hn' : n ≠ 0 := Nat.ne_of_gt hn
-    have hAxis : Shape.NonemptyAxis 1 s := (Shape.hasNonemptyAxisOne (h₂ := hn')).proof
+    have hAxis : Shape.NonemptyAxis 1 s :=
+      Shape.NonemptyAxis.succ (Shape.hasNonemptyAxisZeroOfPos hn).proof
     let hRed : Shape.NonemptyAxis 1 s := hAxis
     approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.reduceSum (α := ℝ) (s := s) 1 xS hRed)
       (Spec.Tensor.reduceSum (α := R) (s := s) 1 xR hRed)
-      (let boundVec : SpecTensor (.dim m .scalar) :=
+      (let boundVec : SpecTensor [m] :=
         match xR with
         | .dim xRf => Tensor.dim (fun i =>
             Tensor.scalar (sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar) eps
               (xRf i)))
       linfNorm boundVec) := by
-  intro s _hm' hn' hAxis hRed
+  intro s hAxis hRed
   classical
   have hε : 0 ≤ eps := approxTensor_eps_nonneg (s := s) hx
   cases xS with
   | dim xSf =>
       cases xR with
       | dim xRf =>
-          let boundVec : SpecTensor (.dim m .scalar) :=
+          let boundVec : SpecTensor [m] :=
             Tensor.dim (fun i =>
               Tensor.scalar (sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar)
                 eps (xRf i)))
@@ -185,24 +178,23 @@ theorem approxTensor_reduce_sum_by_row_2d
           exact hScalarApprox
 
 -- ---------------------------------------------------------------------------
--- Row-wise mean (axis=1) on a 2D tensor
+-- Row-wise matrix mean (axis=1)
 -- ---------------------------------------------------------------------------
 
-theorem approxTensor_reduce_mean_by_row_2d
-    {m n : Nat} (hm : 0 < m) (hn : 0 < n)
-    {xS : SpecTensor (.dim m (.dim n .scalar))}
-    {xR : Tensor R (.dim m (.dim n .scalar))}
+theorem approxTensor_reduce_mean_rows
+    {m n : Nat} (hn : 0 < n)
+    {xS : SpecTensor [m, n]}
+    {xR : Tensor R [m, n]}
     {eps : ℝ}
     (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
     let s : Shape := .dim m (.dim n .scalar)
-    have _hm' : m ≠ 0 := Nat.ne_of_gt hm
-    have hn' : n ≠ 0 := Nat.ne_of_gt hn
-    have hAxis : Shape.NonemptyAxis 1 s := (Shape.hasNonemptyAxisOne (h₂ := hn')).proof
+    have hAxis : Shape.NonemptyAxis 1 s :=
+      Shape.NonemptyAxis.succ (Shape.hasNonemptyAxisZeroOfPos hn).proof
     let hRed : Shape.NonemptyAxis 1 s := hAxis
     approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.reduceMean (α := ℝ) (s := s) 1 xS hRed)
       (Spec.Tensor.reduceMean (α := R) (s := s) 1 xR hRed)
-      (let boundVec : SpecTensor (.dim m .scalar) :=
+      (let boundVec : SpecTensor [m] :=
         match xR with
         | .dim xRf => Tensor.dim (fun i =>
             let sumR : R := sumSpec (α := R) (s := .dim n .scalar) (xRf i)
@@ -217,7 +209,7 @@ theorem approxTensor_reduce_mean_by_row_2d
                 + abs (toSpec (β := β) (fexp := fexp) (rnd := rnd) sumR)
                 + epsSum))
       linfNorm boundVec) := by
-  intro s _hm' hn' hAxis hRed
+  intro s hAxis hRed
   classical
   have hε : 0 ≤ eps := approxTensor_eps_nonneg (s := s) hx
   have hn1 : (1 : ℝ) ≤ (n : ℝ) := by
@@ -226,7 +218,7 @@ theorem approxTensor_reduce_mean_by_row_2d
   | dim xSf =>
       cases xR with
       | dim xRf =>
-          let boundVec : SpecTensor (.dim m .scalar) :=
+          let boundVec : SpecTensor [m] :=
             Tensor.dim (fun i =>
               let sumR : R := sumSpec (α := R) (s := .dim n .scalar) (xRf i)
               let epsSum := sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim n .scalar) eps
@@ -311,23 +303,21 @@ theorem approxTensor_reduce_mean_by_row_2d
           exact hScalarApprox
 
 -- ---------------------------------------------------------------------------
--- Column-wise sum (axis=0) on a 2D tensor
+-- Column-wise matrix sum (axis=0)
 -- ---------------------------------------------------------------------------
 
 /-- Extract column `j` from a runtime `m×n` tensor, represented row-wise as `Fin m → Vec n`. -/
-def colR {m n : Nat} (xRf : Fin m → Tensor R (.dim n .scalar)) (j : Fin n) : Tensor R (.dim m
-  .scalar) :=
-  Tensor.dim (fun i => sliceSpec (xRf i) j)
+def colR {m n : Nat} (xRf : Fin m → Tensor R [n]) (j : Fin n) : Tensor R [m] :=
+  Tensor.dim (fun i => get (xRf i) j)
 
 /-- Extract column `j` from a spec `m×n` tensor, represented row-wise as `Fin m → Vec n`. -/
-def colS {m n : Nat} (xSf : Fin m → SpecTensor (.dim n .scalar)) (j : Fin n) : SpecTensor (.dim m
-  .scalar) :=
-  Tensor.dim (fun i => sliceSpec (xSf i) j)
+def colS {m n : Nat} (xSf : Fin m → SpecTensor [n]) (j : Fin n) : SpecTensor [m] :=
+  Tensor.dim (fun i => get (xSf i) j)
 
-theorem approxTensor_reduce_sum_by_column_2d
+theorem approxTensor_reduce_sum_columns
     {m n : Nat} (hm : 0 < m) (_hn : 0 < n)
-    {xS : SpecTensor (.dim m (.dim n .scalar))}
-    {xR : Tensor R (.dim m (.dim n .scalar))}
+    {xS : SpecTensor [m, n]}
+    {xR : Tensor R [m, n]}
     {eps : ℝ}
     (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xS xR eps) :
     let s : Shape := .dim m (.dim n .scalar)
@@ -337,7 +327,7 @@ theorem approxTensor_reduce_sum_by_column_2d
     approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
       (Spec.Tensor.reduceSum (α := ℝ) (s := s) 0 xS hRed)
       (Spec.Tensor.reduceSum (α := R) (s := s) 0 xR hRed)
-      (let boundVec : SpecTensor (.dim n .scalar) :=
+      (let boundVec : SpecTensor [n] :=
         match xR with
         | .dim xRf => Tensor.dim (fun j =>
             Tensor.scalar (sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim m .scalar) eps
@@ -350,7 +340,7 @@ theorem approxTensor_reduce_sum_by_column_2d
   | dim xSf =>
       cases xR with
       | dim xRf =>
-          let boundVec : SpecTensor (.dim n .scalar) :=
+          let boundVec : SpecTensor [n] :=
             Tensor.dim (fun j =>
               Tensor.scalar (sumBound (β := β) (fexp := fexp) (rnd := rnd) (s := .dim m .scalar)
                 eps (colR (m := m) (n := n) xRf j)))
@@ -383,7 +373,7 @@ theorem approxTensor_reduce_sum_by_column_2d
                         rnd))
                         (xS := Tensor.dim colsS) (xR := Tensor.dim colsR) (eps := eps) (by simpa
                           [hs, hr] using hrow) j
-                    simpa [colS, colR, hs, hr, sliceSpec] using hij
+                    simpa [colS, colR, hs, hr] using hij
 
           have hSum :=
             approxTensor_sum_spec (β := β) (fexp := fexp) (rnd := rnd) (s := .dim m .scalar)
@@ -421,8 +411,8 @@ theorem approxTensor_reduce_sum_by_column_2d
             reduce_sum_by_column_get (α := SpecScalar) (m := m) (n := n) (x := Tensor.dim xSf) hRed j
           have hEqR :=
             reduce_sum_by_column_get (α := R) (m := m) (n := n) (x := Tensor.dim xRf) hRed j
-          simp [colS, colR, sliceSpec] at hScalarApprox
-          simp [getAtSpec, sliceSpec] at hEqS hEqR
+          simp [colS, colR] at hScalarApprox
+          simp only [Spec.get_dim] at hEqS hEqR
           rw [← hEqS, ← hEqR] at hScalarApprox
           exact hScalarApprox
 

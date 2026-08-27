@@ -314,12 +314,12 @@ will identify the node whose value escaped the claimed enclosure.
 structure TrainingStepTrace where
   optimizer : String
   parameterIndex : Nat
-  forwardBounds : List ℝ
-  backwardBounds : List ℝ
+  forwardBounds : Array ℝ
+  backwardBounds : Array ℝ
   gradientBound : ℝ
   parameterBound : ℝ
-  optimizerStateBounds : List (String × ℝ)
-  stepData : List (String × ℝ)
+  optimizerStateBounds : Array (String × ℝ)
+  stepData : Array (String × ℝ)
 ```
 
 The trace is architecture-independent. A frontend can attach names such as

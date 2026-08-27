@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Export a tiny transformer-encoder-style interval certificate."""
-import math
 from typing import Any
 
 from common import (
@@ -8,9 +7,10 @@ from common import (
     add_up,
     affine_interval,
     centered_box,
+    layernorm_range_interval,
     matmul_interval,
     relu_interval,
-    softmax_interval,
+    softmax_range_interval,
     write_json,
 )
 
@@ -58,34 +58,6 @@ def ibp_add(lo1: list[float], hi1: list[float], lo2: list[float], hi2: list[floa
     ]
 
 
-def ibp_layernorm(lo: list[float], hi: list[float], eps: float = 1e-6):
-    """Propagate coarse interval bounds through a layernorm-like normalization."""
-    n = len(lo)
-    sum_lo = sum(lo)
-    sum_hi = sum(hi)
-    mu_lo = sum_lo / n
-    mu_hi = sum_hi / n
-    # Upper bound on variance via worst-case deviations
-    sum_abs_sq = 0.0
-    for i in range(n):
-        dl = abs(lo[i] - mu_hi)
-        du = abs(hi[i] - mu_lo)
-        a = max(dl, du)
-        sum_abs_sq += a * a
-    var_hi = sum_abs_sq / n
-    den_lo = math.sqrt(eps)
-    den_hi = math.sqrt(var_hi + eps)
-    out_lo = []
-    out_hi = []
-    for i in range(n):
-        dl = lo[i] - mu_hi
-        du = hi[i] - mu_lo
-        cands = [dl / den_lo, dl / den_hi, du / den_lo, du / den_hi]
-        out_lo.append(min(cands))
-        out_hi.append(max(cands))
-    return out_lo, out_hi
-
-
 def run_ibp() -> dict[str, Any]:
     """Compute the transformer-like certificate payload consumed by Lean."""
     (
@@ -98,14 +70,11 @@ def run_ibp() -> dict[str, Any]:
         feed_forward_output_bias,
     ) = seed_params()
     x_lo, x_hi = seed_input_box(0.5)
-    score_lo, score_hi = affine_interval(score_weight, score_bias, x_lo, x_hi)
-    prob_lo, prob_hi = softmax_interval(score_lo, score_hi)
+    affine_interval(score_weight, score_bias, x_lo, x_hi)
+    prob_lo, prob_hi = softmax_range_interval(scoresDim)
     attention_lo, attention_hi = matmul_interval(value_weight, prob_lo, prob_hi)
     attention_residual_lo, attention_residual_hi = ibp_add(x_lo, x_hi, attention_lo, attention_hi)
-    normalized_attention_lo, normalized_attention_hi = ibp_layernorm(
-        attention_residual_lo,
-        attention_residual_hi,
-    )
+    normalized_attention_lo, normalized_attention_hi = layernorm_range_interval(nModel)
     hidden_lo, hidden_hi = affine_interval(
         feed_forward_hidden_weight,
         feed_forward_hidden_bias,
@@ -125,7 +94,7 @@ def run_ibp() -> dict[str, Any]:
         feed_forward_lo,
         feed_forward_hi,
     )
-    output_lo, output_hi = ibp_layernorm(feed_forward_residual_lo, feed_forward_residual_hi)
+    output_lo, output_hi = layernorm_range_interval(nModel)
 
     return {
         "graph": "transformer_encoder_workflow_v1",

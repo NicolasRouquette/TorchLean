@@ -146,7 +146,7 @@ def softmaxOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s] : OpSpec α s
 
 /-- Stable log-softmax `OpSpec` along an explicitly selected tensor dimension.
 
-Backward recomputes the forward output so the VJP matches `logSoftmaxLastBackwardSpec`. Runtime engines
+Backward recomputes the forward output so the VJP uses the same axis-parametric semantics. Runtime engines
 may cache that output instead. -/
 def logSoftmaxOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s] : OpSpec α s s :=
 { forward      := fun x => Activation.logSoftmaxSpec (α := α) (s := s) axis x
@@ -166,7 +166,7 @@ PyTorch analogy: `torch.nn.functional.linear` forward, with autograd producing g
 `x`, `W`, and `b`. -/
 def linearOp {α : Type} [Add α] [Mul α] [Zero α] [One α] {inDim outDim : Nat}
   (m : LinearSpec α inDim outDim) :
-  OpSpec α (.dim inDim .scalar) (.dim outDim .scalar) :=
+  OpSpec α ([inDim]) ([outDim]) :=
 { forward      := fun x => linearSpec (α:=α) m x
 , backward     := fun _x dLdy => linearInputDerivSpec (α:=α) m.weights dLdy }
 
@@ -513,24 +513,6 @@ def logCoshLossOp {s : Shape} (target : Tensor α s) : OpSpec α s Shape.scalar 
     scaleSpec (logCoshDerivSpec (α:=α) (s:=s) yhat target) g
 }
 
-/-! ## Normalization -/
-
-/-- LayerNorm OpSpec over (seqLen × embedDim). Parameters gamma/beta are captured.
-Backward returns only $\partial L/\partial x$ (parameter grads are not returned at this level). -/
-def layerNormOp (seqLen embedDim : Nat)
-  (gamma : Tensor α (.dim embedDim .scalar))
-  (beta  : Tensor α (.dim embedDim .scalar))
-  (h_seq_pos : seqLen > 0 := by decide)
-  (h_embed_pos : embedDim > 0 := by decide) :
-  OpSpec α (.dim seqLen (.dim embedDim .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
-{ forward      := fun x => layerNorm (α:=α) (seqLen:=seqLen) (embedDim:=embedDim) x gamma beta
-    h_seq_pos h_embed_pos
-, backward     := fun x dLdy =>
-    let (dx, _dg, _db) := layerNormBackward (α:=α) (seqLen:=seqLen) (embedDim:=embedDim) h_seq_pos
-      h_embed_pos x gamma beta dLdy
-    dx
-}
-
 /-- Identity op: pass-through forward and backward. -/
 def identityOp {s : Shape} : OpSpec α s s :=
 { forward      := fun x => x
@@ -546,13 +528,13 @@ def reshapeOp {s t : Shape}
 { forward      := fun x => reshapeSpec (α:=α) (s₁:=s) (s₂:=t) x h
 , backward     := fun _x dLdz => reshapeSpec (α:=α) (s₁:=t) (s₂:=s) dLdz h.symm }
 
-/-- Matrix transpose (2D) op.
-
-PyTorch analogy: `x.transpose(0, 1)` for a matrix. -/
-def matrixTransposeOp {m n : Nat} :
-  OpSpec α (.dim m (.dim n .scalar)) (.dim n (.dim m .scalar)) :=
-{ forward      := fun x => matrixTransposeSpec (α:=α) x
-, backward     := fun _x dLdz => matrixTransposeSpec (α:=α) dLdz }
+/-- Swap adjacent axes at an arbitrary depth. -/
+def swapAdjacentAxesOp {s : Shape} (depth : Nat) :
+    OpSpec α s (s.swapAdjacentAtDepth depth) :=
+{ forward := fun x => swapAdjacentAxes x depth
+, backward := fun _x dLdz =>
+    Tensor.castShape (swapAdjacentAxes dLdz depth)
+      (by simp) }
 
 /-- Fill a tensor with a constant (ignores input).
 
@@ -587,82 +569,38 @@ def dropoutMaskedOp {s : Shape} (p : α) (mask : Tensor Bool s) : OpSpec α s s 
 { forward      := fun x => dropoutMaskedSpec (α:=α) p mask x
 , backward     := fun _x dLdy => dropoutMaskedBackwardSpec (α:=α) p mask dLdy }
 
-/-- Right-multiply by a fixed matrix:
-$X\in\mathbb{R}^{m\times n}\mapsto XB\in\mathbb{R}^{m\times p}$. -/
-def matmulRightOp {m n p : Nat}
-  (B : Tensor α (.dim n (.dim p .scalar))) :
-  OpSpec α (.dim m (.dim n .scalar)) (.dim m (.dim p .scalar)) :=
-{ forward      := fun X => matMulSpec (α:=α) X B
-, backward     := fun _X dLdz => matMulSpec (α:=α) dLdz (matrixTransposeSpec B) }
+/-- Matrix-rank multiplication with a captured right operand and broadcasted batch prefixes. -/
+def matmulRightOp {batchA batchB batch : Shape} {m n p : Nat}
+    (broadcastA : Shape.CanBroadcastTo batchA batch)
+    (broadcastB : Shape.CanBroadcastTo batchB batch)
+    (B : Tensor α (batchB.concat [n, p])) :
+    OpSpec α (batchA.concat [m, n]) (batch.concat [m, p]) :=
+{ forward := fun A => matmulSpec broadcastA broadcastB A B
+, backward := fun A dLdz => (matmulBackwardSpec broadcastA broadcastB A B dLdz).1 }
 
-/-- Left-multiply by a fixed matrix:
-$X\in\mathbb{R}^{n\times p}\mapsto AX\in\mathbb{R}^{m\times p}$. -/
-def matmulLeftOp {m n p : Nat}
-  (A : Tensor α (.dim m (.dim n .scalar))) :
-  OpSpec α (.dim n (.dim p .scalar)) (.dim m (.dim p .scalar)) :=
-{ forward      := fun X => matMulSpec (α:=α) A X
-, backward     := fun _X dLdz => matMulSpec (α:=α) (matrixTransposeSpec A) dLdz }
-
-/-- Batched matrix multiply with captured RHS: $A\mapsto AB$. -/
-def bmmRightOp {batch m n p : Nat}
-  (B : Tensor α (.dim batch (.dim n (.dim p .scalar)))) :
-  OpSpec α (.dim batch (.dim m (.dim n .scalar))) (.dim batch (.dim m (.dim p .scalar))) :=
-{ forward      := fun A => bmmSpec (α:=α) A B
-, backward     := fun A dLdz => (bmmBackwardSpec (α:=α) A B dLdz).1 }
-
-/-- Batched matrix multiply with captured LHS: $B\mapsto AB$. -/
-def bmmLeftOp {batch m n p : Nat}
-  (A : Tensor α (.dim batch (.dim m (.dim n .scalar)))) :
-  OpSpec α (.dim batch (.dim n (.dim p .scalar))) (.dim batch (.dim m (.dim p .scalar))) :=
-{ forward      := fun B => bmmSpec (α:=α) A B
-, backward     := fun B dLdz => (bmmBackwardSpec (α:=α) A B dLdz).2 }
+/-- Matrix-rank multiplication with a captured left operand and broadcasted batch prefixes. -/
+def matmulLeftOp {batchA batchB batch : Shape} {m n p : Nat}
+    (broadcastA : Shape.CanBroadcastTo batchA batch)
+    (broadcastB : Shape.CanBroadcastTo batchB batch)
+    (A : Tensor α (batchA.concat [m, n])) :
+    OpSpec α (batchB.concat [n, p]) (batch.concat [m, p]) :=
+{ forward := fun B => matmulSpec broadcastA broadcastB A B
+, backward := fun B dLdz => (matmulBackwardSpec broadcastA broadcastB A B dLdz).2 }
 
 /-- One-hot embedding as an OpSpec over the one-hot input. Parameter gradients stay outside
 `OpSpec`; this wrapper returns only `dOneHot`. -/
 def oneHotEmbeddingOp {vocab embedDim seqLen : Nat}
   (embedding : Embedding vocab embedDim α) :
-  OpSpec α (.dim seqLen (.dim vocab .scalar)) (.dim seqLen (.dim embedDim .scalar)) :=
+  OpSpec α ([seqLen, vocab]) ([seqLen, embedDim]) :=
 { forward      := fun oneHot => embedding.oneHot oneHot
 , backward     := fun oneHot dLdy => (embedding.oneHotVjp oneHot dLdy).1 }
 
-/-- Expand vector to column (unsqueeze last dim size 1) and the inverse. -/
-def expandToColOp {n : Nat} {s : Shape} :
-  OpSpec α (.dim n s) (.dim n (.dim 1 s)) :=
-{ forward      := fun t => expandToColSpec (α:=α) t
-, backward     := fun _t dLdz => squeezeColSpec (α:=α) dLdz }
-
-/-- Squeeze a trailing singleton dim `(n,1,...)` to `(n,...)` (adjoint unsqueezes). -/
-def squeezeColOp {n : Nat} {s : Shape} :
-  OpSpec α (.dim n (.dim 1 s)) (.dim n s) :=
-{ forward      := fun t => squeezeColSpec (α:=α) t
-, backward     := fun _t dLdz => expandToColSpec (α:=α) dLdz }
-
-/-- Concatenate along the leading dimension with a captured RHS, returning the gradient slice for
-the LHS input. -/
-def concatLeadingAxisLeftOp {n m : Nat} {s : Shape}
-  (rhs : Tensor α (.dim m s)) :
-  OpSpec α (.dim n s) (.dim (n + m) s) :=
-{ forward      := fun lhs => concatLeadingAxisSpec lhs rhs
-, backward     := fun _lhs dLdz =>
-    sliceLeadingAxisRangeSpec (α:=α) (n := n + m) (s := s) 0 n (by
-      simp) dLdz }
-
-/-- Concatenate along the leading dimension with a captured LHS, returning the gradient slice for
-the RHS input. -/
-def concatLeadingAxisRightOp {n m : Nat} {s : Shape}
-  (lhs : Tensor α (.dim n s)) :
-  OpSpec α (.dim m s) (.dim (n + m) s) :=
-{ forward      := fun rhs => concatLeadingAxisSpec lhs rhs
-, backward     := fun _rhs dLdz =>
-    sliceLeadingAxisRangeSpec (α:=α) (n := n + m) (s := s) n m (by
-      simp) dLdz }
-
-/-- Slice a leading-axis range; backward inserts the upstream gradient into the original shape. -/
-def sliceLeadingAxisRangeOp {n : Nat} {s : Shape}
-  (start len : Nat) (h : start + len ≤ n) :
-  OpSpec α (.dim n s) (.dim len s) :=
-{ forward      := fun x => sliceLeadingAxisRangeSpec (α:=α) (n := n) (s := s) start len h x
-, backward     := fun _x dLdy => sliceLeadingAxisRangeBackwardSpec (α:=α) (n := n) (s := s) start len h dLdy }
+/-- Slice a contiguous range along an arbitrary tensor axis. -/
+def sliceAxisRangeOp {s : Shape} (axis : Nat) [Shape.AxisInBounds axis s]
+    (start count : Nat) (hRange : start + count ≤ Shape.axisSize s axis) :
+    OpSpec α s (s.replaceAxis axis count) :=
+{ forward := fun x => sliceAxisRangeSpec axis x start count hRange
+, backward := fun _x dLdy => sliceAxisRangeBackwardSpec axis start count hRange dLdy }
 
 /-! ## Reductions and broadcasting -/
 

@@ -16,8 +16,8 @@ public import NN.Proofs.Autograd.Tape.Util.Idx
 End-to-end `fderiv`/backprop correctness for a **Multi-Head Self-Attention** graph,
 decomposed into proven tape nodes:
 - linear projections via `matmul`,
-- head split/merge via `reshape` + `swap_first_two3d`,
-- attention core via batched `matmul` + `transpose3d_last_two` + `scale` + batched `softmax_last`.
+- head split/merge via `reshape` and coordinate reindexing,
+- attention core via batched `matmul`, coordinate reindexing, scaling, and row-wise softmax.
 
 This is spec-level over `ℝ`. It is a corollary of the general graph theorem once each node
 used by the graph has a `NodeFDerivCorrect` instance.
@@ -282,7 +282,7 @@ def mhaProjectionDGraph {n dModel numHeads headDim : Nat} :
         (s₁ := BigShape n numHeads headDim) (s₂ := HeadsShape n numHeads headDim)
         idxKbig (size_big_to_heads (n := n) (numHeads := numHeads) (headDim := headDim)))
 
-  -- 5) Kᵀ (per head): transpose last two axes of Kheads
+  -- 5) Kᵀ (per head): exchange the sequence and feature axes of `Kheads`.
   let idxKheads :
       Idx
         (ΓMHA n dModel numHeads headDim ++
@@ -293,24 +293,33 @@ def mhaProjectionDGraph {n dModel numHeads headDim : Nat} :
       (ss := [BigShape n numHeads headDim, HeadsShape n numHeads headDim, BigShape n numHeads
         headDim])
       (τ := HeadsShape n numHeads headDim)
+  let transposeKeys :
+      Fin (Spec.Shape.size (HeadsShape n numHeads headDim)) ≃
+        Fin (Spec.Shape.size (KtShape n numHeads headDim)) := by
+    simpa [HeadsShape, KtShape, Spec.Shape.size] using
+      mapOuterEquiv numHeads (swapAdjacentEquiv n headDim 1)
   let nodeKt :
       Node
         (ΓMHA n dModel numHeads headDim ++
           [BigShape n numHeads headDim, HeadsShape n numHeads headDim, BigShape n numHeads headDim,
             HeadsShape n numHeads headDim])
         (.dim numHeads (.dim headDim (.dim n .scalar))) :=
-    transpose3dLastTwo
+    reindex
       (Γ := ΓMHA n dModel numHeads headDim ++
         [BigShape n numHeads headDim, HeadsShape n numHeads headDim, BigShape n numHeads headDim,
           HeadsShape n numHeads headDim])
-      (a := numHeads) (b := n) (c := headDim) idxKheads
+      (source := HeadsShape n numHeads headDim)
+      (target := KtShape n numHeads headDim)
+      idxKheads transposeKeys
   let dg5 :=
     DGraph.snoc (dg := dg4) (node := nodeKt)
-      (hn := transpose3dLastTwoFderiv
+      (hn := reindexFDeriv
         (Γ := ΓMHA n dModel numHeads headDim ++
           [BigShape n numHeads headDim, HeadsShape n numHeads headDim, BigShape n numHeads headDim,
             HeadsShape n numHeads headDim])
-        (a := numHeads) (b := n) (c := headDim) idxKheads)
+        (source := HeadsShape n numHeads headDim)
+        (target := KtShape n numHeads headDim)
+        idxKheads transposeKeys)
 
   -- 6) Vbig := x * Wv
   let nodeVbig :
@@ -558,22 +567,31 @@ def mhaDGraph {n dModel numHeads headDim : Nat} (c : ℝ) :
     , ScoresShape n numHeads
     ]
 
-  -- 12) swapped := swap_first_two3d headOut  (numHeads,n,headDim) → (n,numHeads,headDim)
+  -- 12) Exchange the head and sequence axes before concatenating heads.
   let idxHeadOut :
       Idx (ΓMHA n dModel numHeads headDim ++ ss10 ++ [HeadsShape n numHeads headDim])
         (HeadsShape n numHeads headDim) :=
     Idx.last (Γ := ΓMHA n dModel numHeads headDim) (ss := ss10) (τ := HeadsShape n numHeads headDim)
+  let swapHeadSequence :
+      Fin (Spec.Shape.size (HeadsShape n numHeads headDim)) ≃
+        Fin (Spec.Shape.size (SwappedShape n numHeads headDim)) := by
+    simpa [HeadsShape, SwappedShape, Spec.Shape.size] using
+      swapAdjacentEquiv numHeads n headDim
   let nodeSwapped :
       Node (ΓMHA n dModel numHeads headDim ++ ss10 ++ [HeadsShape n numHeads headDim])
         (.dim n (.dim numHeads (.dim headDim .scalar))) :=
-    swapFirstTwo3d
+    reindex
       (Γ := ΓMHA n dModel numHeads headDim ++ ss10 ++ [HeadsShape n numHeads headDim])
-      (m := numHeads) (n := n) (rest := .dim headDim .scalar) idxHeadOut
+      (source := HeadsShape n numHeads headDim)
+      (target := SwappedShape n numHeads headDim)
+      idxHeadOut swapHeadSequence
   let dg12 :=
     DGraph.snoc (dg := dg11) (node := nodeSwapped)
-      (hn := swapFirstTwo3dFderiv
+      (hn := reindexFDeriv
         (Γ := ΓMHA n dModel numHeads headDim ++ ss10 ++ [HeadsShape n numHeads headDim])
-        (m := numHeads) (n := n) (rest := .dim headDim .scalar) idxHeadOut)
+        (source := HeadsShape n numHeads headDim)
+        (target := SwappedShape n numHeads headDim)
+        idxHeadOut swapHeadSequence)
 
   -- 13) concat := reshape swapped to (n, numHeads*headDim)
   let idxSwapped :

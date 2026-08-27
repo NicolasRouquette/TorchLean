@@ -58,7 +58,7 @@ operations are most convenient in that convention in our `Dataset` library.
 
 ## Datasets as tensors
 
-In `Stability.Core`, a dataset `Dataset N Z` is a length-`N` spec tensor (`Spec.Vec N Z`).
+In `Stability.Core`, a dataset `Dataset N Z` is a tensor of shape `[N]` (`Spec.Tensor Z [N]`).
 We use `Dataset.get S i` to access the `i`-th example.
 
 ## Stability statement (informal)
@@ -192,8 +192,8 @@ private lemma sum_replaceAt_sub {Z : Type} (φ : Z → ℝ)
     funext j
     by_cases h : j = i
     · subst h
-      simp [replaceAt, Dataset.get, Dataset.toFn, Dataset.ofFn, Function.update]
-    · simp [replaceAt, f, Function.update, h]
+      simp
+    · simp [f, h]
   have hS : (fun j => φ (Dataset.get S j)) = Function.update f i (f i) := by
     funext j
     by_cases h : j = i
@@ -205,7 +205,7 @@ private lemma sum_replaceAt_sub {Z : Type} (φ : Z → ℝ)
   have hsumS' :
       (∑ j ∈ s, φ (Dataset.get (replaceAt S i z') j)) = (∑ j ∈ s, Function.update f i (φ z') j) :=
         by
-    simp [hS']
+    rw [hS']
   -- Now apply `Finset.sum_update_of_mem` to both sums and cancel the common remainder.
   have hUpd1 : (∑ j ∈ s, Function.update f i (f i) j) = f i + ∑ j ∈ s \ {i}, f j := by
     simpa using (Finset.sum_update_of_mem (s := s) (i := i) hi f (f i))

@@ -61,7 +61,7 @@ open NN.Verification.TorchLean
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
       (c : NN.Verification.TorchLean.LoweredIR α) :
       (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=
         out)
@@ -89,8 +89,8 @@ open NN.Verification.TorchLean
       {α : Type} [Context α] [DecidableEq Shape]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
-      (vals : Array (Spec.PackedTensor α)) :
+      (params : TorchLean.TensorPack α paramShapes)
+      (vals : Array (Spec.SomeTensor α)) :
       evalForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out := out)
         g params vals
         =
@@ -99,7 +99,7 @@ open NN.Verification.TorchLean
           evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out
             := out)
             g params vals
-        let v : Spec.PackedTensor α ← getValue? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
+        let v : Spec.SomeTensor α ← getValue? vals' ((outputIndex (α := α) (paramShapes := paramShapes)
           (inShape := inShape) (ss := ss) (out := out) g).id)
         if h : v.shape = out then
           pure (h ▸ v.tensor)
@@ -155,8 +155,8 @@ open NN.Verification.TorchLean
       {α : Type} [Context α] [DecidableEq Shape]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
-      (vals vals' : Array (Spec.PackedTensor α))
+      (params : TorchLean.TensorPack α paramShapes)
+      (vals vals' : Array (Spec.SomeTensor α))
       (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss)
       (hOk :
         evalForwardLetChainVals (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out :=

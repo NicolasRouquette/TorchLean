@@ -22,20 +22,20 @@ positive-definite `A`. Here we factor a 3×3 SPD matrix and check the reconstruc
 namespace NN.Examples.Factorization.Cholesky
 
 /-- A symmetric positive-definite test matrix. -/
-def A : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) :=
-  mkMat [[4, 2, 2],
-         [2, 5, 3],
-         [2, 3, 6]]
+def A : Spec.Tensor Float [3, 3] :=
+  mkMat #[#[4, 2, 2],
+          #[2, 5, 3],
+          #[2, 3, 6]]
 
 /-- The Cholesky factor `L` (lower-triangular). -/
-def L : Spec.Tensor Float (.dim 3 (.dim 3 .scalar)) := Spec.choleskySpec A
+def L : Spec.Tensor Float [3, 3] := Spec.choleskySpec A
 
 /-- Reconstruction error $\lVert A-LL^\mathsf{T}\rVert_{\max}$. -/
-def reconErr : Float := maxMatErr A (mm L (tr L))
+def reconErr : Float := maxMatErr A (matmul L (tr L))
 
 -- Inspect the diagonal of the factor.
 #guard_msgs (drop info) in
-#eval vecToList (Spec.Tensor.vector (fun i : Fin 3 => Spec.get2 L i i))
+#eval vectorToArray (Spec.Tensor.ofFn (fun i : Fin 3 => Spec.get2 L i i))
 
 -- Compiled assertion: the factorization reconstructs A (fails the build otherwise).
 #guard_msgs (drop info) in
@@ -51,14 +51,14 @@ sufficient condition for it). The matrix below is symmetric but *not* positive-d
 is `NaN` — never a small error. This documents that the hypothesis genuinely bites. -/
 
 /-- A symmetric but **indefinite** matrix (eigenvalues `{3, -1}`), outside Cholesky's domain. -/
-def Abad : Spec.Tensor Float (.dim 2 (.dim 2 .scalar)) :=
-  mkMat [[1, 2],
-         [2, 1]]
+def Abad : Spec.Tensor Float [2, 2] :=
+  mkMat #[#[1, 2],
+          #[2, 1]]
 
-def Lbad : Spec.Tensor Float (.dim 2 (.dim 2 .scalar)) := Spec.choleskySpec Abad
+def Lbad : Spec.Tensor Float [2, 2] := Spec.choleskySpec Abad
 -- Use the *summed* Frobenius error here, not `maxMatErr`: IEEE `max` ignores `NaN`, whereas the sum
 -- propagates the `NaN` produced by `√(negative)`, faithfully reporting that no factor exists.
-def reconErrBad : Float := frobSqErr Abad (mm Lbad (tr Lbad))
+def reconErrBad : Float := frobSqErr Abad (matmul Lbad (tr Lbad))
 
 #guard_msgs (drop info) in
 #eval assertReconFails "Cholesky on indefinite A correctly fails (no SPD ⇒ no factor)" reconErrBad

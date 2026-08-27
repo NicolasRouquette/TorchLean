@@ -17,55 +17,12 @@ Everything is organized by purpose:
 - `datasets/`: dataset download, conversion, and training-log plotting helpers.
 - `verification/`: certificate producers and artifact-regeneration workflows.
 - `rl/`: optional reinforcement-learning bridge examples.
-### Build and Check Support
 
-These scripts are used by the build, documentation, and local verification paths:
+The sections below document each command and distinguish required repository checks from optional
+dataset, verification, and reinforcement-learning workflows. Invoke commands by their paths, for
+example `python3 scripts/datasets/download_example_data.py --cifar10`.
 
-- `checks/check.sh`
-- `checks/example_regression.sh`
-- `checks/cuda_sanitize_tests.sh`
-- `checks/cuda_profile_tests.sh`
-- `checks/repo_lint.py`
-- `checks/TorchLeanLint.lean`
-- `checks/dependency_audit.py`
-- `docs/build_site.sh`
-- `docs/check_site_links.py`
-- `docs/polish_docgen.py`
-- `docs/polish_verso_guide.py`
-- `setup/resolve_libtorch.sh`
-
-`docs/polish_docgen.py` and `docs/polish_verso_guide.py` are website post-processors rather than
-verification logic. DocGen and Verso generate the HTML; these scripts add the TorchLean landing page,
-navigation polish, responsive figures, copy buttons, asset copying, and public-site styling.
-
-### Reproducibility Helpers
-
-These are referenced by examples, docs, or artifact-regeneration workflows:
-
-- `datasets/download_example_data.py`
-- `datasets/torchlean_data_convert.py`
-- `datasets/plot_trainlog.py`
-- `verification/regenerate_assets.py`
-- `verification/robustness/*`
-- `verification/lirpa/*`
-- `verification/pinn/*`
-- `verification/splines/*`
-- `verification/two_stage/*`
-- `verification/geometry3d/*`
-
-Use the subfolder paths directly, for example
-`python3 scripts/datasets/download_example_data.py --cifar10`.
-
-### Optional Examples and Research Workflows
-
-These scripts support documented workflows outside the core build path:
-
-- `datasets/download_wikitext.py`
-- `rl/gymnasium_server.py`
-- `rl/export_gymnasium_rollout.py`
-- `rl/train_ppo_cartpole_sb3.py`
-
-### Local Output
+## Local Output
 
 These are generated locally and stay out of the source tree:
 
@@ -107,8 +64,8 @@ Generated locally:
   performance reports.
 - `checks/repo_lint.py`: repository lint used by `lake lint`. It checks source hygiene, public API
   boundaries, import-only aggregators, fixed-rank names in public tensor/model APIs,
-  trusted-axiom quarantine, public-example spellings, DocGen/Verso math markup, and module
-  docstrings for `NN/` Lean files.
+  trusted-axiom quarantine, public-example spellings, DocGen/Verso math markup, module
+  docstrings, and Lake typecheck-target coverage for `NN/` Lean files.
 - `checks/dependency_audit.py`: repository-level module/import graph audit inspired by
   Li et al., "The Network Structure of Mathlib" (arXiv:2604.24797). It reports
   broad imports, layer-boundary smells, fan-in/fan-out hubs, and Markdown/JSON
@@ -155,6 +112,8 @@ python3 scripts/checks/dependency_audit.py --markdown /tmp/torchlean_dependency_
   identifier after the site is assembled.
 - `docs/polish_docgen.py`: post-processes DocGen HTML with the TorchLean landing page,
   navigation links, declaration legends, dependency-link rewrites, and site styling.
+- `docs/postprocess_importgraph.py`: points generated import-graph nodes at TorchLean's local
+  declaration pages and keeps labels readable under the site's light and dark themes.
 - `docs/polish_verso_guide.py`: post-processes the Verso guide with responsive figures and tables,
   stable KaTeX display layout, copy buttons, theorem cards, and a check that every guide page loads
   the local math runtime.
@@ -200,8 +159,8 @@ the checker.
   into TorchLean's `abcrown_leaf_artifact_v0_1` JSON schema and can run the Lean checker.
 - `verification/robustness/train_digits_linear.py`: trains the tiny digits linear model used by
   robustness examples.
-- `verification/robustness/export_margin_cert.py`: writes logit-margin certificates consumed by
-  the robustness checker.
+- `verification/robustness/export_margin_cert.py`: writes logit-bound reports consumed by the
+  margin-consistency checker.
 - `verification/pinn/train_pinn_1d.py`, `verification/pinn/train_pinn_2d.py`: configurable
   PyTorch PINN trainers.
 - `verification/pinn/pinn_common.py`: shared dataset/model/export utilities used by the PINN

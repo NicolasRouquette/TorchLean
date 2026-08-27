@@ -20,10 +20,6 @@ or, for a normed tensor statement,
 $$`\left\|\operatorname{toSpec}(Y_{\mathrm{run}})-Y_{\mathrm{spec}}\right\|_\infty
 \le \varepsilon.`
 
-We encourage readers to come here after the autograd proof layer. The autograd theorems explain what
-the ideal forward and backward maps mean; here we explain how far an executable or rounded path
-may differ from that ideal, and how we keep that difference explicit.
-
 # Why Real Proofs Are Not Float Proofs
 
 It is tempting to prove a property over real numbers and then deploy float32 code under the same
@@ -211,7 +207,7 @@ It does not introduce a second deployment graph or a second interval type.
 
 A certificate contains source enclosures, one derived range per IR node, the name of the range
 registry, and the existing backend execution audit. A successful `check` stores the graph inside
-`CheckedCertificate`; later replay cannot silently substitute a different graph or rule set.
+`RegistryCheckedCertificate`; later replay cannot silently substitute a different graph or rule set.
 Checking performs three independent executable validations:
 
 1. validate that source and derived endpoints are finite and ordered;
@@ -230,8 +226,8 @@ interval.
 #check Proofs.RuntimeApprox.NumericalCertificate.GraphRangeRegistry
 #check Proofs.RuntimeApprox.NumericalCertificate.numericalCoverage
 #check Proofs.RuntimeApprox.NumericalCertificate.executeIEEE32
-#check Proofs.RuntimeApprox.NumericalCertificate.CheckedRealExecution
-#check Proofs.RuntimeApprox.NumericalCertificate.CheckedExecution.errorTrace
+#check Proofs.RuntimeApprox.NumericalCertificate.ProvedRealEnclosure
+#check Proofs.RuntimeApprox.NumericalCertificate.RangeCheckedExecution.errorTrace
 #check Proofs.RuntimeApprox.NumericalCertificate.tensor_error_le_width_of_check
 #check Proofs.RuntimeApprox.NumericalCertificate.execution_error_trace_of_check
 ```
@@ -244,9 +240,9 @@ encloses the graph's real denotation.
 `executeIEEE32` evaluates the same `NN.IR.Graph` with TorchLean's bit-level `IEEE32Exec` context and
 checks every intermediate value against the stored ranges, rejecting NaN and infinity. This is a
 reference replay, not an agreement theorem for a high-throughput backend.
-`CheckedRealExecution` carries the separate semantic evidence: its fields require both the real
+`ProvedRealEnclosure` carries the separate semantic evidence: its fields require both the real
 denotation equality and a pointwise real enclosure proof. When that evidence is supplied,
-`CheckedExecution.errorTrace` combines the real enclosure with the successful IEEE replay to prove
+`RangeCheckedExecution.errorTrace` combines the real enclosure with the successful IEEE replay to prove
 a pointwise error trace whose bound is the interval width. A successful range check or replay alone
 cannot stand in for the missing real-semantics proof.
 
@@ -302,7 +298,7 @@ ranges, and backend audit in one artifact. `mlpReplay` then supplies concrete we
 input values, executes the stored graph with `IEEE32Exec`, and checks every intermediate tensor.
 The same file tests rejection of a tampered range, an unsupported operation, a violated
 square-root domain, and an incompatible reduction policy. These Boolean and `Except` checks are
-useful regression evidence; the example does not construct a `CheckedRealExecution`, so it is not
+useful regression evidence; the example does not construct a `ProvedRealEnclosure`, so it is not
 by itself a proof that the MLP's exact real execution is enclosed.
 
 There is no MLP-specific branch in this process. The checker sees input, constant, matrix
@@ -353,9 +349,9 @@ lemmas in
 [NN.Proofs.RuntimeApprox.NF.ReductionOps](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ReductionOps.lean):
 
 ```
-#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_sum_by_row_2d
-#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_mean_by_row_2d
-#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_sum_by_column_2d
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_sum_rows
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_mean_rows
+#check Proofs.RuntimeApprox.NFBackend.approxTensor_reduce_sum_columns
 ```
 
 The row-sum theorem accounts for the number of accumulated
@@ -394,6 +390,12 @@ bounds needed to keep the denominator away from zero. In particular,
 and epsilon, plus a positive exact stabilized-variance lower bound and strict rounded-error
 margins. It does not derive the mean and variance reduction bounds itself.
 
+For BatchNorm, the ideal reverse rule is connected to the mathematical forward map in the
+[BatchNorm autograd proof](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Norm/BatchNorm.lean).
+The theorem `batchNormJvp_batchNormBackward_adjoint` covers an arbitrary list of spatial axes and
+all three cotangents: input, scale, and bias. The rounded normalization bounds can therefore be read
+against a proved ideal reverse rule rather than an independently written gradient formula.
+
 The [attention approximation API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/Attention.lean)
 builds scaled dot-product attention from matrix multiplication, scaling, stable axis softmax, and a
 second matrix multiplication. A hard attention mask is semantic: blocked entries have zero
@@ -411,35 +413,30 @@ implementations.
 #check Proofs.RuntimeApprox.Attention.approxTensor_scaledDotProductAttention_masked
 ```
 
-# Convolution Forward And Backward
+# Rank-Polymorphic Convolution
 
-Convolution stresses the approximation layer because it mixes indexing, padding, nested sums, and
-gradients with respect to inputs and parameters. TorchLean has dedicated normal form APIs:
+Convolution is parameterized by the number of spatial axes, with one kernel, stride, and padding
+entry for each axis. The same definition therefore describes sequence, image, volume, and
+higher-rank convolutions. Its typed lowering and executable IR semantics are connected by the
+[convolution semantic-preservation proof](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/IRExec/Correctness/Ops/Convolution.lean).
 
-- [NN.Proofs.RuntimeApprox.NF.ConvForward API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ConvForward.lean)
-- [NN.Proofs.RuntimeApprox.NF.ConvBackward API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ConvBackward.lean)
-- [NN.Proofs.RuntimeApprox.NF.Conv API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/Conv.lean)
+The ideal autograd proof is in
+[Convolution FDeriv](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/Autograd/Tape/Ops/Conv/FDeriv.lean).
+It proves the Fréchet derivative of the rank-general forward map and shows that the implemented
+kernel, bias, and input reverse rules are adjoint to that derivative.
 
-The convolution forward API proves pointwise and full tensor approximation for convolution forward:
+The [rounded convolution proof](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/Convolution.lean)
+then follows the implementation's actual nested loops. `approx_convSpec_coordinate` bounds one
+forward coordinate. The kernel, bias, and input-gradient theorems bound the three components of
+`convBackwardSpec`. Padding branches, multiplication error, and every rounded accumulation are
+included; the proofs do not reorder the sums or assume floating-point associativity.
 
-- `approx_conv2d_point` for one output coordinate;
-- `approxTensor_conv2d_spec` for the full output tensor;
-- `conv2dNode` to package the theorem as a graph node.
-
-The proof has a lot of indexing work because the spec definition and the runtime replay need to
-read the same padded input entries. Lemmas such as `foldl_flatMap`,
-`entry_eq_scalar_get_at_or_zero3`, and facts about padded input alignment are essential; they are
-what prevents the proof from silently comparing two different convolutions.
-
-The convolution backward API covers the three reverse operators:
-
-- `approxTensor_conv2d_bias_deriv_spec`;
-- `approxTensor_conv2d_kernel_deriv_spec`;
-- `approxTensor_conv2d_input_deriv_spec`.
-
-It also packages the result as `conv2dRevNode`, so the backward approximation theorem can compose
-convolution with the rest of a reverse graph. Here is the local-to-global pattern in its cleanest
-form: first prove the hard local operator approximation, then hand it to `RevGraph`.
+```
+#check Proofs.RuntimeApprox.NFBackend.approx_convSpec_coordinate
+#check Proofs.RuntimeApprox.NFBackend.approx_convKernelDerivSpec_coordinate
+#check Proofs.RuntimeApprox.NFBackend.approx_convBiasDerivSpec_coordinate
+#check Proofs.RuntimeApprox.NFBackend.approx_convInputDerivSpec_coordinate
+```
 
 # Rounded Optimizer Steps
 
@@ -614,8 +611,8 @@ bounds, compose them over forward and backward graphs, and finally connect the r
   contains `RevGraph.backprop_approx`.
 - The [normal form operator API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/Ops.lean) supplies local obligations, including
   domain-sensitive operations such as division and safe log.
-- The [convolution forward API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ConvForward.lean) and
-  [convolution backward API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/ConvBackward.lean) handle a larger operator family.
+- The [rounded convolution proof](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/NF/Convolution.lean)
+  gives ordered forward and backward bounds at arbitrary spatial rank.
 - The [scale approximation API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/Scale/ScaleApprox.lean) supports scale-aware error bounds.
 - The [autograd algebra link API](https://github.com/lean-dojo/TorchLean/blob/main/NN/Proofs/RuntimeApprox/Graph/LinkAutogradAlgebra.lean)
   connects approximation to the autograd proof layer.

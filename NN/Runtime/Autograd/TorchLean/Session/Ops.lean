@@ -60,7 +60,7 @@ Scale a tensor by a scalar constant `c` (elementwise).
 PyTorch analogy: `x * c` or `torch.mul(x, c)`.
 -/
 def scale {α : Type} (s : Session α) [Mul α] [Add α] [Zero α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α] {sh : Shape}
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α] {sh : Shape}
   (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) (c : α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.state with
@@ -95,7 +95,7 @@ $p$ is expected to satisfy $0\le p<1$; we throw if
 $\mathtt{keepProb}=1-p$ is not strictly positive.
 -/
 def dropout {α : Type} [Context α] [DecidableEq Shape]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+    [_root_.Runtime.Autograd.Torch.TensorTransfer α]
     (s : Session α) (rng : RngState) {sh : Shape}
     (x : _root_.Runtime.Autograd.Torch.TensorRef α sh)
     (p : α) (train : Bool := true) :
@@ -123,7 +123,8 @@ def dropout {α : Type} [Context α] [DecidableEq Shape]
               (sh := sh) keepProbRef opSeed
         | .typedGraph sess =>
             _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.commitGraphM (α := α) sess
-              (β := _root_.Runtime.Autograd.Torch.TensorRef α sh) (fun {Γ} {ss} xv nat g => do
+              (β := _root_.Runtime.Autograd.Torch.TensorRef α sh)
+              (refs := #[keepProbRef.identity?]) (fun {Γ} {ss} xv nat g => do
                 let (v, st') ← _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.runGraphM (α := α)
                   (Γ := Γ)
                   (Runtime.Autograd.TypedGraph.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := sh)
@@ -163,7 +164,7 @@ def sqrt {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α
 /-- Elementwise clamp to `[minVal, maxVal]` (dispatches by execution mode). -/
 def clamp {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
   [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
+  [_root_.Runtime.Autograd.Torch.TensorTransfer α]
   {sh : Shape} (x : _root_.Runtime.Autograd.Torch.TensorRef α sh) (minVal maxVal : α) :
   IO (_root_.Runtime.Autograd.Torch.TensorRef α sh) := do
   match s.state with
@@ -192,37 +193,23 @@ def min {α : Type} (s : Session α) [Context α] [DecidableRel ((· > ·) : α 
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.min (α := α) sess (sh := sh) a b
 
-/--
-Matrix multiplication (rank-2 tensors).
-
-PyTorch analogy: `torch.matmul` / `@` for matrices.
--/
+/-- Matrix multiplication with broadcasted batch prefixes. -/
 def matmul {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {m n p : Nat}
-  (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim m (.dim n .scalar)))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim n (.dim p .scalar))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim m (.dim p .scalar))) := do
+  {batchA batchB batch : Shape} {m n p : Nat}
+  [broadcastA : Shape.BroadcastTo batchA batch]
+  [broadcastB : Shape.BroadcastTo batchB batch]
+  (a : _root_.Runtime.Autograd.Torch.TensorRef α (batchA.concat [m, n]))
+  (b : _root_.Runtime.Autograd.Torch.TensorRef α (batchB.concat [n, p])) :
+  IO (_root_.Runtime.Autograd.Torch.TensorRef α (batch.concat [m, p])) := do
   match s.state with
-  | .eager sess => EagerSession.matmul (α := α) sess (m := m) (n := n) (p := p) a b
+  | .eager sess =>
+      EagerSession.matmul (α := α) sess
+        (batchA := batchA) (batchB := batchB) (batch := batch)
+        (m := m) (n := n) (p := p) a b
   | .typedGraph sess =>
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.matmul (α := α) sess
+        (batchA := batchA) (batchB := batchB) (batch := batch)
         (m := m) (n := n) (p := p) a b
-
-/--
-Batched matrix multiplication (rank-3 tensors).
-
-PyTorch analogy: `torch.bmm`.
--/
-def bmm {α : Type} (s : Session α) [Add α] [Mul α] [Zero α] [DecidableEq Shape]
-  {batch m n p : Nat}
-  (a : _root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim m (.dim n .scalar))))
-  (b : _root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim n (.dim p .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α (.dim batch (.dim m (.dim p .scalar)))) := do
-  match s.state with
-  | .eager sess => EagerSession.bmm (α := α) sess (batch := batch) (m := m) (n := n) (p := p) a b
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.bmm (α := α) sess (batch := batch) (m := m)
-        (n := n) (p := p) a b
 
 /-- Concatenate along the outermost dimension (dimension 0) (dispatches to eager vs typed graph
   backend). -/
@@ -253,64 +240,68 @@ def sliceLeadingAxisRange {α : Type} (s : Session α) [Zero α] [DecidableEq Sh
       _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.sliceLeadingAxisRange (α := α) sess
         (n := n) (sh := sh) x start len h
 
-/--
-2D max pooling on a CHW tensor.
-
-PyTorch analogy: `torch.nn.functional.max_pool2d` (channel-first layout).
--/
-def maxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
+/-- Apply max pooling over an arbitrary number of spatial axes. -/
+def maxPool {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
+    {d channels : Nat} {spatial kernel stride padding : Spec.Tensor Nat [d]}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    (x : _root_.Runtime.Autograd.Torch.TensorRef α
+      (Shape.ofList (channels :: spatial.toList))) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α
+      (Shape.ofList
+        (channels :: (Spec.poolOutSpatialPad spatial kernel stride padding).toList))) :=
   match s.state with
-  | .eager sess =>
-      EagerSession.maxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
-        (inC := inC) (stride := stride) (h1 := h1) (h2 := h2) x
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.maxPool2d (α := α) sess
-        (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-        (h1 := h1) (h2 := h2) x
+  | .eager session =>
+      EagerSession.maxPool (α := α) session
+        (d := d) (channels := channels) (spatial := spatial)
+        (kernel := kernel) (stride := stride) (padding := padding)
+        (hKernel := hKernel) x
+  | .typedGraph session =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.maxPool (α := α) session
+        (d := d) (C := channels) (inSpatial := spatial)
+        (kernel := kernel) (stride := stride) (padding := padding)
+        (hKernel := hKernel) x
 
-/--
-Smooth max pooling (differentiable surrogate for max pooling) on a CHW tensor.
-
-This is parameterized by `beta` (larger values behave more like true max pooling).
--/
-def smoothMaxPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-  {kH kW inH inW inC stride : Nat} {h1 : kH ≠ 0} {h2 : kW ≠ 0}
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) (beta :
-    α) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
+/-- Apply smooth max pooling over an arbitrary number of spatial axes. -/
+def smoothMaxPool {α : Type} (s : Session α) [Context α] [DecidableEq α]
+    [DecidableEq Shape]
+    [_root_.Runtime.Autograd.Torch.TensorTransfer α]
+    {d channels : Nat} {spatial kernel stride padding : Spec.Tensor Nat [d]}
+    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0}
+    (x : _root_.Runtime.Autograd.Torch.TensorRef α
+      (Shape.ofList (channels :: spatial.toList))) (beta : α) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α
+      (Shape.ofList
+        (channels :: (Spec.poolOutSpatialPad spatial kernel stride padding).toList))) :=
   match s.state with
-  | .eager sess =>
-      EagerSession.smoothMaxPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
-        (inC := inC) (stride := stride) (h1 := h1) (h2 := h2) x beta
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.smoothMaxPool2d (α := α) sess
-        (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-        (h1 := h1) (h2 := h2) x beta
+  | .eager session =>
+      EagerSession.smoothMaxPool (α := α) session
+        (d := d) (channels := channels) (spatial := spatial)
+        (kernel := kernel) (stride := stride) (padding := padding)
+        (hKernel := hKernel) x beta
+  | .typedGraph session =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.smoothMaxPool (α := α) session
+        (d := d) (C := channels) (inSpatial := spatial)
+        (kernel := kernel) (stride := stride) (padding := padding)
+        (hKernel := hKernel) x beta
 
-/--
-2D average pooling on a CHW tensor.
-
-PyTorch analogy: `torch.nn.functional.avg_pool2d` (channel-first layout).
--/
-def avgPool2d {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
-  {kH kW inH inW inC stride : Nat} (h1 : kH ≠ 0) (h2 : kW ≠ 0)
-  (x : _root_.Runtime.Autograd.Torch.TensorRef α (.dim inC (.dim inH (.dim inW .scalar)))) :
-  IO (_root_.Runtime.Autograd.Torch.TensorRef α
-    (.dim inC (.dim (Spec.poolOutDim inH kH stride 0) (.dim (Spec.poolOutDim inW kW stride 0) .scalar)))) := do
+/-- Apply average pooling over an arbitrary number of spatial axes. -/
+def avgPool {α : Type} (s : Session α) [Context α] [DecidableEq Shape]
+    {d channels : Nat} {spatial kernel stride padding : Spec.Tensor Nat [d]}
+    (hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0)
+    (x : _root_.Runtime.Autograd.Torch.TensorRef α
+      (Shape.ofList (channels :: spatial.toList))) :
+    IO (_root_.Runtime.Autograd.Torch.TensorRef α
+      (Shape.ofList
+        (channels :: (Spec.poolOutSpatialPad spatial kernel stride padding).toList))) :=
   match s.state with
-  | .eager sess =>
-      EagerSession.avgPool2d (α := α) sess (kH := kH) (kW := kW) (inH := inH) (inW := inW)
-        (inC := inC) (stride := stride) h1 h2 x
-  | .typedGraph sess =>
-      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.avgPool2d (α := α) sess
-        (kH := kH) (kW := kW) (inH := inH) (inW := inW) (inC := inC) (stride := stride)
-        h1 h2 x
+  | .eager session =>
+      EagerSession.avgPool (α := α) session
+        (d := d) (channels := channels) (spatial := spatial)
+        (kernel := kernel) (stride := stride) (padding := padding) hKernel x
+  | .typedGraph session =>
+      _root_.Runtime.Autograd.Torch.Internal.TypedGraphSession.avgPool (α := α) session
+        (d := d) (C := channels) (inSpatial := spatial)
+        (kernel := kernel) (stride := stride) (padding := padding) hKernel x
 
 end Session
 

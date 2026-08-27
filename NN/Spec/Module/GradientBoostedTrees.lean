@@ -28,7 +28,7 @@ variable {α : Type} [Context α]
 /-- Gradient boosted trees as an `Spec.Module`. -/
 def gradientBoostedTrees {nTrees maxDepth nFeatures : Nat}
   (model : GradientBoostedTreesSpec α nFeatures nTrees maxDepth) :
-  Spec.Module α (.dim nFeatures .scalar) .scalar :=
+  Spec.Module α ([nFeatures]) .scalar :=
 {
   forward := fun x => gradientBoostedTreesForwardSpec model x,
   kind := "GradientBoostedTrees",

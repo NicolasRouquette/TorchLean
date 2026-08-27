@@ -78,25 +78,25 @@ abbrev nTotal : Nat := 200
 
 /-- Small CNN (no BatchNorm): Conv -> ReLU -> Pool -> Conv -> ReLU -> Pool -> Linear(10). -/
 def mkModel {batch : Nat} :
-    nn.Builder (nn.Sequential (.dim batch (.dim channels (.dim height (.dim width .scalar)))) (shape![batch, classes])) :=
+    nn.Builder (nn.Sequential [batch, channels, height, width] [batch, classes]) :=
   let outC1 : Nat := 16
   let outC2 : Nat := 32
-  let spatial0 : Vector Nat 2 := #v[height, width]
+  let spatial0 : Tensor Nat [2] := tensor! [height, width]
   let conv1 : nn.Conv 2 :=
     { outChannels := outC1
-      kernel := #v[3, 3]
-      padding := #v[1, 1]
+      kernel := tensor! [3, 3]
+      padding := tensor! [1, 1]
       kernelNonzero := by intro i; fin_cases i <;> decide
       strideNonzero := by intro i; fin_cases i <;> decide }
   let conv2 : nn.Conv 2 :=
     { outChannels := outC2
-      kernel := #v[3, 3]
-      padding := #v[1, 1]
+      kernel := tensor! [3, 3]
+      padding := tensor! [1, 1]
       kernelNonzero := by intro i; fin_cases i <;> decide
       strideNonzero := by intro i; fin_cases i <;> decide }
   let pool : nn.Pool 2 :=
-    { kernel := #v[2, 2]
-      stride := #v[2, 2]
+    { kernel := tensor! [2, 2]
+      stride := tensor! [2, 2]
       kernelNonzero := by intro i; fin_cases i <;> decide
       strideNonzero := by intro i; fin_cases i <;> decide }
   let spatial1 := Spec.convOutSpatial spatial0 conv1.kernel conv1.stride conv1.padding
@@ -104,14 +104,14 @@ def mkModel {batch : Nat} :
   let spatial3 := Spec.convOutSpatial spatial2 conv2.kernel conv2.stride conv2.padding
   let spatial4 := Spec.poolOutSpatialPad spatial3 pool.kernel pool.stride pool.padding
   nn.Sequential![
-    nn.conv (leading := .dim batch .scalar) (inChannels := channels) spatial0 conv1,
+    nn.conv (leading := [batch]) (inChannels := channels) spatial0 conv1,
     nn.relu,
-    nn.maxPool (leading := .dim batch .scalar) (channels := outC1) spatial1 pool,
-    nn.conv (leading := .dim batch .scalar) (inChannels := outC1) spatial2 conv2,
+    nn.maxPool (leading := [batch]) (channels := outC1) spatial1 pool,
+    nn.conv (leading := [batch]) (inChannels := outC1) spatial2 conv2,
     nn.relu,
-    nn.maxPool (leading := .dim batch .scalar) (channels := outC2) spatial3 pool,
-    nn.lift (nn.heads.classifier (leading := .dim batch .scalar)
-      (s := Spec.Shape.ofList (outC2 :: spatial4.toList)) classes)
+    nn.maxPool (leading := [batch]) (channels := outC2) spatial3 pool,
+    pure (nn.heads.classifier (leading := [batch])
+      (shape := outC2 :: spatial4.toList) classes)
   ]
 
 /-- Shared offline CIFAR10-like tensor source used by this tutorial. -/
@@ -119,12 +119,12 @@ def source (xPath yPath : System.FilePath) (nRows : Nat) : Data.LabeledSource :=
   Data.LabeledSource.ofPaths .npy xPath yPath nRows [channels, height, width] classes
 
 def trainDataset (xPath yPath : System.FilePath) (nRows trainSize seed : Nat) :
-    Trainer.DataSource (.dim channels (.dim height (.dim width .scalar))) (.dim classes .scalar) :=
+    Trainer.Dataset [channels, height, width] [classes] :=
   (Data.randomSplitDataset trainSize (Data.labeledDataset (source xPath yPath nRows)) seed).1
 
 /-- Runtime-polymorphic test split used for `--check-only` reporting. -/
 def testDataset (xPath yPath : System.FilePath) (nRows trainSize seed : Nat) :
-    Trainer.DataSource (.dim channels (.dim height (.dim width .scalar))) (.dim classes .scalar) :=
+    Trainer.Dataset [channels, height, width] [classes] :=
   (Data.randomSplitDataset trainSize (Data.labeledDataset (source xPath yPath nRows)) seed).2
 
 /-- Command-line help for the CIFAR10-style NPY loader tutorial. -/
@@ -220,7 +220,7 @@ def main (args : List String) : IO Unit := do
     throw <| IO.userError
       s!"{label}: --train-size {trainSize} exceeds dataset size {dsAll.size}"
 
-  let (_seed', (dsTrain, dsTest)) := Data.randomSplitAt (seed := seed) trainSize dsAll
+  let (_seed', (dsTrain, dsTest)) := Data.SampleStream.randomSplitAt seed trainSize dsAll
 
   if checkOnly then
     IO.println s!"loaded     = {dsAll.size} image rows"
@@ -239,8 +239,8 @@ def main (args : List String) : IO Unit := do
             s!"train_size={trainSize}", s!"test_size={dsTest.size}",
             s!"epochs={eb.epochs}", s!"batch={eb.batch}", s!"lr={lr}"] }
     trained.printSummary
-    let blank : Tensor Float (.dim channels (.dim height (.dim width .scalar))) :=
-      Tensor.fill 0.0 (.dim channels (.dim height (.dim width .scalar)))
-    trained.printPrediction "blank" (Spec.Tensor.dim (fun _ : Fin eb.batch => blank))
+    let blank : Tensor Float [channels, height, width] :=
+      Tensor.full [channels, height, width] 0.0
+    trained.printPrediction "blank" (Tensor.repeatAxis 0 eb.batch blank)
 
 end NN.Examples.Data.Loaders.Cifar10Images

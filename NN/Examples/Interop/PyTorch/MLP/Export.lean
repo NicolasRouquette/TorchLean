@@ -78,18 +78,19 @@ structure MLPExportMetadata (α : Type) (inDim hidDim outDim : Nat) where
   /-- Whether the generated Python should embed concrete weights. -/
   hasWeights : Bool
   /-- Optional two-layer MLP parameter payload: weights and biases for both linear layers. -/
-  weights : Option (Tensor Float (.dim hidDim (.dim inDim .scalar)) ×
-                   Tensor Float (.dim hidDim .scalar) ×
-                   Tensor Float (.dim outDim (.dim hidDim .scalar)) ×
-                   Tensor Float (.dim outDim .scalar))
+  weights : Option (Tensor Float [hidDim, inDim] ×
+                   Tensor Float [hidDim] ×
+                   Tensor Float [outDim, hidDim] ×
+                   Tensor Float [outDim])
 
 /--
 Emit the Python class body for a basic `Linear → ReLU → Linear` MLP.
 
 This returns *lines* (not a single string) so callers can splice it into larger scripts.
 -/
-def generateMLPPyTorchClassLines (inDim hidDim outDim : Nat) (className : String) : List String :=
-  [
+def generateMLPPyTorchClassLines
+    (inDim hidDim outDim : Nat) (className : String) : Array String :=
+  #[
     s!"class {className}(nn.Module):",
     indentTwo (s!"\"\"\"Multi-Layer Perceptron with {inDim} input, {hidDim} hidden, " ++
       s!"{outDim} output dimensions\"\"\""),
@@ -130,7 +131,7 @@ def generateMLPPyTorchClassLines (inDim hidDim outDim : Nat) (className : String
     indentFour ""
   ] ++
     generateGetModelInfoMethodLines className
-      [ ("input_dim", "self.input_dim")
+      #[ ("input_dim", "self.input_dim")
       , ("hidden_dim", "self.hidden_dim")
       , ("output_dim", "self.output_dim")
       ]
@@ -138,7 +139,7 @@ def generateMLPPyTorchClassLines (inDim hidDim outDim : Nat) (className : String
 /-- Generate a standalone Python file containing an `nn.Module` MLP class. -/
 def generateMLPPyTorchClass (inDim hidDim outDim : Nat) (className : String := "MLP") : String :=
   joinLines <|
-    [generatePyTorchImports, ""] ++ generateMLPPyTorchClassLines inDim hidDim outDim className
+    #[generatePyTorchImports, ""] ++ generateMLPPyTorchClassLines inDim hidDim outDim className
 
 /--
 Generate Python code for an MLP plus helper functions that embed concrete weights.
@@ -147,22 +148,22 @@ The output contains a `get_mlp_state_dict` function that returns a PyTorch-shape
 (`state_dict`) and a `load_mlp_weights` helper that calls `model.load_state_dict(...)`.
 -/
 def generateMLPWithWeights {inDim hidDim outDim : Nat}
-  (w1 : Tensor Float (.dim hidDim (.dim inDim .scalar)))
-  (b1 : Tensor Float (.dim hidDim .scalar))
-  (w2 : Tensor Float (.dim outDim (.dim hidDim .scalar)))
-  (b2 : Tensor Float (.dim outDim .scalar))
+  (w1 : Tensor Float [hidDim, inDim])
+  (b1 : Tensor Float [hidDim])
+  (w2 : Tensor Float [outDim, hidDim])
+  (b2 : Tensor Float [outDim])
   (className : String := "MLP")
   (keyStyle : WeightKeyStyle := .linear) : String :=
-  joinLines [
+  joinLines #[
     generateMLPPyTorchClass inDim hidDim outDim className,
     "",
     "# Weight initialization functions",
     "def get_mlp_state_dict():",
     indentTwo "state_dict = {}",
-    indentTwo s!"state_dict['{firstWeightKey keyStyle}'] = torch.tensor({matrixTensorToPy w1})",
-    indentTwo s!"state_dict['{firstBiasKey keyStyle}'] = torch.tensor({vectorTensorToPy b1})",
-    indentTwo s!"state_dict['{secondWeightKey keyStyle}'] = torch.tensor({matrixTensorToPy w2})",
-    indentTwo s!"state_dict['{secondBiasKey keyStyle}'] = torch.tensor({vectorTensorToPy b2})",
+    indentTwo s!"state_dict['{firstWeightKey keyStyle}'] = torch.tensor({tensorToPyString w1})",
+    indentTwo s!"state_dict['{firstBiasKey keyStyle}'] = torch.tensor({tensorToPyString b1})",
+    indentTwo s!"state_dict['{secondWeightKey keyStyle}'] = torch.tensor({tensorToPyString w2})",
+    indentTwo s!"state_dict['{secondBiasKey keyStyle}'] = torch.tensor({tensorToPyString b2})",
     indentTwo "return state_dict",
     indentTwo "",
     "def load_mlp_weights(model):",
@@ -191,7 +192,7 @@ loss (e.g. `CrossEntropyLoss`) instead of an explicit softmax.
 def generateMLPWithSoftmax {inDim hidDim outDim : Nat} (className : String := "MLPWithSoftmax") :
   String :=
   joinLines <|
-  [generatePyTorchImports, ""] ++ [
+  #[generatePyTorchImports, ""] ++ #[
     s!"class {className}(nn.Module):",
     indentTwo s!"\"\"\"Multi-Layer Perceptron with softmax output for classification\"\"\"",
     indentTwo "",
@@ -233,8 +234,9 @@ def generateMLPWithSoftmax {inDim hidDim outDim : Nat} (className : String := "M
   ]
 
 /-- Line-based version of `generateMLPWithSoftmax` for script composition. -/
-def generateMLPWithSoftmaxLines {inDim hidDim outDim : Nat} (className : String) : List String :=
-  [
+def generateMLPWithSoftmaxLines
+    {inDim hidDim outDim : Nat} (className : String) : Array String :=
+  #[
     s!"class {className}(nn.Module):",
     indentTwo s!"\"\"\"Multi-Layer Perceptron with softmax output for classification\"\"\"",
     indentTwo "",
@@ -282,7 +284,7 @@ The chain is accepted to keep the API aligned with `Spec.Module.Chain`, while th
 metadata from the explicit dimensions supplied by the type parameters.
 -/
 def exportMLPFromChain {α : Type} {inDim hidDim outDim : Nat}
-  (_chain : Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar))
+  (_chain : Spec.Module.Chain α [inDim] [outDim])
   (className : String := "ExportedMLP") : MLPExportMetadata α inDim hidDim outDim :=
   {
     modelName := className,
@@ -295,11 +297,11 @@ def exportMLPFromChain {α : Type} {inDim hidDim outDim : Nat}
 
 /-- Like `exportMLPFromChain`, but include explicit weights in the metadata record. -/
 def exportMLPWithWeights {α : Type} {inDim hidDim outDim : Nat}
-  (_chain : Spec.Module.Chain α (.dim inDim .scalar) (.dim outDim .scalar))
-  (w1 : Tensor Float (.dim hidDim (.dim inDim .scalar)))
-  (b1 : Tensor Float (.dim hidDim .scalar))
-  (w2 : Tensor Float (.dim outDim (.dim hidDim .scalar)))
-  (b2 : Tensor Float (.dim outDim .scalar))
+  (_chain : Spec.Module.Chain α [inDim] [outDim])
+  (w1 : Tensor Float [hidDim, inDim])
+  (b1 : Tensor Float [hidDim])
+  (w2 : Tensor Float [outDim, hidDim])
+  (b2 : Tensor Float [outDim])
   (className : String := "ExportedMLP") : MLPExportMetadata α inDim hidDim outDim :=
   {
     modelName := className,
@@ -321,7 +323,7 @@ This includes:
 -/
 def generateCompleteMLPExport {inDim hidDim outDim : Nat}
   (className : String := "MLP") : String :=
-  joinLines [
+  joinLines #[
     generatePyTorchImports,
     "",
     joinLines (generateMLPPyTorchClassLines inDim hidDim outDim className),

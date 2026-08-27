@@ -72,18 +72,18 @@ theorem buildFrom_denoteAllFrom_mse_loss
         buildFrom (α := α) (g := g) (payload := payload) (inShape := inShape)
           (i := i + 1) st1 = .ok st' →
         NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-          (input := Spec.PackedTensor.mk (α := α) inShape x)
+          (input := Spec.SomeTensor.mk (α := α) inShape x)
           (i := i + 1) (vals := denoteAllState (α := α) inShape st1 x) =
           .ok (denoteAllState (α := α) inShape st' x)) :
     NN.IR.Graph.denoteAllFrom (α := α) (g := g) (payload := payload)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := i) (vals := denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x) =
       .ok (denoteAllState (α := α) inShape st' x) := by
-  let vals0 : Array (Spec.PackedTensor α) :=
+  let vals0 : Array (Spec.SomeTensor α) :=
     denoteAllState (α := α) inShape (st := (⟨ss, gd⟩ : State α inShape)) x
-  let ctx : TList α ([inShape] ++ ss) :=
+  let ctx : _root_.TorchLean.TensorPack α ([inShape] ++ ss) :=
     ForwardData.eval (α := α) (Γ := [inShape]) (ss := ss) gd (.cons x .nil)
-  let input : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) inShape x
+  let input : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) inShape x
   rcases n with ⟨nId, nParents, nKind, nOutShape⟩
   have hkKind : nKind = .mseLoss := by
     simpa using hk
@@ -96,117 +96,118 @@ theorem buildFrom_denoteAllFrom_mse_loss
   simp (config := { failIfUnchanged := false }) only
     [hi, hN, Except.ok_bind]
     at hBuild0
-  cases nParents with
-  | nil =>
-      exact False.elim <| throw_bind_ne_ok (h := (by simpa using hBuild0))
-  | cons yId rest =>
-      cases rest with
-      | nil =>
-          exact False.elim <| throw_bind_ne_ok (h := (by simpa using hBuild0))
-      | cons tId rest2 =>
-          cases rest2 with
-          | cons _ _ =>
-              exact False.elim <| throw_bind_ne_ok (h := (by simpa using hBuild0))
-          | nil =>
-              cases hY : g.getNode yId with
-              | error msg =>
-                  simp [hY] at hBuild0
-              | ok yNode =>
-                  cases hT : g.getNode tId with
+  cases hp : binaryParents? nParents with
+  | none =>
+      exact False.elim <| throw_bind_ne_ok (h := (by simpa [hp] using hBuild0))
+  | some parentIds =>
+      rcases parentIds with ⟨yId, tId⟩
+      simp (config := { failIfUnchanged := false }) [hp] at hBuild0
+      cases hY : g.getNode yId with
+      | error msg =>
+          simp [hY] at hBuild0
+      | ok yNode =>
+          cases hT : g.getNode tId with
+          | error msg =>
+              simp [hY, hT] at hBuild0
+          | ok tNode =>
+              have hBuild1 := hBuild0
+              -- Keep simp focused; `buildFrom` has a large op table, and default simp
+              -- search does unnecessary work here.
+              simp (config := { failIfUnchanged := false }) only
+                [hY, hT, Except.ok_bind]
+                at hBuild1
+              by_cases hShape : yNode.outShape = tNode.outShape
+              · have hBuild2 := hBuild1
+                simp (config := { failIfUnchanged := false }) only [hShape] at hBuild2
+                by_cases hOut : Shape.scalar = nOutShape
+                · have hBuild3 := hBuild2
+                  simp (config := { failIfUnchanged := false }) only [hOut] at hBuild3
+                  let s : Shape := yNode.outShape
+                  cases hIy : mkIdx (inShape := inShape) (ss := ss) yId s with
                   | error msg =>
-                      simp [hY, hT] at hBuild0
-                  | ok tNode =>
-                      have hBuild1 := hBuild0
-                      -- Keep simp focused; `buildFrom` has a large op table, and default simp
-                      -- search does unnecessary work here.
-                      simp (config := { failIfUnchanged := false }) only
-                        [hY, hT, Except.ok_bind]
-                        at hBuild1
-                      by_cases hShape : yNode.outShape = tNode.outShape
-                      · have hBuild2 := hBuild1
-                        simp (config := { failIfUnchanged := false }) only [hShape] at hBuild2
-                        by_cases hOut : Shape.scalar = nOutShape
-                        · have hBuild3 := hBuild2
-                          simp (config := { failIfUnchanged := false }) only [hOut] at hBuild3
-                          let s : Shape := yNode.outShape
-                          cases hIy : mkIdx (inShape := inShape) (ss := ss) yId s with
-                          | error msg =>
-                              simp [s, hIy] at hBuild3
-                          | ok iy =>
-                              cases hIt : mkIdx (inShape := inShape) (ss := ss) tId s with
-                              | error msg =>
-                                  simp [s, hIy, hIt] at hBuild3
-                              | ok it =>
-                                  have hBuild4 := hBuild3
-                                  simp (config := { failIfUnchanged := false }) only
-                                    [s, hIy, hIt, Except.ok_bind]
-                                    at hBuild4
-                                  let nodeData : ForwardNode α ([inShape] ++ ss) nOutShape :=
-                                    mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := nOutShape) (fun
-                                      ctx =>
-                                      let yhat := getIdx (α := α) (xs := ctx) iy
-                                      let target := getIdx (α := α) (xs := ctx) it
-                                      let diff := Tensor.subSpec (α := α) yhat target
-                                      let sq := Tensor.mulSpec (α := α) diff diff
-                                      let total : α := Tensor.sumSpec (α := α) sq
-                                      let y0 : Tensor α Shape.scalar :=
-                                        Tensor.scalar (total / (↑(NN.IR.Graph.meanDenom s) : α))
-                                      Tensor.castShape y0 hOut)
-                                  let st1 : State α inShape :=
-                                    ⟨ss ++ [nOutShape], .snoc (ss := ss) gd nodeData⟩
-                                  have hs : tNode.outShape = s := by
-                                    simpa [s] using hShape.symm
-                                  have hRec :
-                                      buildFrom (α := α) (g := g) (payload := payload) (inShape :=
-                                        inShape)
-                                          (i := i + 1) st1 = .ok st' := by
-                                    simpa [st1, nodeData, hs, Tensor.cast_shape_proof_irrel] using hBuild4
-                                  have hGetY :
-                                      vals0[yId]? = some (Spec.PackedTensor.mk (α := α) s
-                                        (getIdx (α := α) (xs := ctx) iy)) := by
-                                    simpa [vals0, ctx, s] using
-                                      (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
-                                        (gd := gd) (x := x) (pid := yId) (s := s) (idx := iy) hIy)
-                                  have hGetT :
-                                      vals0[tId]? = some (Spec.PackedTensor.mk (α := α) s
-                                        (getIdx (α := α) (xs := ctx) it)) := by
-                                    simpa [vals0, ctx, s] using
-                                      (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
-                                        (gd := gd) (x := x) (pid := tId) (s := s) (idx := it) hIt)
-                                  have hEval :
-                                      NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
-                                          (input := input) (vals := vals0) (i := i) =
-                                        .ok (Spec.PackedTensor.mk (α := α) nOutShape
-                                          (nodeData.eval ctx)) := by
-                                    -- `evalAt` normalizes using `Eq.rec` casts, while the lowered
-                                    -- `forward` closure uses `Tensor.cast_shape`.
-                                    --
-                                    -- Reduce the node fetch first so the large `OpKind` match
-                                    -- collapses to the `.mse_loss` branch.
-                                    unfold NN.IR.Graph.evalAt NN.IR.Graph.evalNode
-                                    simp (config := { failIfUnchanged := false })
-                                      [hN, hGetY, hGetT,
-                                        NN.IR.Graph.mseLossPackedTensor_mk,
-                                        hOut, nodeData, mkForwardNode,
-                                        NN.IR.Graph.normalizeNodeOutput,
-                                        Tensor.eqRec_eq_cast_shape,
-                                        Tensor.cast_shape_proof_irrel]
-                                    congr 1
-                                  have hStep :
-                                      denoteAllState (α := α) inShape st1 x =
-                                        vals0.push (Spec.PackedTensor.mk (α := α) nOutShape
-                                          (nodeData.eval ctx)) := by
-                                    simpa [vals0, st1, nodeData, ctx] using
-                                      (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)
-                                        (τ := nOutShape) (gd := gd) (nodeData := nodeData) (x := x))
-                                  have hTail := ih st1 hRec
-                                  exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload :=
-                                    payload)
-                                    (i := i) (x := x) (hi := hi) (τ := nOutShape)
-                                    (nodeData := nodeData) (st1 := st1) (st' := st')
-                                    (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
-                        · exact False.elim <| throw_bind_ne_ok (h := (by simpa [dif_neg hOut] using hBuild2))
-                      · exact False.elim <| throw_bind_ne_ok (h := (by simpa [if_neg hShape] using hBuild1))
+                      simp [s, hIy] at hBuild3
+                  | ok iy =>
+                      cases hIt : mkIdx (inShape := inShape) (ss := ss) tId s with
+                      | error msg =>
+                          simp [s, hIy, hIt] at hBuild3
+                      | ok it =>
+                          have hBuild4 := hBuild3
+                          simp (config := { failIfUnchanged := false }) only
+                            [s, hIy, hIt, Except.ok_bind]
+                            at hBuild4
+                          let nodeData : ForwardNode α ([inShape] ++ ss) nOutShape :=
+                            mkForwardNode (α := α) (Γ := [inShape] ++ ss) (τ := nOutShape) (fun
+                              ctx =>
+                              let yhat := getIdx (α := α) (xs := ctx) iy
+                              let target := getIdx (α := α) (xs := ctx) it
+                              let diff := Tensor.subSpec (α := α) yhat target
+                              let sq := Tensor.mulSpec (α := α) diff diff
+                              let total : α := Tensor.sumSpec (α := α) sq
+                              let y0 : Tensor α .scalar :=
+                                Tensor.scalar (total / (↑(NN.IR.Graph.meanDenom s) : α))
+                              Tensor.castShape y0 hOut)
+                          let st1 : State α inShape :=
+                            ⟨ss ++ [nOutShape], .snoc (ss := ss) gd nodeData⟩
+                          have hs : tNode.outShape = s := by
+                            simpa [s] using hShape.symm
+                          have hRec :
+                              buildFrom (α := α) (g := g) (payload := payload) (inShape :=
+                                inShape)
+                                  (i := i + 1) st1 = .ok st' := by
+                            simpa [st1, nodeData, hs, Tensor.cast_shape_proof_irrel] using hBuild4
+                          have hGetY :
+                              vals0[yId]? = some (Spec.SomeTensor.mk (α := α) s
+                                (getIdx (α := α) (xs := ctx) iy)) := by
+                            simpa [vals0, ctx, s] using
+                              (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
+                                (gd := gd) (x := x) (pid := yId) (s := s) (idx := iy) hIy)
+                          have hGetT :
+                              vals0[tId]? = some (Spec.SomeTensor.mk (α := α) s
+                                (getIdx (α := α) (xs := ctx) it)) := by
+                            simpa [vals0, ctx, s] using
+                              (denoteAllState_get_mkIdx? (inShape := inShape) (ss := ss)
+                                (gd := gd) (x := x) (pid := tId) (s := s) (idx := it) hIt)
+                          have hParentIds :
+                              NN.IR.Graph.binaryParentIds i
+                                  { id := nId, parents := nParents, kind := .mseLoss,
+                                    outShape := nOutShape } = .ok (yId, tId) :=
+                            binaryParentIds_eq_ok_of_binaryParents_eq_some i yId tId
+                              { id := nId, parents := nParents, kind := .mseLoss,
+                                outShape := nOutShape } hp
+                          have hEval :
+                              NN.IR.Graph.evalAt (α := α) (g := g) (payload := payload)
+                                  (input := input) (vals := vals0) (i := i) =
+                                .ok (Spec.SomeTensor.mk (α := α) nOutShape
+                                  (nodeData.eval ctx)) := by
+                            -- `evalAt` normalizes using `Eq.rec` casts, while the lowered
+                            -- `forward` closure uses `Tensor.cast_shape`.
+                            --
+                            -- Reduce the node fetch first so the large `OpKind` match
+                            -- collapses to the `.mse_loss` branch.
+                            unfold NN.IR.Graph.evalAt NN.IR.Graph.evalNode
+                            simp (config := { failIfUnchanged := false })
+                              [hN, hParentIds, hGetY, hGetT,
+                                NN.IR.Graph.mseLossSomeTensor_mk,
+                                hOut, nodeData, mkForwardNode,
+                                NN.IR.Graph.normalizeNodeOutput,
+                                Tensor.eqRec_eq_cast_shape,
+                                Tensor.cast_shape_proof_irrel]
+                            congr 1
+                          have hStep :
+                              denoteAllState (α := α) inShape st1 x =
+                                vals0.push (Spec.SomeTensor.mk (α := α) nOutShape
+                                  (nodeData.eval ctx)) := by
+                            simpa [vals0, st1, nodeData, ctx] using
+                              (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)
+                                (τ := nOutShape) (gd := gd) (nodeData := nodeData) (x := x))
+                          have hTail := ih st1 hRec
+                          exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload :=
+                            payload)
+                            (i := i) (x := x) (hi := hi) (τ := nOutShape)
+                            (nodeData := nodeData) (st1 := st1) (st' := st')
+                            (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
+                · exact False.elim <| throw_bind_ne_ok (h := (by simpa [dif_neg hOut] using hBuild2))
+              · exact False.elim <| throw_bind_ne_ok (h := (by simpa [if_neg hShape] using hBuild1))
 
 end IRExec
 end Autograd

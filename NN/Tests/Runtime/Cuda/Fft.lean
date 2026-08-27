@@ -30,8 +30,8 @@ namespace Fft
 open Runtime.Autograd.Cuda
 open Spec
 
-def floatArrayOfList (xs : List Float) : FloatArray :=
-  FloatArray.mk xs.toArray
+def floatArray (xs : Array Float) : FloatArray :=
+  FloatArray.mk xs
 
 def assertFloatArrayApprox (msg : String) (a b : FloatArray) (tol : Float := 1e-4) : IO Unit := do
   if a.size != b.size then
@@ -46,20 +46,20 @@ def dotFloatArray (a b : FloatArray) : Float := Id.run do
     acc := acc + a.get! i * b.get! i
   pure acc
 
-def perturbList : List Float → Nat → Float → List Float
-  | [], _, _ => []
-  | x :: xs, 0, delta => (x + delta) :: xs
-  | x :: xs, i + 1, delta => x :: perturbList xs i delta
+def perturbArray (xs : Array Float) (i : Nat) (delta : Float) : Array Float :=
+  match xs[i]? with
+  | none => xs
+  | some x => xs.setIfInBounds i (x + delta)
 
 def spectralConvLoss
-    (x wRe wIm dY : List Float) (grid width modes : UInt32) : Float :=
+    (x wRe wIm dY : Array Float) (grid width modes : UInt32) : Float :=
   let y :=
     Buffer.spectralConv1dRfftFwd
-      (Buffer.ofFloatArray (floatArrayOfList x))
-      (Buffer.ofFloatArray (floatArrayOfList wRe))
-      (Buffer.ofFloatArray (floatArrayOfList wIm))
+      (Buffer.ofFloatArray (floatArray x))
+      (Buffer.ofFloatArray (floatArray wRe))
+      (Buffer.ofFloatArray (floatArray wIm))
       grid width modes
-  dotFloatArray (Buffer.toFloatArray y) (floatArrayOfList dY)
+  dotFloatArray (Buffer.toFloatArray y) (floatArray dY)
 
 def assertFiniteDiff
     (msg : String) (analytic : FloatArray) (idx : Nat) (fd : Float) (tol : Float) : IO Unit := do
@@ -70,12 +70,12 @@ def runKnownSpectrum : IO Unit := do
 
   -- Two rows, n=4. The second row catches the sign convention:
   -- DFT([1,2,3,4]) at k=1 is `-2 + 2i` for the `exp(-2*pi*i*k*t/n)` convention used by cuFFT.
-  let x := Buffer.ofFloatArray (floatArrayOfList [
+  let x := Buffer.ofFloatArray (floatArray #[
     1.0, 0.0, 0.0, 0.0,
     1.0, 2.0, 3.0, 4.0
   ])
   let got := Buffer.toFloatArray (Buffer.rfft1dPacked x 2 4)
-  let expected := floatArrayOfList [
+  let expected := floatArray #[
     1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
     10.0, 0.0, -2.0, 2.0, -2.0, 0.0
   ]
@@ -86,7 +86,7 @@ def runRoundtripEvenOdd : IO Unit := do
 
   -- Even and odd lengths exercise different Nyquist-bin handling. cuFFT's inverse is
   -- unnormalized, so the runtime wrapper scales by `1/n` before returning.
-  let even := floatArrayOfList [
+  let even := floatArray #[
     0.25, -0.50, 1.00, 0.75, -1.25, 0.50, 0.125, -0.875,
     -0.30, 0.20, 0.90, -0.10, 0.45, -0.65, 1.10, -0.95
   ]
@@ -94,7 +94,7 @@ def runRoundtripEvenOdd : IO Unit := do
   let evenBack := Buffer.toFloatArray (Buffer.irfft1dPacked (Buffer.rfft1dPacked evenBuf 2 8) 2 8)
   assertFloatArrayApprox "rfft/irfft roundtrip even" evenBack even (tol := 2e-4)
 
-  let odd := floatArrayOfList [
+  let odd := floatArray #[
     0.10, 0.30, -0.20, 0.70, -0.40,
     -0.60, 0.80, 0.15, -0.25, 0.55
   ]
@@ -107,18 +107,18 @@ def runSpectralConvIdentity : IO Unit := do
 
   -- With all retained RFFT bins and identity channel weights, the fused spectral convolution is
   -- exactly `irfft(rfft(x))`, so it should return the input up to float32/cuFFT roundoff.
-  let x := floatArrayOfList [
+  let x := floatArray #[
     0.25, -0.50,
     1.00, 0.75,
     -1.25, 0.50,
     0.125, -0.875
   ]
-  let wRe := floatArrayOfList [
+  let wRe := floatArray #[
     1.0, 0.0, 0.0, 1.0,
     1.0, 0.0, 0.0, 1.0,
     1.0, 0.0, 0.0, 1.0
   ]
-  let wIm := floatArrayOfList (List.replicate 12 0.0)
+  let wIm := floatArray (Array.replicate 12 0.0)
   let got :=
     Buffer.toFloatArray
       (Buffer.spectralConv1dRfftFwd
@@ -138,17 +138,17 @@ def runSpectralConvFiniteDiff : IO Unit := do
   let grid : UInt32 := 4
   let width : UInt32 := 1
   let modes : UInt32 := 3
-  let x : List Float := [0.20, -0.40, 0.70, 1.10]
-  let wRe : List Float := [0.75, -0.30, 0.20]
-  let wIm : List Float := [0.00, 0.45, 0.00]
-  let dY : List Float := [1.00, -0.50, 0.25, 0.75]
+  let x : Array Float := #[0.20, -0.40, 0.70, 1.10]
+  let wRe : Array Float := #[0.75, -0.30, 0.20]
+  let wIm : Array Float := #[0.00, 0.45, 0.00]
+  let dY : Array Float := #[1.00, -0.50, 0.25, 0.75]
   let eps := 1e-2
   let tol := 2e-2
 
-  let xBuf := Buffer.ofFloatArray (floatArrayOfList x)
-  let wReBuf := Buffer.ofFloatArray (floatArrayOfList wRe)
-  let wImBuf := Buffer.ofFloatArray (floatArrayOfList wIm)
-  let dYBuf := Buffer.ofFloatArray (floatArrayOfList dY)
+  let xBuf := Buffer.ofFloatArray (floatArray x)
+  let wReBuf := Buffer.ofFloatArray (floatArray wRe)
+  let wImBuf := Buffer.ofFloatArray (floatArray wIm)
+  let dYBuf := Buffer.ofFloatArray (floatArray dY)
   let dX :=
     Buffer.toFloatArray (Buffer.spectralConv1dRfftBwdX xBuf wReBuf wImBuf dYBuf grid width modes)
   let dWRe :=
@@ -156,19 +156,19 @@ def runSpectralConvFiniteDiff : IO Unit := do
   let dWIm :=
     Buffer.toFloatArray (Buffer.spectralConv1dRfftBwdWIm xBuf wReBuf wImBuf dYBuf grid width modes)
 
-  for i in [:x.length] do
-    let lp := spectralConvLoss (perturbList x i eps) wRe wIm dY grid width modes
-    let lm := spectralConvLoss (perturbList x i (-eps)) wRe wIm dY grid width modes
+  for i in [:x.size] do
+    let lp := spectralConvLoss (perturbArray x i eps) wRe wIm dY grid width modes
+    let lm := spectralConvLoss (perturbArray x i (-eps)) wRe wIm dY grid width modes
     assertFiniteDiff "spectralConv1dRfft dX" dX i ((lp - lm) / (2.0 * eps)) tol
 
-  for i in [:wRe.length] do
-    let lp := spectralConvLoss x (perturbList wRe i eps) wIm dY grid width modes
-    let lm := spectralConvLoss x (perturbList wRe i (-eps)) wIm dY grid width modes
+  for i in [:wRe.size] do
+    let lp := spectralConvLoss x (perturbArray wRe i eps) wIm dY grid width modes
+    let lm := spectralConvLoss x (perturbArray wRe i (-eps)) wIm dY grid width modes
     assertFiniteDiff "spectralConv1dRfft dWRe" dWRe i ((lp - lm) / (2.0 * eps)) tol
 
-  for i in [:wIm.length] do
-    let lp := spectralConvLoss x wRe (perturbList wIm i eps) dY grid width modes
-    let lm := spectralConvLoss x wRe (perturbList wIm i (-eps)) dY grid width modes
+  for i in [:wIm.size] do
+    let lp := spectralConvLoss x wRe (perturbArray wIm i eps) dY grid width modes
+    let lm := spectralConvLoss x wRe (perturbArray wIm i (-eps)) dY grid width modes
     assertFiniteDiff "spectralConv1dRfft dWIm" dWIm i ((lp - lm) / (2.0 * eps)) tol
 
 def runSpectralConvTapeNode : IO Unit := do
@@ -176,12 +176,12 @@ def runSpectralConvTapeNode : IO Unit := do
 
   -- This is the autograd-facing runtime check: the tape node should return the same forward value and
   -- parent cotangents as the direct low-level fused VJP primitives.
-  let xShape : Shape := .dim 4 (.dim 1 .scalar)
-  let wShape : Shape := .dim 3 (.dim 1 (.dim 1 .scalar))
-  let xA := floatArrayOfList [0.20, -0.40, 0.70, 1.10]
-  let wReA := floatArrayOfList [0.75, -0.30, 0.20]
-  let wImA := floatArrayOfList [0.00, 0.45, 0.00]
-  let dYA := floatArrayOfList [1.00, -0.50, 0.25, 0.75]
+  let xShape : Shape := [4, 1]
+  let wShape : Shape := [3, 1, 1]
+  let xA := floatArray #[0.20, -0.40, 0.70, 1.10]
+  let wReA := floatArray #[0.75, -0.30, 0.20]
+  let wImA := floatArray #[0.00, 0.45, 0.00]
+  let dYA := floatArray #[1.00, -0.50, 0.25, 0.75]
   let xB := Buffer.ofFloatArray xA
   let wReB := Buffer.ofFloatArray wReA
   let wImB := Buffer.ofFloatArray wImA
@@ -191,7 +191,8 @@ def runSpectralConvTapeNode : IO Unit := do
   let (t2, wReId) := t1.leaf { s := wShape, buf := wReB } (some "wRe")
   let (t3, wImId) := t2.leaf { s := wShape, buf := wImB } (some "wIm")
   let (t4, yId) ← Utils.okOrThrow <|
-    Tape.spectralConv1dRfft (grid := 4) (width := 1) (modes := 3) (t := t3) xId wReId wImId
+    Tape.Internal.spectralConv1dRfft
+      (grid := 4) (width := 1) (modes := 3) (t := t3) xId wReId wImId
 
   let y ← Utils.okOrThrow <| Tape.requireValue (t := t4) yId xShape
   let directY := Buffer.spectralConv1dRfftFwd xB wReB wImB 4 1 3

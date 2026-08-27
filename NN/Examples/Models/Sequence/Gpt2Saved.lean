@@ -107,7 +107,7 @@ def sampleCheckpoint
     let state ← Checkpoint.loadModelState model load.checkpointPath
     let graph ← nn.lowerToTypedGraph model (α := Float)
     let predict : NN.Examples.Models.Sequence.Gpt2.Predictor :=
-      fun x => pure <| graph.forward state x
+      fun x => pure <| nn.TypedGraphModel.forward graph state x
     let outIds ←
       NN.Examples.Models.Sequence.Gpt2.generateSampled predict load.prompt load.generate
         load.temperature load.topK load.seed load.repeatWindow load.repeatPenalty load.asciiOnly

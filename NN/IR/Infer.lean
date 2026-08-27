@@ -54,17 +54,31 @@ namespace Infer
 ## Node-local inference
 
 Most IR ops are “shape transparent” (elementwise, permute, etc.). A few need special handling:
-- `matmul` has rank-sensitive rules (2D and a limited 3D batched case),
+- `matmul` preserves an arbitrary shared leading shape around its final matrix axes,
 - `concat` needs to merge multiple parents along an axis,
-- pooling/conv ops use centralized CHW arithmetic from `OpContracts`.
+- pooling and convolution use centralized rank-polymorphic spatial arithmetic from `OpContracts`.
 -/
+
+/-- Read the sole parent shape of a unary operation. -/
+def expectUnaryParent (tag : String) (parents : Array Shape) : Except String Shape := do
+  if parents.size = 1 then
+    pure parents[0]!
+  else
+    throw s!"{tag}: expected 1 parent"
+
+/-- Read both parent shapes of a binary operation. -/
+def expectBinaryParents (tag : String) (parents : Array Shape) : Except String (Shape × Shape) := do
+  if parents.size = 2 then
+    pure (parents[0]!, parents[1]!)
+  else
+    throw s!"{tag}: expected 2 parents"
 
 /--
 Infer the output shape of a node from its kind + parent shapes.
 
 This function is used by `Graph.checkShapes` below.
 -/
-def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Shape := do
+def inferNodeOutShape (n : Node) (parentShapes : Array Shape) : Except String Shape := do
   match n.kind with
   | .input =>
       -- Nothing to infer: the input's shape is part of the graph interface.
@@ -72,167 +86,110 @@ def inferNodeOutShape (n : Node) (parentShapes : List Shape) : Except String Sha
   | .const valueShape =>
       pure valueShape
   | .permute perm =>
-      match parentShapes with
-      | [s] =>
-          match Spec.Shape.permute? s perm with
-          | some s' => pure s'
-          | none => throw s!"permute: invalid permutation {repr perm} for shape {repr s}"
-      | _ => throw "permute: expected 1 parent"
+      let s ← expectUnaryParent "permute" parentShapes
+      match Spec.Shape.permute? s perm.toList with
+      | some s' => pure s'
+      | none => throw s!"permute: invalid permutation {repr perm} for shape {repr s}"
+  | .transpose axis₁ axis₂ =>
+      OpContracts.inferTransposeOutShape axis₁ axis₂ (← expectUnaryParent "transpose" parentShapes)
   | .detach =>
-      match parentShapes with
-      | [s] => pure s
-      | _ => throw "detach: expected 1 parent"
+      expectUnaryParent "detach" parentShapes
   | .randUniform _seed =>
-      match parentShapes with
-      | [] => pure n.outShape
-      | _ => throw "rand_uniform: expected 0 parents"
+      if parentShapes.isEmpty then pure n.outShape
+      else throw "rand_uniform: expected 0 parents"
   | .bernoulliMask _seed =>
-      match parentShapes with
-      | [.scalar] => pure n.outShape
-      | [s] => throw s!"bernoulli_mask: expected scalar keepProb parent, got {repr s}"
-      | _ => throw "bernoulli_mask: expected 1 parent"
+      match ← expectUnaryParent "bernoulli_mask" parentShapes with
+      | .scalar => pure n.outShape
+      | s => throw s!"bernoulli_mask: expected scalar keepProb parent, got {repr s}"
   | .add | .sub | .mul_elem =>
-      match parentShapes with
-      | [a, b] =>
-          if a = b then pure a
-          else throw s!"{n.kind.tag}: shape mismatch: {repr a} vs {repr b}"
-      | _ => throw s!"{n.kind.tag}: expected 2 parents"
+      let (a, b) ← expectBinaryParents n.kind.tag parentShapes
+      if a = b then pure a
+      else throw s!"{n.kind.tag}: shape mismatch: {repr a} vs {repr b}"
   | .abs | .sqrt =>
-      match parentShapes with
-      | [s] => pure s
-      | _ => throw s!"{n.kind.tag}: expected 1 parent"
+      expectUnaryParent n.kind.tag parentShapes
   | .maxElem | .minElem =>
-      match parentShapes with
-      | [a, b] =>
-          if a = b then pure a
-          else throw s!"{n.kind.tag}: shape mismatch: {repr a} vs {repr b}"
-      | _ => throw s!"{n.kind.tag}: expected 2 parents"
-  | .maxPool2d kH kW stride =>
-      match parentShapes with
-      | [s] => OpContracts.inferPool2dOutShape "max_pool2d" kH kW stride 0 s
-      | _ => throw "max_pool2d: expected 1 parent"
-  | .maxPool2dPad kH kW stride padding =>
-      match parentShapes with
-      | [s] => OpContracts.inferPool2dOutShape "max_pool2d_pad" kH kW stride padding s
-      | _ => throw "max_pool2d_pad: expected 1 parent"
-  | .avgPool2d kH kW stride =>
-      match parentShapes with
-      | [s] => OpContracts.inferPool2dOutShape "avg_pool2d" kH kW stride 0 s
-      | _ => throw "avg_pool2d: expected 1 parent"
-  | .avgPool2dPad kH kW stride padding =>
-      match parentShapes with
-      | [s] => OpContracts.inferPool2dOutShape "avg_pool2d_pad" kH kW stride padding s
-      | _ => throw "avg_pool2d_pad: expected 1 parent"
+      let (a, b) ← expectBinaryParents n.kind.tag parentShapes
+      if a = b then pure a
+      else throw s!"{n.kind.tag}: shape mismatch: {repr a} vs {repr b}"
+  | .maxPool config =>
+      OpContracts.inferPoolOutShape "max_pool" config.kernel config.stride config.padding
+        (← expectUnaryParent "max_pool" parentShapes)
+  | .avgPool config =>
+      OpContracts.inferPoolOutShape "avg_pool" config.kernel config.stride config.padding
+        (← expectUnaryParent "avg_pool" parentShapes)
   | .broadcastTo s₁ s₂ =>
-      match parentShapes with
-      | [s] =>
-          if s != s₁ then
-            throw s!"broadcastTo: parent shape mismatch: expected {repr s₁}, got {repr s}"
-          match OpContracts.mkCanBroadcastTo? s₁ s₂ with
-          | some _ => pure s₂
-          | none => throw s!"broadcastTo: invalid broadcast from {repr s₁} to {repr s₂}"
-      | _ => throw "broadcastTo: expected 1 parent"
+      let s ← expectUnaryParent "broadcastTo" parentShapes
+      if s != s₁ then
+        throw s!"broadcastTo: parent shape mismatch: expected {repr s₁}, got {repr s}"
+      match OpContracts.mkCanBroadcastTo? s₁ s₂ with
+      | some _ => pure s₂
+      | none => throw s!"broadcastTo: invalid broadcast from {repr s₁} to {repr s₂}"
   | .reduceSum axis =>
-    match parentShapes with
-      | [s] => OpContracts.checkAxisValid axis s *> pure (Tensor.shapeAfterSum s axis)
-      | _ => throw "reduce_sum: expected 1 parent"
+      let s ← expectUnaryParent "reduce_sum" parentShapes
+      OpContracts.checkAxisValid axis s *> pure (Tensor.shapeAfterSum s axis)
   | .reduceMean axis =>
-    match parentShapes with
-      | [s] => OpContracts.checkAxisValid axis s *> pure (Tensor.shapeAfterSum s axis)
-      | _ => throw "reduce_mean: expected 1 parent"
+      let s ← expectUnaryParent "reduce_mean" parentShapes
+      OpContracts.checkAxisValid axis s *> pure (Tensor.shapeAfterSum s axis)
   | .sum =>
-      match parentShapes with
-      | [_] => pure .scalar
-      | _ => throw "sum: expected 1 parent"
+      let _ ← expectUnaryParent "sum" parentShapes
+      pure .scalar
   | .matmul =>
-      match parentShapes with
-      | [a, b] => OpContracts.inferMatmulOutShape a b
-      | _ => throw "matmul: expected 2 parents"
+      let (a, b) ← expectBinaryParents "matmul" parentShapes
+      OpContracts.inferMatmulOutShape a b
   | .linear =>
       -- `OpKind.linear` does not record dimensions. PyTorch's `F.linear` acts on the last
       -- dimension and preserves any leading batch/sequence dimensions, so the shape checker
       -- validates that contract and accepts the declared output last dimension.
-      match parentShapes with
-      | [s] =>
-          let inDims := Shape.toList s
-          let outDims := Shape.toList n.outShape
-          match inDims.reverse, outDims.reverse with
-          | _inLast :: inPrefixRev, _outLast :: outPrefixRev =>
-              if inPrefixRev = outPrefixRev then
-                pure n.outShape
-              else
-                throw <|
-                  s!"linear: leading dimensions must be preserved: input={repr s}, " ++
-                  s!"outShape={repr n.outShape}"
-          | _, _ =>
-              throw s!"linear: expected rank≥1 input/output, got input={repr s}, out={repr n.outShape}"
-      | _ => throw "linear: expected 1 parent"
-  | .conv2d inC outC kH kW stride padding =>
-      match parentShapes with
-      | [s] => OpContracts.inferConv2dOutShape inC outC kH kW stride padding s
-      | _ => throw "conv2d: expected 1 parent"
-  | .batchNorm2dNchwEval channels =>
-      match parentShapes with
-      | [s] => OpContracts.inferBatchNorm2dNchwEvalOutShape channels s
-      | _ => throw "batch_norm2d_nchw_eval: expected 1 parent"
+      let s ← expectUnaryParent "linear" parentShapes
+      let inDims := Shape.toList s
+      let outDims := Shape.toList n.outShape
+      match inDims.reverse, outDims.reverse with
+      | _inLast :: inPrefixRev, _outLast :: outPrefixRev =>
+          if inPrefixRev = outPrefixRev then
+            pure n.outShape
+          else
+            throw <|
+              s!"linear: leading dimensions must be preserved: input={repr s}, " ++
+              s!"outShape={repr n.outShape}"
+      | _, _ =>
+          throw s!"linear: expected rank≥1 input/output, got input={repr s}, out={repr n.outShape}"
+  | .conv config =>
+      OpContracts.inferConvConfigOutShape "conv" config
+        (← expectUnaryParent "conv" parentShapes)
+  | .batchNormEval channelAxis channels =>
+      OpContracts.inferBatchNormEvalOutShape channelAxis channels
+        (← expectUnaryParent "batch_norm_eval" parentShapes)
   | .relu | .tanh | .sigmoid | .exp | .log | .inv | .sin | .cos =>
-      match parentShapes with
-      | [s] => pure s
-      | _ => throw s!"{n.kind.tag}: expected 1 parent"
+      expectUnaryParent n.kind.tag parentShapes
   | .softmax axis =>
-      match parentShapes with
-      | [s] => OpContracts.checkAxisValid axis s *> pure s
-      | _ => throw "softmax: expected 1 parent"
+      let s ← expectUnaryParent "softmax" parentShapes
+      OpContracts.checkAxisValid axis s *> pure s
   | .hardMaskedSoftmax mask =>
-      match parentShapes with
-      | [s] =>
-          let _ ← NN.IR.HardMask.validateAs mask s
-          pure s
-      | _ => throw "hard_masked_softmax: expected 1 parent"
+      let s ← expectUnaryParent "hard_masked_softmax" parentShapes
+      let _ ← NN.IR.HardMask.validateAs mask s
+      pure s
   | .layernorm axis =>
-      match parentShapes with
-      | [s] =>
-          let _ ← OpContracts.layerNormMatrixDims axis s
-          pure s
-      | _ => throw "layernorm: expected 1 parent"
+      let s ← expectUnaryParent "layernorm" parentShapes
+      let _ ← OpContracts.layerNormMatrixDims axis s
+      pure s
   | .reshape inS outS =>
-      match parentShapes with
-      | [s] =>
-          if s != inS then
-            throw s!"reshape: parent shape mismatch: expected {repr inS}, got {repr s}"
-          if Spec.Shape.size inS != Spec.Shape.size outS then
-            throw s!"reshape: numel mismatch: {Spec.Shape.size inS} vs {Spec.Shape.size outS}"
-          pure outS
-      | _ => throw "reshape: expected 1 parent"
+      let s ← expectUnaryParent "reshape" parentShapes
+      if s != inS then
+        throw s!"reshape: parent shape mismatch: expected {repr inS}, got {repr s}"
+      if Spec.Shape.size inS != Spec.Shape.size outS then
+        throw s!"reshape: numel mismatch: {Spec.Shape.size inS} vs {Spec.Shape.size outS}"
+      pure outS
   | .flatten s =>
-      match parentShapes with
-      | [s'] =>
-          if s' != s then
-            throw s!"flatten: parent shape mismatch: expected {repr s}, got {repr s'}"
-          pure (ShapeUtil.flattenOutShape s)
-      | _ => throw "flatten: expected 1 parent"
+      let s' ← expectUnaryParent "flatten" parentShapes
+      if s' != s then
+        throw s!"flatten: parent shape mismatch: expected {repr s}, got {repr s'}"
+      pure (ShapeUtil.flattenOutShape s)
   | .concat axis =>
       OpContracts.inferConcatOutShape axis parentShapes
-  | .swap_first_two =>
-      match parentShapes with
-      | [s] =>
-          match ShapeUtil.swapFirstTwoShape? s with
-          | some t => pure t
-          | none => throw s!"swap_first_two: expected rank≥2, got {repr s}"
-      | _ => throw "swap_first_two: expected 1 parent"
-  | .transpose3dLastTwo =>
-      match parentShapes with
-      | [s] =>
-          match ShapeUtil.transpose3dLastTwoShape? s with
-          | some t => pure t
-          | none => throw s!"transpose3d_last_two: expected rank=3 with scalar base, got {repr s}"
-      | _ => throw "transpose3d_last_two: expected 1 parent"
   | .mseLoss =>
-      match parentShapes with
-      | [a, b] =>
-          if a = b then pure .scalar
-          else throw s!"mse_loss: yhat/target shape mismatch: {repr a} vs {repr b}"
-      | _ => throw "mse_loss: expected 2 parents"
+      let (a, b) ← expectBinaryParents "mse_loss" parentShapes
+      if a = b then pure .scalar
+      else throw s!"mse_loss: yhat/target shape mismatch: {repr a} vs {repr b}"
 
 end Infer
 

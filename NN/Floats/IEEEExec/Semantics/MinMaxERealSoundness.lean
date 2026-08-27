@@ -53,22 +53,6 @@ namespace IEEE32Exec
 
 noncomputable section
 
-private lemma coe_min (a b : ℝ) : ((min a b : ℝ) : EReal) = min (a : EReal) (b : EReal) := by
-  by_cases h : a ≤ b
-  · have hE : (a : EReal) ≤ (b : EReal) := by simpa [EReal.coe_le_coe_iff] using h
-    simp [min_eq_left h, min_eq_left hE]
-  · have h' : b ≤ a := le_of_not_ge h
-    have hE : (b : EReal) ≤ (a : EReal) := by simpa [EReal.coe_le_coe_iff] using h'
-    simp [min_eq_right h', min_eq_right hE]
-
-private lemma coe_max (a b : ℝ) : ((max a b : ℝ) : EReal) = max (a : EReal) (b : EReal) := by
-  by_cases h : a ≤ b
-  · have hE : (a : EReal) ≤ (b : EReal) := by simpa [EReal.coe_le_coe_iff] using h
-    simp [max_eq_right h, max_eq_right hE]
-  · have h' : b ≤ a := le_of_not_ge h
-    have hE : (b : EReal) ≤ (a : EReal) := by simpa [EReal.coe_le_coe_iff] using h'
-    simp [max_eq_left h', max_eq_left hE]
-
 /-! ## Main bridge lemmas -/
 
 /--
@@ -109,7 +93,7 @@ theorem toEReal_minimum_eq_min (x y : IEEE32Exec)
           toEReal_eq_coe_toReal_of_isFinite (x := minimum x y) hminFin
         _ = ((min (toReal x) (toReal y) : ℝ) : EReal) := by
           rw [htoReal]
-        _ = min (toReal x : EReal) (toReal y : EReal) := coe_min _ _
+        _ = min (toReal x : EReal) (toReal y : EReal) := TorchLean.Floats.coe_min _ _
         _ = min (toEReal x) (toEReal y) := by
           simp [toEReal_eq_coe_toReal_of_isFinite (x := x) hxFin,
             toEReal_eq_coe_toReal_of_isFinite (x := y) hyFin]
@@ -149,7 +133,7 @@ theorem toEReal_maximum_eq_max (x y : IEEE32Exec)
           toEReal_eq_coe_toReal_of_isFinite (x := maximum x y) hmaxFin
         _ = ((max (toReal x) (toReal y) : ℝ) : EReal) := by
           rw [htoReal]
-        _ = max (toReal x : EReal) (toReal y : EReal) := coe_max _ _
+        _ = max (toReal x : EReal) (toReal y : EReal) := TorchLean.Floats.coe_max _ _
         _ = max (toEReal x) (toEReal y) := by
           simp [toEReal_eq_coe_toReal_of_isFinite (x := x) hxFin,
             toEReal_eq_coe_toReal_of_isFinite (x := y) hyFin]

@@ -108,14 +108,14 @@ lemma approxTensor_scalar_iff {α : Type} {toSpec : α → SpecScalar} {x : Spec
     have h' : abs (x - toSpec xR) ≤ eps := by
       simpa [approxTensor, approxWith, tensorToSpec, linfNorm, RuntimeApprox.linfNorm,
         tensorDistance, NN.MLTheory.Robustness.Spec.tensor_distance_tensor_sub_eq_sub_spec,
-        tensorLinfNorm, Spec.mapTensor, Spec.Tensor.subSpec, map2Spec, MathFunctions.abs] using h
+        tensorLinfNorm, Spec.Tensor.map, Spec.Tensor.subSpec, map2Spec, MathFunctions.abs] using h
     simpa [abs_sub_comm] using h'
   · intro h
     have h' : abs (x - toSpec xR) ≤ eps := by
       simpa [abs_sub_comm] using h
     simpa [approxTensor, approxWith, tensorToSpec, linfNorm, RuntimeApprox.linfNorm,
       tensorDistance, NN.MLTheory.Robustness.Spec.tensor_distance_tensor_sub_eq_sub_spec,
-      tensorLinfNorm, Spec.mapTensor, Spec.Tensor.subSpec, map2Spec, MathFunctions.abs] using h'
+      tensorLinfNorm, Spec.Tensor.map, Spec.Tensor.subSpec, map2Spec, MathFunctions.abs] using h'
 
 /--
 Projection lemma for `approxTensor` on dimensioned tensors.
@@ -212,16 +212,16 @@ lemma approxTensor_dim_of_forall {α : Type} {toSpec : α → SpecScalar} {n : N
               (tensorToSpec (α := α) (toSpec := toSpec) (xRf i)))
           (acc := (0 : SpecScalar)) (eps := eps) hε hf
       simp [approxTensor, approxWith, tensorDistance,
-        linfNorm, RuntimeApprox.linfNorm, tensorToSpec, Spec.mapTensor]
+        linfNorm, RuntimeApprox.linfNorm, tensorToSpec]
       change
         List.foldl
           (fun a i =>
             max a
               (tensorLinfNorm
-                ((xSf i).subSpec (mapTensor toSpec (xRf i)))))
+                ((xSf i).subSpec (Tensor.map toSpec (xRf i)))))
           0 (List.finRange n) ≤ eps
       simpa [tensorDistance, linfNorm, RuntimeApprox.linfNorm, tensorToSpec,
-        MathFunctions.abs, Spec.mapTensor] using hfold
+        MathFunctions.abs, Spec.Tensor.map] using hfold
 
 -- ---------------------------------------------------------------------------
 -- Generic lifting lemmas for elementwise ops (`map_spec`, `map2_spec`)
@@ -275,7 +275,7 @@ theorem approxTensor_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecS
                   (eps := linfNorm
                     (mapSpec (s := Shape.scalar) (fun a => bnd a eps)
                       (tensorToSpec (α := α) (toSpec := toSpec) (Tensor.scalar xR))))).2 (by
-                        simpa [tensorToSpec, Spec.mapTensor, mapSpec,
+                        simpa [tensorToSpec, Spec.Tensor.map, mapSpec,
                           linfNorm, RuntimeApprox.linfNorm, tensorLinfNorm,
                           MathFunctions.abs] using herr')
   | dim n s ih =>
@@ -308,7 +308,7 @@ theorem approxTensor_map_spec_of_scalar_bound {α : Type} {toSpec : α → SpecS
                         (mapSpec (s := s) (fun a => bnd a eps)
                           (tensorToSpec (α := α) (toSpec := toSpec) (xRf i)))
                       ≤ B := by
-                  simpa [B, tensorToSpec, Spec.mapTensor, mapSpec] using
+                  simpa [B, tensorToSpec, Spec.Tensor.map, mapSpec] using
                     (linf_norm_le_get_dim
                       (t :=
                         mapSpec (s := Shape.dim n s) (fun a => bnd a eps)
@@ -419,7 +419,7 @@ theorem approxTensor_map2_spec_of_scalar_bound {α : Type} {toSpec : α → Spec
                               (tensorToSpec (α := α) (toSpec := toSpec) (Tensor.scalar xR))
                               (tensorToSpec (α := α) (toSpec := toSpec) (Tensor.scalar yR))))).2
                                 (by
-                                simpa [tensorToSpec, Spec.mapTensor, map2Spec,
+                                simpa [tensorToSpec, Spec.Tensor.map, map2Spec,
                                   linfNorm, RuntimeApprox.linfNorm, tensorLinfNorm,
                                   MathFunctions.abs] using herr')
   | dim n s ih =>
@@ -464,7 +464,7 @@ theorem approxTensor_map2_spec_of_scalar_bound {α : Type} {toSpec : α → Spec
                                   (tensorToSpec (α := α) (toSpec := toSpec) (xRf i))
                                   (tensorToSpec (α := α) (toSpec := toSpec) (yRf i)))
                               ≤ B := by
-                          simpa [B, tensorToSpec, Spec.mapTensor, map2Spec] using
+                          simpa [B, tensorToSpec, Spec.Tensor.map, map2Spec] using
                             (linf_norm_le_get_dim
                               (t :=
                                 map2Spec (fun a b => bnd a b epsx epsy)

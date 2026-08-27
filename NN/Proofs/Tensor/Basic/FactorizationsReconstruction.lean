@@ -309,7 +309,7 @@ theorem isCholesky_of_pos (A : Fin n → Fin n → ℝ) (hsymm : ∀ i j, A i j 
 /-- **Tensor-level Cholesky reconstruction.** For a symmetric tensor `A` whose `choleskySpec` pivots
 are positive, every entry of `A` is reconstructed by `L · Lᵀ`:
 `A[i,j] = Σ_k L[i,k] · L[j,k]`, with `L = choleskySpec A`. -/
-theorem choleskySpec_reconstruction (A : Spec.Tensor ℝ (.dim n (.dim n .scalar)))
+theorem choleskySpec_reconstruction (A : Spec.Tensor ℝ [n, n])
     (hsymm : ∀ i j, Spec.get2 A i j = Spec.get2 A j i)
     (hpos : ∀ j : Fin n, 0 < Spec.get2 (Spec.choleskySpec A) j j) (i j : Fin n) :
     Spec.get2 A i j
@@ -630,7 +630,7 @@ theorem qr_mul_eq (A : Fin m → Fin n → ℝ) (hrank : ∀ j : Fin n, 0 < Rmat
 /-- **Tensor-level QR reconstruction.** For a tensor `A` whose `qrSpec` `R`-pivots are positive
 (full column rank), every entry of `A` is reconstructed by `Q · R`:
 `A[i,j] = Σ_k Q[i,k]·R[k,j]`, with `Q = qrQSpec A`, `R = qrRSpec A`. -/
-theorem qrSpec_reconstruction (A : Spec.Tensor ℝ (.dim m (.dim n .scalar)))
+theorem qrSpec_reconstruction (A : Spec.Tensor ℝ [m, n])
     (hrank : ∀ j : Fin n, 0 < Spec.get2 (Spec.qrRSpec A) j j) (i : Fin m) (j : Fin n) :
     Spec.get2 A i j
       = ∑ k, Spec.get2 (Spec.qrQSpec A) i k * Spec.get2 (Spec.qrRSpec A) k j := by

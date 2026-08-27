@@ -20,15 +20,15 @@ They are used heavily inside the spec layer (models/layers) and in proofs, where
 - no dependence on `IO` or dynamic shape checks.
 
 If you want a PyTorch-style user experience for examples (dynamic dims, runtime errors, and
-Float-literal casting), prefer `NN/Tensor/API.lean` instead.
+Float-literal casting), prefer `NN/Tensor.lean` instead.
 
 Design choice (why these are "total"):
 
 - In the spec layer we would rather make edge cases explicit than throw runtime exceptions.
 - If something is shape-invalid, we want Lean to reject it at elaboration time.
-- If something is index-invalid at runtime (e.g. array-backed constructor with wrong size), we
-  choose a predictable fallback (usually `Inhabited.default`) and let *verification* code decide
-  whether that situation is allowed.
+- Dynamic storage is admitted only through constructors that either carry an exact size proof or
+  return an explicit failure. The resizing constructors near the end of this file are named as
+  such and are not used implicitly.
 -/
 
 @[expose] public section
@@ -44,6 +44,25 @@ def fill {α : Type} (value : α): (s : Shape) → Tensor α s
   | Shape.scalar => Tensor.scalar value
   | Shape.dim _ s' => Tensor.dim (fun _ => fill value s')
 
+/-- Flattening a filled tensor produces one copy of the value for every scalar position. -/
+@[simp] theorem Tensor.toList_fill {α : Type} (value : α) (shape : Shape) :
+    (fill value shape).toList = List.replicate shape.size value := by
+  induction shape with
+  | scalar => rfl
+  | dim n shape ih =>
+      simp only [fill, Tensor.toList, ih, Shape.size]
+      induction n with
+      | zero => simp
+      | succ n hn =>
+          rw [List.finRange_succ]
+          simp only [List.flatMap_cons, List.flatMap_map]
+          rw [show (List.finRange n).flatMap
+              (fun _ => List.replicate shape.size value) =
+              List.replicate (n * shape.size) value by exact hn]
+          rw [← List.replicate_add]
+          congr 1
+          simp [Nat.succ_mul, Nat.add_comm]
+
 /-- Every outer coordinate of a filled tensor is the corresponding filled subtensor. -/
 @[simp] theorem get_fill {α : Type} (value : α) (n : Nat) (s : Shape) (i : Fin n) :
     get (fill value (.dim n s)) i = fill value s := by
@@ -56,28 +75,108 @@ def fill {α : Type} (value : α): (s : Shape) → Tensor α s
 
 namespace Tensor
 
+/--
+Construct an arbitrary-rank tensor from a coordinate function.
+
+The dimension list is outermost first. At each coordinate, `f` receives one natural-number index
+per dimension. The indices are in bounds by construction; the list representation keeps callers
+independent of the recursive implementation of `Shape` and `Tensor`.
+
+For example, `Tensor.generate [2, 3] f` has shape `[2, 3]`, and its entry at row `i` and column `j`
+is `f [i, j]`.
+-/
+def generate {α : Type} (dims : List Nat) (f : List Nat → α) : Tensor α (Shape.ofList dims) :=
+  match dims with
+  | [] => Tensor.scalar (f [])
+  | _ :: rest => Tensor.dim (fun i => generate rest (fun is => f (i.val :: is)))
+
 /-- Construct a vector from its coordinate function.
 
 PyTorch analogy: `torch.tensor([...])` with shape `(n,)`, but our input is a function, not a list.
 -/
-def vector {α : Type} {n : Nat} (values : Fin n → α) : Tensor α (.dim n .scalar) :=
+def ofFn {α : Type} {n : Nat} (values : Fin n → α) : Tensor α [n] :=
   Tensor.dim (fun i => Tensor.scalar (values i))
+
+/-- Reading a coordinate from `ofFn` returns the value supplied at that coordinate. -/
+@[simp] theorem getScalar_ofFn {α : Type} {n : Nat} (values : Fin n → α) (i : Fin n) :
+    (ofFn values).getScalar i = values i := by
+  rfl
+
+/-- Rebuilding a vector from all of its coordinates returns the original vector. -/
+@[simp] theorem ofFn_getScalar {α : Type} {n : Nat} (t : Tensor α [n]) :
+    ofFn (fun i => t.getScalar i) = t := by
+  apply Tensor.ext_vector
+  intro i
+  simp
+
+/-- Build a vector from an array whose length is known statically. -/
+def ofArrayExact {α : Type} {n : Nat} (values : Array α) (h : values.size = n) :
+    Tensor α [n] :=
+  ofFn fun i => values[i.val]'(h.symm ▸ i.2)
+
+/-- Indexing an exact-length vector reads the corresponding array entry. -/
+@[simp] theorem getScalar_ofArrayExact {α : Type} {n : Nat} (values : Array α)
+    (h : values.size = n) (i : Fin n) :
+    (ofArrayExact values h).getScalar i = values[i.val]'(h.symm ▸ i.2) := by
+  rfl
+
+/-- Flattening an exact array constructor preserves the original row-major values. -/
+@[simp] theorem toList_ofArrayExact {α : Type} {n : Nat} (values : Array α)
+    (h : values.size = n) :
+    (ofArrayExact values h).toList = values.toList := by
+  subst n
+  simp only [ofArrayExact, ofFn, Tensor.toList]
+  rw [← List.map_eq_flatMap, ← List.ofFn_eq_map, ← Array.toList_ofFn]
+  simp
+
+/--
+Build an arbitrary-rank tensor from flat row-major data whose length matches the shape.
+
+This is the checked boundary between dynamic array storage and TorchLean's canonical tensor type.
+After the size proof is available, numerical code should use the resulting `Tensor α shape`.
+-/
+def ofFlatArrayExact {α : Type} :
+    (shape : Shape) → (values : Array α) → values.size = shape.size → Tensor α shape
+  | .scalar, values, hSize => by
+      have hLength : values.size = 1 := by
+        simpa [Shape.size] using hSize
+      exact .scalar (values[0]'(by simp [hLength]))
+  | .dim n tail, values, hSize => by
+      let chunkSize := tail.size
+      have hLength : values.size = n * chunkSize := by
+        simpa [Shape.size, chunkSize] using hSize
+      refine .dim fun i => ?_
+      let chunk : Array α := Array.ofFn fun j : Fin chunkSize =>
+        values[i.val * chunkSize + j.val]'(by
+          have hOffset : i.val * chunkSize + j.val < (i.val + 1) * chunkSize := by
+            rw [Nat.add_mul, Nat.one_mul]
+            exact Nat.add_lt_add_left j.2 (i.val * chunkSize)
+          have hChunkEnd : (i.val + 1) * chunkSize ≤ n * chunkSize :=
+            Nat.mul_le_mul_right chunkSize (Nat.succ_le_of_lt i.2)
+          simpa [hLength] using hOffset.trans_le hChunkEnd)
+      have hChunk : chunk.size = tail.size := by simp [chunk, chunkSize]
+      exact ofFlatArrayExact tail chunk hChunk
 
 /-- Construct a matrix from its row and column coordinate function.
 
 PyTorch analogy: `torch.tensor([...]).reshape(m, n)` (again, function input rather than a list).
 -/
 def matrix {α : Type} {m n : Nat} (values : Fin m → Fin n → α) :
-    Tensor α (.dim m (.dim n .scalar)) :=
-  Tensor.dim (fun i => vector (fun j => values i j))
+    Tensor α [m, n] :=
+  Tensor.dim (fun i => ofFn (fun j => values i j))
 
 end Tensor
+
+/-- Every coordinate of a filled vector contains the fill value. -/
+@[simp] theorem Tensor.getScalar_fill {α : Type} (value : α) (n : Nat) (i : Fin n) :
+    (fill value (.dim n .scalar)).getScalar i = value := by
+  rfl
 
 /-- A singleton vector.
 
 PyTorch analogy: `x.unsqueeze(0)` for a scalar `x`.
 -/
-def singleton {α : Type} (x : α) : Tensor α (.dim 1 .scalar) :=
+def singleton {α : Type} (x : α) : Tensor α [1] :=
   Tensor.dim (fun _ => Tensor.scalar x)
 
 /--
@@ -110,17 +209,7 @@ def Tensor.ofArray {α : Type} {n : Nat} {s : Shape}
   Tensor.dim (fun i : Fin n =>
     xs[i.val]'(by simpa [_h] using i.2))
 
-/--
-View a length-`n` vector as an `n x 1` "column" matrix.
-
-PyTorch analogy: `v.unsqueeze(-1)` for a 1D tensor `v` (or `v.reshape(n, 1)`).
--/
-def Tensor.vecToCol {α : Type} {n : Nat}
-    (v : Tensor α (.dim n .scalar)) : Tensor α (.dim n (.dim 1 .scalar)) :=
-  Tensor.dim (fun i : Fin n =>
-    Tensor.dim (fun _ : Fin 1 => get v i))
-
-/-! ## Constant and list-backed constructors -/
+/-! ## Constant and dynamic-data constructors -/
 
 /-- A zero-filled tensor of shape `s`. -/
 def zeros (α : Type) [Zero α] (s : Shape) : Tensor α s :=
@@ -139,14 +228,9 @@ theorem Tensor.forall_fill {α : Type} {p : α → Prop} {s : Shape} {x : α}
       intro _
       exact ih
 
-/-- Build a vector from a list, retaining the list length in its shape. -/
-def vectorFromList {α : Type} (xs : List α) : Tensor α (.dim xs.length .scalar) :=
-  Tensor.dim fun i => Tensor.scalar (xs.get i)
-
 /-- Build a matrix when every row has the same length; reject ragged input. -/
 def matrixFromRows? {α : Type} (rows : List (List α)) :
-    Option (Tensor α (.dim rows.length
-      (.dim (Option.getD (rows.head?.map List.length) 0) .scalar))) :=
+    Option (Tensor α [rows.length, Option.getD (rows.head?.map List.length) 0]) :=
   match rows with
   | [] => some (Tensor.dim fun i => nomatch i)
   | first :: rest =>
@@ -157,27 +241,10 @@ def matrixFromRows? {α : Type} (rows : List (List α)) :
           let row := allRows.get i
           have hLength : row.length = columnCount :=
             hRectangular row (List.get_mem allRows i)
-          Tensor.vector fun j =>
+          Tensor.ofFn fun j =>
             have hIndex : j.val < row.length := by simpa [hLength] using j.isLt
             row.get ⟨j.val, hIndex⟩
       else
         none
-
-/-- Return the greatest row length, or zero for an empty list. -/
-def maxRowLength {α : Type} (rows : List (List α)) : Nat :=
-  rows.foldl (fun n row => Nat.max n row.length) 0
-
-/-- Resize every row to `columnCount`, padding short rows with `default`. -/
-def matrixFromRowsResize {α : Type} [Inhabited α]
-    (columnCount : Nat) (rows : List (List α)) :
-    Tensor α (.dim rows.length (.dim columnCount .scalar)) :=
-  Tensor.dim fun i =>
-    let row := rows.getD i.val []
-    Tensor.vector fun j => row.getD j.val default
-
-/-- Pad every row on the right to the length of the longest row. -/
-def matrixFromRowsPadRight {α : Type} [Inhabited α] (rows : List (List α)) :
-    Tensor α (.dim rows.length (.dim (maxRowLength rows) .scalar)) :=
-  matrixFromRowsResize (maxRowLength rows) rows
 
 end Spec

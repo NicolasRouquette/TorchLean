@@ -10,12 +10,12 @@ public import NN.MLTheory.CROWN.Operators.Conv
 public import NN.Verification.LiRPA.ExampleInputs
 
 /-!
-# LiRPA CNN certificate checker
+# LiRPA convolutional certificate checker
 
-LiRPA/IBP certificate checker: CNN conv2d -> linear head.
+LiRPA/IBP certificate checker for a convolution followed by a linear head.
 
 This workflow:
-- encodes a single conv2d as an affine form (so the graph stays in the "flat vector" LiRPA engine),
+- encodes a convolution as an affine form (so the graph stays in the flat-vector LiRPA engine),
 - adds a linear head, and
 - checks a JSON certificate (produced by Python) using `NN.Verification.Cert.IBPCert`.
 
@@ -43,7 +43,7 @@ open _root_.Spec.Tensor
 
 /--
 Small fixed graph:
-`input(flattened) -> linear(conv2d) -> ReLU -> linear(head)`.
+`input(flattened) -> linear(convolution) -> ReLU -> linear(head)`.
 
 We keep it flat so the certificate checker works over `FlatBox` inputs.
 -/
@@ -57,10 +57,10 @@ def buildGraph : Graph :=
   let outShape := Shape.dim outC (Shape.dim outH (Shape.dim outW Shape.scalar))
   let nConv := outShape.size
   let nOut := 2
-  let inputNode : Node := { id := 0, parents := [], kind := .input, outShape := .dim nIn .scalar }
-  let convAffineNode : Node := { id := 1, parents := [0], kind := .linear, outShape := .dim nConv .scalar }
-  let reluNode : Node := { id := 2, parents := [1], kind := .relu, outShape := .dim nConv .scalar }
-  let classifierNode : Node := { id := 3, parents := [2], kind := .linear, outShape := .dim nOut .scalar }
+  let inputNode : Node := { id := 0, parents := #[], kind := .input, outShape := .dim nIn .scalar }
+  let convAffineNode : Node := { id := 1, parents := #[0], kind := .linear, outShape := .dim nConv .scalar }
+  let reluNode : Node := { id := 2, parents := #[1], kind := .relu, outShape := .dim nConv .scalar }
+  let classifierNode : Node := { id := 3, parents := #[2], kind := .linear, outShape := .dim nOut .scalar }
   { nodes := #[inputNode, convAffineNode, reluNode, classifierNode] }
 
 /--
@@ -73,36 +73,42 @@ linear layer.
 def seedParamsFloat : ParamStore Float :=
   let inC := 1; let outC := 1; let kH := 3; let kW := 3; let stride := 1; let padding := 0
   let inH := 4; let inW := 4
-  have inputChannelsNonzero : inC ≠ 0 := by decide
-  have kernelHeightNonzero : kH ≠ 0 := by decide
-  have kernelWidthNonzero : kW ≠ 0 := by decide
-  let kernel : Tensor Float (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) :=
-    Tensor.dim (fun _ => Tensor.dim (fun _ => Tensor.dim (fun i => Tensor.dim (fun j =>
-      Tensor.scalar (Float.ofNat (1 + (i.val + j.val)))))))
-  let bias : Tensor Float (.dim outC .scalar) := Tensor.dim (fun _ => Tensor.scalar (0.0))
-  let conv : Spec.Conv2dSpec inC outC kH kW stride padding Float
-      inputChannelsNonzero kernelHeightNonzero kernelWidthNonzero :=
-    { kernel := kernel, bias := bias }
-  -- Seed input box (center ones, eps)
-  let inputCenter := Tensor.dim (fun _ => Tensor.dim (fun _ => Tensor.dim (fun _ => Tensor.scalar (1.0))))
-  let eps : Float := 0.1
-  let rad := Spec.fill (α:=Float) eps (.dim inC (.dim inH (.dim inW .scalar)))
-  let xB : Box Float (.dim inC (.dim inH (.dim inW .scalar))) :=
-    { lo := Tensor.subSpec inputCenter rad, hi := Tensor.addSpec inputCenter rad }
-  let inShape := Shape.dim inC (Shape.dim inH (Shape.dim inW Shape.scalar))
-  let outH := Spec.Shape.slidingWindowOutDim inH kH stride padding
-  let outW := Spec.Shape.slidingWindowOutDim inW kW stride padding
-  let outShape := Shape.dim outC (Shape.dim outH (Shape.dim outW Shape.scalar))
+  let kernelShape : Spec.Tensor Nat [2] :=
+    Spec.Tensor.ofArrayExact #[kH, kW] (by simp)
+  let strides : Spec.Tensor Nat [2] :=
+    Spec.Tensor.ofArrayExact #[stride, stride] (by simp)
+  let paddings : Spec.Tensor Nat [2] :=
+    Spec.Tensor.ofArrayExact #[padding, padding] (by simp)
+  let inputSpatial : Spec.Tensor Nat [2] :=
+    Spec.Tensor.ofArrayExact #[inH, inW] (by simp)
+  let inShape := Shape.ofList (inC :: inputSpatial.toList)
+  let outSpatial := Spec.convOutSpatial inputSpatial kernelShape strides paddings
+  let outShape := Shape.ofList (outC :: outSpatial.toList)
   let nIn := inShape.size
   let nConv := outShape.size
-  let convWeight := NN.MLTheory.CROWN.conv2dLinearMatrix (α:=Float) (inC:=inC) (outC:=outC)
-    (kH:=kH) (kW:=kW) (stride:=stride) (padding:=padding) (inH:=inH) (inW:=inW) conv
-  let convBias := NN.MLTheory.CROWN.conv2dBiasBroadcast (α:=Float) (outC:=outC) (inH:=inH)
-    (inW:=inW) (kH:=kH) (kW:=kW) (stride:=stride) (padding:=padding) conv.bias
+  let kernelValues : Tensor Float [outC, inC, kH, kW] :=
+    Tensor.dim (fun _ => Tensor.dim (fun _ => Tensor.dim (fun i => Tensor.dim (fun j =>
+      Tensor.scalar (Float.ofNat (1 + (i.val + j.val)))))))
+  let kernel : Tensor Float (Shape.ofList (outC :: inC :: kernelShape.toList)) := by
+    simpa [kernelShape] using kernelValues
+  let bias : Tensor Float [outC] := Tensor.dim (fun _ => Tensor.scalar (0.0))
+  let conv : Spec.ConvSpec 2 inC outC kernelShape strides paddings Float :=
+    { kernel := kernel, bias := bias }
+  -- Seed input box (center ones, eps)
+  let inputCenter : Tensor Float inShape := Spec.fill 1.0 inShape
+  let eps : Float := 0.1
+  let rad := Spec.fill (α := Float) eps inShape
+  let xB : Box Float inShape :=
+    { lo := Tensor.subSpec inputCenter rad, hi := Tensor.addSpec inputCenter rad }
+  let convWeight : Tensor Float [nConv, nIn] :=
+    NN.MLTheory.CROWN.convLinearMatrix (α := Float)
+    (inSpatial := inputSpatial) conv
+  let convBias : Tensor Float [nConv] :=
+    NN.MLTheory.CROWN.convBiasBroadcast (α := Float) (outSpatial := outSpatial) conv.bias
   -- Linear head 4→2
-  let headWeight : Tensor Float (.dim 2 (.dim nConv .scalar)) := Tensor.dim (fun i => Tensor.dim (fun j
+  let headWeight : Tensor Float [2, nConv] := Tensor.dim (fun i => Tensor.dim (fun j
     => Tensor.scalar (Float.ofNat (2 + (i.val + j.val)))))
-  let headBias : Tensor Float (.dim 2 .scalar) := Tensor.dim (fun i => Tensor.scalar (Float.ofNat
+  let headBias : Tensor Float [2] := Tensor.dim (fun i => Tensor.scalar (Float.ofNat
     (i.val)))
   let emptyStore : ParamStore Float := {}
   -- set input box

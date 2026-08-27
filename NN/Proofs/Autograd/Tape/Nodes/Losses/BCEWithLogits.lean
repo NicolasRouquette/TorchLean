@@ -40,7 +40,7 @@ def bceWithLogits {Γ : List Shape} {s : Shape}
     (logits target : Idx Γ s) : Node Γ Shape.scalar :=
   let n : Nat := Spec.Shape.size s
   let c : ℝ := (1 : ℝ) / (n : ℝ)
-  Node.ofVec (Γ := Γ) (τ := Shape.scalar)
+  Node.ofFn (Γ := Γ) (τ := Shape.scalar)
     (f := fun xV =>
       let x : Vec n := CtxVec.get (Γ := Γ) (s := s) logits xV
       let t : Vec n := CtxVec.get (Γ := Γ) (s := s) target xV
@@ -346,7 +346,7 @@ def bceWithLogitsFderiv {Γ : List Shape} {s : Shape} (logits target : Idx Γ s)
       funext x
       ext i
       -- Expand the node forward definition, then rewrite `sumCLM` and `inner` into explicit sums.
-      simp [bceWithLogits, Node.forwardVec_ofVec, logitsV, targetV, c, sumCLM_apply,
+      simp [bceWithLogits, Node.forwardVec_ofFn, logitsV, targetV, c, sumCLM_apply,
         elemwiseVec, inner_eq_sum_mul, vecOfFun, sub_eq_add_neg,
         smul_eq_mul, mul_assoc, mul_comm, add_comm,
         Finset.sum_add_distrib, Finset.sum_neg_distrib, n]
@@ -380,7 +380,7 @@ def bceWithLogitsFderiv {Γ : List Shape} {s : Shape} (logits target : Idx Γ s)
               c * sumCLM (n := n) (vecOfFun (n := n) (fun j => dx j * sp' j) -
                 (vecOfFun (n := n) fun j => dt j * x j + t j * dx j)))
             (i := i) using 1
-      simp only [bceWithLogits, Node.jvpVec_ofVec]
+      simp only [bceWithLogits, Node.jvpVec_ofFn]
       simpa [x, dx, t, dt, sp', logitsV, targetV, c, elemwiseVec, vecOfFun,
         Spec.Shape.size, n] using hscalar
     let spDeriv : CtxVec Γ →L[ℝ] Vec n :=

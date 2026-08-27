@@ -48,7 +48,7 @@ namespace Models
 
 open _root_.Spec
 open Spec.Tensor
-open NN.Tensor
+open _root_.TorchLean.Tensor
 open NN.GraphSpec.DAG
 
 /--
@@ -56,13 +56,13 @@ Parameter ABI for the residual block.
 
 The layout is exactly:
 
-- `W : Mat d d`
-- `b : Vec d`
+- `W : Tensor α [d, d]`
+- `b : Tensor α [d]`
 
 The parameter-free skip path reuses the input `x`.
 -/
 abbrev ResidualLinearParams (d : Nat) : List Shape :=
-  [.dim d (.dim d .scalar), .dim d .scalar]
+  [[d, d], [d]]
 
 /--
 Residual linear block in DAG form.
@@ -77,36 +77,36 @@ This is a good first DAG example because the only genuinely DAG-specific feature
 input between the main branch and the skip branch.
 -/
 def residualLinear (d : Nat) :
-    DAG.Model (ps := ResidualLinearParams d) (ins := [.dim d .scalar]) (τ := .dim d .scalar) :=
+    DAG.Model (ps := ResidualLinearParams d) (ins := [[d]]) (τ := [d]) :=
   let Γ : List Shape :=
-    [.dim d (.dim d .scalar), .dim d .scalar, .dim d .scalar]
-  let w : DAG.Term Γ (.dim d (.dim d .scalar)) :=
+    [[d, d], [d], [d]]
+  let w : DAG.Term Γ [d, d] :=
     DAG.Term.var (Γ := Γ) .head
-  let b : DAG.Term Γ (.dim d .scalar) :=
+  let b : DAG.Term Γ [d] :=
     DAG.Term.var (Γ := Γ) (.tail .head)
-  let x : DAG.Term Γ (.dim d .scalar) :=
+  let x : DAG.Term Γ [d] :=
     DAG.Term.var (Γ := Γ) (.tail (.tail .head))
-  let y : DAG.Term Γ (.dim d .scalar) :=
+  let y : DAG.Term Γ [d] :=
     DAG.Term.op (Γ := Γ) (DAG.PrimOp.linear (inDim := d) (outDim := d))
       (DAG.Args.cons w (DAG.Args.cons b (DAG.Args.cons x (DAG.Args.nil))))
   { initParams :=
       -- Deterministic, simple init: all zeros.
-      let W0 : Spec.Tensor Float (.dim d (.dim d .scalar)) := Spec.zeros (α := Float) (.dim d (.dim d .scalar))
-      let b0 : Spec.Tensor Float (.dim d .scalar) := Spec.zeros (α := Float) (.dim d .scalar)
+      let W0 : Spec.Tensor Float [d, d] := Spec.zeros (α := Float) [d, d]
+      let b0 : Spec.Tensor Float [d] := Spec.zeros (α := Float) [d]
       .cons W0 (.cons b0 .nil)
     body :=
       DAG.Term.let1 y <|
         let Γ' : List Shape :=
-          [.dim d (.dim d .scalar), .dim d .scalar, .dim d .scalar, .dim d .scalar]
-        let yv : DAG.Term Γ' (.dim d .scalar) :=
+          [[d, d], [d], [d], [d]]
+        let yv : DAG.Term Γ' [d] :=
           DAG.Term.var (Γ := Γ') (.tail (.tail (.tail .head)))
-        let add : DAG.Term Γ' (.dim d .scalar) :=
-          DAG.Term.op (Γ := Γ') (DAG.PrimOp.add (s := .dim d .scalar))
+        let add : DAG.Term Γ' [d] :=
+          DAG.Term.op (Γ := Γ') (DAG.PrimOp.add (s := [d]))
             (DAG.Args.cons yv
               (DAG.Args.cons
                 (DAG.Term.var (Γ := Γ') (.tail (.tail .head)))
                 (DAG.Args.nil)))
-        DAG.Term.op (Γ := Γ') (DAG.PrimOp.relu (s := .dim d .scalar)) (DAG.Args.cons add
+        DAG.Term.op (Γ := Γ') (DAG.PrimOp.relu (s := [d])) (DAG.Args.cons add
           (DAG.Args.nil))
   }
 

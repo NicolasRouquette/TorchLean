@@ -6,10 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Floats.Interval.IEEEExec32
-public import NN.Floats.Interval.IEEEExec32NoNaN
-public import NN.Floats.Interval.RealBounds
-
 public import NN.Floats.Interval.IEEEExec32AddSoundness
 public import NN.Floats.Interval.IEEEExec32DivSoundness
 public import NN.Floats.Interval.IEEEExec32MinMaxSoundness
@@ -34,4 +30,3 @@ We keep these as separate files for navigation, and provide this umbrella so dow
 -/
 
 @[expose] public section
-

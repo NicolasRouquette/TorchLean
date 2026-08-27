@@ -41,7 +41,7 @@ structure BoxCameraCert (α : Type) where
   tol : α
   camera : CameraP α
   corners : BoxCorners α
-  bbox : Box2d α
+  bbox : Box2D α
 ```
 
 The executable checker is a Boolean function:

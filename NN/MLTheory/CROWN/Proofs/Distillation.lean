@@ -31,9 +31,9 @@ open NN.MLTheory.CROWN
 
 /-! ## Small vector helpers -/
 
-@[simp] theorem vecGet_sub {n : Nat}
-    (x y : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
-    (Tensor.subSpec x y).vecGet i = x.vecGet i - y.vecGet i := by
+@[simp] theorem getScalar_sub {n : Nat}
+    (x y : Tensor ℝ [n]) (i : Fin n) :
+    (Tensor.subSpec x y).getScalar i = x.getScalar i - y.getScalar i := by
   cases x with
   | dim fx =>
     cases y with
@@ -42,8 +42,8 @@ open NN.MLTheory.CROWN
       | scalar xv =>
         cases hyi : fy i with
         | scalar yv =>
-          simp [Tensor.vecGet, Tensor.subSpec, Spec.Tensor.subSpec, Spec.Tensor.map2Spec,
-            Spec.get, Spec.getAtSpec, Tensor.item, hxi, hyi]
+          simp [Tensor.getScalar, Tensor.subSpec, Spec.Tensor.subSpec, Spec.Tensor.map2Spec,
+            Spec.get, Tensor.item, hxi, hyi]
 
 /-! ## Interval arithmetic on output boxes -/
 
@@ -56,7 +56,7 @@ def boxSub {n : Nat}
 
 /-- Predicate asserting all coordinates of `B` lie in `[-eps, eps]`. -/
 def boxWithinAbs {n : Nat} (B : Box ℝ (.dim n .scalar)) (eps : ℝ) : Prop :=
-  ∀ i : Fin n, (-eps ≤ B.lo.vecGet i) ∧ (B.hi.vecGet i ≤ eps)
+  ∀ i : Fin n, (-eps ≤ B.lo.getScalar i) ∧ (B.hi.getScalar i ≤ eps)
 
 noncomputable def checkBoxWithinAbs {n : Nat} (B : Box ℝ (.dim n .scalar)) (eps : ℝ) : Bool := by
   classical
@@ -71,7 +71,7 @@ theorem checkBoxWithinAbs_spec {n : Nat} {B : Box ℝ (.dim n .scalar)} {eps : �
 /-- If `x ∈ T` and `y ∈ S`, then `x - y ∈ boxSub T S`. -/
 theorem boxSub_contains {n : Nat}
     {T S : Box ℝ (.dim n .scalar)}
-    {x y : Tensor ℝ (.dim n .scalar)}
+    {x y : Tensor ℝ [n]}
     (hx : Box.contains (α := ℝ) T x)
     (hy : Box.contains (α := ℝ) S y) :
     Box.contains (α := ℝ) (boxSub (n := n) T S) (Tensor.subSpec x y) := by
@@ -126,9 +126,9 @@ theorem boxSub_contains {n : Nat}
                                   using hdiff
 
 /-- Project a `Box.contains` hypothesis to scalar inequalities at a single coordinate. -/
-theorem boxContains_vecGet {n : Nat} {B : Box ℝ (.dim n .scalar)} {x : Tensor ℝ (.dim n .scalar)}
+theorem boxContains_getScalar {n : Nat} {B : Box ℝ (.dim n .scalar)} {x : Tensor ℝ [n]}
     (h : Box.contains (α := ℝ) B x) (i : Fin n) :
-    B.lo.vecGet i ≤ x.vecGet i ∧ x.vecGet i ≤ B.hi.vecGet i := by
+    B.lo.getScalar i ≤ x.getScalar i ∧ x.getScalar i ≤ B.hi.getScalar i := by
   cases B with
   | mk Blo Bhi =>
     cases x with
@@ -147,7 +147,7 @@ theorem boxContains_vecGet {n : Nat} {B : Box ℝ (.dim n .scalar)} {x : Tensor 
               | scalar xv =>
                 have hi := h' i
                 simp [NN.MLTheory.CROWN.Box.contains, hlo, hhi, hxv] at hi
-                simpa [Tensor.vecGet, Spec.get, Spec.getAtSpec, hlo, hhi, hxv] using hi
+                simpa [Tensor.getScalar, Spec.get, hlo, hhi, hxv] using hi
 
 /-! ## Distillation certificate for 2-layer MLPs -/
 
@@ -173,10 +173,10 @@ theorem checkEquivalence_twoLayerMlp_sound {inDim hidDim outDim : Nat}
     (eps : ℝ)
     (hcheck : checkEquivalenceTwoLayerMlp (inDim := inDim) (hidDim := hidDim) (outDim := outDim)
       teacher student xB eps = true) :
-    ∀ x : Tensor ℝ (.dim inDim .scalar),
+    ∀ x : Tensor ℝ [inDim],
       Box.contains (α := ℝ) xB x →
       ∀ i : Fin outDim,
-        |vecGet (Tensor.subSpec
+        |getScalar (Tensor.subSpec
           (NN.MLTheory.CROWN.forward (α := ℝ) teacher x)
           (NN.MLTheory.CROWN.forward (α := ℝ) student x)) i| ≤ eps := by
   intro x hx i
@@ -225,7 +225,7 @@ theorem checkEquivalence_twoLayerMlp_sound {inDim hidDim outDim : Nat}
 
   -- Read off the per-component bounds and conclude abs ≤ eps.
   have hmem_i :=
-    boxContains_vecGet (n := outDim) (B := boxSub (n := outDim)
+    boxContains_getScalar (n := outDim) (B := boxSub (n := outDim)
       (NN.MLTheory.CROWN.boundIbp (α := ℝ) teacher xB)
       (NN.MLTheory.CROWN.boundIbp (α := ℝ) student xB))
       (x := Tensor.subSpec
@@ -235,12 +235,12 @@ theorem checkEquivalence_twoLayerMlp_sound {inDim hidDim outDim : Nat}
 
   have hlo : -eps ≤ (Tensor.subSpec
         (NN.MLTheory.CROWN.forward (α := ℝ) teacher x)
-        (NN.MLTheory.CROWN.forward (α := ℝ) student x)).vecGet i :=
+        (NN.MLTheory.CROWN.forward (α := ℝ) student x)).getScalar i :=
     le_trans (hwithin i).1 hmem_i.1
 
   have hhi : (Tensor.subSpec
         (NN.MLTheory.CROWN.forward (α := ℝ) teacher x)
-        (NN.MLTheory.CROWN.forward (α := ℝ) student x)).vecGet i ≤ eps :=
+        (NN.MLTheory.CROWN.forward (α := ℝ) student x)).getScalar i ≤ eps :=
     le_trans hmem_i.2 (hwithin i).2
 
   exact (abs_le).2 ⟨hlo, hhi⟩

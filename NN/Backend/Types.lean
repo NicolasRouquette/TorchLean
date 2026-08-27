@@ -147,57 +147,85 @@ inductive BackendOp where
   | scaledDotProductAttention
   deriving DecidableEq, BEq, Repr
 
+/-- Broad semantic category used to summarize a backend-visible operation.
+
+This classification is descriptive metadata. Backend support, numerical policy, trust, and
+executable behavior remain properties of individual kernel capsules.
+-/
+inductive OpClass where
+  | source
+  | pointwise
+  | reduction
+  | accumulation
+  | view
+  | selection
+  | composite
+  deriving DecidableEq, Repr
+
+/-- Backend-invariant metadata for one operation. -/
+structure OpSchema where
+  /-- Stable spelling used in reports, capsule names, and CLI diagnostics. -/
+  name : String
+  /-- Broad semantic category of the operation. -/
+  opClass : OpClass
+  /-- Whether differentiating through the operation requires a registered local VJP. -/
+  requiresVJP : Bool
+  deriving DecidableEq, Repr
+
 namespace BackendOp
 
+/-- Canonical backend-invariant metadata for an operation. -/
+def schema : BackendOp → OpSchema
+  | .randUniform => ⟨"rand_uniform", .source, false⟩
+  | .bernoulliMask => ⟨"bernoulli_mask", .source, false⟩
+  | .add => ⟨"add", .pointwise, true⟩
+  | .sub => ⟨"sub", .pointwise, true⟩
+  | .mul => ⟨"mul", .pointwise, true⟩
+  | .scale => ⟨"scale", .pointwise, true⟩
+  | .abs => ⟨"abs", .pointwise, true⟩
+  | .sqrt => ⟨"sqrt", .pointwise, true⟩
+  | .clamp => ⟨"clamp", .pointwise, true⟩
+  | .max => ⟨"max", .pointwise, true⟩
+  | .min => ⟨"min", .pointwise, true⟩
+  | .relu => ⟨"relu", .pointwise, true⟩
+  | .gelu => ⟨"gelu", .pointwise, true⟩
+  | .sigmoid => ⟨"sigmoid", .pointwise, true⟩
+  | .tanh => ⟨"tanh", .pointwise, true⟩
+  | .softplus => ⟨"softplus", .pointwise, true⟩
+  | .exp => ⟨"exp", .pointwise, true⟩
+  | .log => ⟨"log", .pointwise, true⟩
+  | .sin => ⟨"sin", .pointwise, true⟩
+  | .cos => ⟨"cos", .pointwise, true⟩
+  | .inv => ⟨"inv", .pointwise, true⟩
+  | .safeLog => ⟨"safe_log", .pointwise, true⟩
+  | .logSoftmax => ⟨"log_softmax", .accumulation, true⟩
+  | .softmax => ⟨"softmax", .accumulation, true⟩
+  | .hardMaskedSoftmax => ⟨"hard_masked_softmax", .accumulation, true⟩
+  | .reduceSum => ⟨"reduce_sum", .reduction, true⟩
+  | .reduceMean => ⟨"reduce_mean", .reduction, true⟩
+  | .reshape => ⟨"reshape", .view, true⟩
+  | .permute => ⟨"permute", .view, true⟩
+  | .broadcast => ⟨"broadcast", .view, true⟩
+  | .concat => ⟨"concat", .view, true⟩
+  | .slice => ⟨"slice", .selection, true⟩
+  | .gather => ⟨"gather", .selection, true⟩
+  | .scatterAdd => ⟨"scatter_add", .accumulation, true⟩
+  | .matmul => ⟨"matmul", .accumulation, true⟩
+  | .linear => ⟨"linear", .accumulation, true⟩
+  | .mseLoss => ⟨"mse_loss", .reduction, true⟩
+  | .layerNorm => ⟨"layer_norm", .composite, true⟩
+  | .batchNorm => ⟨"batch_norm", .composite, true⟩
+  | .conv => ⟨"conv", .accumulation, true⟩
+  | .convTranspose => ⟨"conv_transpose", .accumulation, true⟩
+  | .maxPool => ⟨"max_pool", .selection, true⟩
+  | .smoothMaxPool => ⟨"smooth_max_pool", .accumulation, true⟩
+  | .avgPool => ⟨"avg_pool", .accumulation, true⟩
+  | .fftFno => ⟨"fft_fno", .composite, true⟩
+  | .selectiveScan => ⟨"selective_scan", .composite, true⟩
+  | .scaledDotProductAttention => ⟨"scaled_dot_product_attention", .composite, true⟩
+
 /-- Stable spelling used in reports, capsule names, and CLI diagnostics. -/
-def name : BackendOp → String
-  | .randUniform => "rand_uniform"
-  | .bernoulliMask => "bernoulli_mask"
-  | .add => "add"
-  | .sub => "sub"
-  | .mul => "mul"
-  | .scale => "scale"
-  | .abs => "abs"
-  | .sqrt => "sqrt"
-  | .clamp => "clamp"
-  | .max => "max"
-  | .min => "min"
-  | .relu => "relu"
-  | .gelu => "gelu"
-  | .sigmoid => "sigmoid"
-  | .tanh => "tanh"
-  | .softplus => "softplus"
-  | .exp => "exp"
-  | .log => "log"
-  | .sin => "sin"
-  | .cos => "cos"
-  | .inv => "inv"
-  | .safeLog => "safe_log"
-  | .logSoftmax => "log_softmax"
-  | .softmax => "softmax"
-  | .hardMaskedSoftmax => "hard_masked_softmax"
-  | .reduceSum => "reduce_sum"
-  | .reduceMean => "reduce_mean"
-  | .reshape => "reshape"
-  | .permute => "permute"
-  | .broadcast => "broadcast"
-  | .concat => "concat"
-  | .slice => "slice"
-  | .gather => "gather"
-  | .scatterAdd => "scatter_add"
-  | .matmul => "matmul"
-  | .linear => "linear"
-  | .mseLoss => "mse_loss"
-  | .layerNorm => "layer_norm"
-  | .batchNorm => "batch_norm"
-  | .conv => "conv"
-  | .convTranspose => "conv_transpose"
-  | .maxPool => "max_pool"
-  | .smoothMaxPool => "smooth_max_pool"
-  | .avgPool => "avg_pool"
-  | .fftFno => "fft_fno"
-  | .selectiveScan => "selective_scan"
-  | .scaledDotProductAttention => "scaled_dot_product_attention"
+def name (op : BackendOp) : String := op.schema.name
 
 instance : ToString BackendOp where
   toString op := op.name
@@ -207,9 +235,7 @@ instance : ToString BackendOp where
 Random sources create values but are not themselves differentiated. Every other backend-visible
 operation must provide a compatible VJP whenever gradient tracking is requested.
 -/
-def requiresVJP : BackendOp → Bool
-  | .randUniform | .bernoulliMask => false
-  | _ => true
+def requiresVJP (op : BackendOp) : Bool := op.schema.requiresVJP
 
 end BackendOp
 

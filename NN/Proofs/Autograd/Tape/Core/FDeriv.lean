@@ -65,34 +65,45 @@ noncomputable section
 /-- Vectorize a tensor by flattening it (spec flattening order) and then using the Euclidean
   equivalence. -/
 def tensorToVec {s : Shape} (t : Tensor ℝ s) : Vec (Spec.Shape.size s) :=
-  toVecE (n := Spec.Shape.size s) (flattenSpec (α := ℝ) t)
+  getScalarE (n := Spec.Shape.size s) (flattenSpec (α := ℝ) t)
+
+/-- The sole coordinate obtained by vectorizing a scalar tensor is the scalar itself. -/
+@[simp] lemma tensorToVec_scalar (x : ℝ) (i : Fin (Spec.Shape.size Shape.scalar)) :
+    tensorToVec (t := (Tensor.scalar x : Tensor ℝ .scalar)) i = x := by
+  change (getScalarE (flattenSpec (Tensor.scalar x))).ofLp i = x
+  rw [getScalarE_ofLp]
+  cases i with
+  | mk value hvalue =>
+      have hzero : value = 0 := Nat.eq_zero_of_le_zero (Nat.le_of_lt_succ hvalue)
+      subst value
+      rfl
 
 /-- Inverse of `tensorToVec`: interpret a vector as a tensor of shape `s`. -/
 def vecToTensor {s : Shape} (v : Vec (Spec.Shape.size s)) : Tensor ℝ s :=
-  unflattenSpec (α := ℝ) s (ofVecE (n := Spec.Shape.size s) v)
+  unflattenSpec (α := ℝ) s (ofFnE (n := Spec.Shape.size s) v)
 
 @[simp] lemma tensorToVec_vecToTensor {s : Shape} (v : Vec (Spec.Shape.size s)) :
     tensorToVec (t := vecToTensor (s := s) v) = v := by
   have hunf :
       flattenSpec (α := ℝ)
-          (unflattenSpec (α := ℝ) s (ofVecE (n := Spec.Shape.size s) v))
+          (unflattenSpec (α := ℝ) s (ofFnE (n := Spec.Shape.size s) v))
         =
-      ofVecE (n := Spec.Shape.size s) v :=
-    unflatten_flatten_inverse (s := s) (v := ofVecE (n := Spec.Shape.size s) v)
-  have := congrArg (toVecE (n := Spec.Shape.size s)) hunf
-  simpa [tensorToVec, vecToTensor] using this.trans (toVecE_ofVecE (n := Spec.Shape.size s) v)
+      ofFnE (n := Spec.Shape.size s) v :=
+    unflatten_flatten_inverse (s := s) (v := ofFnE (n := Spec.Shape.size s) v)
+  have := congrArg (getScalarE (n := Spec.Shape.size s)) hunf
+  simpa [tensorToVec, vecToTensor] using this.trans (getScalarE_ofFnE (n := Spec.Shape.size s) v)
 
 @[simp] lemma vecToTensor_tensorToVec {s : Shape} (t : Tensor ℝ s) :
     vecToTensor (s := s) (tensorToVec (t := t)) = t := by
   have hround :
-      ofVecE (n := Spec.Shape.size s) (toVecE (n := Spec.Shape.size s) (flattenSpec (α := ℝ) t))
+      ofFnE (n := Spec.Shape.size s) (getScalarE (n := Spec.Shape.size s) (flattenSpec (α := ℝ) t))
         =
       flattenSpec (α := ℝ) t := by
     simp
   simpa [vecToTensor, tensorToVec, hround] using (flatten_unflatten_inverse (s := s) (t := t))
 
 -- ---------------------------------------------------------------------------
--- Context vectorization (`TList Γ` ↔ `Vec (ctxSize Γ)`)
+-- Context vectorization (`TorchLean.TensorPack ℝ Γ` ↔ `Vec (ctxSize Γ)`)
 -- ---------------------------------------------------------------------------
 
 /-- Total number of scalar coordinates in a heterogeneous context shape list. -/
@@ -100,7 +111,7 @@ def ctxSize : List Shape → Nat
   | [] => 0
   | s :: ss => Spec.Shape.size s + ctxSize ss
 
-/-- A vectorized context: one Euclidean vector containing all `TList Γ` entries concatenated. -/
+/-- A vectorized context containing every entry of a `TorchLean.TensorPack ℝ Γ`. -/
 abbrev CtxVec (Γ : List Shape) := Vec (ctxSize Γ)
 
 /--
@@ -139,18 +150,18 @@ lemma vecOfFun_ofLp_eq {n : Nat} (f : Fin n → ℝ) :
   simp [vecOfFun, EuclideanSpace.equiv]
 
 /--
-Flatten a typed context `TList Γ` into one big Euclidean vector.
+Flatten a typed context `TorchLean.TensorPack ℝ Γ` into one big Euclidean vector.
 
-Unlike PyTorch’s runtime “saved tensor list”, this is an actual typed isomorphism: shapes are
+Unlike PyTorch's dynamically typed saved-tensor array, this is an actual typed isomorphism: shapes are
 tracked in `Γ`, so the split points are definitional from `ctxSize`.
 -/
-def flattenCtx : {Γ : List Shape} → TList Γ → CtxVec Γ
+def flattenCtx : {Γ : List Shape} → _root_.TorchLean.TensorPack ℝ Γ → CtxVec Γ
   | [], .nil => 0
   | s :: ss, .cons x xs =>
       vecOfFun (n := Spec.Shape.size s + ctxSize ss) (Fin.append (tensorToVec x) (flattenCtx (Γ := ss) xs))
 
-/-- Inverse of `flattenCtx`: split a `CtxVec Γ` back into a `TList Γ`. -/
-def unflattenCtx : {Γ : List Shape} → CtxVec Γ → TList Γ
+/-- Inverse of `flattenCtx`: split a `CtxVec Γ` back into a `TorchLean.TensorPack ℝ Γ`. -/
+def unflattenCtx : {Γ : List Shape} → CtxVec Γ → _root_.TorchLean.TensorPack ℝ Γ
   | [], _ => .nil
   | s :: ss, v =>
       let head : Vec (Spec.Shape.size s) :=
@@ -159,7 +170,8 @@ def unflattenCtx : {Γ : List Shape} → CtxVec Γ → TList Γ
         vecOfFun (n := ctxSize ss) fun i => v (Fin.natAdd (Spec.Shape.size s) i)
       .cons (vecToTensor (s := s) head) (unflattenCtx (Γ := ss) tail)
 
-@[simp] theorem unflattenCtx_flattenCtx {Γ : List Shape} (xs : TList Γ) :
+@[simp] theorem unflattenCtx_flattenCtx {Γ : List Shape}
+    (xs : _root_.TorchLean.TensorPack ℝ Γ) :
     unflattenCtx (Γ := Γ) (flattenCtx (Γ := Γ) xs) = xs := by
   induction Γ with
   | nil =>
@@ -399,9 +411,49 @@ lemma tensorToVec_dim_apply {n : Nat} {s : Shape} (hmpos : 0 < Spec.Shape.size s
   have hi : (⟨(p.2.val + m * p.1.val) / m, houter⟩ : Fin n) = p.1 := by
     apply Fin.ext
     simp [hdiv]
-  cases hfi : flattenSpec (α := ℝ) (f p.1) with
-  | dim gfi =>
-      simp [tensorToVec, toVecE, Spec.toVec, flattenSpec, m, hfi, hdiv, hmod]
+  calc
+    tensorToVec (t := Tensor.dim f) (finProdFinEquiv p) =
+        Spec.Tensor.getScalar (flattenSpec (Tensor.dim f)) (finProdFinEquiv p) :=
+      getScalarE_ofLp _ _
+    _ = Spec.Tensor.getScalar (flattenSpec (f p.1)) p.2 := by
+      have hidx :
+          p.1.val * Spec.Shape.size s + p.2.val < n * Spec.Shape.size s := by
+        simpa [finProdFinEquiv, Nat.mul_comm, Nat.add_comm] using
+          (finProdFinEquiv p).isLt
+      have hentry := Spec.Tensor.Internal.flattenSpec_dim_apply
+        (f := f) (i := p.1) (j := p.2) hmpos hidx
+      have hgetOuter :
+          Spec.get (flattenSpec (Tensor.dim f)) (finProdFinEquiv p) =
+            match flattenSpec (Tensor.dim f) with
+            | Tensor.dim values => values (finProdFinEquiv p) :=
+        Proofs.TensorAlgebra.get_eq _ _
+      have hgetInner :
+          Spec.get (flattenSpec (f p.1)) p.2 =
+            match flattenSpec (f p.1) with
+            | Tensor.dim values => values p.2 :=
+        by
+          cases flattenSpec (f p.1)
+          rfl
+      have hentry' :
+          (match flattenSpec (Tensor.dim f) with
+            | Tensor.dim values => values (finProdFinEquiv p)) =
+            match flattenSpec (f p.1) with
+            | Tensor.dim values => values p.2 := by
+        cases hflat : flattenSpec (Tensor.dim f) with
+        | dim flatValues =>
+            cases hinner : flattenSpec (f p.1) with
+            | dim innerValues =>
+                simp only [hflat, hinner] at hentry ⊢
+                calc
+                  flatValues (finProdFinEquiv p) =
+                      flatValues ⟨p.1.val * Spec.Shape.size s + p.2.val, hidx⟩ := by
+                    congr 1
+                    apply Fin.ext
+                    simp [finProdFinEquiv, Nat.mul_comm, Nat.add_comm]
+                  _ = innerValues p.2 := hentry
+      simpa only [Spec.Tensor.getScalar, hgetOuter, hgetInner] using
+        congrArg Spec.Tensor.item hentry'
+    _ = tensorToVec (t := f p.1) p.2 := (getScalarE_ofLp _ _).symm
 
 -- Inner product decomposition across an outer dimension.
 /-- `tensorToVec` turns dot products on `.dim n s` into sums of Euclidean inner products over slices. -/
@@ -546,11 +598,12 @@ def appendVec {m n : Nat} (a : Vec m) (b : Vec n) : Vec (m + n) :=
   vecOfFun (n := m + n) (Fin.append a b)
 
 @[simp] lemma flattenCtx_nil :
-    flattenCtx (TList.nil : TList []) = 0 := rfl
+    flattenCtx (_root_.TorchLean.TensorPack.nil : _root_.TorchLean.TensorPack ℝ []) = 0 := rfl
 
 @[simp] lemma flattenCtx_cons {s : Shape} {ss : List Shape}
-    (x : Tensor ℝ s) (xs : TList ss) :
-    flattenCtx (TList.cons x xs) = appendVec (tensorToVec x) (flattenCtx xs) := rfl
+    (x : Tensor ℝ s) (xs : _root_.TorchLean.TensorPack ℝ ss) :
+    flattenCtx (_root_.TorchLean.TensorPack.cons x xs) =
+      appendVec (tensorToVec x) (flattenCtx xs) := rfl
 
 @[simp] lemma appendVec_ofLp_castAdd {m n : Nat} (a : Vec m) (b : Vec n) (i : Fin m) :
     (appendVec a b).ofLp (Fin.castAdd n i) = a.ofLp i := by
@@ -618,19 +671,20 @@ lemma inner_append {m n : Nat} (a c : Vec m) (b d : Vec n) :
           simp [inner_eq_sum_mul]
 
 /--
-`TList.dotList` equals Euclidean inner product of `flattenCtx`.
+`TensorPack.dotList` equals Euclidean inner product of `flattenCtx`.
 
 This shows that the “context inner product” used in tape soundness is exactly the Euclidean inner
 product on the vectorized context representation.
 -/
-theorem dotList_eq_inner_flattenCtx {Γ : List Shape} (x y : TList Γ) :
-    TList.dotList (ss := Γ) x y = inner ℝ (flattenCtx (Γ := Γ) x) (flattenCtx (Γ := Γ) y) := by
+theorem dotList_eq_inner_flattenCtx {Γ : List Shape}
+    (x y : _root_.TorchLean.TensorPack ℝ Γ) :
+    TensorPack.dotList (ss := Γ) x y = inner ℝ (flattenCtx (Γ := Γ) x) (flattenCtx (Γ := Γ) y) := by
   classical
   induction Γ with
   | nil =>
       cases x
       cases y
-      simp [TList.dotList, flattenCtx]
+      simp [TensorPack.dotList, flattenCtx]
   | cons s ss ih =>
       cases x with
       | cons xh xt =>
@@ -638,8 +692,8 @@ theorem dotList_eq_inner_flattenCtx {Γ : List Shape} (x y : TList Γ) :
           | cons yh yt =>
               -- Split the inner product across the append, then use IH and `dot_eq_inner_tensorToVec`.
               have hinter :
-                  inner ℝ (flattenCtx (Γ := s :: ss) (TList.cons xh xt))
-                        (flattenCtx (Γ := s :: ss) (TList.cons yh yt))
+                  inner ℝ (flattenCtx (Γ := s :: ss) (_root_.TorchLean.TensorPack.cons xh xt))
+                        (flattenCtx (Γ := s :: ss) (_root_.TorchLean.TensorPack.cons yh yt))
                     =
                   inner ℝ (tensorToVec (t := xh)) (tensorToVec (t := yh))
                     + inner ℝ (flattenCtx (Γ := ss) xt) (flattenCtx (Γ := ss) yt) := by
@@ -657,14 +711,14 @@ theorem dotList_eq_inner_flattenCtx {Γ : List Shape} (x y : TList Γ) :
                     (a := tensorToVec (t := xh)) (c := tensorToVec (t := yh))
                     (b := flattenCtx (Γ := ss) xt) (d := flattenCtx (Γ := ss) yt)
               calc
-                TList.dotList (ss := s :: ss) (TList.cons xh xt) (TList.cons yh yt)
-                    = dot xh yh + TList.dotList (ss := ss) xt yt := by
-                        simp [TList.dotList]
+                TensorPack.dotList (ss := s :: ss) (_root_.TorchLean.TensorPack.cons xh xt) (_root_.TorchLean.TensorPack.cons yh yt)
+                    = dot xh yh + TensorPack.dotList (ss := ss) xt yt := by
+                        simp [TensorPack.dotList]
                 _ = inner ℝ (tensorToVec (t := xh)) (tensorToVec (t := yh))
                       + inner ℝ (flattenCtx (Γ := ss) xt) (flattenCtx (Γ := ss) yt) := by
                         simp [dot_eq_inner_tensorToVec, ih]
-                _ = inner ℝ (flattenCtx (Γ := s :: ss) (TList.cons xh xt))
-                        (flattenCtx (Γ := s :: ss) (TList.cons yh yt)) := by
+                _ = inner ℝ (flattenCtx (Γ := s :: ss) (_root_.TorchLean.TensorPack.cons xh xt))
+                        (flattenCtx (Γ := s :: ss) (_root_.TorchLean.TensorPack.cons yh yt)) := by
                         exact hinter.symm
 
 -- ---------------------------------------------------------------------------
@@ -804,7 +858,7 @@ theorem correct_inner {Γ : List Shape} {τ : Shape} (node : Node Γ τ) :
   have hleft : dot (node.jvp ctx dctx) δ = inner ℝ (node.jvpVec ctxV dctxV) δV := by
     simp [Node.jvpVec, ctx, dctx, δ, dot_eq_inner_tensorToVec]
   have hright :
-      TList.dotList (ss := Γ) dctx (node.vjp ctx δ) = inner ℝ dctxV (node.vjpVec ctxV δV) := by
+      TensorPack.dotList (ss := Γ) dctx (node.vjp ctx δ) = inner ℝ dctxV (node.vjpVec ctxV δV) := by
     simpa [Node.vjpVec, ctx, dctx, δ] using
       (dotList_eq_inner_flattenCtx (Γ := Γ) (x := dctx) (y := node.vjp ctx δ))
   -- Finish.

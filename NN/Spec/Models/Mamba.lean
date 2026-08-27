@@ -49,11 +49,11 @@ open NN.Spec.Dynamics
 /-- Parameters for a compact diagonal Mamba-style block. -/
 structure MambaBlockSpec (α : Type) (inputDim stateDim outputDim : Nat) where
   /-- Input projection into SSM state channels. -/
-  inProj : Tensor α (.dim inputDim (.dim stateDim .scalar))
+  inProj : Tensor α [inputDim, stateDim]
   /-- Gate projection. The gate is `sigmoid(x @ gateProj)`. -/
-  gateProj : Tensor α (.dim inputDim (.dim stateDim .scalar))
+  gateProj : Tensor α [inputDim, stateDim]
   /-- Output projection from gated state channels. -/
-  outProj : Tensor α (.dim stateDim (.dim outputDim .scalar))
+  outProj : Tensor α [stateDim, outputDim]
   /-- Diagonal state-space core. -/
   ssm : DiagonalSSM α stateDim
 
@@ -64,61 +64,43 @@ variable {inputDim stateDim outputDim : Nat}
 
 /-- Input-to-state projection. -/
 def projectInput (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (x : Tensor α (.dim inputDim .scalar)) : Tensor α (.dim stateDim .scalar) :=
+    (x : Tensor α [inputDim]) : Tensor α [stateDim] :=
   vecMatMulSpec x m.inProj
 
 /-- Token-dependent sigmoid gate. -/
 def gate (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (x : Tensor α (.dim inputDim .scalar)) : Tensor α (.dim stateDim .scalar) :=
+    (x : Tensor α [inputDim]) : Tensor α [stateDim] :=
   Tensor.mapSpec Activation.Math.sigmoidSpec (vecMatMulSpec x m.gateProj)
 
 /-- One Mamba-style token step, returning `(new_state, output)`. -/
 def step (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (h : Tensor α (.dim stateDim .scalar))
-    (x : Tensor α (.dim inputDim .scalar)) :
-    Tensor α (.dim stateDim .scalar) × Tensor α (.dim outputDim .scalar) :=
+    (h : Tensor α [stateDim])
+    (x : Tensor α [inputDim]) :
+    Tensor α [stateDim] × Tensor α [outputDim] :=
   let xState := m.projectInput x
   let h' := m.ssm.step h xState
   let yState := m.ssm.readout h' xState
   let gated := yState * m.gate x
   (h', vecMatMulSpec gated m.outProj)
 
-/-- Run a list of tokens through the recurrent block. -/
-def runList (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar)) :
-    List (Tensor α (.dim inputDim .scalar)) →
-    Tensor α (.dim stateDim .scalar) × List (Tensor α (.dim outputDim .scalar))
-  | [] => (h0, [])
-  | x :: xs =>
-      let (h1, y) := m.step h0 x
-      let (hN, ys) := m.runList h1 xs
-      (hN, y :: ys)
+/-- Run an array of tokens through the recurrent block. -/
+def runArray (m : MambaBlockSpec α inputDim stateDim outputDim)
+    (h0 : Tensor α [stateDim])
+    (xs : Array (Tensor α [inputDim])) :
+    Tensor α [stateDim] × Array (Tensor α [outputDim]) :=
+  Spec.scanArray m.step h0 xs
 
-@[simp] theorem runList_nil (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar)) :
-    m.runList h0 [] = (h0, []) := by
-  rfl
-
-@[simp] theorem runList_cons (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar))
-    (x : Tensor α (.dim inputDim .scalar))
-    (xs : List (Tensor α (.dim inputDim .scalar))) :
-    m.runList h0 (x :: xs) =
-      let (h1, y) := m.step h0 x
-      let (hN, ys) := m.runList h1 xs
-      (hN, y :: ys) := by
+@[simp] theorem runArray_empty (m : MambaBlockSpec α inputDim stateDim outputDim)
+    (h0 : Tensor α [stateDim]) :
+    m.runArray h0 #[] = (h0, #[]) := by
   rfl
 
 /-- A Mamba recurrent pass emits one output token per input token. -/
-theorem runList_outputs_length (m : MambaBlockSpec α inputDim stateDim outputDim)
-    (h0 : Tensor α (.dim stateDim .scalar))
-    (xs : List (Tensor α (.dim inputDim .scalar))) :
-    (m.runList h0 xs).2.length = xs.length := by
-  induction xs generalizing h0 with
-  | nil =>
-      simp
-  | cons x rest ih =>
-      simp [runList_cons, ih]
+@[simp] theorem runArray_outputs_size (m : MambaBlockSpec α inputDim stateDim outputDim)
+    (h0 : Tensor α [stateDim])
+    (xs : Array (Tensor α [inputDim])) :
+    (m.runArray h0 xs).2.size = xs.size := by
+  exact Spec.scanArray_outputs_size m.step h0 xs
 
 end MambaBlockSpec
 
@@ -137,27 +119,27 @@ view of Mamba where each expanded channel carries a small diagonal state vector.
 structure SelectiveMambaBlockSpec
     (α : Type) (inputDim innerDim stateDim outputDim convWidth : Nat) where
   /-- Content/input projection `x -> x_path`. -/
-  xProj : Tensor α (.dim inputDim (.dim innerDim .scalar))
+  xProj : Tensor α [inputDim, innerDim]
   /-- Gate projection `x -> z_path`. -/
-  zProj : Tensor α (.dim inputDim (.dim innerDim .scalar))
+  zProj : Tensor α [inputDim, innerDim]
   /-- Causal depthwise-convolution kernel, indexed by `(tap, channel)`. -/
-  convKernel : Tensor α (.dim convWidth (.dim innerDim .scalar))
+  convKernel : Tensor α [convWidth, innerDim]
   /-- Causal depthwise-convolution bias. -/
-  convBias : Tensor α (.dim innerDim .scalar)
+  convBias : Tensor α [innerDim]
   /-- Projection from activated convolution features to per-channel time steps `Delta`. -/
-  dtProj : Tensor α (.dim innerDim (.dim innerDim .scalar))
+  dtProj : Tensor α [innerDim, innerDim]
   /-- Bias before the `softplus` time-step nonlinearity. -/
-  dtBias : Tensor α (.dim innerDim .scalar)
+  dtBias : Tensor α [innerDim]
   /-- Positive diagonal state rates `A[d,n]` used as `exp(-Delta[d] * A[d,n])`. -/
-  A : Tensor α (.dim innerDim (.dim stateDim .scalar))
+  A : Tensor α [innerDim, stateDim]
   /-- Token-dependent input-state projection `B_t = u_t @ bProj`. -/
-  bProj : Tensor α (.dim innerDim (.dim stateDim .scalar))
+  bProj : Tensor α [innerDim, stateDim]
   /-- Token-dependent state-output projection `C_t = u_t @ cProj`. -/
-  cProj : Tensor α (.dim innerDim (.dim stateDim .scalar))
+  cProj : Tensor α [innerDim, stateDim]
   /-- Per-channel residual/skip coefficient. -/
-  dSkip : Tensor α (.dim innerDim .scalar)
+  dSkip : Tensor α [innerDim]
   /-- Output projection from expanded channels to output features. -/
-  outProj : Tensor α (.dim innerDim (.dim outputDim .scalar))
+  outProj : Tensor α [innerDim, outputDim]
 
 namespace SelectiveMambaBlockSpec
 
@@ -166,16 +148,16 @@ variable {inputDim innerDim stateDim outputDim convWidth : Nat}
 
 /-- Projection feeding the content path before convolution and selective state updates. -/
 def projectX (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (x : Tensor α (.dim inputDim .scalar)) : Tensor α (.dim innerDim .scalar) :=
+    (x : Tensor α [inputDim]) : Tensor α [innerDim] :=
   vecMatMulSpec x m.xProj
 
 /-- Projection feeding the multiplicative gate path in the selective state-space block. -/
 def projectZ (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (x : Tensor α (.dim inputDim .scalar)) : Tensor α (.dim innerDim .scalar) :=
+    (x : Tensor α [inputDim]) : Tensor α [innerDim] :=
   vecMatMulSpec x m.zProj
 
 /-- SiLU/Swish applied channelwise. -/
-def siluVec (x : Tensor α (.dim innerDim .scalar)) : Tensor α (.dim innerDim .scalar) :=
+def siluVec (x : Tensor α [innerDim]) : Tensor α [innerDim] :=
   Tensor.mapSpec Activation.Math.swishSpec x
 
 /--
@@ -186,34 +168,34 @@ history entries are treated as zero padding.
 -/
 def causalDepthwiseConv
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (history : List (Tensor α (.dim innerDim .scalar))) :
-    Tensor α (.dim innerDim .scalar) :=
+    (history : Array (Tensor α [innerDim])) :
+    Tensor α [innerDim] :=
   Tensor.dim (fun c : Fin innerDim =>
     Tensor.scalar <|
       (List.finRange convWidth).foldl
         (fun acc tap =>
-          let zeroInner : Tensor α (.dim innerDim .scalar) :=
+          let zeroInner : Tensor α [innerDim] :=
             Tensor.dim (fun _ => Tensor.scalar 0)
-          let xTap : α := Tensor.vecGet (history.getD tap.val zeroInner) c
+          let xTap : α := Tensor.getScalar (history[tap.val]?.getD zeroInner) c
           acc + xTap * get2 m.convKernel tap c)
-        (Tensor.vecGet m.convBias c))
+        (Tensor.getScalar m.convBias c))
 
 /-- Token-dependent positive time steps `Delta = softplus(u @ dtProj + dtBias)`. -/
 def delta
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (u : Tensor α (.dim innerDim .scalar)) : Tensor α (.dim innerDim .scalar) :=
+    (u : Tensor α [innerDim]) : Tensor α [innerDim] :=
   Tensor.mapSpec Activation.Math.softplusSpec (vecMatMulSpec u m.dtProj + m.dtBias)
 
 /-- Token-dependent input-state vector `B_t`. -/
 def bToken
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (u : Tensor α (.dim innerDim .scalar)) : Tensor α (.dim stateDim .scalar) :=
+    (u : Tensor α [innerDim]) : Tensor α [stateDim] :=
   vecMatMulSpec u m.bProj
 
 /-- Token-dependent state-output vector `C_t`. -/
 def cToken
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (u : Tensor α (.dim innerDim .scalar)) : Tensor α (.dim stateDim .scalar) :=
+    (u : Tensor α [innerDim]) : Tensor α [stateDim] :=
   vecMatMulSpec u m.cProj
 
 /--
@@ -223,30 +205,30 @@ One selective diagonal SSM update:
 -/
 def selectiveStateStep
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (u : Tensor α (.dim innerDim .scalar)) :
-    Tensor α (.dim innerDim (.dim stateDim .scalar)) :=
+    (h : Tensor α [innerDim, stateDim])
+    (u : Tensor α [innerDim]) :
+    Tensor α [innerDim, stateDim] :=
   let Δ := m.delta u
   let B := m.bToken u
   Tensor.dim (fun d : Fin innerDim =>
     Tensor.dim (fun n : Fin stateDim =>
-      let deltaD := Tensor.vecGet Δ d
+      let deltaD := Tensor.getScalar Δ d
       let aBar := MathFunctions.exp (-(deltaD * get2 m.A d n))
-      let bBar := deltaD * Tensor.vecGet B n
-      Tensor.scalar (aBar * get2 h d n + bBar * Tensor.vecGet u d)))
+      let bBar := deltaD * Tensor.getScalar B n
+      Tensor.scalar (aBar * get2 h d n + bBar * Tensor.getScalar u d)))
 
 /-- Read out expanded channels from the updated state using `C_t`, plus the Mamba skip path. -/
 def stateReadout
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (u : Tensor α (.dim innerDim .scalar)) :
-    Tensor α (.dim innerDim .scalar) :=
+    (h : Tensor α [innerDim, stateDim])
+    (u : Tensor α [innerDim]) :
+    Tensor α [innerDim] :=
   let C := m.cToken u
   Tensor.dim (fun d : Fin innerDim =>
     Tensor.scalar <|
       (List.finRange stateDim).foldl
-        (fun acc n => acc + get2 h d n * Tensor.vecGet C n)
-        (Tensor.vecGet m.dSkip d * Tensor.vecGet u d))
+        (fun acc n => acc + get2 h d n * Tensor.getScalar C n)
+        (Tensor.getScalar m.dSkip d * Tensor.getScalar u d))
 
 /--
 One full Mamba token step from an already-updated convolution history.
@@ -255,73 +237,81 @@ The `history` argument is newest-first and must include the current projected co
 -/
 def stepWithHistory
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (history : List (Tensor α (.dim innerDim .scalar)))
-    (z : Tensor α (.dim innerDim .scalar)) :
-    Tensor α (.dim innerDim (.dim stateDim .scalar)) × Tensor α (.dim outputDim .scalar) :=
+    (h : Tensor α [innerDim, stateDim])
+    (history : Array (Tensor α [innerDim]))
+    (z : Tensor α [innerDim]) :
+    Tensor α [innerDim, stateDim] × Tensor α [outputDim] :=
   let u := siluVec (m.causalDepthwiseConv history)
   let h' := m.selectiveStateStep h u
   let y := m.stateReadout h' u
   let gated := y * siluVec z
   (h', vecMatMulSpec gated m.outProj)
 
-/-- Recurrent runner from an existing state and newest-first convolution history. -/
-def runListWithHistory
+/-- One recurrent step while carrying the newest-first convolution history. -/
+def stepWithConvolutionHistory
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (history : List (Tensor α (.dim innerDim .scalar))) :
-    List (Tensor α (.dim inputDim .scalar)) →
-    Tensor α (.dim innerDim (.dim stateDim .scalar)) × List (Tensor α (.dim outputDim .scalar))
-  | [] => (h0, [])
-  | x :: xs =>
-      let xPath := m.projectX x
-      let zPath := m.projectZ x
-      let history' := xPath :: history
-      let (h1, y) := m.stepWithHistory h0 history' zPath
-      let (hN, ys) := m.runListWithHistory h1 history' xs
-      (hN, y :: ys)
+    (state : Tensor α [innerDim, stateDim] ×
+      Array (Tensor α [innerDim]))
+    (x : Tensor α [inputDim]) :
+    (Tensor α [innerDim, stateDim] ×
+      Array (Tensor α [innerDim])) ×
+      Tensor α [outputDim] :=
+  let xPath := m.projectX x
+  let zPath := m.projectZ x
+  let history := #[xPath] ++ state.2
+  let (nextHidden, output) := m.stepWithHistory state.1 history zPath
+  ((nextHidden, history), output)
+
+/-- Recurrent runner from an existing state and newest-first convolution history. -/
+def runArrayWithHistory
+    (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
+    (h0 : Tensor α [innerDim, stateDim])
+    (history : Array (Tensor α [innerDim]))
+    (xs : Array (Tensor α [inputDim])) :
+    Tensor α [innerDim, stateDim] ×
+      Array (Tensor α [outputDim]) :=
+  let result := Spec.scanArray m.stepWithConvolutionHistory (h0, history) xs
+  (result.1.1, result.2)
 
 /-- Run a sequence through the full selective Mamba block. -/
-def runList
+def runArray
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar))) :
-    List (Tensor α (.dim inputDim .scalar)) →
-    Tensor α (.dim innerDim (.dim stateDim .scalar)) × List (Tensor α (.dim outputDim .scalar)) :=
-  m.runListWithHistory h0 []
+    (h0 : Tensor α [innerDim, stateDim])
+    (xs : Array (Tensor α [inputDim])) :
+    Tensor α [innerDim, stateDim] ×
+      Array (Tensor α [outputDim]) :=
+  m.runArrayWithHistory h0 #[] xs
 
-@[simp] theorem runListWithHistory_nil
+@[simp] theorem runArrayWithHistory_empty
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (history : List (Tensor α (.dim innerDim .scalar))) :
-    m.runListWithHistory h0 history [] = (h0, []) := by
+    (h0 : Tensor α [innerDim, stateDim])
+    (history : Array (Tensor α [innerDim])) :
+    m.runArrayWithHistory h0 history #[] = (h0, #[]) := by
   rfl
 
-@[simp] theorem runList_nil
+@[simp] theorem runArray_empty
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar))) :
-    m.runList h0 [] = (h0, []) := by
+    (h0 : Tensor α [innerDim, stateDim]) :
+    m.runArray h0 #[] = (h0, #[]) := by
   rfl
 
 /-- The full Mamba recurrent pass emits one output token per input token. -/
-theorem runListWithHistory_outputs_length
+@[simp] theorem runArrayWithHistory_outputs_size
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (history : List (Tensor α (.dim innerDim .scalar)))
-    (xs : List (Tensor α (.dim inputDim .scalar))) :
-    (m.runListWithHistory h0 history xs).2.length = xs.length := by
-  induction xs generalizing h0 history with
-  | nil =>
-      simp
-  | cons x rest ih =>
-      simp [runListWithHistory, ih]
+    (h0 : Tensor α [innerDim, stateDim])
+    (history : Array (Tensor α [innerDim]))
+    (xs : Array (Tensor α [inputDim])) :
+    (m.runArrayWithHistory h0 history xs).2.size = xs.size := by
+  exact Spec.scanArray_outputs_size _ (h0, history) xs
 
 /-- The public full Mamba runner emits one output token per input token. -/
-theorem runList_outputs_length
+@[simp] theorem runArray_outputs_size
     (m : SelectiveMambaBlockSpec α inputDim innerDim stateDim outputDim convWidth)
-    (h0 : Tensor α (.dim innerDim (.dim stateDim .scalar)))
-    (xs : List (Tensor α (.dim inputDim .scalar))) :
-    (m.runList h0 xs).2.length = xs.length := by
-  simpa [runList] using m.runListWithHistory_outputs_length h0 [] xs
+    (h0 : Tensor α [innerDim, stateDim])
+    (xs : Array (Tensor α [inputDim])) :
+    (m.runArray h0 xs).2.size = xs.size := by
+  unfold runArray
+  exact m.runArrayWithHistory_outputs_size h0 #[] xs
 
 end SelectiveMambaBlockSpec
 

@@ -64,17 +64,12 @@ supported subset as `unsupported`.
 inductive Layer where
   /-- Fully connected layer with numeric `in_features` and `out_features`. -/
   | linear (inDim outDim : Nat)
-  /--
-  2D convolution with the fields this text-level assistant can reliably infer from common snippets.
-
-  We do not generate executable TorchLean code directly from this constructor because a correct
-  `nn.conv2d` term also needs the input contract: batch size, input height, and input width.
-  -/
-  | conv2d (inC outC kernel stride padding : Nat)
-  /-- 2D max-pooling metadata; executable lowering likewise needs the surrounding image shape. -/
-  | maxPool2d (kernel stride : Nat)
-  /-- Adaptive average pooling is detected as a named boundary item. -/
-  | adaptiveAvgPool2d (out : Nat)
+  /-- Convolution metadata with an explicit spatial rank. -/
+  | conv (rank inC outC kernel stride padding : Nat)
+  /-- Max-pooling metadata with an explicit spatial rank. -/
+  | maxPool (rank kernel stride : Nat)
+  /-- Adaptive average pooling is detected as a rank-parameterized boundary item. -/
+  | adaptiveAvgPool (rank out : Nat)
   /-- Flatten layer; translated to `nn.flatten` in vector-style sequential skeletons. -/
   | flatten
   /-- Elementwise ReLU. -/
@@ -180,9 +175,10 @@ private def supported (l : Layer) : Bool :=
 /-- Layer label used in the report table. -/
 private def layerName : Layer → String
   | .linear i o => s!"Linear({i}, {o})"
-  | .conv2d i o k s p => s!"Conv2d({i}, {o}, kernel={k}, stride={s}, padding={p})"
-  | .maxPool2d k s => s!"MaxPool2d(kernel={k}, stride={s})"
-  | .adaptiveAvgPool2d o => s!"AdaptiveAvgPool2d({o})"
+  | .conv d i o k s p =>
+      s!"Conv(rank={d}, in={i}, out={o}, kernel={k}, stride={s}, padding={p})"
+  | .maxPool d k s => s!"MaxPool(rank={d}, kernel={k}, stride={s})"
+  | .adaptiveAvgPool d o => s!"AdaptiveAvgPool(rank={d}, output={o})"
   | .flatten => "Flatten"
   | .relu => "ReLU"
   | .gelu => "GELU"
@@ -215,13 +211,15 @@ Lean file and immediately see which information is still missing: image shape, d
 and seed, adaptive-pooling semantics, or an unsupported PyTorch operation.
 -/
 private def layerBoundaryComment? : Layer → Option String
-  | .conv2d i o k s p =>
-      some <| s!"-- Conv2d({i}, {o}, kernel_size={k}, stride={s}, padding={p}) detected: " ++
-        "add `nn.Conv2d` after choosing `batch`, `inH`, and `inW`."
-  | .maxPool2d k s =>
-      some s!"-- MaxPool2d(kernel_size={k}, stride={s}) detected: add pooling after choosing channel/spatial dimensions."
-  | .adaptiveAvgPool2d o =>
-      some s!"-- AdaptiveAvgPool2d({o}) detected: connect this to the specific TorchLean pooling spec you want."
+  | .conv d i o k s p =>
+      some <| s!"-- Conv(rank={d}, in={i}, out={o}, kernel={k}, stride={s}, padding={p}) " ++
+        "detected: add `nn.conv` after choosing the input spatial vector."
+  | .maxPool d k s =>
+      some <| s!"-- MaxPool(rank={d}, kernel={k}, stride={s}) detected: add `nn.maxPool` " ++
+        "after choosing the channel count and input spatial vector."
+  | .adaptiveAvgPool d o =>
+      some <| s!"-- AdaptiveAvgPool(rank={d}, output={o}) detected: connect it to the " ++
+        "rank-polymorphic pooling operation required by the model."
   | .dropout =>
       some "-- Dropout detected: add `nn.Dropout p (seed := seed)` after making `p` and mode behavior explicit."
   | .unsupported raw reason =>
@@ -251,25 +249,35 @@ private def analyzeLine (raw : String) : Option Layer :=
     match nth? ns 0, nth? ns 1 with
     | some i, some o => some (.linear i o)
     | _, _ => some (.unsupported s "Linear needs numeric in_features and out_features")
-  else if hasSubstr s "nn.Conv2d" || hasSubstr s "Conv2d(" then
+  else if hasSubstr s "nn.Conv1d" || hasSubstr s "Conv1d(" ||
+      hasSubstr s "nn.Conv2d" || hasSubstr s "Conv2d(" ||
+      hasSubstr s "nn.Conv3d" || hasSubstr s "Conv3d(" then
+    let rank := if hasSubstr s "Conv1d" then 1 else if hasSubstr s "Conv2d" then 2 else 3
     let ns := numbersInString s
     match nth? ns 0, nth? ns 1, nth? ns 2 with
     | some i, some o, some k =>
         let stride := (nth? ns 3).getD 1
         let padding := (nth? ns 4).getD 0
-        some (.conv2d i o k stride padding)
-    | _, _, _ => some (.unsupported s "Conv2d needs numeric in_channels, out_channels, kernel_size")
-  else if hasSubstr s "nn.MaxPool2d" || hasSubstr s "MaxPool2d(" then
+        some (.conv rank i o k stride padding)
+    | _, _, _ => some (.unsupported s "Conv needs numeric in_channels, out_channels, kernel_size")
+  else if hasSubstr s "nn.MaxPool1d" || hasSubstr s "MaxPool1d(" ||
+      hasSubstr s "nn.MaxPool2d" || hasSubstr s "MaxPool2d(" ||
+      hasSubstr s "nn.MaxPool3d" || hasSubstr s "MaxPool3d(" then
+    let rank := if hasSubstr s "MaxPool1d" then 1 else if hasSubstr s "MaxPool2d" then 2 else 3
     let ns := numbersInString s
     match nth? ns 0 with
     | some k =>
         let stride := (nth? ns 1).getD k
-        some (.maxPool2d k stride)
-    | none => some (.unsupported s "MaxPool2d needs a numeric kernel_size")
-  else if hasSubstr s "nn.AdaptiveAvgPool2d" || hasSubstr s "AdaptiveAvgPool2d(" then
+        some (.maxPool rank k stride)
+    | none => some (.unsupported s "MaxPool needs a numeric kernel_size")
+  else if hasSubstr s "nn.AdaptiveAvgPool1d" || hasSubstr s "AdaptiveAvgPool1d(" ||
+      hasSubstr s "nn.AdaptiveAvgPool2d" || hasSubstr s "AdaptiveAvgPool2d(" ||
+      hasSubstr s "nn.AdaptiveAvgPool3d" || hasSubstr s "AdaptiveAvgPool3d(" then
+    let rank := if hasSubstr s "AdaptiveAvgPool1d" then 1
+      else if hasSubstr s "AdaptiveAvgPool2d" then 2 else 3
     match nth? (numbersInString s) 0 with
-    | some o => some (.adaptiveAvgPool2d o)
-    | none => some (.unsupported s "AdaptiveAvgPool2d needs a numeric output size")
+    | some o => some (.adaptiveAvgPool rank o)
+    | none => some (.unsupported s "AdaptiveAvgPool needs a numeric output size")
   else if hasSubstr s "nn.flatten" || hasSubstr s "torch.flatten" || hasSubstr s ".flatten(" then
     some .flatten
   else if hasSubstr s "nn.relu" || hasSubstr s "F.relu" || hasSubstr s ".relu(" then
@@ -314,23 +322,23 @@ def analyze (snippet : String) : Report :=
     #[]
   let warnings : Array String := Id.run do
     let mut warnings : Array String := #[]
-    if layers.any (fun l => match l with | .conv2d .. => true | .maxPool2d .. => true | _ => false) then
+    if layers.any (fun l => match l with | .conv .. => true | .maxPool .. => true | _ => false) then
       warnings := warnings.push
-        "CNN layers need an explicit input contract (`batch`, channels, height, width) before the \
+        "Convolutional layers need explicit leading, channel, and spatial shapes before the \
         generated TorchLean skeleton can be made executable."
     if layers.any (fun l => match l with | .dropout => true | _ => false) then
       warnings := warnings.push
         "Dropout is mode-dependent; TorchLean asks for an explicit probability/seed and keeps train/eval \
         behavior visible."
-    if layers.any (fun l => match l with | .adaptiveAvgPool2d .. => true | _ => false) then
+    if layers.any (fun l => match l with | .adaptiveAvgPool .. => true | _ => false) then
       warnings := warnings.push
         "Adaptive pooling is detected as a shape-changing operation; connect it to the specific \
         TorchLean pooling spec you want before treating the skeleton as executable."
     pure warnings
   { layers, translated, warnings, unsupported }
 
-private def joinLines (xs : List String) : String :=
-  String.intercalate "\n" xs
+private def joinLines (xs : Array String) : String :=
+  String.intercalate "\n" xs.toList
 
 /--
 Generate a TorchLean skeleton from the recognized layer sequence.
@@ -341,20 +349,20 @@ subset, and then appends boundary notes as Lean comments. The next intended step
 shape contract and wrap the model in a `Trainer.Manual.SeqTask`.
 -/
 def torchLeanSkeleton (r : Report) (name : String := "translatedModel") : String :=
-  let translatedLines :=
-    r.layers.toList.filterMap layerTorchLeanTerm?
+  let translatedLines := r.layers.filterMap layerTorchLeanTerm?
   let body :=
-    match translatedLines with
-    | [] => "    -- No directly translatable sequential terms were recognized."
-    | first :: rest =>
-        joinLines <| ("    " ++ first) :: rest.map (fun line => "  , " ++ line)
-  let boundaryComments := r.layers.toList.filterMap layerBoundaryComment?
+    match translatedLines[0]? with
+    | none => "    -- No directly translatable sequential terms were recognized."
+    | some first =>
+        joinLines <| #["    " ++ first] ++
+          (translatedLines.extract 1 translatedLines.size).map (fun line => "  , " ++ line)
+  let boundaryComments := r.layers.filterMap layerBoundaryComment?
   let boundaryBlock :=
     if boundaryComments.isEmpty then
       "-- Boundary notes: none for this supported translator subset."
     else
-      joinLines ("-- Boundary notes:" :: boundaryComments)
-  joinLines [
+      joinLines (#["-- Boundary notes:"] ++ boundaryComments)
+  joinLines #[
     "import NN",
     "",
     "open TorchLean",
@@ -378,9 +386,9 @@ private def layerRowHtml (l : Layer) : ProofWidgets.Html :=
   let detail :=
     match l with
     | .unsupported _ reason => reason
-    | .conv2d .. => "recognized, but executable lowering needs image shape metadata"
-    | .maxPool2d .. => "recognized, but executable lowering needs image shape metadata"
-    | .adaptiveAvgPool2d .. => "recognized as a boundary item"
+    | .conv .. => "recognized; executable lowering needs the input spatial shape"
+    | .maxPool .. => "recognized; executable lowering needs the input spatial shape"
+    | .adaptiveAvgPool .. => "recognized as a boundary item"
     | .dropout => "recognized; probability/seed must be explicit"
     | _ => "direct sequential skeleton"
   ;

@@ -201,8 +201,7 @@ lemma neural_nearest_even_eq_ceil_of_frac_half_odd (x : ℝ) (h1 : x - ⌊x⌋ =
   have h4 : ¬(x - ⌊x⌋ > 1/2) := by rw [h1]; norm_num
   simp only [h3, h4, if_false, h2, if_false]
 
--- Instance for nearest even rounding with complete mathematical foundation
-/-- `neural_nearest_even` is a valid rounding mode (monotone and fixes integers). -/
+/-- `neuralNearestEven` is a valid rounding mode: it is monotone and fixes integers. -/
 instance : NeuralValidRnd neuralNearestEven where
   monotone := by
     intros x y h

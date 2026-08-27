@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.Shape
+public import NN.Spec.Core.Tensor.Core
 
 /-!
 # IR Graph
@@ -49,8 +49,8 @@ References / related systems:
 - **External parameters**:
   - `OpKind.const` stores its `valueShape` here, but the constant value is stored externally
     (e.g. in a verifier `ParamStore` keyed by node id).
-  - Some ops (notably `OpKind.linear` and `OpKind.conv2d`) typically use *external* parameter stores
-    keyed by node id; in those cases the node’s `parents` list only contains the *runtime inputs*
+  - Some ops (notably `OpKind.linear` and `OpKind.conv`) typically use *external* parameter stores
+    keyed by node id; in those cases the node’s `parents` array only contains the *runtime inputs*
     (e.g. the activation input `x`), not the weights/bias tensors.
 
 This file does **not** implement evaluation or shape inference. Those live in:
@@ -77,6 +77,45 @@ structure HardMask where
   allowed : Array Bool
   deriving Repr
 
+/-- Per-axis geometry for pooling and convolution operators.
+
+All three lists describe the same spatial suffix of the input tensor. Keeping the geometry in one
+record prevents frontends from silently imposing a common stride or padding on every axis.
+-/
+structure WindowConfig where
+  /-- Number of spatial axes. -/
+  spatialRank : Nat
+  /-- Window extent along each spatial axis. -/
+  kernel : Spec.Tensor Nat [spatialRank]
+  /-- Step along each spatial axis. -/
+  stride : Spec.Tensor Nat [spatialRank]
+  /-- Symmetric padding along each spatial axis. -/
+  padding : Spec.Tensor Nat [spatialRank]
+  deriving Repr
+
+/-- Shape metadata for an arbitrary-dimensional convolution.
+
+Axes before `channelAxis` are preserved and mapped independently. The channel axis is replaced by
+`outChannels`; every following axis is spatial and is governed by `window`.
+-/
+structure ConvConfig extends WindowConfig where
+  /-- Spacing between kernel elements along each spatial axis. -/
+  dilation : Spec.Tensor Nat [spatialRank] := Spec.Tensor.dim fun _ => Spec.Tensor.scalar 1
+  /-- Zero padding after the input along each spatial axis.
+
+  The inherited `padding` field is the padding before the input. Keeping both sides explicit
+  represents asymmetric padding without introducing rank-specific convolution variants. -/
+  paddingAfter : Spec.Tensor Nat [spatialRank] := padding
+  /-- Number of channel groups. `1` is an ordinary dense convolution. -/
+  groups : Nat := 1
+  /-- Axis containing the input channels. -/
+  channelAxis : Nat
+  /-- Expected extent of the input-channel axis. -/
+  inChannels : Nat
+  /-- Extent of the output-channel axis. -/
+  outChannels : Nat
+  deriving Repr
+
 /-- Operation kinds in an op-tagged computation graph. -/
 inductive OpKind where
   | input
@@ -84,8 +123,10 @@ inductive OpKind where
   | const (valueShape : Shape)
       -- Constant tensor. We record the shape here, but keep the *value* in an external store
       -- (e.g. verifier parameters, exporter initializers).
-  | permute (perm : List Nat)
+  | permute (perm : Array Nat)
       -- Permute axes (0-based). Similar to `torch.permute`.
+  | transpose (axis₁ axis₂ : Nat)
+      -- Swap two arbitrary axes (0-based). Similar to `torch.transpose`.
   | detach
       -- Identity in the forward pass; marks a gradient stop at runtime (analogous to
       -- `Tensor.detach()`).
@@ -111,14 +152,10 @@ inductive OpKind where
       -- Elementwise max.
   | minElem
       -- Elementwise min.
-  | maxPool2d (kH kW stride : Nat)
-      -- Max pool over CHW (no padding). Similar to `torch.nn.functional.max_pool2d`.
-  | maxPool2dPad (kH kW stride padding : Nat)
-      -- Max pool over CHW (symmetric zero padding).
-  | avgPool2d (kH kW stride : Nat)
-      -- Average pool over CHW (no padding).
-  | avgPool2dPad (kH kW stride padding : Nat)
-      -- Average pool over CHW (symmetric zero padding).
+  | maxPool (config : WindowConfig)
+      -- Max pool over the final `config.kernel.length` axes. Leading axes are preserved.
+  | avgPool (config : WindowConfig)
+      -- Average pool over the same spatial suffix, including zero padding in the divisor.
   | broadcastTo (s₁ s₂ : Shape)
       -- Broadcast parent from s₁→s₂ (analogous to `torch.broadcast_to` / `Tensor.expand`).
   | reduceSum (axis : Nat)
@@ -128,15 +165,16 @@ inductive OpKind where
   | sum
       -- Sum reduction to scalar (convenience op used by some loss/verification code paths).
   | matmul
-      -- 2D matrix multiply (similar to `torch.matmul` in the rank-2 case).
+      -- Matrix multiply over the final two axes, preserving a shared leading shape.
   | linear
       -- Affine layer `y = W x + b`. Parameters live in an external store keyed by node id;
       -- the sole parent is the activation input `x`.
-  | conv2d (inC outC kH kW stride padding : Nat)
-      -- 2D convolution (NCHW-style). Parameters live in an external store keyed by node id.
-  | batchNorm2dNchwEval (channels : Nat)
-      -- BatchNorm2d in eval mode for NCHW tensors. Affine parameters and running statistics live
-      -- in an external store keyed by node id.
+  | conv (config : ConvConfig)
+      -- Arbitrary-dimensional grouped convolution. Parameters live in an external store keyed by
+      -- node id.
+  | batchNormEval (channelAxis channels : Nat)
+      -- Eval-mode BatchNorm along an explicit channel axis. Affine parameters and running
+      -- statistics live in an external store keyed by node id.
   | relu | tanh | sigmoid | exp | log | sin | cos
       -- Common elementwise activations / nonlinearities.
   | softmax (axis : Nat)
@@ -154,67 +192,79 @@ inductive OpKind where
       -- Flatten to a vector of length `Spec.Shape.size s`.
   | concat (axis : Nat)
       -- Concatenate along an axis (verifier/export may allow an arbitrary number of parents ≥ 2).
-  | swap_first_two
-      -- Swap the outermost two axes (rank ≥ 2).
-  | transpose3dLastTwo
-      -- Swap the last two axes (rank = 3).
   | mseLoss
       -- Scalar mean squared error (used in some training/verification examples).
   deriving Repr
 
+/-- Permitted parent-count interval for an IR operation. -/
+structure ParentArity where
+  /-- Minimum number of parents required by the operation. -/
+  min : Nat
+  /-- Maximum number of parents, or `none` when no finite upper bound is imposed. -/
+  max? : Option Nat
+  deriving DecidableEq, Repr
+
+/-- Structural metadata shared by all instances of an IR operation kind. -/
+structure OpMetadata where
+  /-- Short stable tag used in diagnostics and graph serialization. -/
+  tag : String
+  /-- Permitted number of parent nodes. -/
+  arity : ParentArity
+  deriving DecidableEq, Repr
+
 namespace OpKind
 
 /--
-The minimum number of parent nodes expected by an `OpKind`.
+Canonical structural metadata for an `OpKind`.
 
-This is a *structural* convention only.
-
-For example, `linear` has arity 1 here because weights/biases are typically stored externally and
-keyed by the node id; the only data dependency in the graph itself is the activation input.
+The arity is a *structural* convention only. For example, `linear` has arity 1 because weights and
+biases are stored externally and keyed by node id; the graph records only its activation input.
 -/
-def minParents : OpKind → Nat
-  | .input => 0
-  | .const _ => 0
-  | .permute .. => 1
-  | .detach => 1
-  | .randUniform .. => 0
-  | .bernoulliMask .. => 1
-  | .add => 2
-  | .sub => 2
-  | .mul_elem => 2
-  | .abs => 1
-  | .sqrt => 1
-  | .inv => 1
-  | .maxElem => 2
-  | .minElem => 2
-  | .maxPool2d .. => 1
-  | .maxPool2dPad .. => 1
-  | .avgPool2d .. => 1
-  | .avgPool2dPad .. => 1
-  | .broadcastTo .. => 1
-  | .reduceSum .. => 1
-  | .reduceMean .. => 1
-  | .sum => 1
-  | .matmul => 2
-  | .linear => 1
-  | .conv2d .. => 1
-  | .batchNorm2dNchwEval .. => 1
-  | .relu => 1
-  | .tanh => 1
-  | .sigmoid => 1
-  | .exp => 1
-  | .log => 1
-  | .sin => 1
-  | .cos => 1
-  | .softmax .. => 1
-  | .hardMaskedSoftmax .. => 1
-  | .layernorm .. => 1
-  | .reshape .. => 1
-  | .flatten .. => 1
-  | .concat .. => 2
-  | .swap_first_two => 1
-  | .transpose3dLastTwo => 1
-  | .mseLoss => 2
+def metadata : OpKind → OpMetadata
+  | .input => ⟨"input", ⟨0, some 0⟩⟩
+  | .const .. => ⟨"const", ⟨0, some 0⟩⟩
+  | .permute .. => ⟨"permute", ⟨1, some 1⟩⟩
+  | .transpose .. => ⟨"transpose", ⟨1, some 1⟩⟩
+  | .detach => ⟨"detach", ⟨1, some 1⟩⟩
+  | .randUniform .. => ⟨"rand_uniform", ⟨0, some 0⟩⟩
+  | .bernoulliMask .. => ⟨"bernoulli_mask", ⟨1, some 1⟩⟩
+  | .add => ⟨"add", ⟨2, some 2⟩⟩
+  | .sub => ⟨"sub", ⟨2, some 2⟩⟩
+  | .mul_elem => ⟨"mul_elem", ⟨2, some 2⟩⟩
+  | .abs => ⟨"abs", ⟨1, some 1⟩⟩
+  | .sqrt => ⟨"sqrt", ⟨1, some 1⟩⟩
+  | .inv => ⟨"inv", ⟨1, some 1⟩⟩
+  | .maxElem => ⟨"max_elem", ⟨2, some 2⟩⟩
+  | .minElem => ⟨"min_elem", ⟨2, some 2⟩⟩
+  | .maxPool .. => ⟨"max_pool", ⟨1, some 1⟩⟩
+  | .avgPool .. => ⟨"avg_pool", ⟨1, some 1⟩⟩
+  | .broadcastTo .. => ⟨"broadcastTo", ⟨1, some 1⟩⟩
+  | .reduceSum .. => ⟨"reduce_sum", ⟨1, some 1⟩⟩
+  | .reduceMean .. => ⟨"reduce_mean", ⟨1, some 1⟩⟩
+  | .sum => ⟨"sum", ⟨1, some 1⟩⟩
+  | .matmul => ⟨"matmul", ⟨2, some 2⟩⟩
+  | .linear => ⟨"linear", ⟨1, some 1⟩⟩
+  | .conv .. => ⟨"conv", ⟨1, some 1⟩⟩
+  | .batchNormEval .. => ⟨"batch_norm_eval", ⟨1, some 1⟩⟩
+  | .relu => ⟨"relu", ⟨1, some 1⟩⟩
+  | .tanh => ⟨"tanh", ⟨1, some 1⟩⟩
+  | .sigmoid => ⟨"sigmoid", ⟨1, some 1⟩⟩
+  | .exp => ⟨"exp", ⟨1, some 1⟩⟩
+  | .log => ⟨"log", ⟨1, some 1⟩⟩
+  | .sin => ⟨"sin", ⟨1, some 1⟩⟩
+  | .cos => ⟨"cos", ⟨1, some 1⟩⟩
+  | .softmax .. => ⟨"softmax", ⟨1, some 1⟩⟩
+  | .hardMaskedSoftmax .. => ⟨"hard_masked_softmax", ⟨1, some 1⟩⟩
+  | .layernorm .. => ⟨"layernorm", ⟨1, some 1⟩⟩
+  | .reshape .. => ⟨"reshape", ⟨1, some 1⟩⟩
+  | .flatten .. => ⟨"flatten", ⟨1, some 1⟩⟩
+  | .concat .. => ⟨"concat", ⟨2, none⟩⟩
+  | .mseLoss => ⟨"mse_loss", ⟨2, some 2⟩⟩
+
+/--
+The minimum number of parent nodes expected by an `OpKind`.
+-/
+def minParents (kind : OpKind) : Nat := kind.metadata.arity.min
 
 /--
 An optional maximum number of parent nodes expected by an `OpKind`.
@@ -222,54 +272,10 @@ An optional maximum number of parent nodes expected by an `OpKind`.
 For `concat`, the verifier permits an arbitrary number of inputs (at least 2), so this returns
 `none`.
 -/
-def maxParents? : OpKind → Option Nat
-  | .concat .. => none
-  | k => some (minParents k)
+def maxParents? (kind : OpKind) : Option Nat := kind.metadata.arity.max?
 
 /-- A short tag for error messages and debugging output. -/
-def tag : OpKind → String
-  | .input => "input"
-  | .const .. => "const"
-  | .permute .. => "permute"
-  | .detach => "detach"
-  | .randUniform .. => "rand_uniform"
-  | .bernoulliMask .. => "bernoulli_mask"
-  | .add => "add"
-  | .sub => "sub"
-  | .mul_elem => "mul_elem"
-  | .abs => "abs"
-  | .sqrt => "sqrt"
-  | .inv => "inv"
-  | .maxElem => "max_elem"
-  | .minElem => "min_elem"
-  | .maxPool2d .. => "max_pool2d"
-  | .maxPool2dPad .. => "max_pool2d_pad"
-  | .avgPool2d .. => "avg_pool2d"
-  | .avgPool2dPad .. => "avg_pool2d_pad"
-  | .broadcastTo .. => "broadcastTo"
-  | .reduceSum .. => "reduce_sum"
-  | .reduceMean .. => "reduce_mean"
-  | .sum => "sum"
-  | .matmul => "matmul"
-  | .linear => "linear"
-  | .conv2d .. => "conv2d"
-  | .batchNorm2dNchwEval .. => "batch_norm2d_nchw_eval"
-  | .relu => "relu"
-  | .tanh => "tanh"
-  | .sigmoid => "sigmoid"
-  | .exp => "exp"
-  | .log => "log"
-  | .sin => "sin"
-  | .cos => "cos"
-  | .softmax .. => "softmax"
-  | .hardMaskedSoftmax .. => "hard_masked_softmax"
-  | .layernorm .. => "layernorm"
-  | .reshape .. => "reshape"
-  | .flatten .. => "flatten"
-  | .concat .. => "concat"
-  | .swap_first_two => "swap_first_two"
-  | .transpose3dLastTwo => "transpose3d_last_two"
-  | .mseLoss => "mse_loss"
+def tag (kind : OpKind) : String := kind.metadata.tag
 
 /--
 Human-facing operation description including operation-local parameters.
@@ -282,6 +288,7 @@ def describe : OpKind → String
   | .input => "input"
   | .const valueShape => s!"const(shape={repr valueShape})"
   | .permute perm => s!"permute(perm={repr perm})"
+  | .transpose axis₁ axis₂ => s!"transpose(axis1={axis₁}, axis2={axis₂})"
   | .detach => "detach"
   | .randUniform seed => s!"rand_uniform(seed={seed})"
   | .bernoulliMask seed => s!"bernoulli_mask(seed={seed})"
@@ -293,22 +300,17 @@ def describe : OpKind → String
   | .inv => "inv"
   | .maxElem => "max_elem"
   | .minElem => "min_elem"
-  | .maxPool2d kH kW stride => s!"max_pool2d(kH={kH}, kW={kW}, stride={stride})"
-  | .maxPool2dPad kH kW stride padding =>
-      s!"max_pool2d_pad(kH={kH}, kW={kW}, stride={stride}, padding={padding})"
-  | .avgPool2d kH kW stride => s!"avg_pool2d(kH={kH}, kW={kW}, stride={stride})"
-  | .avgPool2dPad kH kW stride padding =>
-      s!"avg_pool2d_pad(kH={kH}, kW={kW}, stride={stride}, padding={padding})"
+  | .maxPool config => s!"max_pool(config={repr config})"
+  | .avgPool config => s!"avg_pool(config={repr config})"
   | .broadcastTo s₁ s₂ => s!"broadcastTo(from={repr s₁}, to={repr s₂})"
   | .reduceSum axis => s!"reduce_sum(axis={axis})"
   | .reduceMean axis => s!"reduce_mean(axis={axis})"
   | .sum => "sum"
   | .matmul => "matmul"
   | .linear => "linear(payload=node_id)"
-  | .conv2d inC outC kH kW stride padding =>
-      s!"conv2d(inC={inC}, outC={outC}, kH={kH}, kW={kW}, stride={stride}, padding={padding})"
-  | .batchNorm2dNchwEval channels =>
-      s!"batch_norm2d_nchw_eval(channels={channels}, payload=node_id)"
+  | .conv config => s!"conv(config={repr config}, payload=node_id)"
+  | .batchNormEval channelAxis channels =>
+      s!"batch_norm_eval(channelAxis={channelAxis}, channels={channels}, payload=node_id)"
   | .relu => "relu"
   | .tanh => "tanh"
   | .sigmoid => "sigmoid"
@@ -323,8 +325,6 @@ def describe : OpKind → String
   | .reshape inShape outShape => s!"reshape(from={repr inShape}, to={repr outShape})"
   | .flatten s => s!"flatten(shape={repr s})"
   | .concat axis => s!"concat(axis={axis})"
-  | .swap_first_two => "swap_first_two"
-  | .transpose3dLastTwo => "transpose3d_last_two"
   | .mseLoss => "mse_loss"
 
 end OpKind
@@ -334,7 +334,7 @@ structure Node where
   /-- Node id. By convention this is also the node's index in `Graph.nodes`. -/
   id       : Nat
   /-- Parent node ids, i.e. data dependencies. Each parent must be smaller than `id`. -/
-  parents  : List Nat
+  parents  : Array Nat
   /-- Operation tag and any operation-local metadata. -/
   kind     : OpKind
   /-- Declared output shape. `NN.IR.Infer` can recompute/check this from parents. -/
@@ -345,7 +345,7 @@ namespace Node
 
 /-- Check the basic parent-count convention for this node kind. -/
 def hasValidArity (n : Node) : Bool :=
-  let p := n.parents.length
+  let p := n.parents.size
   match n.kind.maxParents? with
   | some hi => (n.kind.minParents ≤ p) && (p ≤ hi)
   | none => (n.kind.minParents ≤ p)
@@ -366,6 +366,50 @@ def summary (n : Node) : String :=
   s!"Node(id={n.id}, kind={n.kind.describe}, parents={n.parents}, outShape={repr n.outShape})"
 
 end Node
+
+/-- Return the sole parent id when an IR node has unary arity. -/
+def unaryParent? (parents : Array Nat) : Option Nat :=
+  if parents.size = 1 then parents[0]? else none
+
+/-- Return both parent ids when an IR node has binary arity. -/
+def binaryParents? (parents : Array Nat) : Option (Nat × Nat) :=
+  if parents.size = 2 then some (parents[0]!, parents[1]!) else none
+
+/-- The parent returned by the unary decoder belongs to the source array. -/
+theorem mem_of_unaryParent?_eq_some {parents : Array Nat} {parent : Nat}
+    (h : unaryParent? parents = some parent) : parent ∈ parents := by
+  simp only [unaryParent?] at h
+  split at h
+  next => exact Array.mem_iff_getElem?.2 ⟨0, h⟩
+  next => simp_all
+
+/-- The first parent returned by the binary decoder belongs to the source array. -/
+theorem fst_mem_of_binaryParents?_eq_some {parents : Array Nat} {left right : Nat}
+    (h : binaryParents? parents = some (left, right)) : left ∈ parents := by
+  simp only [binaryParents?] at h
+  split at h
+  next hsize =>
+    have hp : (parents[0]!, parents[1]!) = (left, right) := Option.some.inj h
+    have hleft : parents[0]! = left := by simpa using congrArg Prod.fst hp
+    have hzero : 0 < parents.size := by simp [hsize]
+    have hleft' : parents[0] = left := by simpa [getElem!_pos parents 0 hzero] using hleft
+    rw [← hleft']
+    exact Array.getElem_mem hzero
+  next => simp_all
+
+/-- The second parent returned by the binary decoder belongs to the source array. -/
+theorem snd_mem_of_binaryParents?_eq_some {parents : Array Nat} {left right : Nat}
+    (h : binaryParents? parents = some (left, right)) : right ∈ parents := by
+  simp only [binaryParents?] at h
+  split at h
+  next hsize =>
+    have hp : (parents[0]!, parents[1]!) = (left, right) := Option.some.inj h
+    have hright : parents[1]! = right := by simpa using congrArg Prod.snd hp
+    have hone : 1 < parents.size := by simp [hsize]
+    have hright' : parents[1] = right := by simpa [getElem!_pos parents 1 hone] using hright
+    rw [← hright']
+    exact Array.getElem_mem hone
+  next => simp_all
 
 /-- Entire graph as an array of nodes. Parents must have smaller ids (topo order). -/
 structure Graph where
@@ -398,6 +442,22 @@ def getNode (g : Graph) (id : Nat) : Except String Node := do
         throw s!"IR graph: internal error: nodes[{id}].id = {n.id} (expected {id})"
       pure n
 
+/-- A successful checked lookup returns a node whose stored id is the requested array index. -/
+theorem getNode_id_eq {g : Graph} {id : Nat} {node : Node}
+    (h : g.getNode id = .ok node) : node.id = id := by
+  unfold getNode at h
+  split at h
+  · contradiction
+  · rename_i found hFound
+    split at h
+    · contradiction
+    · rename_i hId
+      have hn : found.id = id := by simpa using hId
+      change Except.ok found = Except.ok node at h
+      injection h with hNode
+      subst node
+      exact hn
+
 /-- Safe outShape lookup by id. -/
 def outShape? (g : Graph) (id : Nat) : Option Shape :=
   (getNode? g id).map (·.outShape)
@@ -408,7 +468,7 @@ Explain why `Node.hasValidArity` failed.
 This returns a human-facing message rather than structured data; callers use it for diagnostics.
 -/
 def arityError (n : Node) : String :=
-  let got := n.parents.length
+  let got := n.parents.size
   match n.kind.maxParents? with
   | some hi =>
       s!"bad parent count for {n.kind.tag}: expected {n.kind.minParents}..{hi}, got {got}"
@@ -456,6 +516,6 @@ end Graph
 
 /-- Default node used only to satisfy generic container APIs; real graphs should not rely on it. -/
 instance : Inhabited Node where
-  default := { id := 0, parents := [], kind := OpKind.input, outShape := Shape.scalar }
+  default := { id := 0, parents := #[], kind := OpKind.input, outShape := Shape.scalar }
 
 end NN.IR

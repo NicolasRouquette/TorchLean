@@ -51,9 +51,9 @@ structure LyapunovCert (α : Type) [Context α] (n : Nat) where
 `Vdot` is supplied by the application; this file does not derive it from dynamics on its own. -/
 structure NeuralLyapunov (α : Type) [Context α] (n : Nat) where
   /-- Candidate Lyapunov scalar field. -/
-  value : Tensor α (.dim n .scalar) → α
+  value : Tensor α [n] → α
   /-- Orbital derivative or decay witness associated with `V`. -/
-  orbitalDerivative : Tensor α (.dim n .scalar) → α
+  orbitalDerivative : Tensor α [n] → α
 
 variable {α : Type} [Context α] {n : Nat}
 

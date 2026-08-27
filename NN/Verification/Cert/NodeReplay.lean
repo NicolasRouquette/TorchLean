@@ -10,7 +10,7 @@ public import NN.MLTheory.CROWN.Graph
 public import NN.MLTheory.CROWN.Extras.BoundOpsIEEE32Exec
 public import NN.MLTheory.CROWN.Proofs.GraphCrownCertSoundness
 public import NN.Runtime.PyTorch.Import.Core
-public import NN.Spec.Core.Tensor.API
+public import NN.Spec.Core.Tensor
 public import NN.Verification.Util.FloatApprox
 public import NN.Verification.Util.Json
 public import Lean.Data.Json
@@ -278,10 +278,10 @@ def parseFlatBox? (dim : Nat) (j : Json) : IO (Option (FlatBox IEEE32Exec)) := d
         throw <| IO.userError "Invalid ibp[i]: interval bounds must be finite"
       unless (List.finRange dim).all (fun i => decide (loVec i <= hiVec i)) do
         throw <| IO.userError "Invalid ibp[i]: every lower bound must be <= its upper bound"
-      let loT : Tensor IEEE32Exec (.dim dim .scalar) :=
-        Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector loVec)
-      let hiT : Tensor IEEE32Exec (.dim dim .scalar) :=
-        Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector hiVec)
+      let loT : Tensor IEEE32Exec [dim] :=
+        Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn loVec)
+      let hiT : Tensor IEEE32Exec [dim] :=
+        Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn hiVec)
       pure (some { dim := dim, lo := loT, hi := hiT })
 
 /--
@@ -292,7 +292,7 @@ We enforce that contract at the JSON boundary, so a malformed external certifica
 accepted by executable checking while relying on proof hypotheses that are false.
 -/
 def parseAlphaVec? (dim : Nat) (j : Json) (ctx : String := "alpha[i]") :
-    IO (Option (FlatVec IEEE32Exec)) := do
+    IO (Option (FlatTensor IEEE32Exec)) := do
   match j with
   | .null => pure none
   | _ =>
@@ -303,8 +303,8 @@ def parseAlphaVec? (dim : Nat) (j : Json) (ctx : String := "alpha[i]") :
         if !a.isFinite || a < 0.0 || a > 1.0 then
           throw <| IO.userError
             s!"Invalid {ctx}[{k.val}]: α-CROWN requires 0 ≤ alpha ≤ 1, got {a}"
-      let t : Tensor IEEE32Exec (.dim dim .scalar) :=
-        Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector v)
+      let t : Tensor IEEE32Exec [dim] :=
+        Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn v)
       pure (some { n := dim, v := t })
 
 /-- Parse flattened affine bounds (lower/upper) from JSON. -/
@@ -330,11 +330,11 @@ def parseAffineBounds? (inDim outDim : Nat) (j : Json) :
           finiteVec outDim loC && finiteVec outDim hiC do
         throw <| IO.userError "Invalid crown[i]: affine bounds must be finite"
       let loAff : AffineVec IEEE32Exec inDim outDim :=
-        { A := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.matrix loA)
-          c := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector loC) }
+        { A := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.matrix loA)
+          c := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn loC) }
       let hiAff : AffineVec IEEE32Exec inDim outDim :=
-        { A := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.matrix hiA)
-          c := Spec.mapTensor IEEE32Exec.ofFloat (Spec.Tensor.vector hiC) }
+        { A := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.matrix hiA)
+          c := Spec.Tensor.map IEEE32Exec.ofFloat (Spec.Tensor.ofFn hiC) }
       pure (some { inDim := inDim, outDim := outDim, loAff := loAff, hiAff := hiAff })
 
 /--
@@ -351,7 +351,7 @@ structure CROWNNodeCoreCertificate where
   /-- Optional per-node affine lower/upper bounds. -/
   crown : Array (Option (FlatAffineBounds IEEE32Exec))
   /-- Optional per-node α values for ReLU lower relaxations. -/
-  alpha : Array (Option (FlatVec IEEE32Exec))
+  alpha : Array (Option (FlatTensor IEEE32Exec))
 
 /--
 Parse the fields shared by α-CROWN and α/β-CROWN node certificates.
@@ -379,7 +379,7 @@ def parseCROWNNodeCoreCertificate (g : Graph) (topObj : Json) :
       if hAlphaSize : alphaArr.size = g.nodes.size then
         let mut ibp : Array (Option (FlatBox IEEE32Exec)) := Array.mkEmpty g.nodes.size
         let mut crown : Array (Option (FlatAffineBounds IEEE32Exec)) := Array.mkEmpty g.nodes.size
-        let mut alpha : Array (Option (FlatVec IEEE32Exec)) := Array.mkEmpty g.nodes.size
+        let mut alpha : Array (Option (FlatTensor IEEE32Exec)) := Array.mkEmpty g.nodes.size
 
         for i in List.finRange g.nodes.size do
           let node := g.nodes[i.val]'i.isLt
@@ -441,8 +441,8 @@ def binaryElementwiseBoxesMatchOutput
   match g.nodes[id]? with
   | none => false
   | some node =>
-      match node.parents with
-      | p1 :: p2 :: _ =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
           match getFlatBox? cert p1, getFlatBox? cert p2 with
           | some B1, some B2 =>
               B1.dim == B2.dim && B1.dim == node.outShape.size
@@ -482,15 +482,15 @@ def ibpNodePreconditionsOk
       | .add | .sub | .mul_elem | .maxElem | .minElem =>
           binaryElementwiseBoxesMatchOutput g cert id
       | .log =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               match getFlatBox? cert p1 with
               | some B => flatBoxStrictlyAbove B Numbers.epsilon
               | none => false
           | _ => false
       | .inv =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               match getFlatBox? cert p1 with
               | some B => flatBoxExcludesZero B
               | none => false

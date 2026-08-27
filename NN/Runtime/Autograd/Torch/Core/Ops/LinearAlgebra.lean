@@ -32,46 +32,47 @@ namespace EagerSession
 
 /-! ## Linear algebra and concatenation -/
 
-/-- 2D matrix multiplication. PyTorch: `torch.matmul` for 2D tensors. -/
+/-- Matrix multiplication with PyTorch-style broadcasting across batch prefixes. -/
 def matmul {α : Type} (s : EagerSession α) [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape]
-  {m n p : Nat}
-  (a : TensorRef α (.dim m (.dim n .scalar)))
-  (b : TensorRef α (.dim n (.dim p .scalar))) :
-  IO (TensorRef α (.dim m (.dim p .scalar))) := do
+  {batchA batchB batch : Shape} {m n p : Nat}
+  [broadcastA : Shape.BroadcastTo batchA batch]
+  [broadcastB : Shape.BroadcastTo batchB batch]
+  (a : TensorRef α (batchA.concat [m, n]))
+  (b : TensorRef α (batchB.concat [n, p])) :
+  IO (TensorRef α (batch.concat [m, p])) := do
   let cpu := do
     let t0 ← s.tape.get
     let (t1, id) ←
-      okOrThrow (Runtime.Autograd.Tape.matmul (t := t0) (m := m) (n := n) (p := p) a.id b.id)
+      okOrThrow (Runtime.Autograd.Tape.matmul (t := t0) (m := m) (n := n) (p := p) a.id b.id
+        (batchA := batchA) (batchB := batchB) (batch := batch))
     s.tape.set t1
     pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow <|
-      Runtime.Autograd.Cuda.Tape.matmul (t := t0) (m := m) (n := n) (p := p) a.id b.id
-    s.cudaTape.set t1
+    let broadcastAFull :=
+      Spec.Tensor.Internal.extendBroadcastSuffix [m, n] broadcastA.proof
+    let broadcastBFull :=
+      Spec.Tensor.Internal.extendBroadcastSuffix [n, p] broadcastB.proof
+    let (t1, commonAId) ← okOrThrow <|
+      Runtime.Autograd.Cuda.Tape.broadcastTo (t := t0) broadcastAFull a.id
+    let (t2, commonBId) ← okOrThrow <|
+      Runtime.Autograd.Cuda.Tape.broadcastTo (t := t1) broadcastBFull b.id
+    let (t3, flatAId) ← okOrThrow <|
+      Runtime.Autograd.Cuda.Tape.reshape (t := t2) commonAId
+        (Spec.Tensor.Internal.flattenBatchMatrix_size batch m n)
+    let (t4, flatBId) ← okOrThrow <|
+      Runtime.Autograd.Cuda.Tape.reshape (t := t3) commonBId
+        (Spec.Tensor.Internal.flattenBatchMatrix_size batch n p)
+    let (t5, flatOutId) ← okOrThrow <|
+      Runtime.Autograd.Cuda.Tape.Internal.matmulFlattened (t := t4) (batch := batch.size)
+        (m := m) (n := n) (p := p) flatAId flatBId
+    let (t6, id) ← okOrThrow <|
+      Runtime.Autograd.Cuda.Tape.reshape (t := t5) flatOutId
+        (Spec.Tensor.Internal.flattenBatchMatrix_size batch m p).symm
+    s.cudaTape.set t6
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .matmul cpu cuda
-
-/-- Batched matrix multiplication. PyTorch: `torch.bmm`. -/
-def bmm {α : Type} (s : EagerSession α) [Add α] [Mul α] [Zero α] [DecidableEq Shape]
-  {batch m n p : Nat}
-  (a : TensorRef α (.dim batch (.dim m (.dim n .scalar))))
-  (b : TensorRef α (.dim batch (.dim n (.dim p .scalar)))) :
-  IO (TensorRef α (.dim batch (.dim m (.dim p .scalar)))) := do
-  let cpu := do
-    let t0 ← s.tape.get
-    let (t1, id) ← okOrThrow (Runtime.Autograd.Tape.bmm (α := α) (t := t0) (batch := batch) (m := m)
-      (n := n) (p := p) a.id b.id)
-    s.tape.set t1
-    pure { id := id }
-  let cuda := do
-    let t0 ← s.cudaTape.get
-    let (t1, id) ← okOrThrow <|
-      Runtime.Autograd.Cuda.Tape.bmm (t := t0) (batch := batch) (m := m) (n := n) (p := p) a.id b.id
-    s.cudaTape.set t1
-    pure (some { id := id })
-  dispatchCudaOpt (α := α) s .matmul cpu cuda
+  dispatchCudaOpt (α := α) s .matmul #[a.identity?, b.identity?] cpu cuda
 
 /-- Concatenate along dim 0 for tensors with leading dimension. PyTorch: `torch.cat(..., dim=0)`. -/
 def concatLeadingAxis {α : Type} (s : EagerSession α) [DecidableEq Shape]
@@ -91,7 +92,7 @@ def concatLeadingAxis {α : Type} (s : EagerSession α) [DecidableEq Shape]
       Runtime.Autograd.Cuda.Tape.concatLeadingAxis (t := t0) (n := n) (m := m) (s := sh) a.id b.id
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .concat cpu cuda
+  dispatchCudaOpt (α := α) s .concat #[a.identity?, b.identity?] cpu cuda
 
 /-- Slice along dim 0: `x[start:start+len]`. PyTorch: standard slicing. -/
 def sliceLeadingAxisRange {α : Type} (s : EagerSession α) [Zero α] [DecidableEq Shape]
@@ -110,7 +111,7 @@ def sliceLeadingAxisRange {α : Type} (s : EagerSession α) [Zero α] [Decidable
       Runtime.Autograd.Cuda.Tape.sliceLeadingAxisRange (t := t0) (n := n) (s := sh) x.id start len h
     s.cudaTape.set t1
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .slice cpu cuda
+  dispatchCudaOpt (α := α) s .slice #[x.identity?] cpu cuda
 
 end EagerSession
 

@@ -35,7 +35,7 @@ namespace TapeNodes
 
 /-- Elementwise `max` node. Differentiable at points where `a ≠ b` coordinatewise. -/
 def maxElem {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun xV =>
       vecOfFun (n := Spec.Shape.size s) fun i =>
         max (CtxVec.get (Γ := Γ) (s := s) a xV i) (CtxVec.get (Γ := Γ) (s := s) b xV i))
@@ -75,7 +75,7 @@ def maxElem {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
 
 /-- Elementwise `min` node. Differentiable at points where `a ≠ b` coordinatewise. -/
 def minElem {Γ : List Shape} {s : Shape} (a b : Idx Γ s) : Node Γ s :=
-  Node.ofVec (Γ := Γ) (τ := s)
+  Node.ofFn (Γ := Γ) (τ := s)
     (f := fun xV =>
       vecOfFun (n := Spec.Shape.size s) fun i =>
         min (CtxVec.get (Γ := Γ) (s := s) a xV i) (CtxVec.get (Γ := Γ) (s := s) b xV i))
@@ -238,7 +238,7 @@ def maxElemFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec 
               by
       funext x
       ext i
-      simp [maxElem, Node.forwardVec_ofVec, vecOfFun, aCLM, bCLM]
+      simp [maxElem, Node.forwardVec_ofFn, vecOfFun, aCLM, bCLM]
     exact hcomp.congr_of_eventuallyEq hEq.eventuallyEq
   · intro dxV
     ext i
@@ -248,13 +248,13 @@ def maxElemFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec 
           hne
     cases hlt with
     | inr hgt =>
-        simp [maxElem, Node.jvpVec_ofVec, hgt, vecOfFun, aCLM, bCLM, CtxVec.getCLM_apply,
+        simp [maxElem, Node.jvpVec_ofFn, hgt, vecOfFun, aCLM, bCLM, CtxVec.getCLM_apply,
           ContinuousLinearMap.comp_apply, evalCLM_apply]
     | inl hlt =>
         have hn : ¬ CtxVec.get (Γ := Γ) (s := s) a xV i > CtxVec.get (Γ := Γ) (s := s) b xV i :=
           (le_of_lt hlt).not_gt
         have hgt : CtxVec.get (Γ := Γ) (s := s) b xV i > CtxVec.get (Γ := Γ) (s := s) a xV i := hlt
-        simp [maxElem, Node.jvpVec_ofVec, hn, vecOfFun, aCLM, bCLM, CtxVec.getCLM_apply,
+        simp [maxElem, Node.jvpVec_ofFn, hn, vecOfFun, aCLM, bCLM, CtxVec.getCLM_apply,
           ContinuousLinearMap.comp_apply, evalCLM_apply]
 
 /-- Pointwise `NodeFDerivCorrectAt` for `min_elem`, assuming there are no ties. -/
@@ -357,7 +357,7 @@ def minElemFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec 
       have hbCoord : bCLM x i = CtxVec.get (Γ := Γ) (s := s) b x i := by
         dsimp [bCLM]
         exact congrArg (fun v : Vec n => v i) (CtxVec.getCLM_apply (Γ := Γ) (s := s) b x)
-      simp [minElem, Node.forwardVec_ofVec, vecOfFun, aCLM, bCLM, haCoord, hbCoord]
+      simp [minElem, Node.forwardVec_ofFn, vecOfFun, aCLM, bCLM, haCoord, hbCoord]
     exact hcomp.congr_of_eventuallyEq hEq.eventuallyEq
   · intro dxV
     ext i
@@ -398,7 +398,7 @@ def minElemFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec 
         have hjvp :
             ((minElem (Γ := Γ) (s := s) a b).jvpVec xV dxV).ofLp i =
               (CtxVec.get (Γ := Γ) (s := s) a dxV).ofLp i := by
-          simp [minElem, Node.jvpVec_ofVec, hlt]
+          simp [minElem, Node.jvpVec_ofFn, hlt]
         exact hjvp.trans (hGet.trans hR.symm)
     | inr hgt =>
         have hn : ¬ CtxVec.get (Γ := Γ) (s := s) a xV i < CtxVec.get (Γ := Γ) (s := s) b xV i :=
@@ -433,7 +433,7 @@ def minElemFderivAt {Γ : List Shape} {s : Shape} (a b : Idx Γ s) (xV : CtxVec 
         have hjvp :
             ((minElem (Γ := Γ) (s := s) a b).jvpVec xV dxV).ofLp i =
               (CtxVec.get (Γ := Γ) (s := s) b dxV).ofLp i := by
-          simp [minElem, Node.jvpVec_ofVec, hn]
+          simp [minElem, Node.jvpVec_ofFn, hn]
         exact hjvp.trans (hGet.trans hR.symm)
 
 

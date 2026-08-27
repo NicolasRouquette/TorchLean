@@ -8,7 +8,7 @@ module
 
 public import NN.Runtime.Autograd.Torch.Core.CheckpointIO
 public import NN.Runtime.Autograd.TorchLean.NN
-public import NN.Spec.Core.TensorBridge
+public import NN.Spec.Core.Tensor.Constructors
 public import Lean
 
 /-!
@@ -85,34 +85,11 @@ def jsonBitsToFloat (j : Lean.Json) : Except String Float := do
   let bits : UInt64 := UInt64.ofNat n
   pure (Float.ofBits bits)
 
-/-- The runtime-list product of a shape agrees with its type-level element count. -/
-private theorem shapeProd_toList (s : Shape) :
-    TensorArray.shapeProd (Shape.toList s) = Shape.size s := by
-  induction s with
-  | scalar => simp [Shape.toList, Shape.size]
-  | dim n rest ih => simp [Shape.toList, Shape.size, ih]
-
-/-- Rebuild a tensor from a flat list, rejecting length mismatches instead of changing the data. -/
-def tensorOfFlatListExact {α : Type} (tag : String) (s : Shape) (xs : List α) :
-    Except String (Tensor α s) := do
-  if hLength : xs.length = Shape.size s then
-    let dims := Shape.toList s
-    have hProduct : xs.length = TensorArray.shapeProd dims := by
-      simpa [dims, shapeProd_toList] using hLength
-    have hShape : Shape.ofList dims = s := by
-      change Shape.ofList (Shape.toList s) = s
-      exact Shape.ofList_toList s
-    pure <| hShape ▸ TensorBridge.unflatten dims xs hProduct
-  else
-    throw <|
-      s!"{tag}: expected {Shape.size s} scalars for shape {Shape.toList s}, " ++
-        s!"got {xs.length}"
-
 /-- Encode one Float tensor as shape metadata plus exact IEEE bit-pattern values. -/
 def tensorToJsonBits (s : Shape) (t : Tensor Float s) : Lean.Json :=
   let dims : Lean.Json := Lean.Json.arr (Shape.toList s |>.toArray |>.map jsonNat)
   let values : Lean.Json :=
-    Lean.Json.arr ((Spec.toList t).toArray.map floatToJsonBits)
+    Lean.Json.arr ((Spec.Tensor.toArray t).map floatToJsonBits)
   Lean.Json.mkObj [("shape", dims), ("values", values)]
 
 /-- Decode one shape-checked Float tensor from the exact-bit state format. -/
@@ -127,12 +104,16 @@ def tensorFromJsonBits (tag : String) (s : Shape) (j : Lean.Json) :
   if Shape.ofList dims != s then
     throw s!"{tag}: shape mismatch (file={dims}, expected={Shape.toList s})"
   let valsArr ← Lean.Json.getArr? valuesJ
-  let vals : List Float ←
-    valsArr.toList.mapM (fun v => jsonBitsToFloat v)
-  tensorOfFlatListExact (tag := tag) s vals
+  let vals : Array Float ← valsArr.mapM jsonBitsToFloat
+  if hSize : vals.size = Shape.size s then
+    pure <| Tensor.ofFlatArrayExact s vals hSize
+  else
+    throw <|
+      s!"{tag}: expected {Shape.size s} scalars for shape {Shape.toList s}, " ++
+        s!"got {vals.size}"
 
 /-- Encode shape-indexed model state as the JSON array stored under `state`. -/
-def stateToJsonBits {ss : List Shape} : Torch.TList Float ss → Lean.Json
+def stateToJsonBits {ss : List Shape} : TorchLean.TensorPack Float ss → Lean.Json
   | .nil => Lean.Json.arr #[]
   | .cons (s := s) t ts =>
       match stateToJsonBits (ss := _) ts with
@@ -142,7 +123,7 @@ def stateToJsonBits {ss : List Shape} : Torch.TList Float ss → Lean.Json
 
 /-- Decode an expected state layout from a tensor array, starting at `offset`. -/
 def stateFromJsonBitsArray (tag : String) (xs : Array Lean.Json) :
-    {ss : List Shape} → (offset : Nat) → Except String (Torch.TList Float ss)
+    {ss : List Shape} → (offset : Nat) → Except String (TorchLean.TensorPack Float ss)
   | [], offset => do
       unless offset = xs.size do
         throw s!"{tag}: unexpected {xs.size - offset} trailing state tensor(s)"
@@ -157,13 +138,13 @@ def stateFromJsonBitsArray (tag : String) (xs : Array Lean.Json) :
 
 /-- Decode the `state` JSON array into the expected shape-indexed state pack. -/
 def stateFromJsonBits (tag : String) {ss : List Shape} (json : Lean.Json) :
-    Except String (Torch.TList Float ss) := do
+    Except String (TorchLean.TensorPack Float ss) := do
   let xs ← Lean.Json.getArr? json
   stateFromJsonBitsArray (tag := tag) xs (ss := ss) 0
 
 /-- Write Float model state using exact IEEE bit patterns rather than decimal floats. -/
 def writeStateBits (path : System.FilePath) {ss : List Shape}
-    (state : Torch.TList Float ss) (pretty : Bool := true) : IO Unit := do
+    (state : TorchLean.TensorPack Float ss) (pretty : Bool := true) : IO Unit := do
   let top : Lean.Json :=
     Lean.Json.mkObj [("format", Lean.Json.str formatTag), ("state", stateToJsonBits state)]
   let s := if pretty then top.pretty else top.compress
@@ -172,7 +153,7 @@ def writeStateBits (path : System.FilePath) {ss : List Shape}
 
 /-- Read Float model state previously written by `writeStateBits`. -/
 def readStateBits (path : System.FilePath) {ss : List Shape} :
-    IO (Except String (Torch.TList Float ss)) := do
+    IO (Except String (TorchLean.TensorPack Float ss)) := do
   let s ← IO.FS.readFile path
   match Lean.Json.parse s with
   | Except.error e =>
@@ -216,7 +197,7 @@ def uint32FromLE (bytes : ByteArray) (offset : Nat) : UInt32 := Id.run do
 /-- Encode a tensor as exact little-endian binary32 values. -/
 def tensorToFloat32Bytes {α : Type} (encode : α → Float32) {shape : Shape}
     (tensor : Tensor α shape) : ByteArray :=
-  (Spec.toList tensor).foldl
+  (Spec.Tensor.toArray tensor).foldl
     (fun out value => pushUInt32LE out (encode value).toBits)
     ByteArray.empty
 
@@ -228,9 +209,10 @@ def tensorFromFloat32Bytes {α : Type} (decode : Float32 → α) (shape : Shape)
     throw <|
       s!"StateIO: float32 payload size mismatch for {Shape.pretty shape} " ++
         s!"(got={bytes.size}, expected={expectedBytes})"
-  let values := (List.range (Shape.size shape)).map fun i =>
+  let values := (Array.range (Shape.size shape)).map fun i =>
     decode (Float32.ofBits (uint32FromLE bytes (4 * i)))
-  tensorOfFlatListExact (tag := "StateIO") shape values
+  have hSize : values.size = Shape.size shape := by simp [values]
+  pure <| Tensor.ofFlatArrayExact shape values hSize
 
 /-- Write one expected tensor shape to a streaming checkpoint. -/
 def writeShape (handle : IO.FS.Handle) (shape : Shape) : IO Unit := do

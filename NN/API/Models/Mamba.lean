@@ -30,23 +30,21 @@ namespace nn
 namespace models
 namespace Mamba
 
-/-- Configuration for byte-level Mamba-style language models. -/
+/-- Configuration for the trainable byte-level Mamba-style language model. -/
 structure Config where
   vocab : Nat
   stateDim : Nat
-  ssmStateDim : Nat
-  convWidth : Nat
 deriving Repr
 
 /-- One-hot token shape `leading ++ (seqLen × vocab)`. -/
 abbrev inputShape (cfg : Config) (seqLen : Nat)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (.dim seqLen (.dim cfg.vocab .scalar))
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [seqLen, cfg.vocab]
 
 /-- Output-logit shape `leading ++ (seqLen × vocab)`. -/
 abbrev outputShape (cfg : Config) (seqLen : Nat)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.concat (.dim seqLen (.dim cfg.vocab .scalar))
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [seqLen, cfg.vocab]
 
 /--
 Trainable Mamba-style causal language model over one-hot token inputs.
@@ -59,68 +57,92 @@ The recurrent core is a gated diagonal state-space update implemented with autog
 TorchLean ops. Passing `--device cuda` to a runner that instantiates this model trains the same
 parameters on the CUDA backend.
 -/
-def textLM (cfg : Config) (seqLen : Nat) (leading : Spec.Shape := .scalar) :
+def textLM (cfg : Config) (seqLen : Nat) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (inputShape cfg seqLen leading) (outputShape cfg seqLen leading)) := do
   let recurrent ← nn.mamba seqLen cfg.vocab cfg.stateDim (leading := leading)
   let headRaw ← linear cfg.stateDim cfg.vocab
-    (leading := leading.concat (.dim seqLen .scalar))
+    (leading := leading ++ [seqLen])
   let head : nn.Sequential
-      (leading.concat (.dim seqLen (.dim cfg.stateDim .scalar)))
-      (leading.concat (.dim seqLen (.dim cfg.vocab .scalar))) := by
-    simpa only [Spec.Shape.concat_appendDim, Spec.Shape.appendDim] using headRaw
+      (leading ++ [seqLen, cfg.stateDim])
+      (leading ++ [seqLen, cfg.vocab]) := by
+    simpa [List.append_assoc] using headRaw
   pure (recurrent >>> head)
 
 namespace Reference
 
-/-- Small deterministic initializer for spec-level reference blocks. -/
+/-- Dimensions used by the full selective reference block. -/
+structure SelectiveConfig extends Config where
+  ssmStateDim : Nat
+  convWidth : Nat
+deriving Repr
+
+namespace Internal
+
+/-- Deterministic scalar initializer shared by the reference Mamba blocks. -/
 def centeredHash (seed modulus : Nat) : Float :=
   (Float.ofNat (seed % modulus) - Float.ofNat (modulus / 2)) / Float.ofNat modulus
+
+end Internal
 
 /-- Compact diagonal Mamba-style block for spec-level reference evaluation. -/
 def compact (cfg : Config) :
     _root_.Models.MambaBlockSpec Float cfg.vocab cfg.stateDim cfg.vocab :=
-  { inProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 17 + j.val * 31 + 3) 47 / 4.0)
-    gateProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 13 + j.val * 19 + 7) 43 / 5.0)
-    outProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 29 + j.val * 11 + 5) 53 / 3.0)
+  { inProj := Tensor.generate [cfg.vocab, cfg.stateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 17 + coordinates.getD 1 0 * 31 + 3) 47 / 4.0
+    gateProj := Tensor.generate [cfg.vocab, cfg.stateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 13 + coordinates.getD 1 0 * 19 + 7) 43 / 5.0
+    outProj := Tensor.generate [cfg.stateDim, cfg.vocab] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 29 + coordinates.getD 1 0 * 11 + 5) 53 / 3.0
     ssm :=
-      { A := _root_.Spec.Tensor.vector (fun i => 0.82 + Float.ofNat (i.val % 5) * 0.025)
-        B := _root_.Spec.Tensor.vector (fun i => 0.12 + Float.ofNat (i.val % 3) * 0.015)
-        C := _root_.Spec.Tensor.vector (fun i => 0.90 - Float.ofNat (i.val % 4) * 0.03)
-        D := _root_.Spec.Tensor.vector (fun i => 0.08 + Float.ofNat (i.val % 2) * 0.02) } }
+      { A := Tensor.generate [cfg.stateDim] fun coordinates =>
+          0.82 + Float.ofNat (coordinates.getD 0 0 % 5) * 0.025
+        B := Tensor.generate [cfg.stateDim] fun coordinates =>
+          0.12 + Float.ofNat (coordinates.getD 0 0 % 3) * 0.015
+        C := Tensor.generate [cfg.stateDim] fun coordinates =>
+          0.90 - Float.ofNat (coordinates.getD 0 0 % 4) * 0.03
+        D := Tensor.generate [cfg.stateDim] fun coordinates =>
+          0.08 + Float.ofNat (coordinates.getD 0 0 % 2) * 0.02 } }
 
 /--
 Full selective Mamba-style block with causal depthwise convolution and token-dependent scan
 parameters.  This deterministic initializer is meant for reference evaluation rather than
 checkpoint-quality training.
 -/
-def selective (cfg : Config) :
+def selective (cfg : SelectiveConfig) :
     _root_.Models.SelectiveMambaBlockSpec Float
       cfg.vocab cfg.stateDim cfg.ssmStateDim cfg.vocab cfg.convWidth :=
-  { xProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 17 + j.val * 31 + 3) 47 * 2.0)
-    zProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 13 + j.val * 19 + 7) 43 * 2.0)
-    convKernel := _root_.Spec.Tensor.matrix
-      (fun tap i => 0.4 + centeredHash (tap.val * 23 + i.val * 7 + 11) 41 * 0.2)
-    convBias := _root_.Spec.Tensor.vector
-      (fun i => centeredHash (i.val * 5 + 3) 37 * 0.2)
-    dtProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 19 + j.val * 17 + 5) 47 * 0.2)
-    dtBias := _root_.Spec.Tensor.vector
-      (fun i => -1.5 + Float.ofNat (i.val % 5) * 0.1)
-    A := _root_.Spec.Tensor.matrix
-      (fun i n => 0.2 + Float.ofNat ((i.val + n.val) % 7) * 0.03)
-    bProj := _root_.Spec.Tensor.matrix
-      (fun i n => centeredHash (i.val * 11 + n.val * 29 + 13) 53)
-    cProj := _root_.Spec.Tensor.matrix
-      (fun i n => centeredHash (i.val * 31 + n.val * 7 + 17) 59)
-    dSkip := _root_.Spec.Tensor.vector
-      (fun i => 0.35 + Float.ofNat (i.val % 3) * 0.03)
-    outProj := _root_.Spec.Tensor.matrix
-      (fun i j => centeredHash (i.val * 29 + j.val * 11 + 5) 53 / 3.0) }
+  { xProj := Tensor.generate [cfg.vocab, cfg.stateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 17 + coordinates.getD 1 0 * 31 + 3) 47 * 2.0
+    zProj := Tensor.generate [cfg.vocab, cfg.stateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 13 + coordinates.getD 1 0 * 19 + 7) 43 * 2.0
+    convKernel := Tensor.generate [cfg.convWidth, cfg.stateDim] fun coordinates =>
+      0.4 + Internal.centeredHash
+        (coordinates.getD 0 0 * 23 + coordinates.getD 1 0 * 7 + 11) 41 * 0.2
+    convBias := Tensor.generate [cfg.stateDim] fun coordinates =>
+      Internal.centeredHash (coordinates.getD 0 0 * 5 + 3) 37 * 0.2
+    dtProj := Tensor.generate [cfg.stateDim, cfg.stateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 19 + coordinates.getD 1 0 * 17 + 5) 47 * 0.2
+    dtBias := Tensor.generate [cfg.stateDim] fun coordinates =>
+      -1.5 + Float.ofNat (coordinates.getD 0 0 % 5) * 0.1
+    A := Tensor.generate [cfg.stateDim, cfg.ssmStateDim] fun coordinates =>
+      0.2 + Float.ofNat ((coordinates.getD 0 0 + coordinates.getD 1 0) % 7) * 0.03
+    bProj := Tensor.generate [cfg.stateDim, cfg.ssmStateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 11 + coordinates.getD 1 0 * 29 + 13) 53
+    cProj := Tensor.generate [cfg.stateDim, cfg.ssmStateDim] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 31 + coordinates.getD 1 0 * 7 + 17) 59
+    dSkip := Tensor.generate [cfg.stateDim] fun coordinates =>
+      0.35 + Float.ofNat (coordinates.getD 0 0 % 3) * 0.03
+    outProj := Tensor.generate [cfg.stateDim, cfg.vocab] fun coordinates =>
+      Internal.centeredHash
+        (coordinates.getD 0 0 * 29 + coordinates.getD 1 0 * 11 + 5) 53 / 3.0 }
 
 end Reference
 

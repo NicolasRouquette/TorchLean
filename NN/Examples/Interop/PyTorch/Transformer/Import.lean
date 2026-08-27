@@ -50,29 +50,29 @@ explicit keys and the nested PyTorch module keys emitted by the exporter.
 -/
 structure TransformerEncoderStateDict (embedDim headCount hiddenDim : Nat) where
   /-- Query projection matrix. -/
-  queryWeight : Tensor Float (.dim embedDim (.dim embedDim .scalar))
+  queryWeight : Tensor Float [embedDim, embedDim]
   /-- Key projection matrix. -/
-  keyWeight : Tensor Float (.dim embedDim (.dim embedDim .scalar))
+  keyWeight : Tensor Float [embedDim, embedDim]
   /-- Value projection matrix. -/
-  valueWeight : Tensor Float (.dim embedDim (.dim embedDim .scalar))
+  valueWeight : Tensor Float [embedDim, embedDim]
   /-- Output projection matrix. -/
-  outputWeight : Tensor Float (.dim embedDim (.dim embedDim .scalar))
+  outputWeight : Tensor Float [embedDim, embedDim]
   /-- Input feed-forward projection matrix. -/
-  feedForwardInputWeight : Tensor Float (.dim embedDim (.dim hiddenDim .scalar))
+  feedForwardInputWeight : Tensor Float [embedDim, hiddenDim]
   /-- Output feed-forward projection matrix. -/
-  feedForwardOutputWeight : Tensor Float (.dim hiddenDim (.dim embedDim .scalar))
+  feedForwardOutputWeight : Tensor Float [hiddenDim, embedDim]
   /-- Input feed-forward projection bias. -/
-  feedForwardInputBias : Tensor Float (.dim hiddenDim .scalar)
+  feedForwardInputBias : Tensor Float [hiddenDim]
   /-- Output feed-forward projection bias. -/
-  feedForwardOutputBias : Tensor Float (.dim embedDim .scalar)
+  feedForwardOutputBias : Tensor Float [embedDim]
   /-- First LayerNorm scale. -/
-  norm1Scale : Tensor Float (.dim embedDim .scalar)
+  norm1Scale : Tensor Float [embedDim]
   /-- First LayerNorm bias. -/
-  norm1Bias : Tensor Float (.dim embedDim .scalar)
+  norm1Bias : Tensor Float [embedDim]
   /-- Second LayerNorm scale. -/
-  norm2Scale : Tensor Float (.dim embedDim .scalar)
+  norm2Scale : Tensor Float [embedDim]
   /-- Second LayerNorm bias. -/
-  norm2Bias : Tensor Float (.dim embedDim .scalar)
+  norm2Bias : Tensor Float [embedDim]
 
 def getTensorAny? (o : StateDict) (s : Shape) (keys : List String) :
     Option (Tensor Float s) :=
@@ -87,12 +87,12 @@ def getTensorAny? (o : StateDict) (s : Shape) (keys : List String) :
 def loadTransformerEncoderStateDict (embedDim headCount hiddenDim : Nat) (j : Json) : Option
   (TransformerEncoderStateDict embedDim headCount hiddenDim) :=
   let _ := headCount
-  let projectionShape : Shape := .dim embedDim (.dim embedDim .scalar)
-  let feedForwardInputWeightShape : Shape := .dim embedDim (.dim hiddenDim .scalar)
-  let feedForwardOutputWeightShape : Shape := .dim hiddenDim (.dim embedDim .scalar)
-  let feedForwardInputBiasShape : Shape := .dim hiddenDim .scalar
-  let feedForwardOutputBiasShape : Shape := .dim embedDim .scalar
-  let normShape : Shape := .dim embedDim .scalar
+  let projectionShape : Shape := [embedDim, embedDim]
+  let feedForwardInputWeightShape : Shape := [embedDim, hiddenDim]
+  let feedForwardOutputWeightShape : Shape := [hiddenDim, embedDim]
+  let feedForwardInputBiasShape : Shape := [hiddenDim]
+  let feedForwardOutputBiasShape : Shape := [embedDim]
+  let normShape : Shape := [embedDim]
   do
     -- Accepts both `{...}` and `{ "params": {...} }`.
     let o ← loadWeights? j

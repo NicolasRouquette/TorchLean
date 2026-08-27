@@ -8,10 +8,15 @@ module
 
 public import Std
 
+public import NN.Tests.API.BuilderSeeds
 public import NN.Tests.API.SelfSupervised.BlockMask
 public import NN.Tests.API.GradientAccumulation
 public import NN.Tests.Backend.Profile
+public import NN.Tests.GraphSpec.Generality
+public import NN.Tests.IR.ShapeContracts
 public import NN.Tests.MLTheory.CROWNOperators
+public import NN.Tests.MLTheory.CROWNSoundnessGuardrails
+public import NN.Tests.MLTheory.Diagnostics
 public import NN.Tests.Runtime.Floats.Suite
 public import NN.Tests.Runtime.Rationals.Suite
 public import NN.Tests.Runtime.Cuda.Suite
@@ -53,13 +58,23 @@ def run : IO Unit := do
   | some "cache-cap" => Tests.Cuda.Stress.runCacheCapProbe
   | _ =>
     IO.println "== TorchLean: curated tests =="
+    NN.Tests.API.BuilderSeeds.run
     NN.Tests.API.SelfSupervised.BlockMask.run
     NN.Tests.API.GradientAccumulation.run
     NN.Tests.Backend.Profile.run
     NN.Tests.MLTheory.CROWNOperators.run
+    NN.Tests.MLTheory.CROWNSoundnessGuardrails.run
+    NN.Tests.MLTheory.Diagnostics.run
     Tests.Floats.run
     Tests.Rationals.Suite.run
-    Tests.Cuda.run
+    match Runtime.Autograd.Cuda.Buffer.runtimeStatus with
+    | .cpuStub =>
+        IO.println "  CUDA kernels: skipped (CPU build)"
+    | .nativeAvailable =>
+        Tests.Cuda.run
+    | .nativeUnavailable =>
+        throw <| IO.userError
+          "TorchLean was built with CUDA, but no usable CUDA device is visible"
     IO.println "== TorchLean: all curated tests passed =="
 
 def main (args : List String) : IO Unit := do

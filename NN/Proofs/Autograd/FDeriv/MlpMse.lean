@@ -63,13 +63,13 @@ Convert a matrix-shaped tensor `W : Tensor ℝ (m×n)` into the Hilbert-space ma
 This is used for parameter-gradient proofs, where the parameter space is a Hilbert space with the
 Frobenius/$\ell_2$ inner product.
 -/
-def toMatE {m n : Nat} (W : Tensor ℝ (.dim m (.dim n .scalar))) : Mat m n :=
+def toMatE {m n : Nat} (W : Tensor ℝ [m, n]) : Mat m n :=
   WithLp.toLp 2 fun i : Fin m =>
     WithLp.toLp 2 fun j : Fin n =>
       Spec.get2 W i j
 
 /-- `toMatE` agrees with the coordinate-level view `tensorToMatrix` used by the FDeriv core. -/
-lemma toMatrix_toMatE {m n : Nat} (W : Tensor ℝ (.dim m (.dim n .scalar))) :
+lemma toMatrix_toMatE {m n : Nat} (W : Tensor ℝ [m, n]) :
     toMatrix (m := m) (n := n) (toMatE W) = tensorToMatrix (m := m) (n := n) W := by
   funext i j
   simp [toMatE, toMatrix, tensorToMatrix]
@@ -139,50 +139,50 @@ The spec-level “input derivative” for a linear layer agrees with the Euclide
 In words: the tensor expression for `∂(W x)/∂x` applied to an upstream `δ` is `Wᵀ δ`, and this is
 exactly the adjoint of the CLM `x ↦ W x`.
 -/
-lemma toVecE_linear_input_deriv_spec_eq_adjoint
+lemma getScalarE_linear_input_deriv_spec_eq_adjoint
     {inDim outDim : Nat}
-    (W : Tensor ℝ (.dim outDim (.dim inDim .scalar)))
-    (δ : Tensor ℝ (.dim outDim .scalar)) :
-    toVecE (Spec.linearInputDerivSpec (inDim := inDim) (outDim := outDim) W δ)
+    (W : Tensor ℝ [outDim, inDim])
+    (δ : Tensor ℝ [outDim]) :
+    getScalarE (Spec.linearInputDerivSpec (inDim := inDim) (outDim := outDim) W δ)
       =
     (matCLM (m := outDim) (n := inDim) (tensorToMatrix (m := outDim) (n := inDim) W)).adjoint
-      (toVecE δ) := by
+      (getScalarE δ) := by
   classical
   -- Let `A x := W x` (as a continuous linear map on Euclidean vectors).
   let A : Vec inDim →L[ℝ] Vec outDim :=
     matCLM (m := outDim) (n := inDim) (tensorToMatrix (m := outDim) (n := inDim) W)
-  let u : Vec inDim := toVecE (vecMatMulSpec δ W)
-  let v : Vec inDim := A.adjoint (toVecE δ)
+  let u : Vec inDim := getScalarE (vecMatMulSpec δ W)
+  let v : Vec inDim := A.adjoint (getScalarE δ)
 
   have hforall : ∀ dxV : Vec inDim, inner ℝ dxV u = inner ℝ dxV v := by
     intro dxV
     -- Tensor-level adjointness (dot) for mat-vec vs vec-mat.
     have hdot :=
       dot_mat_linear_adjoint (inDim := inDim) (outDim := outDim)
-        (W := W) (dLdy := δ) (dx := ofVecE dxV)
+        (W := W) (dLdy := δ) (dx := ofFnE dxV)
     -- Translate `dot` to `inner`.
     have hinner :
-        inner ℝ (toVecE δ) (toVecE (Spec.matVecMulSpec W (ofVecE dxV)))
+        inner ℝ (getScalarE δ) (getScalarE (Spec.matVecMulSpec W (ofFnE dxV)))
           =
-        inner ℝ (toVecE (vecMatMulSpec δ W)) dxV := by
-      simpa [dot_eq_inner_vec, toVecE_ofVecE] using hdot
+        inner ℝ (getScalarE (vecMatMulSpec δ W)) dxV := by
+      simpa [dot_eq_inner_vec, getScalarE_ofFnE] using hdot
     -- Identify the mat-vec output with `A dxV`.
-    have hAx : toVecE (Spec.matVecMulSpec W (ofVecE dxV)) = A dxV := by
+    have hAx : getScalarE (Spec.matVecMulSpec W (ofFnE dxV)) = A dxV := by
       simpa [A] using
-        (toVecE_mat_vec_mul_spec (m := outDim) (n := inDim) (A := W) (v := ofVecE dxV))
+        (getScalarE_mat_vec_mul_spec (m := outDim) (n := inDim) (A := W) (v := ofFnE dxV))
     -- Use symmetry + the defining property of the adjoint.
     calc
       inner ℝ dxV u
           = inner ℝ u dxV := by simp [real_inner_comm]
-      _ = inner ℝ (toVecE δ) (A dxV) := by
+      _ = inner ℝ (getScalarE δ) (A dxV) := by
             have htmp := hinner.symm
             -- Rewrite the mat-vec output to `A dxV` explicitly (avoid simp rewriting order issues).
             rw [hAx] at htmp
             simpa [u] using htmp
-      _ = inner ℝ (A dxV) (toVecE δ) := by simp [real_inner_comm]
+      _ = inner ℝ (A dxV) (getScalarE δ) := by simp [real_inner_comm]
       _ = inner ℝ dxV v := by
             simpa [v] using
-              (ContinuousLinearMap.adjoint_inner_right (A := A) (x := dxV) (y := toVecE δ)).symm
+              (ContinuousLinearMap.adjoint_inner_right (A := A) (x := dxV) (y := getScalarE δ)).symm
 
   -- Nondegeneracy to conclude `u = v`.
   have h0 : inner ℝ (u - v) (u - v) = 0 := by

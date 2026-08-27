@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Seeded
-public import NN.API.Tensor
+public import NN.Tensor
 
 /-!
 # Generative Models
@@ -43,37 +43,31 @@ deriving Repr
 
 /-- Data shape with arbitrary leading dimensions. -/
 abbrev Config.dataShape (cfg : Config)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.dataDim
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.dataDim]
 
 /-- Latent shape with arbitrary leading dimensions. -/
 abbrev Config.latentShape (cfg : Config)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim cfg.latentDim
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.latentDim]
 
 /--
-β-VAE-style supervised output shape.
+Output shape for supervised reconstruction with two auxiliary latent-statistic vectors.
 
-Rows contain:
-- reconstruction, length `dataDim`;
-- latent mean proxy, length `latentDim`;
-- latent log-variance proxy, length `latentDim`.
-
-The runnable example trains this compact target with MSE, which is a practical path for the
-runtime. The formal VAE ELBO/KL objective lives in `NN.Spec.Models.Vae` and
-`NN.MLTheory.Generative.Latent.VAE`.
+Rows contain a reconstruction of length `dataDim`, followed by two vectors of length `latentDim`.
+The constructor does not prescribe probabilistic semantics for those auxiliary values.
 -/
-abbrev Config.vaeOutputShape (cfg : Config)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim (cfg.dataDim + 2 * cfg.latentDim)
+abbrev Config.reconstructionStatisticsShape (cfg : Config)
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.dataDim + 2 * cfg.latentDim]
 
 /-- Scalar-score shape with arbitrary leading dimensions. -/
 abbrev Config.scoreShape (_cfg : Config)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  leading.appendDim 1
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [1]
 
 /-- Autoencoder: `x -> hidden -> latent -> hidden -> reconstruction`. -/
-def autoencoder (cfg : Config) (leading : Spec.Shape := .scalar) :
+def autoencoder (cfg : Config) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.dataShape leading) (cfg.dataShape leading)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (leading := leading),
@@ -86,9 +80,10 @@ def autoencoder (cfg : Config) (leading : Spec.Shape := .scalar) :
     nn.sigmoid
   ]
 
-/-- Compact β-VAE-style network producing reconstruction plus latent statistics. -/
-def vae (cfg : Config) (leading : Spec.Shape := .scalar) :
-    nn.Builder (nn.Sequential (cfg.dataShape leading) (cfg.vaeOutputShape leading)) :=
+/-- Supervised bottleneck network producing a reconstruction and two auxiliary latent vectors. -/
+def reconstructionWithLatentStatistics (cfg : Config) (leading : List Nat := []) :
+    nn.Builder
+      (nn.Sequential (cfg.dataShape leading) (cfg.reconstructionStatisticsShape leading)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (leading := leading),
     relu,
@@ -100,8 +95,8 @@ def vae (cfg : Config) (leading : Spec.Shape := .scalar) :
       (leading := leading)
   ]
 
-/-- VQ-VAE-style encoder/decoder with a narrow discrete-code proxy bottleneck. -/
-def vqVae (cfg : Config) (leading : Spec.Shape := .scalar) :
+/-- Autoencoder with a narrow continuous bottleneck bounded by `tanh`. -/
+def tanhBottleneckAutoencoder (cfg : Config) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.dataShape leading) (cfg.dataShape leading)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (leading := leading),
@@ -115,7 +110,7 @@ def vqVae (cfg : Config) (leading : Spec.Shape := .scalar) :
   ]
 
 /-- Generator `z -> x`. -/
-def ganGenerator (cfg : Config) (leading : Spec.Shape := .scalar) :
+def ganGenerator (cfg : Config) (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.latentShape leading) (cfg.dataShape leading)) :=
   nn.Sequential![
     linear cfg.latentDim cfg.hiddenDim (leading := leading),
@@ -128,7 +123,7 @@ def ganGenerator (cfg : Config) (leading : Spec.Shape := .scalar) :
 
 /-- Discriminator/critic `x -> score`. -/
 def ganDiscriminator (cfg : Config)
-    (leading : Spec.Shape := .scalar) :
+    (leading : List Nat := []) :
     nn.Builder (nn.Sequential (cfg.dataShape leading) (cfg.scoreShape leading)) :=
   nn.Sequential![
     linear cfg.dataDim cfg.hiddenDim (leading := leading),

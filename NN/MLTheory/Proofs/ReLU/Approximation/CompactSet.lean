@@ -13,7 +13,7 @@ public import Mathlib.Data.Finsupp.Multiset
 public import Mathlib.Data.Fintype.Perm
 public import Mathlib.Data.Multiset.Fintype
 public import Mathlib.Topology.Compactness.Compact
-public import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationND
+public import NN.MLTheory.Proofs.Approximation.Universal.StoneWeierstrass
 public import NN.MLTheory.Proofs.ReLU.Approx.ReLUMulApprox
 
 /-!
@@ -28,9 +28,9 @@ Key theorems proved in this file:
 Dependencies:
 - `NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximation` (constructive 1D ReLU
   approximation).
-- `NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationND` (Stone–Weierstrass density
+- `NN.MLTheory.Proofs.Approximation.Universal.StoneWeierstrass` (Stone–Weierstrass density
   of coordinate polynomials on compact sets of tensor vectors).
-- `NN.MLTheory.Proofs.ReLU.Bridge.ReLUMlpBridge` (lifting 1D MLP constructions to `TensorVec n`).
+- `NN.MLTheory.Proofs.ReLU.Bridge.ReLUMlpBridge` (lifting 1D MLP constructions to `Tensor ℝ [n]`).
 -/
 
 @[expose] public section
@@ -43,32 +43,32 @@ open Examples
 open NN.MLTheory.Proofs.UniversalApproximation
 open NN.MLTheory.Proofs.ReLUMlpBridge
 open NN.MLTheory.Proofs.ReLUMulApprox
-open NN.MLTheory.Proofs.UniversalApproximationND
+open NN.MLTheory.Proofs.UniversalApproximation
 
 /-- `ApproxOn D f` means: on the domain `D`, the scalar function `f` can be uniformly approximated
 by a single-hidden-layer ReLU MLP (`mlp_eval_nd`). -/
-def ApproxOn {n : Nat} (D : Set (ReLUMlpBridge.TensorVec n)) (f : ReLUMlpBridge.TensorVec n → ℝ) :
+def ApproxOn {n : Nat} (D : Set (Tensor ℝ [n])) (f : Tensor ℝ [n] → ℝ) :
   Prop :=
   ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ n hidDim) (l2 : LinearSpec ℝ hidDim 1),
-    ∀ x ∈ D, |f x - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x| < ε
+    ∀ x ∈ D, |f x - mlpEval (n := n) (hidDim := hidDim) l1 l2 x| < ε
 
 namespace ApproxOn
 
 /-- The zero function is uniformly approximable on any domain `D`. -/
-theorem zero {n : Nat} (D : Set (ReLUMlpBridge.TensorVec n)) :
+theorem zero {n : Nat} (D : Set (Tensor ℝ [n])) :
     ApproxOn (n := n) D (fun _ => (0 : ℝ)) := by
   intro ε hε
   -- Use exact representability of affine maps with zero weight and zero bias.
   refine ⟨2, affineIdLayer1 (n := n) (w := fun _ => (0 : ℝ)) (b := 0), affineIdLayer2, ?_⟩
   intro x hx
-  have : mlpEvalNd (n := n) (hidDim := 2)
+  have : mlpEval (n := n) (hidDim := 2)
         (affineIdLayer1 (n := n) (w := fun _ => (0 : ℝ)) (b := 0)) affineIdLayer2 x = 0 := by
     simp [mlp_eval_affine_id, dot]
   simpa [this] using hε
 
 /-- If `f` and `g` are uniformly approximable on `D`, then so is `f + g`. -/
-theorem add {n : Nat} {D : Set (ReLUMlpBridge.TensorVec n)}
-    {f g : ReLUMlpBridge.TensorVec n → ℝ}
+theorem add {n : Nat} {D : Set (Tensor ℝ [n])}
+    {f g : Tensor ℝ [n] → ℝ}
     (hf : ApproxOn (n := n) D f) (hg : ApproxOn (n := n) D g) :
     ApproxOn (n := n) D (fun x => f x + g x) := by
   intro ε hε
@@ -84,55 +84,55 @@ theorem add {n : Nat} {D : Set (ReLUMlpBridge.TensorVec n)}
       (l1a := l1f) (l1b := l1g) (l2a := l2f) (l2b := l2g)
       (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) (x := x)
   -- Turn the combined evaluation into a triangle-inequality bound.
-  have hf'' : |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x| < ε / 2 := hf' x hx
-  have hg'' : |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x| < ε / 2 := hg' x hx
+  have hf'' : |f x - mlpEval (n := n) (hidDim := m) l1f l2f x| < ε / 2 := hf' x hx
+  have hg'' : |g x - mlpEval (n := n) (hidDim := k) l1g l2g x| < ε / 2 := hg' x hx
   -- Rewrite the combined network output into the two independent approximation errors.
   have hre :
-      (f x + g x) - mlpEvalNd (n := n) (hidDim := m + k)
+      (f x + g x) - mlpEval (n := n) (hidDim := m + k)
           (appendLinearSpec (inDim := n) l1f l1g)
           (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x
         =
-      (f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x)
-        + (g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x) := by
+      (f x - mlpEval (n := n) (hidDim := m) l1f l2f x)
+        + (g x - mlpEval (n := n) (hidDim := k) l1g l2g x) := by
     have hcomb' :
-        mlpEvalNd (n := n) (hidDim := m + k)
+        mlpEval (n := n) (hidDim := m + k)
             (appendLinearSpec (inDim := n) l1f l1g)
             (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x
           =
-        mlpEvalNd (n := n) (hidDim := m) l1f l2f x
-          + mlpEvalNd (n := n) (hidDim := k) l1g l2g x := by
+        mlpEval (n := n) (hidDim := m) l1f l2f x
+          + mlpEval (n := n) (hidDim := k) l1g l2g x := by
       -- Specialize the output-combination lemma at α=β=1 and γ=0.
       simp [hcomb, one_mul, zero_add]
     -- `a + b - (â + b̂) = (a - â) + (b - b̂)`.
     simp [hcomb', sub_eq_add_neg, add_assoc, add_left_comm, add_comm]
   -- Finish with triangle inequality.
   have htri :
-      |(f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x)
-          + (g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x)|
-        ≤ |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x|
-          + |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x| := by
+      |(f x - mlpEval (n := n) (hidDim := m) l1f l2f x)
+          + (g x - mlpEval (n := n) (hidDim := k) l1g l2g x)|
+        ≤ |f x - mlpEval (n := n) (hidDim := m) l1f l2f x|
+          + |g x - mlpEval (n := n) (hidDim := k) l1g l2g x| := by
     simpa using (abs_add_le _ _)
-  have hsum : |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x|
-        + |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x| < ε := by
+  have hsum : |f x - mlpEval (n := n) (hidDim := m) l1f l2f x|
+        + |g x - mlpEval (n := n) (hidDim := k) l1g l2g x| < ε := by
     linarith [hf'', hg'']
-  have : |(f x + g x) - mlpEvalNd (n := n) (hidDim := m + k)
+  have : |(f x + g x) - mlpEval (n := n) (hidDim := m + k)
           (appendLinearSpec (inDim := n) l1f l1g)
           (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x| < ε :=
             by
     -- Rewrite with `hre`, then apply the two half-ε bounds.
     have hle : |(f x + g x) -
-          mlpEvalNd (n := n) (hidDim := m + k)
+          mlpEval (n := n) (hidDim := m + k)
             (appendLinearSpec (inDim := n) l1f l1g)
             (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x|
-        ≤ |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x|
-          + |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x| := by
+        ≤ |f x - mlpEval (n := n) (hidDim := m) l1f l2f x|
+          + |g x - mlpEval (n := n) (hidDim := k) l1g l2g x| := by
       simpa [hre] using htri
     exact lt_of_le_of_lt hle hsum
   exact this
 
 /-- If `f` is uniformly approximable on `D`, then so is the scalar multiple `c • f`. -/
-theorem smul {n : Nat} {D : Set (ReLUMlpBridge.TensorVec n)}
-    {f : ReLUMlpBridge.TensorVec n → ℝ} (c : ℝ)
+theorem smul {n : Nat} {D : Set (Tensor ℝ [n])}
+    {f : Tensor ℝ [n] → ℝ} (c : ℝ)
     (hf : ApproxOn (n := n) D f) :
     ApproxOn (n := n) D (fun x => c * f x) := by
   intro ε hε
@@ -146,36 +146,36 @@ theorem smul {n : Nat} {D : Set (ReLUMlpBridge.TensorVec n)}
   -- Scale only the output layer weights/bias by `c`.
   let l2' : LinearSpec ℝ m 1 :=
     { weights := Tensor.matrix (m := 1) (n := m) (fun _ j => c * mat1Get l2.weights j)
-      bias := Tensor.vector (n := 1) (fun _ => c * extractScalarOutput l2.bias) }
+      bias := Tensor.ofFn (n := 1) (fun _ => c * extractScalarOutput l2.bias) }
   refine ⟨m, l1, l2', ?_⟩
   intro x hx
-  have hf'' : |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x| < ε / |c| := hf' x hx
+  have hf'' : |f x - mlpEval (n := n) (hidDim := m) l1 l2 x| < ε / |c| := hf' x hx
   -- `mlp_eval_nd` is affine in the output layer, so scaling the output layer scales the output.
   -- Use `mlp_eval_nd_eq_bias_sum` from the multiplication file to reduce to algebra.
   classical
   have hscale :
-      mlpEvalNd (n := n) (hidDim := m) l1 l2' x = c * mlpEvalNd (n := n) (hidDim := m) l1 l2 x
+      mlpEval (n := n) (hidDim := m) l1 l2' x = c * mlpEval (n := n) (hidDim := m) l1 l2 x
         := by
     -- Unfold both sides using the explicit bias-plus-sum form.
     rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2') (x := x)]
     rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2) (x := x)]
     -- Compute the scaled bias and weights.
-    simp [l2', singleRowMatrix_get_matrix, extractScalarOutput, Tensor.vector, Tensor.item,
+    simp [l2', singleRowMatrix_get_matrix, extractScalarOutput, Tensor.ofFn, Tensor.item,
       mul_add, Finset.mul_sum, mul_left_comm, mul_comm]
   -- Bound `|c*f - c*mlp|` by factoring out the output-layer scale.
   have :
-      |c * f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x| < ε := by
+      |c * f x - mlpEval (n := n) (hidDim := m) l1 l2' x| < ε := by
     -- Reduce to `|c| * |f-mlp| < ε`.
-    have habs : |c * f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x|
-        = |c| * |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x| := by
+    have habs : |c * f x - mlpEval (n := n) (hidDim := m) l1 l2' x|
+        = |c| * |f x - mlpEval (n := n) (hidDim := m) l1 l2 x| := by
       -- `c*f - c*mlp = c*(f-mlp)`.
-      have : c * f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x
-          = c * (f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x) := by
+      have : c * f x - mlpEval (n := n) (hidDim := m) l1 l2' x
+          = c * (f x - mlpEval (n := n) (hidDim := m) l1 l2 x) := by
         simp [hscale, sub_eq_add_neg, mul_add]
       -- Take absolute values.
       simp [this, abs_mul]
     -- Multiply the base error by `|c|`.
-    have hmul : |c| * |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x| < |c| * (ε / |c|) := by
+    have hmul : |c| * |f x - mlpEval (n := n) (hidDim := m) l1 l2 x| < |c| * (ε / |c|) := by
       exact (mul_lt_mul_of_pos_left hf'' hcabs)
     have hcancel : |c| * (ε / |c|) = ε := by
       field_simp [hc, abs_ne_zero.2 hc]
@@ -191,27 +191,27 @@ end ApproxOn
 
 /-- `ApproxOnC K f` means: the continuous map `f : C(K,ℝ)` can be uniformly approximated (on `K`)
 by a single-hidden-layer ReLU MLP (`mlp_eval_nd`, evaluated on the underlying point `x.1`). -/
-def ApproxOnC {n : Nat} (K : Set (ReLUMlpBridge.TensorVec n)) (f : C(K, ℝ)) : Prop :=
+def ApproxOnC {n : Nat} (K : Set (Tensor ℝ [n])) (f : C(K, ℝ)) : Prop :=
   ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ n hidDim) (l2 : LinearSpec ℝ hidDim 1),
-    ∀ x : K, |f x - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1| < ε
+    ∀ x : K, |f x - mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1| < ε
 
 namespace ApproxOnC
 
 /-! ## Closure properties -/
 
 /-- The zero continuous function is uniformly approximable on `K`. -/
-theorem zero {n : Nat} (K : Set (ReLUMlpBridge.TensorVec n)) :
+theorem zero {n : Nat} (K : Set (Tensor ℝ [n])) :
     ApproxOnC (n := n) K (0 : C(K, ℝ)) := by
   intro ε hε
   refine ⟨2, affineIdLayer1 (n := n) (w := fun _ => (0 : ℝ)) (b := 0), affineIdLayer2, ?_⟩
   intro x
-  have : mlpEvalNd (n := n) (hidDim := 2)
+  have : mlpEval (n := n) (hidDim := 2)
         (affineIdLayer1 (n := n) (w := fun _ => (0 : ℝ)) (b := 0)) affineIdLayer2 x.1 = 0 := by
     simp [mlp_eval_affine_id, dot]
   simpa [this] using hε
 
 /-- If `f` and `g` are uniformly approximable on `K`, then so is `f + g`. -/
-theorem add {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
+theorem add {n : Nat} {K : Set (Tensor ℝ [n])}
     {f g : C(K, ℝ)}
     (hf : ApproxOnC (n := n) K f) (hg : ApproxOnC (n := n) K g) :
     ApproxOnC (n := n) K (f + g) := by
@@ -226,46 +226,46 @@ theorem add {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
     mlp_eval_append_linear (inDim := n) (m := m) (n := k)
       (l1a := l1f) (l1b := l1g) (l2a := l2f) (l2b := l2g)
       (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) (x := x.1)
-  have hf'' : |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x.1| < ε / 2 := hf' x
-  have hg'' : |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x.1| < ε / 2 := hg' x
+  have hf'' : |f x - mlpEval (n := n) (hidDim := m) l1f l2f x.1| < ε / 2 := hf' x
+  have hg'' : |g x - mlpEval (n := n) (hidDim := k) l1g l2g x.1| < ε / 2 := hg' x
   have hre :
-      (f x + g x) - mlpEvalNd (n := n) (hidDim := m + k)
+      (f x + g x) - mlpEval (n := n) (hidDim := m + k)
           (appendLinearSpec (inDim := n) l1f l1g)
           (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x.1
         =
-      (f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x.1)
-        + (g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x.1) := by
+      (f x - mlpEval (n := n) (hidDim := m) l1f l2f x.1)
+        + (g x - mlpEval (n := n) (hidDim := k) l1g l2g x.1) := by
     have hcomb' :
-        mlpEvalNd (n := n) (hidDim := m + k)
+        mlpEval (n := n) (hidDim := m + k)
             (appendLinearSpec (inDim := n) l1f l1g)
             (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x.1
           =
-        mlpEvalNd (n := n) (hidDim := m) l1f l2f x.1
-          + mlpEvalNd (n := n) (hidDim := k) l1g l2g x.1 := by
+        mlpEval (n := n) (hidDim := m) l1f l2f x.1
+          + mlpEval (n := n) (hidDim := k) l1g l2g x.1 := by
       simpa [add_assoc, add_left_comm, add_comm] using hcomb
     -- Rearrange the two approximation errors.
     simp [hcomb', sub_eq_add_neg, add_assoc, add_left_comm, add_comm]
-  have htri : |(f x + g x) - mlpEvalNd (n := n) (hidDim := m + k)
+  have htri : |(f x + g x) - mlpEval (n := n) (hidDim := m + k)
           (appendLinearSpec (inDim := n) l1f l1g)
           (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x.1|
-        ≤ |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x.1|
-          + |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x.1| := by
+        ≤ |f x - mlpEval (n := n) (hidDim := m) l1f l2f x.1|
+          + |g x - mlpEval (n := n) (hidDim := k) l1g l2g x.1| := by
     -- Apply the triangle inequality to the two approximation errors.
     simpa [hre] using
-      (abs_add_le (f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x.1)
-        (g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x.1))
-  have : |(f x + g x) - mlpEvalNd (n := n) (hidDim := m + k)
+      (abs_add_le (f x - mlpEval (n := n) (hidDim := m) l1f l2f x.1)
+        (g x - mlpEval (n := n) (hidDim := k) l1g l2g x.1))
+  have : |(f x + g x) - mlpEval (n := n) (hidDim := m + k)
           (appendLinearSpec (inDim := n) l1f l1g)
           (combineOutput (m := m) (n := k) (α := (1 : ℝ)) (β := (1 : ℝ)) (γ := 0) l2f l2g) x.1|
         < ε := by
-    have hsum : |f x - mlpEvalNd (n := n) (hidDim := m) l1f l2f x.1|
-          + |g x - mlpEvalNd (n := n) (hidDim := k) l1g l2g x.1| < ε := by
+    have hsum : |f x - mlpEval (n := n) (hidDim := m) l1f l2f x.1|
+          + |g x - mlpEval (n := n) (hidDim := k) l1g l2g x.1| < ε := by
       nlinarith [hf'', hg'']
     exact lt_of_le_of_lt htri hsum
   simpa using this
 
 /-- If `f` is uniformly approximable on `K`, then so is the scalar multiple `c • f`. -/
-theorem smul {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
+theorem smul {n : Nat} {K : Set (Tensor ℝ [n])}
     (c : ℝ) {f : C(K, ℝ)} (hf : ApproxOnC (n := n) K f) :
     ApproxOnC (n := n) K (c • f) := by
   by_cases hc : c = 0
@@ -278,42 +278,42 @@ theorem smul {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
     -- Scale only the output layer weights/bias by `c`.
     let l2' : LinearSpec ℝ m 1 :=
       { weights := Tensor.matrix (m := 1) (n := m) (fun _ j => c * mat1Get l2.weights j)
-        bias := Tensor.vector (n := 1) (fun _ => c * extractScalarOutput l2.bias) }
+        bias := Tensor.ofFn (n := 1) (fun _ => c * extractScalarOutput l2.bias) }
     refine ⟨m, l1, l2', ?_⟩
     intro x
     have hscale :
-        mlpEvalNd (n := n) (hidDim := m) l1 l2' x.1
+        mlpEval (n := n) (hidDim := m) l1 l2' x.1
           =
-        c * mlpEvalNd (n := n) (hidDim := m) l1 l2 x.1 := by
+        c * mlpEval (n := n) (hidDim := m) l1 l2 x.1 := by
       -- We prove it by unfolding the bias+sum form.
       classical
       rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2') (x := x.1)]
       rw [mlp_eval_nd_eq_bias_sum (l1 := l1) (l2 := l2) (x := x.1)]
-      simp [l2', singleRowMatrix_get_matrix, extractScalarOutput, Tensor.vector, Tensor.item,
+      simp [l2', singleRowMatrix_get_matrix, extractScalarOutput, Tensor.ofFn, Tensor.item,
         mul_add, Finset.mul_sum, mul_left_comm, mul_comm]
     have habs :
-        |c * f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x.1|
+        |c * f x - mlpEval (n := n) (hidDim := m) l1 l2' x.1|
           =
-        |c| * |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x.1| := by
+        |c| * |f x - mlpEval (n := n) (hidDim := m) l1 l2 x.1| := by
       -- `c*f - c*net = c*(f-net)`
-      have : c * f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x.1
-          = c * (f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x.1) := by
+      have : c * f x - mlpEval (n := n) (hidDim := m) l1 l2' x.1
+          = c * (f x - mlpEval (n := n) (hidDim := m) l1 l2 x.1) := by
         simp [hscale, sub_eq_add_neg, mul_add, add_comm]
       simp [this, abs_mul]
-    have hmul : |c| * |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x.1| < |c| * (ε / |c|) := by
+    have hmul : |c| * |f x - mlpEval (n := n) (hidDim := m) l1 l2 x.1| < |c| * (ε / |c|) := by
       exact mul_lt_mul_of_pos_left (hf' x) hcabs
     have hcancel : |c| * (ε / |c|) = ε := by
       field_simp [hc, abs_ne_zero.2 hc]
-    have : |c • f x - mlpEvalNd (n := n) (hidDim := m) l1 l2' x.1| < ε := by
+    have : |c • f x - mlpEval (n := n) (hidDim := m) l1 l2' x.1| < ε := by
       -- Rewrite `hmul` using the absolute-value identity.
-      have : |c| * |f x - mlpEvalNd (n := n) (hidDim := m) l1 l2 x.1| < ε := by
+      have : |c| * |f x - mlpEval (n := n) (hidDim := m) l1 l2 x.1| < ε := by
         exact lt_of_lt_of_eq hmul hcancel
       -- `c • f x = c * f x` in `ℝ`, then use `habs`.
       simpa [habs] using this
     simpa using this
 
 /-- Finite sums preserve `ApproxOnC` (Finset-indexed). -/
-theorem sum_finset {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
+theorem sum_finset {n : Nat} {K : Set (Tensor ℝ [n])}
     {ι : Type} (s : Finset ι) (f : ι → C(K, ℝ))
     (hf : ∀ i ∈ s, ApproxOnC (n := n) K (f i)) :
     ApproxOnC (n := n) K (∑ i ∈ s, f i) := by
@@ -335,7 +335,7 @@ theorem sum_finset {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
         (add (n := n) (K := K) (f := f a) (g := ∑ i ∈ s, f i) ha' ih')
 
 /-- Finite sums preserve `ApproxOnC` (Fintype-indexed). -/
-theorem sum_fintype {n : Nat} {K : Set (ReLUMlpBridge.TensorVec n)}
+theorem sum_fintype {n : Nat} {K : Set (Tensor ℝ [n])}
     {ι : Type} [Fintype ι] (f : ι → C(K, ℝ)) (hf : ∀ i : ι, ApproxOnC (n := n) K (f i)) :
     ApproxOnC (n := n) K (∑ i : ι, f i) := by
   classical
@@ -358,13 +358,13 @@ This is a small algebraic normalization lemma used to connect coordinate polynom
 `MvPolynomial` syntax (`aeval`).
 -/
 theorem coordSubalg_eq_range_aeval {n : Nat} (K : Set
-  (NN.MLTheory.Proofs.UniversalApproximationND.TensorVec n)) :
-    NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass.coordSubalg (K := K) =
-      (MvPolynomial.aeval (NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass.coord (K :=
+  (Tensor ℝ [n])) :
+    NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass.coordSubalg (K := K) =
+      (MvPolynomial.aeval (NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass.coord (K :=
         K))).range := by
-  simpa [NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass.coordSubalg] using
+  simpa [NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass.coordSubalg] using
     (Algebra.adjoin_range_eq_range_aeval (R := ℝ)
-      (f := NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass.coord (K := K)))
+      (f := NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass.coord (K := K)))
 
 -- ---------------------------------------------------------------------------
 -- Polarization identity for products (sum over {±1}^d picks out the full product)
@@ -859,14 +859,14 @@ end Polarization
 
 /-! ## Compact domains: boxes and linear forms -/
 
-/-- The box `[-M,M]^n` as a subset of `TensorVec n`. -/
-noncomputable def boxN (n : Nat) (M : ℝ) : Set (ReLUMlpBridge.TensorVec n) :=
-  fun x => ∀ i : Fin n, toVec x i ∈ Set.Icc (-M) M
+/-- The box `[-M,M]^n` as a subset of `Tensor ℝ [n]`. -/
+noncomputable def boxN (n : Nat) (M : ℝ) : Set (Tensor ℝ [n]) :=
+  fun x => ∀ i : Fin n, Spec.Tensor.getScalar x i ∈ Set.Icc (-M) M
 
 /-- A coordinate of `x ∈ boxN n M` lies in the interval `[-M, M]`. -/
-lemma coord_mem_Icc {n : Nat} {M : ℝ} {x : ReLUMlpBridge.TensorVec n} (hx : x ∈ boxN n M) (i : Fin
+lemma coord_mem_Icc {n : Nat} {M : ℝ} {x : Tensor ℝ [n]} (hx : x ∈ boxN n M) (i : Fin
   n) :
-    toVec x i ∈ Set.Icc (-M) M :=
+    Spec.Tensor.getScalar x i ∈ Set.Icc (-M) M :=
   hx i
 
 /-- The weight vector `e_i + e_j` (sum of two standard basis vectors). -/
@@ -878,20 +878,20 @@ noncomputable def wMinus {n : Nat} (i j : Fin n) : Fin n → ℝ :=
   fun k => stdBasis (n := n) i k - stdBasis (n := n) j k
 
 /-- Linearity of `dot` in the weight argument: `dot (w1+w2) = dot w1 + dot w2`. -/
-lemma dot_add {n : Nat} (w1 w2 : Fin n → ℝ) (x : ReLUMlpBridge.TensorVec n) :
+lemma dot_add {n : Nat} (w1 w2 : Fin n → ℝ) (x : Tensor ℝ [n]) :
     dot (fun k => w1 k + w2 k) x = dot w1 x + dot w2 x := by
   classical
   simp [dot, add_mul, Finset.sum_add_distrib]
 
 /-- Negation law for `dot`: `dot (-w) = - dot w`. -/
-lemma dot_neg {n : Nat} (w : Fin n → ℝ) (x : ReLUMlpBridge.TensorVec n) :
+lemma dot_neg {n : Nat} (w : Fin n → ℝ) (x : Tensor ℝ [n]) :
     dot (fun k => -w k) x = - dot w x := by
   classical
   simp [dot, Finset.sum_neg_distrib]
 
-/-- `dot (e_i + e_j) x = x_i + x_j` for `TensorVec` coordinates. -/
-lemma dot_wPlus {n : Nat} (i j : Fin n) (x : ReLUMlpBridge.TensorVec n) :
-    dot (wPlus (n := n) i j) x = toVec x i + toVec x j := by
+/-- `dot (e_i + e_j) x = x_i + x_j` for rank-one tensor coordinates. -/
+lemma dot_wPlus {n : Nat} (i j : Fin n) (x : Tensor ℝ [n]) :
+    dot (wPlus (n := n) i j) x = Spec.Tensor.getScalar x i + Spec.Tensor.getScalar x j := by
   classical
   have hadd :
       dot (wPlus (n := n) i j) x =
@@ -903,9 +903,9 @@ lemma dot_wPlus {n : Nat} (i j : Fin n) (x : ReLUMlpBridge.TensorVec n) :
     exact dot_add (n := n) (w1 := stdBasis (n := n) i) (w2 := stdBasis (n := n) j) x
   simp [hadd, dot_stdBasis]
 
-/-- `dot (e_i - e_j) x = x_i - x_j` for `TensorVec` coordinates. -/
-lemma dot_wMinus {n : Nat} (i j : Fin n) (x : ReLUMlpBridge.TensorVec n) :
-    dot (wMinus (n := n) i j) x = toVec x i - toVec x j := by
+/-- `dot (e_i - e_j) x = x_i - x_j` for rank-one tensor coordinates. -/
+lemma dot_wMinus {n : Nat} (i j : Fin n) (x : Tensor ℝ [n]) :
+    dot (wMinus (n := n) i j) x = Spec.Tensor.getScalar x i - Spec.Tensor.getScalar x j := by
   classical
   have hadd :
       dot (wMinus (n := n) i j) x =
@@ -925,31 +925,31 @@ lemma dot_wMinus {n : Nat} (i j : Fin n) (x : ReLUMlpBridge.TensorVec n) :
   simp [hadd, hneg, dot_stdBasis, sub_eq_add_neg]
 
 /-- If `x ∈ [-M,M]^n`, then `x_i + x_j ∈ [-2M, 2M]`. -/
-lemma sum_mem_Icc {n : Nat} {M : ℝ} (_hM : 0 ≤ M) {x : ReLUMlpBridge.TensorVec n} (hx : x ∈ boxN n
+lemma sum_mem_Icc {n : Nat} {M : ℝ} (_hM : 0 ≤ M) {x : Tensor ℝ [n]} (hx : x ∈ boxN n
   M) (i j : Fin n) :
     dot (wPlus (n := n) i j) x ∈ Set.Icc (-2*M) (2*M) := by
   have hxi := coord_mem_Icc (n := n) (M := M) hx i
   have hxj := coord_mem_Icc (n := n) (M := M) hx j
-  have hxi_l : -M ≤ toVec x i := hxi.1
-  have hxi_u : toVec x i ≤ M := hxi.2
-  have hxj_l : -M ≤ toVec x j := hxj.1
-  have hxj_u : toVec x j ≤ M := hxj.2
-  have hl : -(2*M) ≤ toVec x i + toVec x j := by linarith
-  have hu : toVec x i + toVec x j ≤ 2*M := by linarith
+  have hxi_l : -M ≤ Spec.Tensor.getScalar x i := hxi.1
+  have hxi_u : Spec.Tensor.getScalar x i ≤ M := hxi.2
+  have hxj_l : -M ≤ Spec.Tensor.getScalar x j := hxj.1
+  have hxj_u : Spec.Tensor.getScalar x j ≤ M := hxj.2
+  have hl : -(2*M) ≤ Spec.Tensor.getScalar x i + Spec.Tensor.getScalar x j := by linarith
+  have hu : Spec.Tensor.getScalar x i + Spec.Tensor.getScalar x j ≤ 2*M := by linarith
   simpa [dot_wPlus] using And.intro hl hu
 
 /-- If `x ∈ [-M,M]^n`, then `x_i - x_j ∈ [-2M, 2M]`. -/
-lemma diff_mem_Icc {n : Nat} {M : ℝ} (_hM : 0 ≤ M) {x : ReLUMlpBridge.TensorVec n} (hx : x ∈ boxN n
+lemma diff_mem_Icc {n : Nat} {M : ℝ} (_hM : 0 ≤ M) {x : Tensor ℝ [n]} (hx : x ∈ boxN n
   M) (i j : Fin n) :
     dot (wMinus (n := n) i j) x ∈ Set.Icc (-2*M) (2*M) := by
   have hxi := coord_mem_Icc (n := n) (M := M) hx i
   have hxj := coord_mem_Icc (n := n) (M := M) hx j
-  have hxi_l : -M ≤ toVec x i := hxi.1
-  have hxi_u : toVec x i ≤ M := hxi.2
-  have hxj_l : -M ≤ toVec x j := hxj.1
-  have hxj_u : toVec x j ≤ M := hxj.2
-  have hl : -(2*M) ≤ toVec x i - toVec x j := by linarith
-  have hu : toVec x i - toVec x j ≤ 2*M := by linarith
+  have hxi_l : -M ≤ Spec.Tensor.getScalar x i := hxi.1
+  have hxi_u : Spec.Tensor.getScalar x i ≤ M := hxi.2
+  have hxj_l : -M ≤ Spec.Tensor.getScalar x j := hxj.1
+  have hxj_u : Spec.Tensor.getScalar x j ≤ M := hxj.2
+  have hl : -(2*M) ≤ Spec.Tensor.getScalar x i - Spec.Tensor.getScalar x j := by linarith
+  have hu : Spec.Tensor.getScalar x i - Spec.Tensor.getScalar x j ≤ 2*M := by linarith
   simpa [dot_wMinus] using And.intro hl hu
 
 /--
@@ -961,7 +961,7 @@ approximated on `boxN n M` by a single-hidden-layer ReLU MLP.
 theorem relu_mul_coord_universal_approximation_box
     {n : Nat} {M : ℝ} (hM : 0 < M) (i j : Fin n) :
     ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ n hidDim) (l2 : LinearSpec ℝ hidDim 1),
-      ∀ x ∈ boxN n M, |(toVec x i * toVec x j) - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x| <
+      ∀ x ∈ boxN n M, |(Spec.Tensor.getScalar x i * Spec.Tensor.getScalar x j) - mlpEval (n := n) (hidDim := hidDim) l1 l2 x| <
         ε := by
   classical
   intro ε hε
@@ -983,8 +983,8 @@ theorem relu_mul_coord_universal_approximation_box
   rcases relu_universal_approximation_Icc (f := fun u => u*u) (a := -2*M) (b := 2*M) (L := 4*M)
       h_ab hL h_lip δ hδ with ⟨hidSq, l1Sq, l2Sq, hSq⟩
   -- Lift to `u = x_i + x_j` and `u = x_i - x_j`.
-  let l1Plus : LinearSpec ℝ n hidSq := liftLayer1From1d (n := n) l1Sq (wPlus (n := n) i j) 0
-  let l1Minus : LinearSpec ℝ n hidSq := liftLayer1From1d (n := n) l1Sq (wMinus (n := n) i j) 0
+  let l1Plus : LinearSpec ℝ n hidSq := liftScalarLayer1 (n := n) l1Sq (wPlus (n := n) i j) 0
+  let l1Minus : LinearSpec ℝ n hidSq := liftScalarLayer1 (n := n) l1Sq (wMinus (n := n) i j) 0
   let l1Prod : LinearSpec ℝ n (hidSq + hidSq) := appendLinearSpec (inDim := n) l1Plus l1Minus
   let l2Prod : LinearSpec ℝ (hidSq + hidSq) 1 :=
     combineOutput (m := hidSq) (n := hidSq) (α := (1/4 : ℝ)) (β := (-1/4 : ℝ)) (γ := 0) l2Sq l2Sq
@@ -995,20 +995,20 @@ theorem relu_mul_coord_universal_approximation_box
   have hx_minus : dot (wMinus (n := n) i j) x ∈ Set.Icc (-2*M) (2*M) := diff_mem_Icc (n := n) (M :=
     M) hM0 hx i j
   have hplus_eval :
-      mlpEvalNd (n := n) (hidDim := hidSq) l1Plus l2Sq x =
-        mlpEval1d hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) := by
+      mlpEval (n := n) (hidDim := hidSq) l1Plus l2Sq x =
+        mlpEvalScalar hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) := by
     simpa [l1Plus] using
-      (mlp_eval_lift_from_1d (n := n) (hidDim := hidSq) l1Sq l2Sq (wPlus (n := n) i j) 0 x)
+      (mlp_eval_lift_from_scalar (n := n) (hidDim := hidSq) l1Sq l2Sq (wPlus (n := n) i j) 0 x)
   have hminus_eval :
-      mlpEvalNd (n := n) (hidDim := hidSq) l1Minus l2Sq x =
-        mlpEval1d hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x) := by
+      mlpEval (n := n) (hidDim := hidSq) l1Minus l2Sq x =
+        mlpEvalScalar hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x) := by
     simpa [l1Minus] using
-      (mlp_eval_lift_from_1d (n := n) (hidDim := hidSq) l1Sq l2Sq (wMinus (n := n) i j) 0 x)
+      (mlp_eval_lift_from_scalar (n := n) (hidDim := hidSq) l1Sq l2Sq (wMinus (n := n) i j) 0 x)
   have hcomb :
-      mlpEvalNd (n := n) (hidDim := hidSq + hidSq) l1Prod l2Prod x
+      mlpEval (n := n) (hidDim := hidSq + hidSq) l1Prod l2Prod x
         =
-      (1/4 : ℝ) * mlpEvalNd (n := n) (hidDim := hidSq) l1Plus l2Sq x
-        + (-1/4 : ℝ) * mlpEvalNd (n := n) (hidDim := hidSq) l1Minus l2Sq x := by
+      (1/4 : ℝ) * mlpEval (n := n) (hidDim := hidSq) l1Plus l2Sq x
+        + (-1/4 : ℝ) * mlpEval (n := n) (hidDim := hidSq) l1Minus l2Sq x := by
     have :=
       mlp_eval_append_linear (inDim := n) (m := hidSq) (n := hidSq)
         (l1a := l1Plus) (l1b := l1Minus) (l2a := l2Sq) (l2b := l2Sq)
@@ -1016,32 +1016,32 @@ theorem relu_mul_coord_universal_approximation_box
     simpa [l1Prod, l2Prod, add_assoc, add_left_comm, add_comm] using this
   have hsq_plus :
       |(dot (wPlus (n := n) i j) x) * (dot (wPlus (n := n) i j) x)
-        - mlpEval1d hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x)| < δ :=
+        - mlpEvalScalar hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x)| < δ :=
     hSq (dot (wPlus (n := n) i j) x) hx_plus
   have hsq_minus :
       |(dot (wMinus (n := n) i j) x) * (dot (wMinus (n := n) i j) x)
-        - mlpEval1d hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x)| < δ :=
+        - mlpEvalScalar hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x)| < δ :=
     hSq (dot (wMinus (n := n) i j) x) hx_minus
   -- Finish with `uv = ((u+v)^2 - (u-v)^2)/4` and the same triangle bound as the 2D proof.
   have hmul :
-      (toVec x i * toVec x j)
+      (Spec.Tensor.getScalar x i * Spec.Tensor.getScalar x j)
         = ((dot (wPlus (n := n) i j) x) * (dot (wPlus (n := n) i j) x)
             - (dot (wMinus (n := n) i j) x) * (dot (wMinus (n := n) i j) x)) / 4 := by
-    have := mul_identity (toVec x i) (toVec x j)
+    have := mul_identity (Spec.Tensor.getScalar x i) (Spec.Tensor.getScalar x j)
     simpa [dot_wPlus, dot_wMinus, sub_eq_add_neg, add_assoc, add_comm, add_left_comm] using this
   -- Main error bound
-  have : |(toVec x i * toVec x j) - mlpEvalNd (n := n) (hidDim := hidSq + hidSq) l1Prod l2Prod x|
+  have : |(Spec.Tensor.getScalar x i * Spec.Tensor.getScalar x j) - mlpEval (n := n) (hidDim := hidSq + hidSq) l1Prod l2Prod x|
     < ε := by
     rw [hmul, hcomb, hplus_eval, hminus_eval]
     set e1 := (dot (wPlus (n := n) i j) x) * (dot (wPlus (n := n) i j) x)
-        - mlpEval1d hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) with he1
+        - mlpEvalScalar hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) with he1
     set e2 := (dot (wMinus (n := n) i j) x) * (dot (wMinus (n := n) i j) x)
-        - mlpEval1d hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x) with he2
+        - mlpEvalScalar hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x) with he2
     have hrew :
         ((dot (wPlus (n := n) i j) x) * (dot (wPlus (n := n) i j) x)
               - (dot (wMinus (n := n) i j) x) * (dot (wMinus (n := n) i j) x)) / 4
-            - ((1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) +
-                (-1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x))
+            - ((1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) +
+                (-1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x))
           =
         (e1 - e2) / 4 := by
       subst e1 e2
@@ -1067,13 +1067,13 @@ theorem relu_mul_coord_universal_approximation_box
       exact lt_of_le_of_lt (by simpa [habs] using hle) hlt
     have : |((dot (wPlus (n := n) i j) x) * (dot (wPlus (n := n) i j) x)
               - (dot (wMinus (n := n) i j) x) * (dot (wMinus (n := n) i j) x)) / 4
-            - ((1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) +
-                (-1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x))| < ε := by
+            - ((1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) +
+                (-1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x))| < ε := by
       have hrew' :
           ((dot (wPlus (n := n) i j) x) * (dot (wPlus (n := n) i j) x)
                 - (dot (wMinus (n := n) i j) x) * (dot (wMinus (n := n) i j) x)) / 4
-              - ((4 : ℝ)⁻¹ * mlpEval1d hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) +
-                  (-1 / 4 : ℝ) * mlpEval1d hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x))
+              - ((4 : ℝ)⁻¹ * mlpEvalScalar hidSq l1Sq l2Sq (dot (wPlus (n := n) i j) x) +
+                  (-1 / 4 : ℝ) * mlpEvalScalar hidSq l1Sq l2Sq (dot (wMinus (n := n) i j) x))
             =
           (e1 - e2) / 4 := by
         simpa [one_div] using hrew
@@ -1174,7 +1174,7 @@ This packages the 1D Lipschitz ReLU approximation theorem for the specific funct
 -/
 theorem relu_universal_approximation_pow_Icc {R : ℝ} (hR : 0 < R) (d : ℕ) :
     ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ 1 hidDim) (l2 : LinearSpec ℝ hidDim 1),
-      ∀ x ∈ Set.Icc (-R) R, |x ^ d - mlpEval1d hidDim l1 l2 x| < ε := by
+      ∀ x ∈ Set.Icc (-R) R, |x ^ d - mlpEvalScalar hidDim l1 l2 x| < ε := by
   intro ε hε
   have hR0 : 0 ≤ R := le_of_lt hR
   have hab : (-R) < R := by nlinarith
@@ -1204,14 +1204,14 @@ theorem relu_universal_approximation_pow_Icc {R : ℝ} (hR : 0 < R) (d : ℕ) :
 
 section ReLUStoneWeierstrassBridge
 
-open NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass
+open NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass
 open scoped BigOperators
 open ContinuousMap
 
-variable {n : Nat} (K : Set (ReLUMlpBridge.TensorVec n)) [CompactSpace K]
+variable {n : Nat} (K : Set (Tensor ℝ [n])) [CompactSpace K]
 
 /-- The linear form `x ↦ w ⋅ x` as a continuous map on the compact set `K`. -/
-noncomputable def linFormC (K : Set (ReLUMlpBridge.TensorVec n)) (w : Fin n → ℝ) : C(K, ℝ) :=
+noncomputable def linFormC (K : Set (Tensor ℝ [n])) (w : Fin n → ℝ) : C(K, ℝ) :=
   ∑ i : Fin n, w i • StoneWeierstrass.coord (K := K) i
 
 omit [CompactSpace K] in
@@ -1219,7 +1219,12 @@ omit [CompactSpace K] in
 lemma linFormC_apply (w : Fin n → ℝ) (x : K) :
     linFormC K w x = dot w x.1 := by
   classical
-  simp [linFormC, StoneWeierstrass.coord, dot, ReLUMlpBridge.toVec]
+  simp only [linFormC, StoneWeierstrass.coord, dot, ContinuousMap.sum_apply,
+    ContinuousMap.smul_apply, smul_eq_mul]
+  apply Finset.sum_congr rfl
+  intro i _
+  change w i * Tensor.vectorEquiv n x.1 i = w i * Spec.Tensor.getScalar x.1 i
+  rw [Spec.Tensor.vectorEquiv_apply]
 
 -- Approximate `x ↦ (w⋅x)^d` on a compact set, using the 1D power approximation and ridge lifting.
 /-- Uniform approximation of the continuous function `x ↦ (w ⋅ x)^d` on `K` by a 2-layer ReLU MLP.
@@ -1230,7 +1235,7 @@ theorem approx_pow_linFormC (w : Fin n → ℝ) (d : ℕ) :
   let R : ℝ := max 1 ‖linFormC K w‖
   have hR : 0 < R := lt_of_lt_of_le zero_lt_one (le_max_left 1 ‖linFormC K w‖)
   rcases relu_universal_approximation_pow_Icc (R := R) hR d ε hε with ⟨hidDim, l1, l2, hpow⟩
-  let l1' : LinearSpec ℝ n hidDim := liftLayer1From1d (n := n) l1 w 0
+  let l1' : LinearSpec ℝ n hidDim := liftScalarLayer1 (n := n) l1 w 0
   refine ⟨hidDim, l1', l2, ?_⟩
   intro x
   have hxR : linFormC K w x ∈ Set.Icc (-R) R := by
@@ -1239,14 +1244,14 @@ theorem approx_pow_linFormC (w : Fin n → ℝ) (d : ℕ) :
     have habsR : |linFormC K w x| ≤ R := le_trans habs (le_max_right 1 ‖linFormC K w‖)
     exact (abs_le).1 habsR
   have hpowx :
-      |(linFormC K w x) ^ d - mlpEval1d hidDim l1 l2 (linFormC K w x)| < ε :=
+      |(linFormC K w x) ^ d - mlpEvalScalar hidDim l1 l2 (linFormC K w x)| < ε :=
     hpow (linFormC K w x) hxR
   have hlift :
-      mlpEvalNd (n := n) (hidDim := hidDim) l1' l2 x.1
+      mlpEval (n := n) (hidDim := hidDim) l1' l2 x.1
         =
-      mlpEval1d hidDim l1 l2 (dot w x.1) := by
+      mlpEvalScalar hidDim l1 l2 (dot w x.1) := by
     simpa [l1'] using
-      (mlp_eval_lift_from_1d (n := n) (hidDim := hidDim) l1 l2 w 0 x.1)
+      (mlp_eval_lift_from_scalar (n := n) (hidDim := hidDim) l1 l2 w 0 x.1)
   have hdot : dot w x.1 = linFormC K w x :=
     (linFormC_apply (K := K) (w := w) (x := x)).symm
   -- rewrite the approximator in terms of the lifted network.
@@ -1256,11 +1261,11 @@ end ReLUStoneWeierstrassBridge
 
 section ReLUStoneWeierstrassBridgeProducts
 
-open NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass
+open NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass
 open scoped BigOperators
 open ContinuousMap
 
-variable {n : Nat} (K : Set (ReLUMlpBridge.TensorVec n)) [CompactSpace K]
+variable {n : Nat} (K : Set (Tensor ℝ [n])) [CompactSpace K]
 
 -- Weight vector for the signed sum `∑ i, sgn(ε i) * x_{idx i}`.
 /-- Weight vector encoding a signed sum of selected coordinates `∑ i, sgn(ε i) * x_{idx i}`. -/
@@ -1269,57 +1274,57 @@ noncomputable def wSigned {d : Nat} (idx : Fin d → Fin n) (ε : Fin d → Bool
 
 /-- `dot (wSigned idx ε) x` computes the signed sum of the selected coordinates of `x`. -/
 lemma dot_wSigned_eq_signedSum {d : Nat} (idx : Fin d → Fin n) (ε : Fin d → Bool)
-    (x : ReLUMlpBridge.TensorVec n) :
+    (x : Tensor ℝ [n]) :
     dot (wSigned (n := n) idx ε) x =
-      signedSum (d := d) ε (fun i : Fin d => toVec x (idx i)) := by
+      signedSum (d := d) ε (fun i : Fin d => Spec.Tensor.getScalar x (idx i)) := by
   classical
   -- Expand `dot` and rearrange into a sum of basis-vector dots.
   unfold dot wSigned signedSum
-  -- First distribute the `toVec x j` multiplier across the inner sum.
+  -- First distribute the `Spec.Tensor.getScalar x j` multiplier across the inner sum.
   have hdist :
-      (∑ j : Fin n, (∑ i : Fin d, sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j)
+      (∑ j : Fin n, (∑ i : Fin d, sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j)
         =
-      ∑ j : Fin n, ∑ i : Fin d, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j := by
+      ∑ j : Fin n, ∑ i : Fin d, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j := by
     refine Fintype.sum_congr _ _ (fun j => ?_)
     -- `(∑ i, a i) * b = ∑ i, a i * b` on `Finset.univ`.
     simpa using
       (Finset.sum_mul (s := (Finset.univ : Finset (Fin d)))
         (f := fun i : Fin d => sgn (ε i) * stdBasis (n := n) (idx i) j)
-        (a := toVec x j))
+        (a := Spec.Tensor.getScalar x j))
   -- Swap the two sums.
   have hswap :
-      (∑ j : Fin n, ∑ i : Fin d, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j)
+      (∑ j : Fin n, ∑ i : Fin d, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j)
         =
-      ∑ i : Fin d, ∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j := by
+      ∑ i : Fin d, ∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j := by
     -- This is the standard `Finset.sum_comm` over `Finset.univ`.
     exact Finset.sum_comm
   -- Simplify the inner sum using `dot_stdBasis`.
   have hinner :
       ∀ i : Fin d,
-        (∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j)
+        (∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j)
           =
-        sgn (ε i) * toVec x (idx i) := by
+        sgn (ε i) * Spec.Tensor.getScalar x (idx i) := by
     intro i
     -- Factor out the constant `sgn (ε i)` and recognize `dot (stdBasis (idx i)) x`.
     have :
-        (∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j)
+        (∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j)
           =
-        sgn (ε i) * (∑ j : Fin n, stdBasis (n := n) (idx i) j * toVec x j) := by
+        sgn (ε i) * (∑ j : Fin n, stdBasis (n := n) (idx i) j * Spec.Tensor.getScalar x j) := by
       -- `∑ j, (c * a j) * b j = c * ∑ j, a j * b j`
       simp [mul_assoc, Finset.mul_sum]
     have hdotbasis :
-        (∑ j : Fin n, stdBasis (n := n) (idx i) j * toVec x j) = toVec x (idx i) := by
+        (∑ j : Fin n, stdBasis (n := n) (idx i) j * Spec.Tensor.getScalar x j) = Spec.Tensor.getScalar x (idx i) := by
       simpa [dot] using (dot_stdBasis (n := n) (i := idx i) (x := x))
     calc
-      (∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j)
-          = sgn (ε i) * (∑ j : Fin n, stdBasis (n := n) (idx i) j * toVec x j) := this
-      _ = sgn (ε i) * toVec x (idx i) := by simp [hdotbasis]
+      (∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j)
+          = sgn (ε i) * (∑ j : Fin n, stdBasis (n := n) (idx i) j * Spec.Tensor.getScalar x j) := this
+      _ = sgn (ε i) * Spec.Tensor.getScalar x (idx i) := by simp [hdotbasis]
   -- Put everything together.
   calc
-    (∑ j : Fin n, (∑ i : Fin d, sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j)
-        = ∑ i : Fin d, ∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * toVec x j := by
+    (∑ j : Fin n, (∑ i : Fin d, sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j)
+        = ∑ i : Fin d, ∑ j : Fin n, (sgn (ε i) * stdBasis (n := n) (idx i) j) * Spec.Tensor.getScalar x j := by
           simpa [hdist] using hswap
-    _ = ∑ i : Fin d, sgn (ε i) * toVec x (idx i) := by
+    _ = ∑ i : Fin d, sgn (ε i) * Spec.Tensor.getScalar x (idx i) := by
           refine Fintype.sum_congr _ _ (fun i => ?_)
           simpa using hinner i
 
@@ -1355,14 +1360,14 @@ theorem approx_coordProd_fin {d : Nat} (idx : Fin d → Fin n) :
       rhs = (∏ i : Fin d, StoneWeierstrass.coord (K := K) (idx i)) := by
     ext x
     -- reduce to a pointwise real identity and apply `polarization_prod`.
-    have hpol := polarization_prod (d := d) (u := fun i : Fin d => toVec x.1 (idx i))
+    have hpol := polarization_prod (d := d) (u := fun i : Fin d => Spec.Tensor.getScalar x.1 (idx i))
     -- rewrite the RHS evaluation into the polarization sum
     have hterm_eval :
         (∑ ε : (Fin d → Bool), term ε) x
           =
         ∑ ε : (Fin d → Bool),
           (signedProd (d := d) ε) *
-            (signedSum (d := d) ε (fun i : Fin d => toVec x.1 (idx i))) ^ d := by
+            (signedSum (d := d) ε (fun i : Fin d => Spec.Tensor.getScalar x.1 (idx i))) ^ d := by
       -- evaluate `term` and rewrite the lifted linear form as the signed sum.
       simp [term, linFormC_apply (K := K), dot_wSigned_eq_signedSum (n := n) (idx := idx),
         ]
@@ -1372,14 +1377,16 @@ theorem approx_coordProd_fin {d : Nat} (idx : Fin d → Fin n) :
       have hpolC :
           (∑ ε : (Fin d → Bool),
               (signedProd (d := d) ε) *
-                (signedSum (d := d) ε (fun i : Fin d => toVec x.1 (idx i))) ^ d)
-            = C * (∏ i : Fin d, toVec x.1 (idx i)) := by
+                (signedSum (d := d) ε (fun i : Fin d => Spec.Tensor.getScalar x.1 (idx i))) ^ d)
+            = C * (∏ i : Fin d, Spec.Tensor.getScalar x.1 (idx i)) := by
         simpa [C, mul_assoc, mul_left_comm, mul_comm] using hpol
       -- compute the coordinate product pointwise
       have hprod :
-          (∏ i : Fin d, StoneWeierstrass.coord (K := K) (idx i) x) = ∏ i : Fin d, toVec x.1 (idx i)
+          (∏ i : Fin d, StoneWeierstrass.coord (K := K) (idx i) x) = ∏ i : Fin d, Spec.Tensor.getScalar x.1 (idx i)
             := by
-        simp [StoneWeierstrass.coord, ReLUMlpBridge.toVec]
+        apply Finset.prod_congr rfl
+        intro i _
+        exact Spec.Tensor.vectorEquiv_apply x.1 (idx i)
       -- simplify `rhs x`
       -- Keep `C` folded so `simp` can cancel using `hCne`.
       simp [rhs, ContinuousMap.smul_apply, hterm_eval, hprod, hpolC, hCne]
@@ -1439,11 +1446,11 @@ end ReLUStoneWeierstrassBridgeProducts
 
 section ReLUStoneWeierstrassBridgePolynomials
 
-open NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass
+open NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass
 open scoped BigOperators
 open ContinuousMap
 
-variable {n : Nat} (K : Set (ReLUMlpBridge.TensorVec n)) [CompactSpace K]
+variable {n : Nat} (K : Set (Tensor ℝ [n])) [CompactSpace K]
 
 -- `∏ x : m, f (x : α)` (as a fintype product over the multiset coerced to a type) is exactly the
 -- multiset product of `m.map f`.
@@ -1612,11 +1619,11 @@ end ReLUStoneWeierstrassBridgePolynomials
 
 section ReLUStoneWeierstrassBridgeFull
 
-open NN.MLTheory.Proofs.UniversalApproximationND.StoneWeierstrass
+open NN.MLTheory.Proofs.UniversalApproximation.StoneWeierstrass
 open scoped BigOperators
 open ContinuousMap
 
-variable {n : Nat} (K : Set (ReLUMlpBridge.TensorVec n)) [CompactSpace K]
+variable {n : Nat} (K : Set (Tensor ℝ [n])) [CompactSpace K]
 
 -- ---------------------------------------------------------------------------
 -- Bridge theorem: coordinate Stone–Weierstrass subalgebra ⊆ ReLU uniform closure (as `ApproxOnC`)
@@ -1694,52 +1701,52 @@ theorem relu_universal_approximation_compact (f : C(K, ℝ)) :
       exact lt_of_le_of_lt hle' hg'
     exact this
   have hnet' : |(MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-        mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1| < ε / 2 := hnet x
+        mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1| < ε / 2 := hnet x
   -- Combine the two `< ε/2` bounds.
   have htri :
-      |f x - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1|
+      |f x - mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1|
         ≤
       |f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x|
         +
       |(MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-          mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1| := by
+          mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1| := by
     -- `f - net = (f - poly) + (poly - net)`
-    have hdecomp : f x - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1
+    have hdecomp : f x - mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1
         =
       (f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x)
         +
       ((MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-        mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1) := by
+        mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1) := by
       ring
     have habs :
-        |f x - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1|
+        |f x - mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1|
           =
         |(f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x)
             +
           ((MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-            mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1)| := by
+            mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1)| := by
       simp
     -- Now apply `abs_add`.
     calc
-      |f x - mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1|
+      |f x - mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1|
           =
         |(f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x)
             +
           ((MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-            mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1)| := habs
+            mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1)| := habs
       _ ≤
         |f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x|
           +
         |(MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-            mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1| := by
+            mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1| := by
           simpa using
             (abs_add_le
               (f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x)
               ((MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-                mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1))
+                mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1))
   have hsum : |f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x|
         + |(MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x -
-            mlpEvalNd (n := n) (hidDim := hidDim) l1 l2 x.1| < ε := by
+            mlpEval (n := n) (hidDim := hidDim) l1 l2 x.1| < ε := by
     -- `|f - poly| = |poly - f|` and both pieces are `< ε/2`.
     have hfg : |f x - (MvPolynomial.aeval (StoneWeierstrass.coord (K := K)) p) x| < ε / 2 := by
       simpa [abs_sub_comm] using hgf
@@ -1748,22 +1755,9 @@ theorem relu_universal_approximation_compact (f : C(K, ℝ)) :
 
 end ReLUStoneWeierstrassBridgeFull
 
-/-! ## Two forms for two-dimensional multiplication -/
+/-! ## Two-dimensional multiplication from the general coordinate theorem -/
 
-/--
-Agreement theorem for the standalone 2D multiplication construction from `ReLUMulApprox`.
-
-The n-dimensional development below subsumes this result. This theorem name remains available for
-downstream files that use the classical two-coordinate multiplication statement.
--/
-theorem relu_mul_universal_approximation_plane_box
-    {M : ℝ} (hM : 0 < M) :
-    ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ 2 hidDim) (l2 : LinearSpec ℝ hidDim 1),
-      ∀ x ∈ ReLUMulApprox.box M,
-        |ReLUMulApprox.mulFun x - mlpEvalNd (n := 2) (hidDim := hidDim) l1 l2 x| < ε := by
-  simpa using (ReLUMulApprox.relu_mul_universal_approximation_box (M := M) hM)
-
-lemma planeBox_iff_coordinateBox (M : ℝ) (x : ReLUMulApprox.PlaneTensorVec) :
+lemma planeBox_iff_coordinateBox (M : ℝ) (x : Tensor ℝ [2]) :
     x ∈ boxN 2 M ↔ x ∈ ReLUMulApprox.box M := by
   constructor
   · intro hx
@@ -1774,7 +1768,7 @@ lemma planeBox_iff_coordinateBox (M : ℝ) (x : ReLUMulApprox.PlaneTensorVec) :
       simpa [ReLUMulApprox.box, ReLUMulApprox.secondCoordinate] using this
   · intro hx
     -- Convert a two-coordinate box proof into the corresponding pair of interval facts.
-    change ∀ i : Fin 2, toVec x i ∈ Set.Icc (-M) M
+    change ∀ i : Fin 2, Spec.Tensor.getScalar x i ∈ Set.Icc (-M) M
     refine (Fin.forall_fin_two).2 ?_
     refine And.intro ?_ ?_
     · simpa [ReLUMulApprox.box, ReLUMulApprox.firstCoordinate] using hx.1
@@ -1790,7 +1784,7 @@ theorem relu_mul_universal_approximation_plane_box_via_nd
     {M : ℝ} (hM : 0 < M) :
     ∀ ε > 0, ∃ (hidDim : ℕ) (l1 : LinearSpec ℝ 2 hidDim) (l2 : LinearSpec ℝ hidDim 1),
       ∀ x ∈ ReLUMulApprox.box M,
-        |ReLUMulApprox.mulFun x - mlpEvalNd (n := 2) (hidDim := hidDim) l1 l2 x| < ε := by
+        |ReLUMulApprox.mulFun x - mlpEval (n := 2) (hidDim := hidDim) l1 l2 x| < ε := by
   intro ε hε
   rcases relu_mul_coord_universal_approximation_box (n := 2) (M := M) hM (0 : Fin 2) (1 : Fin 2) ε
     hε with

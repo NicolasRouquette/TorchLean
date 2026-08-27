@@ -285,10 +285,12 @@ opaque releaseWithToken (b : @& Buffer) (token : UInt32) : UInt32
 /--
 Effectfully release a device allocation owned by a completed runtime scope.
 
-The changing token makes the release depend on the surrounding `IO` sequence. Every alias becomes
-invalid, so callers must own the complete tape or workspace containing the buffer. Pure CUDA
-formulas that must retire an intermediate use `releaseThen`, which threads cleanup through the
-returned buffer.
+The changing token makes the release depend on the surrounding `IO` sequence. `Buffer` values are
+copyable Lean references to one native allocation, so release invalidates every raw alias and Lean's
+type system does not establish unique ownership. Callers must enforce that no alias remains usable;
+session caches atomically remove their published alias before calling this function. Pure CUDA
+formulas that retire an intermediate use `releaseThen`, which threads cleanup through the returned
+buffer.
 -/
 def releaseIO (b : @& Buffer) : IO UInt32 := do
   let token ← IO.monoNanosNow
@@ -310,7 +312,7 @@ Many CUDA tape formulas create a group of intermediate buffers, then continue wi
 buffer. Threading cleanup through the result keeps ownership local to the formula and avoids waiting
 for external-object finalizers in long training loops.
 -/
-def releaseManyThen (workspace : List Buffer) (keep : @& Buffer) : Buffer :=
+def releaseManyThen (workspace : Array Buffer) (keep : @& Buffer) : Buffer :=
   workspace.foldr (fun b acc => releaseThen b acc) keep
 
 /--
@@ -323,7 +325,7 @@ recompute a value only to differentiate through it.
 -/
 structure WithWorkspace where
   value : Buffer
-  workspace : List Buffer := []
+  workspace : Array Buffer := #[]
 
 namespace WithWorkspace
 

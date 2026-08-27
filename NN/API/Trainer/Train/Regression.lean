@@ -8,7 +8,7 @@ module
 
 public import NN.API.Trainer.Run
 public import NN.API.Trainer.Results
-public import NN.API.Verification
+public import NN.API.Trainer.Manual.Loops
 
 /-!
 # Regression Training
@@ -22,179 +22,68 @@ namespace TorchLean
 
 namespace Trainer
 
-namespace Implementation
+namespace Internal
 
 namespace Regression
 
-namespace Internal
-
-/-!
-This namespace contains the dependent runner machinery behind the public regression trainer. The
-public API stays small: examples talk about models, datasets, and artifacts, while this file carries
-the shape-indexed runtime details.
--/
-
-/--
-Run a regression trainer directly from a public `RunConfig`.
-
-Direct non-CLI execution path for the public training API. It deliberately avoids
-`Manual.run trainer.task run.toArgs`, because that CLI-oriented path is designed for executable
-commands that parse and print runtime flags themselves. Public trainer methods already hold a
-`RunConfig`, so they can instantiate the runner directly and keep the user-facing output clean.
--/
-def withRunner {σ τ : Shape} {β : Type}
-    (trainer : Regression σ τ) (run : RunConfig)
-    (k : {α : Type} → [_root_.Context α] → [DecidableEq Shape] → [ToString α] →
-      [Runtime.FromFloat α] → [NN.MLTheory.CROWN.BoundOps α] →
-      [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α] →
-      TorchLean.Trainer.Manual.Runner α trainer.task → IO β) :
-    IO β := do
-  let opts := run.toRuntimeOptions
-  if opts.usesCuda && run.scalar != .float32 then
-    throw <| IO.userError
-      "TorchLean.Trainer.train: CUDA execution currently requires --scalar float32"
-  match run.scalar with
-  | .float32 =>
-      let runner ←
-        TorchLean.Trainer.Manual.Runner.instantiate
-          (task := trainer.task) (α := Float32) (opts := opts)
-      k (α := Float32) runner
-  | .ieee32Exec =>
-      let α := TorchLean.Floats.IEEE32Exec
-      let runner ←
-        TorchLean.Trainer.Manual.Runner.instantiate
-          (task := trainer.task) (α := α) (opts := opts)
-      k (α := α) runner
-  | .complex64 =>
-      throw <| IO.userError
-        "TorchLean.Trainer.train: regression verification currently supports real scalar backends"
-
-/--
-Build the public trained regression result from an already-trained runner.
-
-Both dataset and stream training end at the same place: a runner whose parameters have been
-updated. This operation packages that runner behind the stable public API:
-
-- `predict` casts ordinary `Float` tensors into the selected runtime scalar,
-- `predictMany` applies the same prediction path to several inputs,
-- `verify` lowers the trained model into verifier IR and runs the public IBP request.
-
-Keeping this here prevents every training variant from re-copying the same trained-model closures.
--/
-def mkTrainResult {σ τ : Shape} {α : Type}
+/-- Train using an already-instantiated regression runner. -/
+def trainCoreWithRunner {inputShape outputShape : List Nat} {α β : Type}
     [_root_.Context α] [DecidableEq Shape] [ToString α] [Runtime.FromFloat α]
-    [NN.MLTheory.CROWN.BoundOps α]
-    [_root_.Runtime.Autograd.Torch.Internal.CudaBridge.TensorConv α]
-    (trainer : Regression σ τ)
+    [Runtime.TensorTransfer α]
+    (trainer : SelectedTask inputShape outputShape)
+    (data : Dataset inputShape outputShape)
+    (cfg : TorchLean.Trainer.Manual.TrainConfig)
+    (probes : Array (Probe inputShape))
     (runner : TorchLean.Trainer.Manual.Runner α trainer.task)
-    (steps : Nat) (before after : α) :
-    TrainResult σ τ :=
-  let predict :=
-    fun (xFloat : Tensor Float σ) => do
-      Manual.Runner.eval (task := trainer.task) runner
-      let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
-      let yhat ← Manual.Runner.run (task := trainer.task) runner x
-      Tensor.toFloatIO yhat
-  let predictMany :=
-    fun (xsFloat : List (Tensor Float σ)) => do
-      xsFloat.mapM predict
-  let verifyRobustLInf :=
-    fun (centerFloat : Tensor Float σ) (eps : Float) => do
-      Manual.Runner.eval (task := trainer.task) runner
-      let state : TensorPack α
-          (TorchLean.Trainer.Manual.stateShapes trainer.task) ←
-        Manual.Runner.state (task := trainer.task) runner
-      let modelState : TensorPack α (nn.stateShapes trainer.model) :=
-        Eq.mp (by rw [Regression.task_state_shapes_eq (trainer := trainer)]) state
-      let lowered ←
-        match Verification.lowerForwardToIR (α := α) trainer.model modelState with
-        | .ok c => pure c
-        | .error e => throw <| IO.userError e
-      let center := Tensor.map (Runtime.ofFloat (α := α)) centerFloat
-      let ps := Verification.seedLInfBall lowered center (Runtime.ofFloat eps)
-      let ibp := Verification.runIBP lowered ps
-      let outB ←
-        match Verification.outputBox? lowered ibp with
-        | .ok box => pure box
-        | .error msg => throw <| IO.userError msg
-      pure
-        { nodes := lowered.graph.nodes.size
-          outputDim := outB.dim
-          lo := Tensor.pretty outB.lo
-          hi := Tensor.pretty outB.hi }
-  { report :=
-      { steps := steps
-        before := toString before
-        after := toString after }
-    predict := predict
-    predictMany := predictMany
-    verifyRobustLInf? := some verifyRobustLInf }
+    (afterTrain : TorchLean.Trainer.Manual.Runner α trainer.task → IO β) :
+    IO (TrainResult inputShape outputShape × β) := do
+  let dataset ← data.build (α := α)
+  IO.println s!"dataset size = {dataset.size}"
+
+  Manual.Runner.train (task := trainer.task) runner
+
+  let reportProbes := fun (title : String) => do
+    unless probes.isEmpty do
+      IO.println title
+      for probe in probes do
+        let yhat ← Manual.Runner.run (task := trainer.task) runner (probe.input (α := α))
+        let expected :=
+          match probe.expected with
+          | some value => s!"  target={value}"
+          | none => ""
+        let inputText := if probe.inputText.isEmpty then "" else s!" {probe.inputText}"
+        IO.println s!"  {probe.name}:{inputText}{expected}  pred={Tensor.pretty yhat}"
+
+  TorchLean.Trainer.Manual.Report.meanLoss (task := trainer.task) runner dataset "before"
+  reportProbes "predictions(before)"
+
+  let report ← TorchLean.Trainer.Manual.trainFinite (task := trainer.task) runner cfg dataset
+
+  Manual.Runner.eval (task := trainer.task) runner
+  TorchLean.Trainer.Manual.Report.meanLoss (task := trainer.task) runner dataset "after"
+  reportProbes "predictions(after)"
+  let result := SelectedTask.toTrainResult (α := α) trainer runner cfg.steps
+    report.before report.after
+  let extra ← afterTrain runner
+  pure (result, extra)
 
 /--
 Shared regression training core for already-parsed public runtime settings.
 
-Path used by `trainer.train` and the regression implementation. It mirrors the CLI-backed
-trainer body, but starts from `RunConfig` instead of CLI strings, so public API calls do not print
-or parse runtime settings twice.
+This starts from `RunConfig` rather than CLI strings, so library calls do not parse or print runtime
+settings twice.
 -/
-def trainCore {σ τ : Shape} {β : Type}
-    (trainer : Regression σ τ) (run : RunConfig) (data : DataSource σ τ)
-    (cfg : TorchLean.Trainer.Manual.TrainConfig) (probes : List (Probe σ) := [])
+def trainCore {inputShape outputShape : List Nat} {β : Type}
+    (trainer : SelectedTask inputShape outputShape) (run : RunConfig)
+    (data : Dataset inputShape outputShape)
+    (cfg : TorchLean.Trainer.Manual.TrainConfig)
+    (probes : Array (Probe inputShape) := #[])
     (afterTrain : {α : Type} → [_root_.Context α] → [DecidableEq Shape] → [ToString α] →
       [Runtime.FromFloat α] →
       TorchLean.Trainer.Manual.Runner α trainer.task → IO β) :
-    IO (TrainResult σ τ × β) := do
-  withRunner trainer run (fun {α} _ _ _ _ _ _ runner => do
-    let dataset ← data.build (α := α)
-    IO.println s!"dataset size = {dataset.size}"
-
-    Manual.Runner.train (task := trainer.task) runner
-
-    let reportProbes := fun (title : String) => do
-      unless probes.isEmpty do
-        IO.println title
-        for probe in probes do
-          let yhat ← Manual.Runner.run (task := trainer.task) runner (probe.input (α := α))
-          let expected :=
-            match probe.expected with
-            | some value => s!"  target={value}"
-            | none => ""
-          let inputText := if probe.inputText.isEmpty then "" else s!" {probe.inputText}"
-          IO.println s!"  {probe.name}:{inputText}{expected}  pred={Tensor.pretty yhat}"
-
-    TorchLean.Trainer.Manual.Report.meanLoss (task := trainer.task) runner dataset "before"
-    reportProbes "predictions(before)"
-
-    let report ← TorchLean.Trainer.Manual.trainDataset (task := trainer.task) runner cfg dataset
-
-    Manual.Runner.eval (task := trainer.task) runner
-    TorchLean.Trainer.Manual.Report.meanLoss (task := trainer.task) runner dataset "after"
-    reportProbes "predictions(after)"
-    let result := mkTrainResult (α := α) trainer runner cfg.steps report.before report.after
-    let extra ← afterTrain (α := α) runner
-    pure (result, extra))
-
-end Internal
-
-end Regression
-
-namespace Regression
-
-/--
-Train on an in-memory regression dataset using an explicit runtime override.
-
-Use this when one call should temporarily override the optimizer, backend, scalar, or device
-settings attached to the trainer.
--/
-def trainWithRun {σ τ : Shape} (trainer : Regression σ τ)
-    (data : DataSource σ τ) (run : RunConfig := trainer.runConfig) (opts : TrainOptions := {})
-    (probes : List (Probe σ) := []) :
-    IO (TrainResult σ τ) := do
-  let (report, _) ← Regression.Internal.trainCore trainer run data
-    (opts.toTrainConfig run.optimizer) probes
-    (fun {_} _ _ _ _ _ => pure ())
-  report.report.writeLog opts.log opts.title opts.notes
-  pure report
+    IO (TrainResult inputShape outputShape × β) := do
+  SelectedTask.withRunner trainer run (fun {α} _ _ _ _ _ runner => do
+    trainCoreWithRunner (α := α) trainer data cfg probes runner (afterTrain (α := α)))
 
 /--
 Train on an in-memory regression dataset using the trainer's attached runtime settings.
@@ -204,14 +93,18 @@ For ordinary training:
 - put persistent optimizer, backend, scalar, or device choices on the trainer value itself,
 - pass per-training-call knobs such as `steps` and `logEvery` here.
 -/
-def train {σ τ : Shape} (trainer : Regression σ τ)
-    (data : DataSource σ τ) (opts : TrainOptions := {}) (probes : List (Probe σ) := []) :
-    IO (TrainResult σ τ) :=
-  trainWithRun trainer data trainer.runConfig opts probes
+def train {inputShape outputShape : List Nat} (trainer : SelectedTask inputShape outputShape)
+    (data : Dataset inputShape outputShape) (opts : TrainOptions := {})
+    (probes : Array (Probe inputShape) := #[]) : IO (TrainResult inputShape outputShape) := do
+  let (result, _) ← Regression.trainCore trainer trainer.runtime data
+    (opts.toTrainConfig trainer.runtime.optimizer) probes
+    (fun {_} _ _ _ _ _ => pure ())
+  result.report.writeLog opts.log opts.title opts.notes
+  pure result
 
 end Regression
 
-end Implementation
+end Internal
 
 end Trainer
 

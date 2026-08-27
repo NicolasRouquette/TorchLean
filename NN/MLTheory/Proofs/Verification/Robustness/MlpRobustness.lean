@@ -12,10 +12,9 @@ public import Mathlib.Order.Bounds.Basic
 public import NN.MLTheory.LearningTheory.Robustness.Spec
 public import NN.Proofs.Analysis.Lipschitz
 public import NN.Proofs.Tensor.Basic
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Spec.Core.Context
 public import NN.Spec.Core.Tensor
-public import NN.Spec.Core.TensorBridge
 public import NN.Spec.Core.TensorOps
 public import NN.Spec.Core.TensorReductionShape
 public import NN.Spec.Models.Mlp
@@ -117,7 +116,7 @@ theorem relu_comp_preserves (f : ℝ → ℝ) (h : ∀ x y, |f x - f y| ≤ |x -
 /-! ## Tensor helpers -/
 
 /-- Definition: A non-zero tensor has at least one non-zero entry -/
-def tensorNonzeroHasNonzeroEntry {m n : ℕ} (W : Tensor ℝ (.dim m (.dim n .scalar))) : Prop :=
+def tensorNonzeroHasNonzeroEntry {m n : ℕ} (W : Tensor ℝ [m, n]) : Prop :=
   W ≠ fill (0 : ℝ) (.dim m (.dim n .scalar)) →
   ∃ i : Fin m, ∃ j : Fin n, get2 W i j ≠ 0
 
@@ -131,29 +130,28 @@ theorem tensor_l2_norm_pos_of_ne_zero {s : Shape} (t : Tensor ℝ s) :
     exact h_ne_zero h_eq
   exact lt_of_le_of_ne (Proofs.tensor_l2_norm_nonneg t) (by simpa using h_norm_ne_zero.symm)
 
-/-- Get the operator norm of the weight matrix in a linear layer -/
-noncomputable def linearLayerOperatorNorm {inDim outDim : ℕ}
+/-- Frobenius-norm Lipschitz bound for a linear layer's weight matrix. -/
+noncomputable def linearLayerFrobeniusBound {inDim outDim : ℕ}
     (layer : Spec.LinearSpec ℝ inDim outDim) : ℝ :=
-  Proofs.matrixOpNorm layer.weights
+  Proofs.matrixFrobeniusNorm layer.weights
 
 /--
-Theorem: Linear layers are Lipschitz continuous with constant `matrix_op_norm`.
+Linear layers are Lipschitz continuous with the Frobenius norm as a valid, possibly loose, bound.
 -/
 theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
     (layer : Spec.LinearSpec ℝ inDim outDim)
     (h_weights_nonzero : layer.weights ≠ fill (0 : ℝ) _) :
-    ∃ L : ℝ, L > 0 ∧ ∀ x y : Tensor ℝ (.dim inDim .scalar),
+    ∃ L : ℝ, L > 0 ∧ ∀ x y : Tensor ℝ [inDim],
       Proofs.tensorL2Dist (Spec.linearSpec layer x) (Spec.linearSpec layer y) ≤
       L * Proofs.tensorL2Dist x y := by
 
-  -- Use the actual operator norm of the weight matrix
-  let L := linearLayerOperatorNorm layer
+  let L := linearLayerFrobeniusBound layer
 
   use L
   constructor
   · -- `matrix_op_norm` is nonnegative and only zero on the zero matrix.
     have hL_nonneg : 0 ≤ L := by
-      simp [L, linearLayerOperatorNorm, Proofs.matrixOpNorm, Real.sqrt_nonneg]
+      simp [L, linearLayerFrobeniusBound, Proofs.matrixFrobeniusNorm, Real.sqrt_nonneg]
 
     have hL_ne : L ≠ 0 := by
       intro hL0
@@ -161,7 +159,7 @@ theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
       have hsqrt0 :
           Real.sqrt (∑ i : Fin outDim, Spec.tensorNormSquared (Spec.get layer.weights i)) = 0 :=
             by
-        simpa [L, linearLayerOperatorNorm, Proofs.matrixOpNorm] using hL0
+        simpa [L, linearLayerFrobeniusBound, Proofs.matrixFrobeniusNorm] using hL0
 
       -- The sum is nonnegative (each term is a squared norm).
       have hsum_nonneg :
@@ -213,7 +211,7 @@ theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
           have hrows : rows = fun _ : Fin outDim => fill (0 : ℝ) (.dim inDim .scalar) := by
             funext i
             have hi : Spec.get layer.weights i = fill (0 : ℝ) (.dim inDim .scalar) := hrows0 i
-            simpa [hW, Spec.get, Spec.getAtSpec] using hi
+            simpa [hW, Spec.get] using hi
           -- Rewrite both sides into `Tensor.dim` form.
           simp [Spec.fill, hrows]
 
@@ -241,7 +239,7 @@ theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
   rw [h_linear_eq]
   exact Proofs.linear_op_norm_bound layer.weights x y
 
-theorem relu_activation_lipschitz {n : ℕ} (x y : Tensor ℝ (.dim n .scalar)) :
+theorem relu_activation_lipschitz {n : ℕ} (x y : Tensor ℝ [n]) :
     Proofs.tensorL2Dist (Activation.reluSpec x) (Activation.reluSpec y) ≤ Proofs.tensorL2Dist
       x y := by
   -- This follows directly from the existing relu_lipschitz_general theorem
@@ -253,7 +251,7 @@ theorem mlp_lipschitz_complete_analysis {inDim hidDim outDim : ℕ}
     (h1_nonzero : l1.weights ≠ fill (0 : ℝ) _)
     (h2_nonzero : l2.weights ≠ fill (0 : ℝ) _) :
     ∃ lipschitz_constant : ℝ, lipschitz_constant > 0 ∧
-      ∀ x y : Tensor ℝ (.dim inDim .scalar),
+      ∀ x y : Tensor ℝ [inDim],
         Proofs.tensorL2Dist (Examples.mlpForward l1 l2 x) (Examples.mlpForward l1 l2 y) ≤
         lipschitz_constant * Proofs.tensorL2Dist x y := by
 
@@ -349,15 +347,16 @@ theorem mlp_is_lipschitz_continuous_l2 {inDim hidDim outDim : ℕ}
   -- Rewrite robustness-spec distances into the `Proofs.tensor_l2_dist` form used by `hLip`.
   simpa [NN.MLTheory.Robustness.Spec.tensorDistance, Proofs.tensorL2Dist] using hLip x y
 
-theorem adversarial_robustness_certificate {inDim hidDim outDim : ℕ}
+/-- Bound output drift on an input ball. This theorem does not by itself preserve a class label. -/
+theorem mlp_output_drift_bound_on_ball {inDim hidDim outDim : ℕ}
     (l1 : Spec.LinearSpec ℝ inDim hidDim)
     (l2 : Spec.LinearSpec ℝ hidDim outDim)
     (h1_nonzero : l1.weights ≠ fill (0 : ℝ) _)
     (h2_nonzero : l2.weights ≠ fill (0 : ℝ) _)
-    (x₀ : Tensor ℝ (.dim inDim .scalar)) (perturbation_radius : ℝ) :
+    (x₀ : Tensor ℝ [inDim]) (perturbation_radius : ℝ) :
     perturbation_radius > 0 →
     ∃ robustness_guarantee : ℝ, robustness_guarantee > 0 ∧
-      ∀ x : Tensor ℝ (.dim inDim .scalar),
+      ∀ x : Tensor ℝ [inDim],
         Proofs.tensorL2Dist x₀ x ≤ perturbation_radius →
         Proofs.tensorL2Dist (Examples.mlpForward l1 l2 x₀) (Examples.mlpForward l1 l2 x) ≤
         robustness_guarantee * perturbation_radius := by

@@ -126,6 +126,5 @@ appropriate transfer and finite-precision refinement hypotheses.
 
 - `Extras/IntervalLemmas.lean`: interval-arithmetic lemmas over `ℝ`.
 - `Extras/AlphaConfig.lean`: data structures for alpha-optimized relaxations.
-- `Extras/FloatIntegration.lean`: experiments integrating bound propagation with explicit rounding.
 - `Extras/FP32.lean` and `Extras/BoundOpsIEEE32Exec.lean`: finite-precision specializations and
   executable IEEE32 connections.

@@ -28,11 +28,11 @@ namespace Correctness
 open NN.Verification.TorchLean
 
   /-- Extract the list of shapes from an array of dynamic values. -/
-  def shapesOfVals {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) : List Shape :=
+  def shapesOfVals {α : Type} [Context α] (vals : Array (Spec.SomeTensor α)) : List Shape :=
     vals.toList.map (fun v => v.1)
 
 /-- `shapesOfVals` commutes with pushing an element onto the value array. -/
-theorem shapesOfVals_push {α : Type} [Context α] (vals : Array (Spec.PackedTensor α)) (v : Spec.PackedTensor α) :
+theorem shapesOfVals_push {α : Type} [Context α] (vals : Array (Spec.SomeTensor α)) (v : Spec.SomeTensor α) :
     shapesOfVals (α := α) (vals.push v) = shapesOfVals (α := α) vals ++ [v.1] := by
   simp [shapesOfVals, Array.push, List.concat_eq_append]
 
@@ -137,13 +137,13 @@ theorem wellFormed_push
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (id : Nat)
     (node : Node α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α) :
     (lowerNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss) (out := out)
         id node params ps).1.hasValidArity = true := by
     cases node <;>
       simp [lowerNode, NN.IR.Node.hasValidArity, NN.IR.OpKind.minParents,
-        NN.IR.OpKind.maxParents?]
+        NN.IR.OpKind.maxParents?, NN.IR.OpKind.metadata]
 
   /--
   Lowered nodes satisfy `parentsBelow` when lowered at the next fresh id. Typed parent indices
@@ -152,7 +152,7 @@ theorem wellFormed_push
   theorem lowerNode_parentsBelow
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
-      (params : Runtime.Autograd.Torch.TList α paramShapes)
+      (params : TorchLean.TensorPack α paramShapes)
     (ps : NN.MLTheory.CROWN.Graph.ParamStore α)
     (id : Nat)
     (hId : id = (Ctx inShape ss).length)
@@ -200,13 +200,7 @@ theorem wellFormed_push
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
-    | matmul2d _m _n _p a b =>
-      have ha : a.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) a
-      have hb : b.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) b
-      have : a.id ≤ ss.length ∧ b.id ≤ ss.length :=
-        ⟨Nat.lt_succ_iff.mp ha, Nat.lt_succ_iff.mp hb⟩
-      simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, ha, hb] using this
-    | bmm _batch _m _n _p a b =>
+    | matmul _op a b =>
       have ha : a.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) a
       have hb : b.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) b
       have : a.id ≤ ss.length ∧ b.id ≤ ss.length :=
@@ -216,19 +210,15 @@ theorem wellFormed_push
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
-    | swap_first_two _m _n _rest x =>
+    | transpose _axis₁ _axis₂ _hOut x =>
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
-    | transpose3dLastTwo _a _b _c x =>
+    | softmax _axis _hAxis x =>
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
-    | softmaxLast _hRank x =>
-      have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
-      have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
-      simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
-    | layernorm2d _seqLen _embedDim _hSeq _hEmb x =>
+    | layerNorm _op x =>
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
@@ -236,8 +226,8 @@ theorem wellFormed_push
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
-    | conv2d _inC _outC _kH _kW _stride _padding _inH _inW _hIn _hKH _hKW _hStride _hHeight _hWidth _kernel
-        _bias x =>
+    | conv _inC _outC _kernelShape _stride _padding _inSpatial _hIn _hKernel _hStride
+        _hFits _kernel _bias x =>
       have hx : x.id < ss.length + 1 := idx_id_lt_ctxLen (inShape := inShape) (ss := ss) x
       have : x.id ≤ ss.length := Nat.lt_succ_iff.mp hx
       simpa [lowerNode, NN.IR.Node.parentsBelow, List.all, hx] using this
@@ -256,7 +246,7 @@ theorem wellFormed_push
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
       (g : ForwardLetChain α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     (hSize : c.graph.nodes.size = (Ctx inShape ss).length)
     (hWF : c.graph.wellFormed = true) :
@@ -312,17 +302,17 @@ theorem lowerForwardProgramToIR_wellFormed
       {α : Type} [Context α]
       {paramShapes : List Shape} {inShape outShape : Shape}
       (p : ForwardProgram α paramShapes inShape outShape)
-    (params : Runtime.Autograd.Torch.TList α paramShapes) :
+    (params : TorchLean.TensorPack α paramShapes) :
     (lowerForwardProgramToIR (α := α) (paramShapes := paramShapes) (inShape := inShape) (outShape :=
       outShape)
         p params).graph.wellFormed = true := by
     classical
-  let input : NN.IR.Node := { id := 0, parents := [], kind := .input, outShape := inShape }
+  let input : NN.IR.Node := { id := 0, parents := #[], kind := .input, outShape := inShape }
   let c0 : NN.Verification.TorchLean.LoweredIR α :=
     { graph := { nodes := #[input] }, ps := {}, inputId := 0, outputId := 0 }
   have hWF0 : c0.graph.wellFormed = true := by
     simp [c0, NN.IR.Graph.wellFormed, input, NN.IR.Node.hasValidArity, NN.IR.Node.parentsBelow,
-      NN.IR.OpKind.minParents, NN.IR.OpKind.maxParents?]
+      NN.IR.OpKind.minParents, NN.IR.OpKind.maxParents?, NN.IR.OpKind.metadata]
   have hSize0 : c0.graph.nodes.size = (Ctx inShape []).length := by
     simp [c0, Ctx]
   simpa [lowerForwardProgramToIR, c0, input] using

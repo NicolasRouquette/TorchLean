@@ -22,27 +22,27 @@ namespace Spec
 open Tensor
 open scoped BigOperators
 
-/-- `sum_spec` on a 1D tensor equals the `Finset` sum of its coordinates (`toVec`). -/
-lemma sum_spec_vec {n : Nat} (v : Tensor ℝ (.dim n .scalar)) :
-  sumSpec v = ∑ i : Fin n, toVec v i := by
+/-- `sum_spec` on a 1D tensor equals the `Finset` sum of its coordinates (`getScalar`). -/
+lemma sum_spec_vec {n : Nat} (v : Tensor ℝ [n]) :
+  sumSpec v = ∑ i : Fin n, getScalar v i := by
   classical
   cases v with
   | dim values =>
       -- `sum_spec_dim` reduces a vector sum to a sum of scalar `sum_spec`.
       have h :=
-        (sum_spec_dim (t := (Tensor.dim values : Tensor ℝ (.dim n .scalar))) (s := .scalar))
+        (sum_spec_dim (t := (Tensor.dim values : Tensor ℝ [n])) (s := .scalar))
       -- Turn each scalar `sum_spec` into the corresponding coordinate.
       refine h.trans ?_
       refine Finset.sum_congr rfl ?_
       intro i _
       cases hval : values i with
       | scalar x =>
-          simp [get_eq, toVec, sumSpec, tensorFoldlSpec, hval]
+          simp [get_eq, getScalar, sumSpec, tensorFoldlSpec, hval]
 
--- Pointwise product of vectors under `toVec`.
-/-- `toVec` of `mul_spec` is pointwise multiplication of coordinate functions. -/
-lemma toVec_mul_spec {n : Nat} (a b : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
-  toVec (mulSpec a b) i = toVec a i * toVec b i := by
+-- Pointwise product of vectors under `getScalar`.
+/-- `getScalar` of `mul_spec` is pointwise multiplication of coordinate functions. -/
+lemma getScalar_mul_spec {n : Nat} (a b : Tensor ℝ [n]) (i : Fin n) :
+  getScalar (mulSpec a b) i = getScalar a i * getScalar b i := by
   cases a with
   | dim fa =>
     cases b with
@@ -51,27 +51,27 @@ lemma toVec_mul_spec {n : Nat} (a b : Tensor ℝ (.dim n .scalar)) (i : Fin n) :
       | scalar x =>
         cases hb : fb i with
         | scalar y =>
-          simp [mulSpec, map2Spec, toVec, ha, hb]
+          simp [mulSpec, map2Spec, getScalar, ha, hb]
 
 -- Dot product of vectors as a `Finset` sum over coordinates.
 /-- Dot product of vectors is the coordinate-wise sum `∑ i, a[i] * b[i]`. -/
-lemma dot_vec_eq_sum {n : Nat} (a b : Tensor ℝ (.dim n .scalar)) :
-  dot a b = ∑ i : Fin n, toVec a i * toVec b i := by
+lemma dot_vec_eq_sum {n : Nat} (a b : Tensor ℝ [n]) :
+  dot a b = ∑ i : Fin n, getScalar a i * getScalar b i := by
   calc
     dot a b = Proofs.TensorAlgebra.dot (α := ℝ) a b := by
       exact dot_eq_tensorAlgebra_dot (a := a) (b := b)
-    _ = ∑ i : Fin n, toVec a i * toVec b i := by
+    _ = ∑ i : Fin n, getScalar a i * getScalar b i := by
       simpa using Proofs.TensorAlgebra.dot_vec_eq_sum (α := ℝ) (a := a) (b := b)
 
 -- Converting the spec-level `List.finRange` fold for `vec_mat_mul_spec` into a `Finset.univ` sum.
 /-- Coordinate formula for `vec_mat_mul_spec` as a `Finset` sum: `(v @ A)[j] = ∑ i, v[i] * A[i,j]`.
   -/
-lemma toVec_vec_mat_mul_spec {m n : Nat}
-  (v : Tensor ℝ (.dim m .scalar))
-  (A : Tensor ℝ (.dim m (.dim n .scalar))) (j : Fin n) :
-  toVec (vecMatMulSpec v A) j = ∑ i : Fin m, (toVec v i) * (get2 A i j) := by
+lemma getScalar_vec_mat_mul_spec {m n : Nat}
+  (v : Tensor ℝ [m])
+  (A : Tensor ℝ [m, n]) (j : Fin n) :
+  getScalar (vecMatMulSpec v A) j = ∑ i : Fin m, (getScalar v i) * (get2 A i j) := by
   simpa using
-    (Proofs.TensorAlgebra.toVec_vec_mat_mul_spec (α := ℝ) (v := v) (A := A) (j := j))
+    (Proofs.TensorAlgebra.getScalar_vec_mat_mul_spec (α := ℝ) (v := v) (A := A) (j := j))
 
 /--
 Adjointness of matrix-vector and vector-matrix multiplication under the `dot` product:
@@ -81,9 +81,9 @@ This is the algebraic heart of the linear-layer gradient rule.
 -/
 theorem dot_mat_linear_adjoint
   {inDim outDim : Nat}
-  (W : Tensor ℝ (.dim outDim (.dim inDim .scalar)))
-  (dLdy : Tensor ℝ (.dim outDim .scalar))
-  (dx : Tensor ℝ (.dim inDim .scalar)) :
+  (W : Tensor ℝ [outDim, inDim])
+  (dLdy : Tensor ℝ [outDim])
+  (dx : Tensor ℝ [inDim]) :
   dot dLdy (matVecMulSpec W dx)
   = dot (vecMatMulSpec dLdy W) dx := by
   calc
@@ -183,56 +183,56 @@ theorem map2_spec_comm {s : Shape} (f : ℝ → ℝ → ℝ) (a b : Tensor ℝ s
 
 /-- Associativity of matrix-vector multiplication: `A (B x) = (A B) x`. -/
 theorem mat_vec_assoc {m n p : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (B : Tensor ℝ (.dim n (.dim p .scalar)))
-  (x : Tensor ℝ (.dim p .scalar)) :
+  (A : Tensor ℝ [m, n])
+  (B : Tensor ℝ [n, p])
+  (x : Tensor ℝ [p]) :
   matVecMulSpec A (matVecMulSpec B x) =
   matVecMulSpec (matMulSpec A B) x := by
   classical
   have hto :
-      toVec (matVecMulSpec A (matVecMulSpec B x)) =
-        toVec (matVecMulSpec (matMulSpec A B) x) := by
+      getScalar (matVecMulSpec A (matVecMulSpec B x)) =
+        getScalar (matVecMulSpec (matMulSpec A B) x) := by
     funext i
     have hBx : ∀ k : Fin n,
-        toVec (matVecMulSpec B x) k = ∑ j : Fin p, (get2 B k j) * (toVec x j) := by
+        getScalar (matVecMulSpec B x) k = ∑ j : Fin p, (get2 B k j) * (getScalar x j) := by
       intro k
-      simpa using (toVec_mat_vec_mul_spec (A := B) (v := x) (i := k))
+      simpa using (getScalar_mat_vec_mul_spec (A := B) (v := x) (i := k))
 
     -- Expand both sides into finite sums and use a Fubini-style swap.
     have h_expand :
-        (∑ k : Fin n, (get2 A i k) * (∑ j : Fin p, (get2 B k j) * (toVec x j))) =
-          (∑ j : Fin p, (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (toVec x j)) := by
+        (∑ k : Fin n, (get2 A i k) * (∑ j : Fin p, (get2 B k j) * (getScalar x j))) =
+          (∑ j : Fin p, (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (getScalar x j)) := by
       -- This is a finite-dimensional distributivity/commutation identity.
       -- We follow the standard pattern: expand, swap sums, factor.
       classical
       -- Expand `get2 A i k * (∑ j, ...)` into a double sum.
       have h1 :
-          (∑ k : Fin n, (get2 A i k) * (∑ j : Fin p, (get2 B k j) * (toVec x j))) =
-            (∑ k : Fin n, ∑ j : Fin p, (get2 A i k) * ((get2 B k j) * (toVec x j))) := by
+          (∑ k : Fin n, (get2 A i k) * (∑ j : Fin p, (get2 B k j) * (getScalar x j))) =
+            (∑ k : Fin n, ∑ j : Fin p, (get2 A i k) * ((get2 B k j) * (getScalar x j))) := by
         simp [Finset.mul_sum]
       -- Swap the order of summation.
       have h2 :
-          (∑ k : Fin n, ∑ j : Fin p, (get2 A i k) * ((get2 B k j) * (toVec x j))) =
-            (∑ j : Fin p, ∑ k : Fin n, (get2 A i k) * ((get2 B k j) * (toVec x j))) := by
+          (∑ k : Fin n, ∑ j : Fin p, (get2 A i k) * ((get2 B k j) * (getScalar x j))) =
+            (∑ j : Fin p, ∑ k : Fin n, (get2 A i k) * ((get2 B k j) * (getScalar x j))) := by
         simpa using
           (Finset.sum_comm (s := (Finset.univ : Finset (Fin n))) (t := (Finset.univ : Finset (Fin
             p)))
-            (f := fun k j => (get2 A i k) * ((get2 B k j) * (toVec x j))))
-      -- Factor `(toVec x j)` out of the inner sum.
+            (f := fun k j => (get2 A i k) * ((get2 B k j) * (getScalar x j))))
+      -- Factor `(getScalar x j)` out of the inner sum.
       have h3 :
-          (∑ j : Fin p, ∑ k : Fin n, (get2 A i k) * ((get2 B k j) * (toVec x j))) =
-            (∑ j : Fin p, (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (toVec x j)) := by
+          (∑ j : Fin p, ∑ k : Fin n, (get2 A i k) * ((get2 B k j) * (getScalar x j))) =
+            (∑ j : Fin p, (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (getScalar x j)) := by
         refine Finset.sum_congr rfl ?_
         intro j _
         have h_reassoc :
-            (∑ k : Fin n, (get2 A i k) * ((get2 B k j) * (toVec x j))) =
-              (∑ k : Fin n, ((get2 A i k) * (get2 B k j)) * (toVec x j)) := by
+            (∑ k : Fin n, (get2 A i k) * ((get2 B k j) * (getScalar x j))) =
+              (∑ k : Fin n, ((get2 A i k) * (get2 B k j)) * (getScalar x j)) := by
           refine Finset.sum_congr rfl ?_
           intro k _
-          simpa using (mul_assoc (get2 A i k) (get2 B k j) (toVec x j)).symm
+          simpa using (mul_assoc (get2 A i k) (get2 B k j) (getScalar x j)).symm
         have h_pull :
-            (∑ k : Fin n, ((get2 A i k) * (get2 B k j)) * (toVec x j)) =
-              (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (toVec x j) := by
+            (∑ k : Fin n, ((get2 A i k) * (get2 B k j)) * (getScalar x j)) =
+              (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (getScalar x j) := by
           simp [Finset.sum_mul]
         exact h_reassoc.trans h_pull
 
@@ -240,14 +240,14 @@ theorem mat_vec_assoc {m n p : Nat}
 
     -- Turn the vector components into the needed sum forms, then apply `h_expand`.
     have lhs :
-        toVec (matVecMulSpec A (matVecMulSpec B x)) i =
-          ∑ k : Fin n, (get2 A i k) * (∑ j : Fin p, (get2 B k j) * (toVec x j)) := by
-      -- start from `toVec_mat_vec_mul_spec` and rewrite each inner component via `hBx`
+        getScalar (matVecMulSpec A (matVecMulSpec B x)) i =
+          ∑ k : Fin n, (get2 A i k) * (∑ j : Fin p, (get2 B k j) * (getScalar x j)) := by
+      -- start from `getScalar_mat_vec_mul_spec` and rewrite each inner component via `hBx`
       have hA :
-          toVec (matVecMulSpec A (matVecMulSpec B x)) i =
-            ∑ k : Fin n, (get2 A i k) * (toVec (matVecMulSpec B x) k) := by
-        simpa using (toVec_mat_vec_mul_spec (A := A) (v := matVecMulSpec B x) (i := i))
-      -- rewrite `toVec (mat_vec_mul_spec B x) k`
+          getScalar (matVecMulSpec A (matVecMulSpec B x)) i =
+            ∑ k : Fin n, (get2 A i k) * (getScalar (matVecMulSpec B x) k) := by
+        simpa using (getScalar_mat_vec_mul_spec (A := A) (v := matVecMulSpec B x) (i := i))
+      -- rewrite `getScalar (mat_vec_mul_spec B x) k`
       classical
       refine hA.trans ?_
       refine Finset.sum_congr rfl ?_
@@ -255,13 +255,13 @@ theorem mat_vec_assoc {m n p : Nat}
       simp [hBx k]
 
     have rhs :
-        toVec (matVecMulSpec (matMulSpec A B) x) i =
-          ∑ j : Fin p, (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (toVec x j) := by
+        getScalar (matVecMulSpec (matMulSpec A B) x) i =
+          ∑ j : Fin p, (∑ k : Fin n, (get2 A i k) * (get2 B k j)) * (getScalar x j) := by
       -- rewrite the matrix multiplication entry via `get2_mat_mul_spec`
       have hR :
-          toVec (matVecMulSpec (matMulSpec A B) x) i =
-            ∑ j : Fin p, (get2 (matMulSpec A B) i j) * (toVec x j) := by
-        simpa using (toVec_mat_vec_mul_spec (A := matMulSpec A B) (v := x) (i := i))
+          getScalar (matVecMulSpec (matMulSpec A B) x) i =
+            ∑ j : Fin p, (get2 (matMulSpec A B) i j) * (getScalar x j) := by
+        simpa using (getScalar_mat_vec_mul_spec (A := matMulSpec A B) (v := x) (i := i))
       -- now rewrite `get2 (mat_mul_spec A B) i j`
       classical
       refine hR.trans ?_
@@ -272,47 +272,26 @@ theorem mat_vec_assoc {m n p : Nat}
     -- Combine.
     simpa [lhs, rhs] using h_expand
 
-  -- Lift pointwise equality back to tensors via `ofVec`.
-  have h := congrArg ofVec hto
-  -- `ofVec (toVec t) = t` for vectors.
-  simpa [ofVec_toVec] using h
-
-/-- Matrix transpose is an involution. -/
-theorem matrix_transpose_involution {m n : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar))) :
-  matrixTransposeSpec (matrixTransposeSpec A) = A := by
-  cases A with
-  | dim rows =>
-    -- reduce to function extensionality on the underlying `Fin`-indexed structure
-    apply congrArg Tensor.dim
-    funext i
-    -- each row is itself a `.dim`
-    cases hrow : rows i with
-    | dim cols =>
-      -- show the transposed-transposed row equals the original row
-      apply congrArg Tensor.dim
-      funext j
-      cases hcol : cols j with
-      | scalar v =>
-        -- everything is definitional once we unfold `matrix_transpose_spec`
-        simp [hrow, hcol]
+  -- Lift pointwise equality back to tensors via `ofFn`.
+  have h := congrArg ofFn hto
+  -- `ofFn (getScalar t) = t` for vectors.
+  simpa [ofFn_getScalar] using h
 
 /-- Coordinate rule for `matrix_transpose_spec`: `(Aᵀ)[i,j] = A[j,i]`. -/
 lemma get2_matrix_transpose_spec {m n : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar))) (i : Fin n) (j : Fin m) :
-  get2 (matrixTransposeSpec A) i j = get2 A j i := by
+  (A : Tensor ℝ [m, n]) (i : Fin n) (j : Fin m) :
+  get2 (swapAdjacentAxes A 0) i j = get2 A j i := by
+  rw [swapAdjacentAxes_zero]
   cases A with
   | dim rows =>
-    -- Unfold transpose + `get2` and reduce the extra scalar match.
-    simp [Tensor.matrixTransposeSpec, get2_eq, get_eq]
     cases hrow : rows j with
     | dim cols =>
       cases hcol : cols i with
       | scalar value =>
-        simp [hcol]
+        simp [get2_eq, hrow, hcol]
 
 /-- Matrix extensionality: matrices are equal when all their entries are equal. -/
-lemma matrix_ext {m n : Nat} {A B : Tensor ℝ (.dim m (.dim n .scalar))} :
+lemma matrix_ext {m n : Nat} {A B : Tensor ℝ [m, n]} :
   (∀ i : Fin m, ∀ j : Fin n, get2 A i j = get2 B i j) → A = B := by
   intro h
   cases A with
@@ -322,8 +301,8 @@ lemma matrix_ext {m n : Nat} {A B : Tensor ℝ (.dim m (.dim n .scalar))} :
       apply congrArg Tensor.dim
       funext i
 
-      -- Prove row equality via `toVec` and then lift back with `ofVec`.
-      have hto : toVec (rowsA i) = toVec (rowsB i) := by
+      -- Prove row equality via `getScalar` and then lift back with `ofFn`.
+      have hto : getScalar (rowsA i) = getScalar (rowsB i) := by
         funext j
         cases hrowA : rowsA i with
         | dim colsA =>
@@ -336,24 +315,32 @@ lemma matrix_ext {m n : Nat} {A B : Tensor ℝ (.dim m (.dim n .scalar))} :
                 have hij : get2 (Tensor.dim rowsA) i j = get2 (Tensor.dim rowsB) i j := h i j
                 have hab : a = b := by
                   simpa [get2_eq, get_eq, hrowA, hrowB, hcolA, hcolB] using hij
-                simp [toVec, hcolA, hcolB, hab]
+                simp [getScalar, hcolA, hcolB, hab]
 
-      have hrow := congrArg ofVec hto
-      simpa [ofVec_toVec] using hrow
+      have hrow := congrArg ofFn hto
+      simpa [ofFn_getScalar] using hrow
+
+/-- Matrix transpose is an involution. -/
+theorem matrix_transpose_involution {m n : Nat}
+    (A : Tensor ℝ [m, n]) :
+    swapAdjacentAxes (swapAdjacentAxes A 0) 0 = A := by
+  apply matrix_ext
+  intro i j
+  rw [get2_matrix_transpose_spec, get2_matrix_transpose_spec]
 
 /-- Transpose of a product: `(A ⬝ B)ᵀ = Bᵀ ⬝ Aᵀ`. -/
 theorem matrix_transpose_mul {m n p : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (B : Tensor ℝ (.dim n (.dim p .scalar))) :
-  matrixTransposeSpec (matMulSpec A B) =
-  matMulSpec (matrixTransposeSpec B) (matrixTransposeSpec A) := by
+  (A : Tensor ℝ [m, n])
+  (B : Tensor ℝ [n, p]) :
+  swapAdjacentAxes (matMulSpec A B) 0 =
+  matMulSpec (swapAdjacentAxes B 0) (swapAdjacentAxes A 0) := by
   classical
   -- Prove equality by `get2`-extensionality on matrix entries.
   apply matrix_ext
   intro j i
   -- Compare the `(j,i)` entry of both sides.
   calc
-    get2 (matrixTransposeSpec (matMulSpec A B)) j i
+    get2 (swapAdjacentAxes (matMulSpec A B) 0) j i
         = get2 (matMulSpec A B) i j := by
             simpa using (get2_matrix_transpose_spec (A := matMulSpec A B) (i := j) (j := i))
     _ = ∑ k : Fin n, (get2 A i k) * (get2 B k j) := by
@@ -362,15 +349,15 @@ theorem matrix_transpose_mul {m n p : Nat}
           refine Finset.sum_congr rfl ?_
           intro k _
           simp [mul_comm]
-    _ = ∑ k : Fin n, (get2 (matrixTransposeSpec B) j k) * (get2 (matrixTransposeSpec A) k i) :=
+    _ = ∑ k : Fin n, (get2 (swapAdjacentAxes B 0) j k) * (get2 (swapAdjacentAxes A 0) k i) :=
       by
           refine Finset.sum_congr rfl ?_
           intro k _
           simp [get2_matrix_transpose_spec]
-    _ = get2 (matMulSpec (matrixTransposeSpec B) (matrixTransposeSpec A)) j i := by
+    _ = get2 (matMulSpec (swapAdjacentAxes B 0) (swapAdjacentAxes A 0)) j i := by
           symm
           simpa using
-            (get2_mat_mul_spec (A := matrixTransposeSpec B) (B := matrixTransposeSpec A) (i :=
+            (get2_mat_mul_spec (A := swapAdjacentAxes B 0) (B := swapAdjacentAxes A 0) (i :=
               j) (j := i))
 
 -- ---------------------------------------------------------------------------
@@ -379,7 +366,7 @@ theorem matrix_transpose_mul {m n p : Nat}
 
 /-- Expand the matrix dot-product as a double sum over entries (Frobenius inner product). -/
 lemma dot_mat_eq_sum {m n : Nat}
-  (A B : Tensor ℝ (.dim m (.dim n .scalar))) :
+  (A B : Tensor ℝ [m, n]) :
   dot A B = ∑ i : Fin m, ∑ j : Fin n, (get2 A i j) * (get2 B i j) := by
   classical
   cases A with
@@ -410,7 +397,7 @@ lemma dot_mat_eq_sum {m n : Nat}
                   have hsum :
                       sumSpec (mulSpec (Tensor.dim colsA) (Tensor.dim colsB))
                         =
-                      ∑ j : Fin n, toVec (mulSpec (Tensor.dim colsA) (Tensor.dim colsB)) j := by
+                      ∑ j : Fin n, getScalar (mulSpec (Tensor.dim colsA) (Tensor.dim colsB)) j := by
                       simpa using (sum_spec_vec (v := mulSpec (Tensor.dim colsA) (Tensor.dim
                         colsB)))
                   -- Rewrite via `sum_spec_vec`, then compare summands coordinatewise.
@@ -422,7 +409,7 @@ lemma dot_mat_eq_sum {m n : Nat}
                   | scalar a =>
                     cases hcolB : colsB j with
                     | scalar b =>
-                      simp [toVec, mulSpec, map2Spec, get2_eq, get_eq, hA, hB, hcolA, hcolB]
+                      simp [getScalar, mulSpec, map2Spec, get2_eq, get_eq, hA, hB, hcolA, hcolB]
 
 /-- Right-adjointness of matrix multiplication under the Frobenius dot-product.
 
@@ -430,16 +417,16 @@ Informally: `⟪A ⬝ B, C⟫ = ⟪A, C ⬝ Bᵀ⟫`.
 -/
 theorem dot_mat_mul_right_adjoint
   {m n p : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (B : Tensor ℝ (.dim n (.dim p .scalar)))
-  (C : Tensor ℝ (.dim m (.dim p .scalar))) :
-  dot (matMulSpec A B) C = dot A (matMulSpec C (matrixTransposeSpec B)) := by
+  (A : Tensor ℝ [m, n])
+  (B : Tensor ℝ [n, p])
+  (C : Tensor ℝ [m, p]) :
+  dot (matMulSpec A B) C = dot A (matMulSpec C (swapAdjacentAxes B 0)) := by
   classical
   -- Expand both sides into entry sums; then it's just rearranging a finite triple sum.
   -- LHS: ∑ i ∑ j (∑ k Aik*Bkj) * Cij
   -- RHS: ∑ i ∑ k Aik * (∑ j Cij*Bkj)
   rw [dot_mat_eq_sum (A := matMulSpec A B) (B := C)]
-  rw [dot_mat_eq_sum (A := A) (B := matMulSpec C (matrixTransposeSpec B))]
+  rw [dot_mat_eq_sum (A := A) (B := matMulSpec C (swapAdjacentAxes B 0))]
   -- Rewrite matrix products and transpose entries.
   simp [get2_mat_mul_spec, get2_matrix_transpose_spec, Finset.mul_sum, Finset.sum_mul]
   -- The goal is now exactly `Finset.sum_comm` on the two inner indices.
@@ -451,18 +438,18 @@ theorem dot_mat_mul_right_adjoint
 
 /-- Transpose invariance of the Frobenius dot-product: `⟪Aᵀ, Bᵀ⟫ = ⟪A, B⟫`. -/
 lemma dot_mat_transpose {m n : Nat}
-  (A B : Tensor ℝ (.dim m (.dim n .scalar))) :
-  dot (matrixTransposeSpec A) (matrixTransposeSpec B) = dot A B := by
+  (A B : Tensor ℝ [m, n]) :
+  dot (swapAdjacentAxes A 0) (swapAdjacentAxes B 0) = dot A B := by
   classical
-  -- Expand both sides and use `get2_matrix_transpose_spec`.
-  rw [dot_mat_eq_sum (A := matrixTransposeSpec A) (B := matrixTransposeSpec B)]
-  rw [dot_mat_eq_sum (A := A) (B := B)]
-  -- LHS is `∑ i:Fin n, ∑ j:Fin m, A_{j,i} * B_{j,i}`; swap sums to match RHS.
-  simpa [get2_matrix_transpose_spec, mul_assoc, mul_left_comm, mul_comm] using
-    (Finset.sum_comm
-      (s := (Finset.univ : Finset (Fin n)))
-      (t := (Finset.univ : Finset (Fin m)))
-      (f := fun i j => get2 A j i * get2 B j i))
+  calc
+    dot (swapAdjacentAxes A 0) (swapAdjacentAxes B 0) =
+        ∑ i : Fin n, ∑ j : Fin m,
+          get2 (swapAdjacentAxes A 0) i j * get2 (swapAdjacentAxes B 0) i j :=
+      dot_mat_eq_sum _ _
+    _ = ∑ i : Fin n, ∑ j : Fin m, get2 A j i * get2 B j i := by
+      simp [get2_matrix_transpose_spec]
+    _ = ∑ j : Fin m, ∑ i : Fin n, get2 A j i * get2 B j i := Finset.sum_comm
+    _ = dot A B := (dot_mat_eq_sum A B).symm
 
 /-- Left-adjointness of matrix multiplication under the Frobenius dot-product.
 
@@ -470,10 +457,10 @@ Informally: `⟪A ⬝ B, C⟫ = ⟪B, Aᵀ ⬝ C⟫`.
 -/
 theorem dot_mat_mul_left_adjoint
   {m n p : Nat}
-  (A : Tensor ℝ (.dim m (.dim n .scalar)))
-  (B : Tensor ℝ (.dim n (.dim p .scalar)))
-  (C : Tensor ℝ (.dim m (.dim p .scalar))) :
-  dot (matMulSpec A B) C = dot B (matMulSpec (matrixTransposeSpec A) C) := by
+  (A : Tensor ℝ [m, n])
+  (B : Tensor ℝ [n, p])
+  (C : Tensor ℝ [m, p]) :
+  dot (matMulSpec A B) C = dot B (matMulSpec (swapAdjacentAxes A 0) C) := by
   classical
   -- Reduce to the right-adjoint lemma via transpose.
   -- ⟪A·B, C⟫ = ⟪(A·B)ᵀ, Cᵀ⟫ = ⟪Bᵀ·Aᵀ, Cᵀ⟫ = ⟪B, (Cᵀ·A)ᵀ⟫ = ⟪B, Aᵀ·C⟫.
@@ -481,46 +468,46 @@ theorem dot_mat_mul_left_adjoint
     (dot_mat_transpose (m := m) (n := p) (A := matMulSpec A B) (B := C)).symm
   -- rewrite `(A·B)ᵀ`
   have hmulT :
-      matrixTransposeSpec (matMulSpec A B) =
-        matMulSpec (matrixTransposeSpec B) (matrixTransposeSpec A) :=
+      swapAdjacentAxes (matMulSpec A B) 0 =
+        matMulSpec (swapAdjacentAxes B 0) (swapAdjacentAxes A 0) :=
     matrix_transpose_mul (A := A) (B := B)
   -- apply the right-adjoint lemma to `Bᵀ·Aᵀ` against `Cᵀ`
   have hadj :
-      dot (matMulSpec (matrixTransposeSpec B) (matrixTransposeSpec A)) (matrixTransposeSpec
-        C)
+      dot (matMulSpec (swapAdjacentAxes B 0) (swapAdjacentAxes A 0)) (swapAdjacentAxes
+        C 0)
         =
-      dot (matrixTransposeSpec B)
-        (matMulSpec (matrixTransposeSpec C) (matrixTransposeSpec (matrixTransposeSpec A)))
+      dot (swapAdjacentAxes B 0)
+        (matMulSpec (swapAdjacentAxes C 0) (swapAdjacentAxes (swapAdjacentAxes A 0) 0))
           := by
     simpa using
-      (dot_mat_mul_right_adjoint (A := matrixTransposeSpec B) (B := matrixTransposeSpec A)
-        (C := matrixTransposeSpec C))
+      (dot_mat_mul_right_adjoint (A := swapAdjacentAxes B 0) (B := swapAdjacentAxes A 0)
+        (C := swapAdjacentAxes C 0))
   -- simplify involutions and transpose the last dot back
-  have hAinv : matrixTransposeSpec (matrixTransposeSpec A) = A :=
+  have hAinv : swapAdjacentAxes (swapAdjacentAxes A 0) 0 = A :=
     matrix_transpose_involution (A := A)
-  have hCinv : matrixTransposeSpec (matrixTransposeSpec C) = C :=
+  have hCinv : swapAdjacentAxes (swapAdjacentAxes C 0) 0 = C :=
     matrix_transpose_involution (A := C)
   -- `dot (Bᵀ) D = dot B (Dᵀ)` for matching shapes.
   have hdot_swap :
-      dot (matrixTransposeSpec B) (matMulSpec (matrixTransposeSpec C) A)
+      dot (swapAdjacentAxes B 0) (matMulSpec (swapAdjacentAxes C 0) A)
         =
-      dot B (matrixTransposeSpec (matMulSpec (matrixTransposeSpec C) A)) := by
+      dot B (swapAdjacentAxes (matMulSpec (swapAdjacentAxes C 0) A) 0) := by
     -- Apply `dot_mat_transpose` to `B` and `((Cᵀ·A)ᵀ)`.
     have := dot_mat_transpose (m := n) (n := p)
-      (A := B) (B := matrixTransposeSpec (matMulSpec (matrixTransposeSpec C) A))
+      (A := B) (B := swapAdjacentAxes (matMulSpec (swapAdjacentAxes C 0) A) 0)
     -- Rewrite involutions.
     simpa [matrix_transpose_involution, hCinv] using this
   -- Finish by rewriting `transpose (Cᵀ·A) = Aᵀ·C`.
   calc
     dot (matMulSpec A B) C
-        = dot (matrixTransposeSpec (matMulSpec A B)) (matrixTransposeSpec C) := htrans
-    _ = dot (matMulSpec (matrixTransposeSpec B) (matrixTransposeSpec A))
-      (matrixTransposeSpec C) := by
+        = dot (swapAdjacentAxes (matMulSpec A B) 0) (swapAdjacentAxes C 0) := htrans
+    _ = dot (matMulSpec (swapAdjacentAxes B 0) (swapAdjacentAxes A 0))
+      (swapAdjacentAxes C 0) := by
           simp [hmulT]
-    _ = dot (matrixTransposeSpec B) (matMulSpec (matrixTransposeSpec C) A) := by
+    _ = dot (swapAdjacentAxes B 0) (matMulSpec (swapAdjacentAxes C 0) A) := by
           simpa [hAinv] using hadj
-    _ = dot B (matrixTransposeSpec (matMulSpec (matrixTransposeSpec C) A)) := hdot_swap
-    _ = dot B (matMulSpec (matrixTransposeSpec A) C) := by
+    _ = dot B (swapAdjacentAxes (matMulSpec (swapAdjacentAxes C 0) A) 0) := hdot_swap
+    _ = dot B (matMulSpec (swapAdjacentAxes A 0) C) := by
           -- `transpose (Cᵀ·A) = Aᵀ·C`
           simp [matrix_transpose_mul, hCinv]
 
@@ -529,22 +516,23 @@ Outer product properties.
 Essential for proving weight gradient correctness.
 -/
 theorem outer_product_transpose {m n : Nat}
-  (a : Tensor ℝ (.dim m .scalar))
-  (b : Tensor ℝ (.dim n .scalar)) :
-  matrixTransposeSpec (outerProductSpec a b) = outerProductSpec b a := by
+  (a : Tensor ℝ [m])
+  (b : Tensor ℝ [n]) :
+  swapAdjacentAxes (outerProductSpec a b) 0 = outerProductSpec b a := by
+  rw [swapAdjacentAxes_zero]
   cases a with | dim fa =>
   cases b with | dim fb =>
-  simp only [outerProductSpec, matrixTransposeSpec]
+  simp only [outerProductSpec]
   -- extensionality on the outer/inner indices
   apply congrArg Tensor.dim
   funext i
   apply congrArg Tensor.dim
   funext j
-  cases fa j with
+  cases hfa : fa j with
   | scalar x =>
-    cases fb i with
+    cases hfb : fb i with
     | scalar y =>
-      simp [mul_comm]
+      simp [hfa, hfb, mul_comm]
 
 /-! ## Reductions and aggregation -/
 

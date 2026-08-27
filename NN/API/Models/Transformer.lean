@@ -44,13 +44,13 @@ namespace TransformerEncoderConfig
 
 /-- Token-embedding shape with arbitrary leading dimensions. -/
 abbrev shape (cfg : TransformerEncoderConfig)
-    (leading : Spec.Shape := .scalar) : Spec.Shape :=
-  (leading.concat (.dim cfg.seqLen .scalar)).appendDim cfg.dModel
+    (leading : List Nat := []) : List Nat :=
+  leading ++ [cfg.seqLen, cfg.dModel]
 
 end TransformerEncoderConfig
 
 /-- Build one Transformer encoder block over arbitrary leading dimensions. -/
-def transformerEncoder (cfg : TransformerEncoderConfig) (leading : Spec.Shape := .scalar)
+def transformerEncoder (cfg : TransformerEncoderConfig) (leading : List Nat := [])
     (h_seqLen : cfg.seqLen ≠ 0 := by decide)
     (h_dModel : cfg.dModel ≠ 0 := by decide) :
     nn.Builder (nn.Sequential (cfg.shape leading) (cfg.shape leading)) :=

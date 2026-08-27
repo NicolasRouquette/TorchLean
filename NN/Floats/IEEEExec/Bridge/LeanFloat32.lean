@@ -2364,29 +2364,8 @@ def BinaryAgreement
   ∀ a b, modelToIEEE32Exec (modelOp a b) =
     canonicalize (execOp (modelToIEEE32Exec a) (modelToIEEE32Exec b))
 
-/-- Agreement of nearest-even addition in the two logical binary32 models. -/
-abbrev AddAgreement : Prop := BinaryAgreement Float32.Model.add IEEE32Exec.add
-
-/-- Agreement of nearest-even subtraction in the two logical binary32 models. -/
-abbrev SubAgreement : Prop := BinaryAgreement Float32.Model.sub IEEE32Exec.sub
-
-/-- Agreement of nearest-even multiplication in the two logical binary32 models. -/
-abbrev MulAgreement : Prop := BinaryAgreement Float32.Model.mul IEEE32Exec.mul
-
-/-- Agreement of nearest-even division in the two logical binary32 models. -/
-abbrev DivAgreement : Prop := BinaryAgreement Float32.Model.div IEEE32Exec.div
-
-/-- Agreement of sign-bit negation in the two logical binary32 models. -/
-abbrev NegAgreement : Prop := UnaryAgreement Float32.Model.neg IEEE32Exec.neg
-
-/-- Agreement of sign clearing in the two logical binary32 models. -/
-abbrev AbsAgreement : Prop := UnaryAgreement Float32.Model.abs IEEE32Exec.abs
-
-/-- Agreement of nearest-even square root in the two logical binary32 models. -/
-abbrev SqrtAgreement : Prop := UnaryAgreement Float32.Model.sqrt IEEE32Exec.sqrt
-
 /-- Model negation and executable sign-bit negation agree for every canonical binary32 value. -/
-theorem neg_agreement : NegAgreement := by
+theorem neg_agreement : UnaryAgreement Float32.Model.neg IEEE32Exec.neg := by
   intro a
   unfold modelToIEEE32Exec canonicalize IEEE32Exec.neg
   change IEEE32Exec.ofBits (Float32.Model.neg a).toBits =
@@ -2395,7 +2374,7 @@ theorem neg_agreement : NegAgreement := by
   rw [model_neg_eq_ofBits_xor_sign]
 
 /-- Model absolute value and executable sign clearing agree for every canonical binary32 value. -/
-theorem abs_agreement : AbsAgreement := by
+theorem abs_agreement : UnaryAgreement Float32.Model.abs IEEE32Exec.abs := by
   intro a
   unfold modelToIEEE32Exec canonicalize IEEE32Exec.abs
   change IEEE32Exec.ofBits (Float32.Model.abs a).toBits =
@@ -2404,7 +2383,7 @@ theorem abs_agreement : AbsAgreement := by
   rw [model_abs_eq_ofBits_clear_sign]
 
 /-- Model multiplication and executable multiplication agree for all canonical binary32 values. -/
-theorem mul_agreement : MulAgreement := by
+theorem mul_agreement : BinaryAgreement Float32.Model.mul IEEE32Exec.mul := by
   intro a b
   calc
     modelToIEEE32Exec (Float32.Model.mul a b) =
@@ -2415,7 +2394,7 @@ theorem mul_agreement : MulAgreement := by
       exact (canonicalize_modelToIEEE32Exec (Float32.Model.mul a b)).symm
 
 /-- Model addition and executable addition agree for all canonical binary32 values. -/
-theorem add_agreement : AddAgreement := by
+theorem add_agreement : BinaryAgreement Float32.Model.add IEEE32Exec.add := by
   intro a b
   calc
     modelToIEEE32Exec (Float32.Model.add a b) =
@@ -2426,7 +2405,7 @@ theorem add_agreement : AddAgreement := by
       exact (canonicalize_modelToIEEE32Exec (Float32.Model.add a b)).symm
 
 /-- Model division and executable division agree for all canonical binary32 values. -/
-theorem div_agreement : DivAgreement := by
+theorem div_agreement : BinaryAgreement Float32.Model.div IEEE32Exec.div := by
   intro a b
   calc
     modelToIEEE32Exec (Float32.Model.div a b) =
@@ -2437,7 +2416,7 @@ theorem div_agreement : DivAgreement := by
       exact (canonicalize_modelToIEEE32Exec (Float32.Model.div a b)).symm
 
 /-- Model square root and executable square root agree for every canonical binary32 value. -/
-theorem sqrt_agreement : SqrtAgreement := by
+theorem sqrt_agreement : UnaryAgreement Float32.Model.sqrt IEEE32Exec.sqrt := by
   intro a
   calc
     modelToIEEE32Exec (Float32.Model.sqrt a) =
@@ -2447,7 +2426,9 @@ theorem sqrt_agreement : SqrtAgreement := by
       rw [← model_sqrt_eq_ieee32]
       exact (canonicalize_modelToIEEE32Exec (Float32.Model.sqrt a)).symm
 
-private theorem sub_agreement_of_add (h : AddAgreement) : SubAgreement := by
+private theorem sub_agreement_of_add
+    (h : BinaryAgreement Float32.Model.add IEEE32Exec.add) :
+    BinaryAgreement Float32.Model.sub IEEE32Exec.sub := by
   intro a b
   rw [model_sub_eq_add_neg, h a (Float32.Model.neg b), neg_agreement b]
   unfold IEEE32Exec.sub
@@ -2455,7 +2436,7 @@ private theorem sub_agreement_of_add (h : AddAgreement) : SubAgreement := by
     (IEEE32Exec.neg (modelToIEEE32Exec b))
 
 /-- Subtraction agrees because it is addition after exact sign-bit negation in both models. -/
-theorem sub_agreement : SubAgreement :=
+theorem sub_agreement : BinaryAgreement Float32.Model.sub IEEE32Exec.sub :=
   sub_agreement_of_add add_agreement
 
 /-- Transfer Lean `Float32` addition to the independent executable binary32 model. -/

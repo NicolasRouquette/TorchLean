@@ -25,7 +25,7 @@ layer:
 Instead of storing a flat array plus a shape, the spec tensor is a *function from indices*:
 
 - a scalar is `α`
-- an `n`-dimensional tensor is `Fin n → ...`
+- an axis of extent `n` is represented by `Fin n → ...`
 
 This has three practical benefits:
 
@@ -46,8 +46,12 @@ namespace Spec
 Shape-indexed tensor datatype for the spec layer.
 
 This is a *functional* representation:
-- a scalar tensor is just an `α`,
-- an `n`-dimensional tensor is a function `Fin n → Tensor α s`.
+- a scalar tensor contains one `α`,
+- an outer axis of extent `n` is a function `Fin n → Tensor α s`.
+
+Fixed shapes should normally be written with dimension-list syntax, as in `Tensor α [4, 2]`.
+The recursive `.dim` constructor is useful inside proofs and operations whose remaining rank is not
+known statically; it is not a second user-facing tensor representation.
 
 The spec layer does not commit to a concrete memory layout.
 -/
@@ -76,7 +80,7 @@ expensive.
 `Tensor.materialize` rebuilds a tensor into an array-backed normal form (at every dimension), which
 keeps long-running training loops from degrading.
 
-It is extentionally the identity (same mathematical tensor), but it is much friendlier to the
+It is extensionally the identity (the same mathematical tensor), but it is much friendlier to the
 runtime evaluator.
 -/
 
@@ -130,6 +134,13 @@ def shapeOf {α : Type} : ∀ {s : Shape}, Tensor α s → Shape
   cases x
   rfl
 
+/-- Scalar tensors are equal when their stored values are equal. -/
+@[ext] theorem Tensor.ext_scalar {α : Type} {x y : Tensor α .scalar}
+    (h : x.item = y.item) : x = y := by
+  cases x
+  cases y
+  simpa using h
+
 /-- Equivalence between `Tensor α .scalar` and `α` (useful to reuse algebra instances). -/
 def Tensor.scalarEquiv (α : Type) : Tensor α .scalar ≃ α where
   toFun := Tensor.item
@@ -137,12 +148,29 @@ def Tensor.scalarEquiv (α : Type) : Tensor α .scalar ≃ α where
   left_inv := Tensor.scalar_item
   right_inv := Tensor.item_scalar
 
-/-- `AddCommMonoid` on scalar tensors, transported from `α` via `Tensor.scalarEquiv`. -/
-instance {α : Type} [AddCommMonoid α] : AddCommMonoid (Tensor α .scalar) :=
-  Equiv.addCommMonoid (Tensor.scalarEquiv α)
+/-- An outer tensor axis is equivalent to a coordinate function into the remaining tensor shape. -/
+def Tensor.dimEquiv {α : Type} (n : Nat) (s : Shape) :
+    Tensor α (.dim n s) ≃ (Fin n → Tensor α s) where
+  toFun
+    | .dim values => values
+  invFun := Tensor.dim
+  left_inv tensor := by cases tensor; rfl
+  right_inv _ := rfl
 
-/-- Equivalence between vectors-as-tensors and functions `Fin n → α`. -/
-def Tensor.dimScalarEquiv {α : Type} (n : Nat) : Tensor α (.dim n .scalar) ≃ (Fin n → α) :=
+/-- Tensor addition is pointwise at every rank. -/
+@[instance_reducible] def Tensor.addCommMonoid {α : Type} [AddCommMonoid α] :
+    (s : Shape) → AddCommMonoid (Tensor α s)
+  | .scalar => Equiv.addCommMonoid (Tensor.scalarEquiv α)
+  | .dim n s =>
+      letI : AddCommMonoid (Tensor α s) := Tensor.addCommMonoid s
+      Equiv.addCommMonoid (Tensor.dimEquiv n s)
+
+/-- Every tensor shape inherits pointwise additive structure from its scalar type. -/
+instance {α : Type} [AddCommMonoid α] {s : Shape} : AddCommMonoid (Tensor α s) :=
+  Tensor.addCommMonoid s
+
+/-- Equivalence between vectors and coordinate functions `Fin n → α`. -/
+def Tensor.vectorEquiv {α : Type} (n : Nat) : Tensor α [n] ≃ (Fin n → α) :=
 Equiv.mk
   (fun t i => match t with
               | Tensor.dim f => Tensor.item (f i))
@@ -156,22 +184,11 @@ Equiv.mk
     funext i
     simp)
 
-/-- `AddCommMonoid` on vector tensors, transported from `Fin n → α` via `Tensor.dimScalarEquiv`. -/
-instance {α : Type} [AddCommMonoid α] {n : Nat} : AddCommMonoid (Tensor α (.dim n .scalar)) :=
-  let _ : AddCommMonoid (Fin n → α) := Pi.addCommMonoid
-  Equiv.addCommMonoid (Tensor.dimScalarEquiv n)
-
 namespace Tensor
 
 /-- Cast a tensor along an equality of shapes. -/
 def castShape {α : Type} {s₁ s₂ : Shape} (t : Tensor α s₁) (h : s₁ = s₂) : Tensor α s₂ :=
   Eq.mp (congrArg (Tensor α) h) t
-
-/-- Cast a vector tensor along an equality of dimensions. -/
-def castVecDim {α : Type} {n m : Nat} (h : n = m) (t : Tensor α (.dim n .scalar)) :
-    Tensor α (.dim m .scalar) := by
-  cases h
-  simpa using t
 
 /-!
 ### Cast lemmas
@@ -282,16 +299,43 @@ def getSpec {α : Type} {s : Shape} (t : Tensor α s) : List Nat → Option α :
       if h : i < n then getSpec (values ⟨i, h⟩) is else none := by
   simp [getSpec]
 
+/-- Transporting a tensor across an equal shape does not change coordinate lookup. -/
+@[simp] theorem get_spec_castShape {α : Type} {shape shape' : Shape}
+    (tensor : Tensor α shape) (h : shape = shape') (index : List Nat) :
+    getSpec (Tensor.castShape tensor h) index = getSpec tensor index := by
+  cases h
+  rfl
+
 attribute [grind =] get_spec_scalar_nil get_spec_scalar_cons get_spec_dim_nil get_spec_dim_cons
 
-/-- Extract the subtensor at index `i` along the outermost dimension. -/
-def getAtSpec {α : Type} {n s} (t : Tensor α (.dim n s)) (i : Fin n) : Tensor α s :=
-  match t with
-  | Tensor.dim f => f i
+namespace Tensor
 
-/-- Standard spec-level indexing helper, equivalent to `getAtSpec`. -/
+/-- Select one coordinate along an arbitrary tensor axis. The selected axis is removed. -/
+def selectSpec {α : Type} :
+    (axis : Nat) → {s : Shape} → (tensor : Tensor α s) →
+      [_h : Shape.AxisInBounds axis s] →
+      Fin (Shape.axisSize s axis) → Tensor α (s.eraseAxis axis)
+  | 0, .dim _ _, .dim values, _, i => values i
+  | axis + 1, .dim _ rest, .dim values, h, i =>
+      .dim fun outer =>
+        @selectSpec α axis rest (values outer)
+          ⟨by
+            have := h.proof
+            simp only [Shape.rank] at this
+            grind⟩
+          (Fin.cast (by rfl) i)
+
+/-- Selecting axis zero from a tensor built by `Tensor.dim` returns the chosen entry. -/
+@[simp] theorem selectSpec_zero_dim {α : Type} {n : Nat} {s : Shape}
+    (values : Fin n → Tensor α s) (i : Fin n) :
+    selectSpec 0 (Tensor.dim values) i = values i := by
+  rfl
+
+end Tensor
+
+/-- Select one coordinate from the outermost tensor axis. -/
 def get {α : Type} {n s} (t : Tensor α (.dim n s)) (i : Fin n) : Tensor α s :=
-  getAtSpec t i
+  Tensor.selectSpec 0 t i
 
 /-- Indexing a tensor built from an outer coordinate function returns that coordinate. -/
 @[simp] theorem get_dim {α : Type} {n : Nat} {s : Shape}
@@ -313,23 +357,81 @@ instance {α : Type} {n : Nat} {s : Shape} :
 
 namespace Tensor
 
-/-- Extract the `i`-th entry from a vector tensor. -/
-def vecGet {α : Type} {n : Nat} (x : Tensor α (.dim n .scalar)) (i : Fin n) : α :=
+/-- Two tensors of the same shape are equal when every coordinate lookup agrees. -/
+@[ext] theorem ext_getSpec {α : Type} {shape : Shape} {x y : Tensor α shape}
+    (h : ∀ index, getSpec x index = getSpec y index) : x = y := by
+  induction shape with
+  | scalar =>
+      cases x with
+      | scalar x =>
+          cases y with
+          | scalar y =>
+              congr
+              simpa using h []
+  | dim n shape ih =>
+      cases x with
+      | dim x =>
+          cases y with
+          | dim y =>
+              congr
+              funext i
+              apply ih
+              intro index
+              simpa [i.isLt] using h (i.val :: index)
+
+/-- Extract a scalar from a vector at a statically valid coordinate. -/
+def getScalar {α : Type} {n : Nat} (x : Tensor α [n]) (i : Fin n) : α :=
   Tensor.item (_root_.Spec.get x i)
 
-/-- Reading a vector constructed coordinatewise returns the selected scalar. -/
-@[simp] theorem vecGet_dim {α : Type} {n : Nat} (values : Fin n → α) (i : Fin n) :
-    vecGet (Tensor.dim (fun j => Tensor.scalar (values j))) i = values i := by
+/-- Scalar lookup from an outer tensor constructor exposes the selected scalar entry. -/
+@[simp] theorem getScalar_dim_entry {α : Type} {n : Nat}
+    (values : Fin n → Tensor α .scalar) (i : Fin n) :
+    getScalar (Tensor.dim values) i = (values i).item := by
+  rw [getScalar, _root_.Spec.get_dim]
+
+/-- The coordinate-function view of a vector agrees with scalar indexing. -/
+@[simp] theorem vectorEquiv_apply {α : Type} {n : Nat}
+    (x : Tensor α [n]) (i : Fin n) :
+    Tensor.vectorEquiv n x i = getScalar x i := by
+  cases x
   rfl
+
+/-- Reading a vector constructed coordinatewise returns the selected scalar. -/
+@[simp] theorem getScalar_dim {α : Type} {n : Nat} (values : Fin n → α) (i : Fin n) :
+    getScalar (Tensor.dim (fun j => Tensor.scalar (values j))) i = values i := by
+  rfl
+
+/-- Two vectors are equal when all corresponding scalar entries are equal. -/
+@[ext] theorem ext_vector {α : Type} {n : Nat} {x y : Tensor α [n]}
+    (h : ∀ i : Fin n, getScalar x i = getScalar y i) : x = y := by
+  cases x with
+  | dim xs =>
+      cases y with
+      | dim ys =>
+          congr
+          funext i
+          apply Tensor.ext_scalar
+          simpa [getScalar, _root_.Spec.get] using h i
 
 end Tensor
 
 /-- Matrix element access: `get2 A i j` returns `A[i, j]` as a scalar. -/
 def get2 {α : Type} {m n : ℕ}
-    (A : Tensor α (.dim m (.dim n .scalar))) (i : Fin m) (j : Fin n) : α :=
+    (A : Tensor α [m, n]) (i : Fin m) (j : Fin n) : α :=
   match get A i with
   | Tensor.dim row => match row j with
     | Tensor.scalar v => v
+
+/-- Matrix indexing agrees with scalar indexing after selecting the requested row. -/
+theorem get2_eq_getScalar_get {α : Type} {m n : Nat}
+    (A : Tensor α [m, n]) (i : Fin m) (j : Fin n) :
+    get2 A i j = Tensor.getScalar (get A i) j := by
+  cases A with
+  | dim rows =>
+      cases hrow : rows i
+      case dim values =>
+        cases hvalue : values j
+        simp [get2, Tensor.getScalar, get, hrow, hvalue]
 
 /-- Reading a matrix constructed coordinatewise returns the selected scalar. -/
 @[simp] theorem get2_dim {α : Type} {m n : Nat} (values : Fin m → Fin n → α)
@@ -344,7 +446,7 @@ Enable Lean’s indexing syntax for matrix-shaped scalar tensors.
 After this instance, you can write `A[(i, j)]` as notation for `Spec.get2 A i j`.
 -/
 instance {α : Type} {m n : Nat} :
-    GetElem (Tensor α (.dim m (.dim n .scalar))) (Fin m × Fin n) α (fun _ _ => True) where
+    GetElem (Tensor α [m, n]) (Fin m × Fin n) α (fun _ _ => True) where
   getElem A ij _ := get2 A ij.1 ij.2
 
 -- Helper to safely get a scalar from a multi-dimensional tensor
@@ -392,30 +494,6 @@ def getAtOrZero {α : Type} [Zero α] {s : Shape} (t : Tensor α s) : List Nat �
 attribute [grind =] get_at_or_zero_scalar_nil get_at_or_zero_scalar_cons get_at_or_zero_dim_nil
   get_at_or_zero_dim_cons
 
-/-- Construct the first valid index of `Fin n` from an explicit nonempty proof. -/
-def finZero {n : Nat} (h : 0 < n) : Fin n :=
-  ⟨0, h⟩
-
-/-- Get the first element of a 1st‑dimension tensor (if nonempty). -/
-def getHead {α : Type} {n : Nat} {s : Shape} (t : Tensor α (.dim n s)) : Option (Tensor α s) :=
-  if h : 0 < n then
-    match t with
-    | Tensor.dim f => some (f (finZero h))
-  else
-    none
-
-/-- Drop the first element of a 1st‑dimension tensor (if nonempty). -/
-def getTail {α : Type} {n : Nat} {s : Shape} (t : Tensor α (.dim n s)) : Option (Tensor α (.dim (n
-  - 1) s)) :=
-  if h : 0 < n then
-    match t with
-    | Tensor.dim f =>
-      some (Tensor.dim (fun i : Fin (n - 1) =>
-        let i' : Fin n := cast (by rw [Nat.sub_add_cancel h]) (Fin.succ i)
-        f i'))
-  else
-    none
-
 /-- Cast a tensor along an equality of shapes. -/
 def tensorCast {α : Type} {s : Shape} (t : Shape) (h : s = t) : Tensor α s → Tensor α t :=
   fun x => Eq.mp (congrArg (Tensor α) h) x
@@ -433,17 +511,34 @@ def replicate {α : Type} : ∀ {s : Shape}, Tensor α .scalar → Tensor α s
   | .dim n _, t =>
     Tensor.dim (fun _ : Fin n => replicate t)
 
-/-!
-Slicing helpers.
+namespace Tensor
 
-We keep `slice_spec` as a focused "first-axis select" operation since it shows up all over the
-place in spec definitions.
+/-- Keep a contiguous range of coordinates along an arbitrary tensor axis.
 
-PyTorch analogy: `slice_spec t i` is `t[i]`.
--/
-/-- Slice a tensor along its first axis: `slice_spec t i = t[i]`. -/
-def sliceSpec {α : Type} : ∀ {n s}, Tensor α (.dim n s) → Fin n → Tensor α s
-  | _, _, Tensor.dim values, idx => values idx
+The selected axis is replaced by `count`; every other axis is preserved. The range proof makes
+the operation total and rules out clipping. -/
+def sliceAxisRangeSpec {α : Type} :
+    (axis : Nat) → {s : Shape} → (tensor : Tensor α s) →
+      [_h : Shape.AxisInBounds axis s] →
+      (start count : Nat) → (start + count ≤ Shape.axisSize s axis) →
+      Tensor α (s.replaceAxis axis count)
+  | 0, .dim _ rest, .dim values, _, start, count, hRange =>
+      .dim fun i =>
+        values ⟨start + i.val,
+          Nat.lt_of_lt_of_le (Nat.add_lt_add_left i.isLt start) hRange⟩
+  | axis + 1, .dim _ rest, .dim values, hAxis, start, count, hRange =>
+      let innerAxis : Shape.AxisInBounds axis rest :=
+        ⟨by
+          have := hAxis.proof
+          simp only [Shape.rank] at this
+          grind⟩
+      letI := innerAxis
+      have hRange' : start + count ≤ Shape.axisSize rest axis := by
+        simpa only [Shape.axisSize_succ] using hRange
+      .dim fun outer =>
+        @sliceAxisRangeSpec α axis rest (values outer) innerAxis start count hRange'
+
+end Tensor
 
 /--
 Slice a contiguous range along the first axis.
@@ -453,18 +548,56 @@ This is the spec-level analogue of `t[start : start+len]` in array/tensor librar
 def sliceRangeSpec {α : Type} {n : Nat} {s : Shape}
   (t : Tensor α (.dim n s)) (start : Nat) (len : Nat) (h : start + len ≤ n) :
   Tensor α (.dim len s) :=
-  Tensor.dim (fun i : Fin len =>
-    get t (Fin.mk (start + i.val)
-      (Nat.lt_of_lt_of_le (Nat.add_lt_add_left i.isLt start) h)))
+  Tensor.sliceAxisRangeSpec 0 t start len (by simpa using h)
+
+/-- Construct the first valid index of `Fin n` from an explicit nonempty proof. -/
+def finZero {n : Nat} (h : 0 < n) : Fin n :=
+  ⟨0, h⟩
+
+/-- Get the first outer-axis entry, returning `none` for an empty axis. -/
+def getHead {α : Type} {n : Nat} {s : Shape}
+    (t : Tensor α (.dim n s)) : Option (Tensor α s) :=
+  if h : 0 < n then some (get t (finZero h)) else none
+
+/-- Drop the first outer-axis entry, returning `none` for an empty axis. -/
+def getTail {α : Type} {n : Nat} {s : Shape}
+    (t : Tensor α (.dim n s)) : Option (Tensor α (.dim (n - 1) s)) :=
+  if h : 0 < n then
+    some (Tensor.sliceAxisRangeSpec 0 t 1 (n - 1) (by
+      simp only [Shape.axisSize_zero]
+      grind))
+  else
+    none
 
 /-! ## Scalar maps and pointwise predicates -/
 
-/-- Map a scalar function across a tensor, preserving its shape. -/
-def mapTensor {α β : Type} : ∀ {s : Shape}, (α → β) → Tensor α s → Tensor β s
-  | .scalar, f, Tensor.scalar x => Tensor.scalar (f x)
-  | .dim _ _, f, Tensor.dim values => Tensor.dim fun i => mapTensor f (values i)
-
 namespace Tensor
+
+/-- Map a scalar function across a tensor, preserving its shape. -/
+def map {α β : Type} : ∀ {s : Shape}, (α → β) → Tensor α s → Tensor β s
+  | .scalar, f, Tensor.scalar x => Tensor.scalar (f x)
+  | .dim _ _, f, Tensor.dim values => Tensor.dim fun i => map f (values i)
+
+/-- Mapping a function over a scalar tensor applies it to the stored value. -/
+@[simp] theorem map_scalar {α β : Type} (f : α → β) (x : α) :
+    map f (Tensor.scalar x) = Tensor.scalar (f x) :=
+  rfl
+
+/-- Mapping a function over a tensor dimension acts pointwise on its entries. -/
+@[simp] theorem map_dim {α β : Type} {n : Nat} {s : Shape} (f : α → β)
+    (values : Fin n → Tensor α s) :
+    map f (Tensor.dim values) = Tensor.dim (fun i => map f (values i)) :=
+  rfl
+
+/-- Scalar lookup commutes with mapping over a vector. -/
+@[simp] theorem getScalar_map {α β : Type} {n : Nat} (f : α → β)
+    (x : Tensor α [n]) (i : Fin n) :
+    (map f x).getScalar i = f (x.getScalar i) := by
+  cases x with
+  | dim values =>
+      change Tensor.item (map f (values i)) = f (Tensor.item (values i))
+      cases values i
+      rfl
 
 /-- `Forall p x` means that every scalar entry of `x` satisfies `p`. -/
 def Forall {α : Type} (p : α → Prop) : {s : Shape} → Tensor α s → Prop
@@ -506,10 +639,10 @@ theorem forall_true {α : Type} {s : Shape} (x : Tensor α s) :
           exact ih (values i)
 
 /-- Transport a pointwise property through a scalar map. -/
-theorem forall_mapTensor {α β : Type} {p : α → Prop} {q : β → Prop}
+theorem forall_map {α β : Type} {p : α → Prop} {q : β → Prop}
     {f : α → β} {s : Shape} {x : Tensor α s}
     (hx : Forall p x) (hf : ∀ a, p a → q (f a)) :
-    Forall q (mapTensor f x) := by
+    Forall q (map f x) := by
   induction s with
   | scalar =>
       cases x with
@@ -533,11 +666,74 @@ end Tensor
 
 /-! ## Conversion to host values -/
 
+namespace Tensor
+
 /-- Flatten a tensor to a row-major list. -/
 def toList {α : Type} : ∀ {s : Shape}, Tensor α s → List α
   | .scalar, Tensor.scalar x => [x]
   | .dim n _, Tensor.dim values =>
       (List.finRange n).flatMap fun i => toList (values i)
+
+/-- Flattening preserves the number of scalar entries recorded by the shape. -/
+@[simp] theorem toList_length {α : Type} {s : Shape} (x : Tensor α s) :
+    x.toList.length = s.size := by
+  induction s with
+  | scalar =>
+      cases x
+      rfl
+  | dim n rest ih =>
+      cases x with
+      | dim values =>
+          simp [toList, Shape.size, ih]
+
+/-- Flatten a tensor directly to a row-major array at a dynamic storage boundary. -/
+def toArray {α : Type} : ∀ {s : Shape}, Tensor α s → Array α
+  | .scalar, Tensor.scalar x => #[x]
+  | .dim n _, Tensor.dim values =>
+      (Array.finRange n).foldl (fun result i => result ++ toArray (values i)) #[]
+
+/-- The array and list views traverse tensor entries in the same row-major order. -/
+@[simp] theorem toArray_toList {α : Type} : ∀ {s : Shape} (x : Tensor α s),
+    x.toArray.toList = x.toList := by
+  intro s x
+  induction s with
+  | scalar => cases x; rfl
+  | dim n rest ih =>
+      cases x with
+      | dim values =>
+        simp only [toArray, toList]
+        rw [← Array.foldl_toList]
+        rw [Array.foldl_toList_eq_flatMap (G := fun i => (values i).toList)]
+        · simp [Array.finRange, List.finRange]
+        · intro acc i
+          simp [ih]
+
+/-- Multiply the entries of a vector. -/
+def prod {α : Type} [Mul α] [One α] {n : Nat} (x : Tensor α [n]) : α :=
+  x.toArray.foldl (· * ·) 1
+
+/-- The tensor product reduction agrees with the row-major array view. -/
+@[simp] theorem prod_eq_toArray_foldl {α : Type} [Mul α] [One α] {n : Nat}
+    (x : Tensor α [n]) :
+    x.prod = x.toArray.foldl (· * ·) 1 := by
+  rfl
+
+/-- Tensor multiplication agrees with multiplication over the structural shape view. -/
+theorem prod_eq_toList_prod {α : Type} [Monoid α] {n : Nat}
+    (x : Tensor α [n]) :
+    x.prod = x.toList.prod := by
+  have foldl_mul (values : List α) (acc : α) :
+      values.foldl (· * ·) acc = acc * values.prod := by
+    induction values generalizing acc with
+    | nil => simp
+    | cons value values ih => simp [ih, mul_assoc]
+  rw [prod_eq_toArray_foldl, ← Array.foldl_toList, toArray_toList, foldl_mul, one_mul]
+
+/-- Render a tensor through its row-major scalar array. -/
+instance {α : Type} {s : Shape} [Repr α] : Repr (Tensor α s) where
+  reprPrec x _ := repr x.toArray
+
+end Tensor
 
 /-- Render a tensor recursively using the scalar `ToString` instance. -/
 def pretty {α : Type} [ToString α] : ∀ {s : Shape}, Tensor α s → String

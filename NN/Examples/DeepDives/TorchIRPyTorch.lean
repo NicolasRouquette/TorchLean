@@ -36,81 +36,81 @@ open TorchLean
 
 /-! ## Architectures -/
 
-def archLinear : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def archLinear : nn.Builder (nn.Sequential [2] [1]) :=
   nn.linear 2 1
 
-def archMLP : nn.Builder (nn.Sequential (.dim 2 .scalar) (.dim 1 .scalar)) :=
+def archMLP : nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
     nn.linear 2 3,
     nn.relu,
     nn.linear 3 1
   ]
 
-def archSumReduce : nn.Builder (nn.Sequential (.dim 4 .scalar) Shape.scalar) :=
-  nn.sum (s := .dim 4 .scalar)
+def archSumReduce : nn.Builder (nn.Sequential [4] ([] : List Nat)) :=
+  nn.sum (shape := [4])
 
-def archAutoencoder : nn.Builder (nn.Sequential (.dim 3 .scalar) (.dim 3 .scalar)) :=
+def archAutoencoder : nn.Builder (nn.Sequential [3] [3]) :=
   nn.Sequential![
     nn.linear 3 2,
     nn.tanh,
     nn.linear 2 3
   ]
 
-def archCNN : nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 4 (.dim 4 .scalar)))) (shape![1, 3])) :=
+def archCNN : nn.Builder (nn.Sequential [1, 1, 4, 4] [1, 3]) :=
   let cfg : nn.models.CnnConfig 2 :=
     { inChannels := 1
-      spatial := #v[4, 4]
+      spatial := tensor! [4, 4]
       outDim := 3
       conv :=
         { outChannels := 2
-          kernel := #v[3, 3]
+          kernel := tensor! [3, 3]
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide }
       pool :=
-        { kernel := #v[1, 1]
+        { kernel := tensor! [1, 1]
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide } }
   by
     simpa [cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
       Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
-      nn.models.cnn cfg (.dim 1 .scalar)
+      nn.models.cnn cfg [1]
 
 def archConvMLP :
-    nn.Builder (nn.Sequential (.dim 1 (.dim 1 (.dim 3 (.dim 3 .scalar)))) (shape![1, 1])) :=
+    nn.Builder (nn.Sequential [1, 1, 3, 3] [1, 1]) :=
   let cfg : nn.models.CnnConfig 2 :=
     { inChannels := 1
-      spatial := #v[3, 3]
+      spatial := tensor! [3, 3]
       outDim := 1
       conv :=
         { outChannels := 1
-          kernel := #v[2, 2]
+          kernel := tensor! [2, 2]
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide }
       pool :=
-        { kernel := #v[1, 1]
+        { kernel := tensor! [1, 1]
           kernelNonzero := by intro i; fin_cases i <;> decide
           strideNonzero := by intro i; fin_cases i <;> decide } }
   by
     simpa [cfg, nn.models.CnnConfig.inputShape, nn.models.CnnConfig.outputShape,
       Spec.Shape.ofList, Spec.Shape.concat, Spec.Shape.appendDim] using
-      nn.models.cnn cfg (.dim 1 .scalar)
+      nn.models.cnn cfg [1]
 
 def archMHA :
-    nn.Builder (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
-  nn.multiHeadAttention (.dim 1 .scalar) (n := 4) (dModel := 8)
+    nn.Builder (nn.Sequential [1, 4, 8] [1, 4, 8]) :=
+  nn.multiHeadAttention [1] (n := 4) (dModel := 8)
     { numHeads := 2, headDim := 4 }
 
-def archMHAMask : Tensor Bool (.dim 4 (.dim 4 .scalar)) :=
-  text.causalMask 4
+def archMHAMask : Tensor Bool [4, 4] :=
+  Spec.causalMask 4
 
 def archMHAMasked :
-    nn.Builder (nn.Sequential (shape![1, 4, 8]) (shape![1, 4, 8])) :=
-  nn.multiHeadAttention (.dim 1 .scalar) (n := 4) (dModel := 8)
+    nn.Builder (nn.Sequential [1, 4, 8] [1, 4, 8]) :=
+  nn.multiHeadAttention [1] (n := 4) (dModel := 8)
     { numHeads := 2, headDim := 4 } (mask := some archMHAMask)
 
 def archTransformer :
-    nn.Builder (nn.Sequential (shape![1, 2, 2]) (shape![1, 2, 2])) :=
-  nn.transformerEncoderBlock (.dim 1 .scalar) (n := 2) (dModel := 2)
+    nn.Builder (nn.Sequential [1, 2, 2] [1, 2, 2]) :=
+  nn.transformerEncoderBlock [1] (n := 2) (dModel := 2)
     { numHeads := 1
     , headDim := 2
     , ffnHidden := 2 }

@@ -85,7 +85,7 @@ def main():
         if isinstance(sd, dict) and all(k in sd for k in ("0.weight","0.bias","2.weight","2.bias","4.weight","4.bias")):
             model.load_state_dict(sd)
         elif isinstance(sd, dict) and "state_dict" in sd:
-            model.load_state_dict(sd["state_dict"]) 
+            model.load_state_dict(sd["state_dict"])
         else:
             raise SystemExit("Checkpoint does not contain expected state_dict keys")
 

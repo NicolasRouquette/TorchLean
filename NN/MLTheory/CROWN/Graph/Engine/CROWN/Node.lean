@@ -54,14 +54,14 @@ def propagateCROWNNode
     | none => bounds
   | .detach =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1 with
       | some b => bounds.set! id (some b)
       | none => bounds
     | _ => bounds
-  | .randUniform _ | .bernoulliMask _ | .abs | .sqrt | .permute _ | .maxElem | .minElem | .sin |
+  | .randUniform _ | .bernoulliMask _ | .abs | .sqrt | .maxElem | .minElem | .sin |
     .cos | .hardMaskedSoftmax _
-  | .maxPool2d .. | .avgPool2d .. | .maxPool2dPad .. | .avgPool2dPad ..
+  | .maxPool .. | .avgPool ..
   | .broadcastTo .. | .reduceSum .. | .reduceMean .. =>
     -- Conservative fallback: use IBP box as a constant affine bound (A = 0).
     match ibp[id]! with
@@ -69,7 +69,7 @@ def propagateCROWNNode
     | none => bounds
   | .add =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match getB p1, getB p2 with
       | some b1, some b2 =>
         if hout : b1.outDim = b2.outDim then
@@ -92,7 +92,7 @@ def propagateCROWNNode
     | _ => bounds
   | .sub =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match getB p1, getB p2 with
       | some b1, some b2 =>
         if hout : b1.outDim = b2.outDim then
@@ -115,7 +115,7 @@ def propagateCROWNNode
     | _ => bounds
   | .linear =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1, ps.linearWB[id]? with
       | some xin, some p =>
         if hout : xin.outDim = p.n then
@@ -126,7 +126,7 @@ def propagateCROWNNode
     | _ => bounds
   | .matmul =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       -- General (batched) matmul: use McCormick relaxations per product term.
       match getB p1, getB p2, ibp[p1]!, ibp[p2]! with
       | some aAff, some bAff, some aBox, some bBox =>
@@ -141,7 +141,7 @@ def propagateCROWNNode
             Bout.hi))
           | none => bounds
       | _, _, _, _ => bounds
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1, ps.matmulW[id]? with
       | some xin, some p =>
         if hout : xin.outDim = p.n then
@@ -167,7 +167,7 @@ def propagateCROWNNode
     | none => bounds
   | .mul_elem =>
     match node.parents with
-    | p1 :: p2 :: _ =>
+    | #[p1, p2] =>
       match getB p1, getB p2, ibp[p1]!, ibp[p2]! with
       | some xB, some yB, some Bx, some By =>
         if hxo : xB.outDim = Bx.dim then
@@ -185,10 +185,10 @@ def propagateCROWNNode
     | _ => bounds
   | .sum =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1 with
       | some xin =>
-        let onesRow : Tensor α (.dim 1 (.dim xin.outDim .scalar)) :=
+        let onesRow : Tensor α [1, xin.outDim] :=
           Spec.fill (α := α) Numbers.one (.dim 1 (.dim xin.outDim .scalar))
         let loAff : AffineVec α xin.inDim 1 :=
           { A := Spec.matMulSpec onesRow xin.loAff.A
@@ -202,137 +202,97 @@ def propagateCROWNNode
   | .reshape _ _ =>
     -- Flattened representation preserves order; treat as identity.
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1 with
       | some xin => bounds.set! id (some xin)
       | none => bounds
     | _ => bounds
   | .flatten _ =>
     match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1 with
       | some xin => bounds.set! id (some xin)
       | none => bounds
     | _ => bounds
-  | .concat _ =>
-    -- Exact concatenation on flattened vectors.
+  | .concat axis =>
+    if axis != 0 then
+      bounds
+    else
+      -- Leading-axis concatenation is contiguous in row-major flattened storage.
+      match node.parents with
+      | #[p1, p2] =>
+        match getB p1, getB p2 with
+        | some b1, some b2 =>
+          if hin : b1.inDim = b2.inDim then
+            let b2Lo : AffineVec α b1.inDim b2.outDim :=
+              castAffineIn (α := α) (n := b2.inDim) (n' := b1.inDim) (m := b2.outDim) hin.symm
+                b2.loAff
+            let b2Hi : AffineVec α b1.inDim b2.outDim :=
+              castAffineIn (α := α) (n := b2.inDim) (n' := b1.inDim) (m := b2.outDim) hin.symm
+                b2.hiAff
+            match b1.loAff.A, b1.hiAff.A, b1.loAff.c, b1.hiAff.c, b2Lo.A, b2Hi.A, b2Lo.c,
+                b2Hi.c with
+            | .dim A1L, .dim A1U, .dim c1L, .dim c1U, .dim A2L, .dim A2U, .dim c2L,
+                .dim c2U =>
+              let outDim := b1.outDim + b2.outDim
+              let ALo : Tensor α [outDim, b1.inDim] :=
+                Tensor.dim (fun i =>
+                  Fin.addCases (fun i1 => A1L i1) (fun i2 => A2L i2) i)
+              let AHi : Tensor α [outDim, b1.inDim] :=
+                Tensor.dim (fun i =>
+                  Fin.addCases (fun i1 => A1U i1) (fun i2 => A2U i2) i)
+              let cLo : Tensor α [outDim] :=
+                Tensor.dim (fun i =>
+                  Fin.addCases (fun i1 => c1L i1) (fun i2 => c2L i2) i)
+              let cHi : Tensor α [outDim] :=
+                Tensor.dim (fun i =>
+                  Fin.addCases (fun i1 => c1U i1) (fun i2 => c2U i2) i)
+              bounds.set! id
+                (some
+                  { inDim := b1.inDim
+                    outDim := outDim
+                    loAff := { A := ALo, c := cLo }
+                    hiAff := { A := AHi, c := cHi } })
+          else bounds
+        | _, _ => bounds
+      | _ => bounds
+  | .transpose axis₁ axis₂ =>
     match node.parents with
-    | p1 :: p2 :: _ =>
-      match getB p1, getB p2 with
-      | some b1, some b2 =>
-        if hin : b1.inDim = b2.inDim then
-          let b2Lo : AffineVec α b1.inDim b2.outDim :=
-            castAffineIn (α := α) (n := b2.inDim) (n' := b1.inDim) (m := b2.outDim) hin.symm
-              b2.loAff
-          let b2Hi : AffineVec α b1.inDim b2.outDim :=
-            castAffineIn (α := α) (n := b2.inDim) (n' := b1.inDim) (m := b2.outDim) hin.symm
-              b2.hiAff
-          match b1.loAff.A, b1.hiAff.A, b1.loAff.c, b1.hiAff.c, b2Lo.A, b2Hi.A, b2Lo.c, b2Hi.c with
-          | .dim A1L, .dim A1U, .dim c1L, .dim c1U, .dim A2L, .dim A2U, .dim c2L, .dim c2U =>
-            let outDim := b1.outDim + b2.outDim
-            let ALo : Tensor α (.dim outDim (.dim b1.inDim .scalar)) :=
-              Tensor.dim (fun i =>
-                Fin.addCases (fun i1 => A1L i1) (fun i2 => A2L i2) i)
-            let AHi : Tensor α (.dim outDim (.dim b1.inDim .scalar)) :=
-              Tensor.dim (fun i =>
-                Fin.addCases (fun i1 => A1U i1) (fun i2 => A2U i2) i)
-            let cLo : Tensor α (.dim outDim .scalar) :=
-              Tensor.dim (fun i =>
-                Fin.addCases (fun i1 => c1L i1) (fun i2 => c2L i2) i)
-            let cHi : Tensor α (.dim outDim .scalar) :=
-              Tensor.dim (fun i =>
-                Fin.addCases (fun i1 => c1U i1) (fun i2 => c2U i2) i)
-            bounds.set! id
-              (some
-                { inDim := b1.inDim
-                  outDim := outDim
-                  loAff := { A := ALo, c := cLo }
-                  hiAff := { A := AHi, c := cHi } })
-        else bounds
-      | _, _ => bounds
-    | _ => bounds
-  | .swap_first_two =>
-    match node.parents with
-    | p1 :: _ =>
+    | #[p1] =>
       match getB p1 with
       | some xin =>
-        match nodes[p1]!.outShape with
-        | .dim m (.dim n rest) =>
-          let sIn : Shape := .dim m (.dim n rest)
-          if xin.outDim = sIn.size then
-            let restSize := Spec.Shape.size rest
-            let outDim := xin.outDim
-            if h0 : outDim = 0 then
-              -- Empty tensor: permutation is trivial.
-              bounds.set! id (some xin)
-            else
-              haveI : NeZero outDim := ⟨h0⟩
-              let block := m * restSize
-              let perm : Fin outDim → Fin outDim := fun idx =>
-                let t := idx.val
-                let j := t / block
-                let rem := t % block
-                let i := rem / restSize
-                let k := rem % restSize
-                let tIn := i * (n * restSize) + j * restSize + k
-                Fin.ofNat outDim tIn
-              let loAff := permuteAffineOut (α := α) (inDim := xin.inDim) (outDim := outDim) perm
-                xin.loAff
-              let hiAff := permuteAffineOut (α := α) (inDim := xin.inDim) (outDim := outDim) perm
-                xin.hiAff
-              bounds.set! id (some { inDim := xin.inDim, outDim := outDim, loAff := loAff, hiAff :=
-                hiAff })
-          else
-            match ibp[id]! with
-            | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
+        if xin.outDim = 0 then
+          bounds.set! id (some xin)
+        else
+          match OpContracts.transposePerm nodes[p1]!.outShape.rank axis₁ axis₂ with
+          | .ok perm =>
+            match permuteFlatAffineBounds? (α := α) nodes[p1]!.outShape perm xin with
+            | some result => bounds.set! id (some result)
             | none => bounds
-        | _ =>
-          match ibp[id]! with
-          | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
+          | .error _ => bounds
+      | none => bounds
+    | _ => bounds
+  | .permute perm =>
+    match node.parents with
+    | #[p1] =>
+      match getB p1 with
+      | some xin =>
+        if xin.outDim = 0 then
+          bounds.set! id (some xin)
+        else
+          match permuteFlatAffineBounds? (α := α) nodes[p1]!.outShape perm xin with
+          | some result => bounds.set! id (some result)
           | none => bounds
       | none => bounds
     | _ => bounds
-  | .transpose3dLastTwo =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1 with
-      | some xin =>
-        match nodes[p1]!.outShape with
-        | .dim a (.dim b (.dim c .scalar)) =>
-          let sIn : Shape := .dim a (.dim b (.dim c .scalar))
-          if xin.outDim = sIn.size then
-            let outDim := xin.outDim
-            if h0 : outDim = 0 then
-              bounds.set! id (some xin)
-            else
-              haveI : NeZero outDim := ⟨h0⟩
-              let block := c * b
-              let perm : Fin outDim → Fin outDim := fun idx =>
-                let t := idx.val
-                let i := t / block
-                let rem := t % block
-                let k := rem / b
-                let j := rem % b
-                let tIn := i * (b * c) + j * c + k
-                Fin.ofNat outDim tIn
-              let loAff := permuteAffineOut (α := α) (inDim := xin.inDim) (outDim := outDim) perm
-                xin.loAff
-              let hiAff := permuteAffineOut (α := α) (inDim := xin.inDim) (outDim := outDim) perm
-                xin.hiAff
-              bounds.set! id (some { inDim := xin.inDim, outDim := outDim, loAff := loAff, hiAff :=
-                hiAff })
-          else
-            match ibp[id]! with
-            | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-            | none => bounds
-        | _ =>
-          match ibp[id]! with
-          | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-          | none => bounds
+  | .layernorm _ =>
+    if !crownNodeSemanticsSupported (α := α) nodes ps id then
+      bounds
+    else
+      match ibp[id]! with
+      | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
       | none => bounds
-    | _ => bounds
-  | .layernorm _ | .softmax _ =>
-    -- These coupled operators use the same directed IBP-to-constant policy as scalar nonlinearities.
+  | .softmax _ =>
     match ibp[id]! with
     | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
     | none => bounds
@@ -340,40 +300,34 @@ def propagateCROWNNode
     match ibp[id]! with
     | some B => bounds.set! id (some (boundsConst (α := α) ctx.inputDim B.dim B.lo B.hi))
     | none => bounds
-  | .conv2d .. =>
-    match node.parents with
-    | p1 :: _ =>
-      match getB p1 with
-      | some xin =>
-        match ps.conv2dCfg[id]? with
-        | some cfg =>
-          let convIn := cfg.inC * cfg.inH * cfg.inW
-          if _hs : cfg.stride = 0 then
-            bounds
-          else if hout : xin.outDim = convIn then
-            let outH := Spec.Shape.slidingWindowOutDim cfg.inH cfg.kH cfg.stride cfg.padding
-            let outW := Spec.Shape.slidingWindowOutDim cfg.inW cfg.kW cfg.stride cfg.padding
-            let convAff := affOfConv2d (α:=α) cfg
-            let out := propagateLinearBounds (α:=α) (n:=convIn) (m:=cfg.outC * outH * outW)
-              convAff.A convAff.c xin hout
-            bounds.set! id (some out)
-          else bounds
-        | none =>
-          match ps.linearWB[id]? with
-          | some p =>
-            if hout : xin.outDim = p.n then
-              let out := propagateLinearBounds (α:=α) (n:=p.n) (m:=p.m) p.w p.b xin hout
+  | .conv .. =>
+    if !crownNodeSemanticsSupported (α := α) nodes ps id then
+      bounds
+    else
+      match node.parents with
+      | #[p1] =>
+        match getB p1 with
+        | some xin =>
+          match ps.convCfg[id]? with
+          | some cfg =>
+            let inShape := Shape.ofList (cfg.inChannels :: cfg.inputSpatial.toList)
+            let outSpatial := Spec.convOutSpatial cfg.inputSpatial cfg.kernel cfg.stride cfg.padding
+            let outShape := Shape.ofList (cfg.outChannels :: outSpatial.toList)
+            if hout : xin.outDim = inShape.size then
+              let convAff := affOfConv (α:=α) cfg
+              let out := propagateLinearBounds (α:=α) (n:=inShape.size) (m:=outShape.size)
+                convAff.A convAff.c xin hout
               bounds.set! id (some out)
             else bounds
           | none => bounds
-      | none => bounds
-    | _ => bounds
-  | .batchNorm2dNchwEval .. =>
+        | none => bounds
+      | _ => bounds
+  | .batchNormEval channelAxis _ =>
     match node.parents with
-    | p1 :: _ =>
-      match getB p1, ps.batchNorm2dNchwEval[id]? with
+    | #[p1] =>
+      match getB p1, ps.batchNormEval[id]? with
       | some xin, some cfg =>
-        match batchNorm2dNchwEvalLinear? (α := α) nodes[p1]!.outShape cfg with
+        match batchNormEvalLinear? (α := α) nodes[p1]!.outShape channelAxis cfg with
         | some p =>
           if hout : xin.outDim = p.n then
             let out := propagateLinearBounds (α := α) (n := p.n) (m := p.m) p.w p.b xin hout

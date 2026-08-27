@@ -36,10 +36,10 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
     {α : Type} [Context α] [DecidableEq Shape]
     {paramShapes : List Shape} {inShape : Shape} {ss : List Shape} {out : Shape}
     (g : ForwardLetChain α paramShapes inShape ss out)
-    (params : Runtime.Autograd.Torch.TList α paramShapes)
+    (params : TorchLean.TensorPack α paramShapes)
     (c : NN.Verification.TorchLean.LoweredIR α)
     (x : Tensor α inShape)
-    (vals : Array (Spec.PackedTensor α))
+    (vals : Array (Spec.SomeTensor α))
     (hSize : vals.size = c.graph.nodes.size)
     (hShapes : shapesOfVals (α := α) vals = Ctx inShape ss) :
     (NN.IR.Graph.denoteAllFrom (α := α)
@@ -48,7 +48,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
       (payload := payloadOfParamStore (α := α)
         (lowerForwardLetChain (α := α) (paramShapes := paramShapes) (inShape := inShape)
           (ss := ss) (out := out) g params c).ps)
-      (input := Spec.PackedTensor.mk (α := α) inShape x)
+      (input := Spec.SomeTensor.mk (α := α) inShape x)
       (i := c.graph.nodes.size)
       (vals := vals)
         =
@@ -94,8 +94,14 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
           (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext) (params := params) (c := c') (hk := by
             simp [c', id, Array.size_push])
       have hConv :
-          cOut.ps.conv2dCfg.get? id = c'.ps.conv2dCfg.get? id :=
-        lowerForwardLetChain_ps_conv2dCfg_get?_lt (α := α) (paramShapes := paramShapes)
+          cOut.ps.convCfg.get? id = c'.ps.convCfg.get? id :=
+        lowerForwardLetChain_ps_convCfg_get?_lt (α := α) (paramShapes := paramShapes)
+          (inShape := inShape) (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext)
+          (params := params) (c := c') (hk := by
+            simp [c', id, Array.size_push])
+      have hLayerNorm :
+          cOut.ps.layerNorm.get? id = c'.ps.layerNorm.get? id :=
+        lowerForwardLetChain_ps_layerNorm_get?_lt (α := α) (paramShapes := paramShapes)
           (inShape := inShape) (ss := ss₀ ++ [mid₀]) (out := out₀) (g := gNext)
           (params := params) (c := c') (hk := by
             simp [c', id, Array.size_push])
@@ -115,7 +121,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
           NN.IR.Graph.evalAt (α := α)
               (g := cOut.graph)
               (payload := payloadOfParamStore (α := α) cOut.ps)
-              (input := Spec.PackedTensor.mk (α := α) inShape x)
+              (input := Spec.SomeTensor.mk (α := α) inShape x)
               (vals := vals) (i := id)
             =
           evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out :=
@@ -128,11 +134,11 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
         | const wf t =>
             let : Shape.WellFormed mid₀ := wf
             -- Show the const payload is present and evaluates back to `t`.
-            let flat : NN.MLTheory.CROWN.Graph.FlatVec α :=
+            let flat : NN.MLTheory.CROWN.Graph.FlatTensor α :=
               flatOfTensor (α := α) (s := mid₀) wf t
             have hnKind : n.kind = .const mid₀ := by
               simp [lowerNode, res, n]
-            have hnParents : n.parents = [] := by
+            have hnParents : n.parents = #[] := by
               simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [lowerNode, res, n]
@@ -147,26 +153,26 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             have hStoreConst :
                 cOut.ps.constVals.get? id =
                   some ({ n := Spec.Shape.size mid₀, v := t.flattenSpec } :
-                    NN.MLTheory.CROWN.Graph.FlatVec α) := by
+                    NN.MLTheory.CROWN.Graph.FlatTensor α) := by
               simpa [flat, flatOfTensor] using hGet
             have hUF : unflattenSpec mid₀ t.flattenSpec = t := by
               simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t := t))
             have hn :
-                n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
+                n = { id := id, parents := #[], kind := .const mid₀, outShape := mid₀ } := by
               simp [n, res, lowerNode]
             have hGetNodeConst :
                 NN.IR.Graph.getNode (g := cOut.graph) id =
-                  pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
+                  pure ({ id := id, parents := #[], kind := .const mid₀, outShape := mid₀ } :
                     NN.IR.Node) := by
               simp [hGetNode, hn]
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
-                Except.ok (Spec.PackedTensor.mk (α := α) mid₀ t) := by
+                Except.ok (Spec.SomeTensor.mk (α := α) mid₀ t) := by
               simpa [hUF] using
                 IRStep.evalAt_const_from_paramStore_of_getNode
                   (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
@@ -178,7 +184,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                   := mid₀)
                     (Node.const wf t) params vals
                   =
-                Except.ok (Spec.PackedTensor.mk (α := α) mid₀ t) := by
+                Except.ok (Spec.SomeTensor.mk (α := α) mid₀ t) := by
               rfl
             simp [hEvalNode]
             exact hEvalAt
@@ -186,7 +192,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             let : Shape.WellFormed mid₀ := wf
             -- Same as `const`, but the stored constant comes from `params`.
             let tp : Tensor α mid₀ := getParam (α := α) (paramShapes := paramShapes) params p
-            let flat : NN.MLTheory.CROWN.Graph.FlatVec α :=
+            let flat : NN.MLTheory.CROWN.Graph.FlatTensor α :=
               flatOfTensor (α := α) (s := mid₀) wf tp
             have hGet' : c'.ps.constVals.get? id = some flat := by
               simp [c', res, lowerNode, ps', flat, tp]
@@ -195,14 +201,14 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             have hStoreConst :
                 cOut.ps.constVals.get? id =
                   some ({ n := Spec.Shape.size mid₀, v := tp.flattenSpec } :
-                    NN.MLTheory.CROWN.Graph.FlatVec α) := by
+                    NN.MLTheory.CROWN.Graph.FlatTensor α) := by
               simpa [flat, flatOfTensor] using hGet
             have hUF : unflattenSpec mid₀ tp.flattenSpec = tp := by
               simpa using (Spec.Tensor.flatten_unflatten_inverse_wf (α := α) (s := mid₀) (t :=
                 tp))
             have hnKind : n.kind = .const mid₀ := by
               simp [lowerNode, res, n]
-            have hnParents : n.parents = [] := by
+            have hnParents : n.parents = #[] := by
               simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [lowerNode, res, n]
@@ -210,16 +216,16 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
-                Except.ok (Spec.PackedTensor.mk (α := α) mid₀ tp) := by
+                Except.ok (Spec.SomeTensor.mk (α := α) mid₀ tp) := by
               have hn :
-                  n = { id := id, parents := [], kind := .const mid₀, outShape := mid₀ } := by
+                  n = { id := id, parents := #[], kind := .const mid₀, outShape := mid₀ } := by
                 simp [n, res, lowerNode]
               have hGetNodeConst :
                   NN.IR.Graph.getNode (g := cOut.graph) id =
-                    pure ({ id := id, parents := [], kind := .const mid₀, outShape := mid₀ } :
+                    pure ({ id := id, parents := #[], kind := .const mid₀, outShape := mid₀ } :
                       NN.IR.Node) := by
                 simp [hGetNode, hn]
               simpa [hUF] using
@@ -233,14 +239,14 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                   := mid₀)
                     (Node.paramConst wf p) params vals
                   =
-                Except.ok (Spec.PackedTensor.mk (α := α) mid₀ tp) := by
+                Except.ok (Spec.SomeTensor.mk (α := α) mid₀ tp) := by
               rfl
             simpa [hEvalNode] using hEvalAt
         | add a b =>
             simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
               IRStep.evalAt_binaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .add a b cOut.graph
-              (payloadOfParamStore (α := α) cOut.ps) (Spec.PackedTensor.mk (α := α) inShape x) vals id n
+              (payloadOfParamStore (α := α) cOut.ps) (Spec.SomeTensor.mk (α := α) inShape x) vals id n
               hShapes hGetNode
                 (by simp [lowerNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
                 (by simp [lowerNode, res, n])
@@ -249,7 +255,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
               IRStep.evalAt_binaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .sub a b cOut.graph
-              (payloadOfParamStore (α := α) cOut.ps) (Spec.PackedTensor.mk (α := α) inShape x) vals id n
+              (payloadOfParamStore (α := α) cOut.ps) (Spec.SomeTensor.mk (α := α) inShape x) vals id n
               hShapes hGetNode
                 (by simp [lowerNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
                 (by simp [lowerNode, res, n])
@@ -258,7 +264,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             simpa [evalNode, IRStep.BinaryElementwiseOp.denote] using
               IRStep.evalAt_binaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .mul a b cOut.graph
-              (payloadOfParamStore (α := α) cOut.ps) (Spec.PackedTensor.mk (α := α) inShape x) vals id n
+              (payloadOfParamStore (α := α) cOut.ps) (Spec.SomeTensor.mk (α := α) inShape x) vals id n
               hShapes hGetNode
                 (by simp [lowerNode, res, n, IRStep.BinaryElementwiseOp.toOpKind])
                 (by simp [lowerNode, res, n])
@@ -267,7 +273,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
               IRStep.evalAt_unaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .relu xIdx cOut.graph
-                (payloadOfParamStore (α := α) cOut.ps) (Spec.PackedTensor.mk (α := α) inShape x) vals id n
+                (payloadOfParamStore (α := α) cOut.ps) (Spec.SomeTensor.mk (α := α) inShape x) vals id n
                 hShapes hGetNode
                 (by simp [lowerNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
                 (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
@@ -275,21 +281,21 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
               IRStep.evalAt_unaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .exp xIdx cOut.graph
-                (payloadOfParamStore (α := α) cOut.ps) (Spec.PackedTensor.mk (α := α) inShape x) vals id n
+                (payloadOfParamStore (α := α) cOut.ps) (Spec.SomeTensor.mk (α := α) inShape x) vals id n
                 hShapes hGetNode
                 (by simp [lowerNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
                 (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
         | log xIdx =>
             have hnKind : n.kind = .log := by
               simp [lowerNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
+            have hnParents : n.parents = #[xIdx.id] := by
               simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
+                     parents := #[xIdx.id]
                      kind := .log
                      outShape := mid₀ } : NN.IR.Node) := by
               simp [n, res, lowerNode]
@@ -306,145 +312,70 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
                 if Tensor.allSpec (α := α) (s := mid₀) (fun v => decide (0 < v)) tx then
-                  Except.ok (Spec.PackedTensor.mk (α := α) mid₀ (Tensor.logSpec (α := α) tx))
+                  Except.ok (Spec.SomeTensor.mk (α := α) mid₀ (Tensor.logSpec (α := α) tx))
                 else
                   throw
                     "IR eval: log: input contains values <= 0 (or NaN); use `safe_log` if you want epsilon protection" := by
               simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
                 NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
                 getElem?_eq_some_packedAt vals xIdx hShapes, hExpectX,
                 throw, throwThe, MonadExceptOf.throw, Bind.bind, Except.bind, Pure.pure, Except.pure]
-            simpa [evalNode, hGetValX, Spec.PackedTensor.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
+            simpa [evalNode, hGetValX, Spec.SomeTensor.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
         | inv xIdx =>
             simpa [evalNode, IRStep.UnaryElementwiseOp.denote] using
               IRStep.evalAt_unaryElementwise_of_getNode
                 (α := α) (inShape := inShape) (ss := ss₀) (s := mid₀) .inv xIdx cOut.graph
-                (payloadOfParamStore (α := α) cOut.ps) (Spec.PackedTensor.mk (α := α) inShape x) vals id n
+                (payloadOfParamStore (α := α) cOut.ps) (Spec.SomeTensor.mk (α := α) inShape x) vals id n
                 hShapes hGetNode
                 (by simp [lowerNode, res, n, IRStep.UnaryElementwiseOp.toOpKind])
                 (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
-        | matmul2d m nDim p a b =>
-            have hnKind : n.kind = .matmul := by
-              simp [lowerNode, res, n]
-            have hnParents : n.parents = [a.id, b.id] := by
-              simp [lowerNode, res, n]
-            have hnOut : n.outShape = .dim m (.dim p .scalar) := by
-              simp [lowerNode, res, n]
-            have hn :
-                n =
-                  ({ id := id
-                     parents := [a.id, b.id]
-                     kind := .matmul
-                     outShape := .dim m (.dim p .scalar) } : NN.IR.Node) := by
-              simp [n, res, lowerNode]
-            let ta : Tensor α (.dim m (.dim nDim .scalar)) := tensorAt vals a hShapes
-            let tb : Tensor α (.dim nDim (.dim p .scalar)) := tensorAt vals b hShapes
-            have hExpectA :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim m (.dim nDim .scalar)) (packedAt vals a hShapes) =
-                  Except.ok ta := by
-              simpa [ta] using expectShape_packedAt_eq_ok vals a hShapes
-            have hExpectB :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim nDim (.dim p .scalar)) (packedAt vals b hShapes) =
-                  Except.ok tb := by
-              simpa [tb] using expectShape_packedAt_eq_ok vals b hShapes
+        | @matmul leftShape rightShape _ op a b =>
+            let ta : Tensor α leftShape := tensorAt vals a hShapes
+            let tb : Tensor α rightShape := tensorAt vals b hShapes
             have hGetValA :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim m (.dim nDim .scalar)) vals a =
+                    (s := leftShape) vals a =
                   Except.ok ta := by
               simpa [ta] using getVal_eq_ok_of_shapesOfVals_eq vals a hShapes
             have hGetValB :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim nDim (.dim p .scalar)) vals b =
+                    (s := rightShape) vals b =
                   Except.ok tb := by
               simpa [tb] using getVal_eq_ok_of_shapesOfVals_eq vals b hShapes
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
                 Except.ok
-                  (Spec.PackedTensor.mk (α := α) (.dim m (.dim p .scalar))
-                    (Tensor.matMulSpec (α := α) (m := m) (n := nDim) (p := p) ta tb)) := by
-              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
-                getElem?_eq_some_packedAt vals a hShapes,
-                getElem?_eq_some_packedAt vals b hShapes, hExpectA, hExpectB,
-                Bind.bind, Except.bind, Pure.pure, Except.pure]
-            simpa [evalNode, hGetValA, hGetValB, Spec.PackedTensor.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
-        | bmm batch m nDim p a b =>
-            have hnKind : n.kind = .matmul := by
-              simp [lowerNode, res, n]
-            have hnParents : n.parents = [a.id, b.id] := by
-              simp [lowerNode, res, n]
-            have hnOut : n.outShape = .dim batch (.dim m (.dim p .scalar)) := by
-              simp [lowerNode, res, n]
-            have hn :
-                n =
-                  ({ id := id
-                     parents := [a.id, b.id]
-                     kind := .matmul
-                     outShape := .dim batch (.dim m (.dim p .scalar)) } : NN.IR.Node) := by
-              simp [n, res, lowerNode]
-            let ta : Tensor α (.dim batch (.dim m (.dim nDim .scalar))) :=
-              tensorAt vals a hShapes
-            let tb : Tensor α (.dim batch (.dim nDim (.dim p .scalar))) :=
-              tensorAt vals b hShapes
-            have hExpectA :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim batch (.dim m (.dim nDim .scalar))) (packedAt vals a hShapes) =
-                  Except.ok ta := by
-              simpa [ta] using expectShape_packedAt_eq_ok vals a hShapes
-            have hExpectB :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim batch (.dim nDim (.dim p .scalar))) (packedAt vals b hShapes) =
-                  Except.ok tb := by
-              simpa [tb] using expectShape_packedAt_eq_ok vals b hShapes
-            have hGetValA :
-                getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim batch (.dim m (.dim nDim .scalar))) vals a =
-                  Except.ok ta := by
-              simpa [ta] using getVal_eq_ok_of_shapesOfVals_eq vals a hShapes
-            have hGetValB :
-                getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim batch (.dim nDim (.dim p .scalar))) vals b =
-                  Except.ok tb := by
-              simpa [tb] using getVal_eq_ok_of_shapesOfVals_eq vals b hShapes
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok
-                  (Spec.PackedTensor.mk (α := α) (.dim batch (.dim m (.dim p .scalar)))
-                    (Tensor.bmmSpec (α := α) (batch := batch) (m := m) (n := nDim) (p := p) ta tb))
-                      := by
-              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
-                getElem?_eq_some_packedAt vals a hShapes,
-                getElem?_eq_some_packedAt vals b hShapes, hExpectA, hExpectB,
-                Bind.bind, Except.bind, Pure.pure, Except.pure]
-            simpa [evalNode, hGetValA, hGetValB, Spec.PackedTensor.mk, ta, tb, Except.bind, Except.pure, bind, pure] using hEvalAt
+                  (Spec.SomeTensor.mk (α := α) mid₀ (op.denote ta tb)) := by
+              simpa [hGetValA, hGetValB, Bind.bind, Except.bind, Pure.pure, Except.pure] using
+                (IRStep.evalAt_matmul_of_getNode
+                  (α := α) (inShape := inShape) (ss := ss₀) op a b cOut.graph
+                  (payloadOfParamStore (α := α) cOut.ps)
+                  (Spec.SomeTensor.mk (α := α) inShape x) vals id n hShapes hGetNode
+                  (by simp [lowerNode, res, n]) (by simp [lowerNode, res, n])
+                  (by simp [lowerNode, res, n]))
+            simpa [evalNode, hGetValA, hGetValB, Spec.SomeTensor.mk, ta, tb,
+              Except.bind, Except.pure, bind, pure] using hEvalAt
         | reshape inS mid₀ h xIdx =>
             have hnKind : n.kind = .reshape inS mid₀ := by
               simp [lowerNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
+            have hnParents : n.parents = #[xIdx.id] := by
               simp [lowerNode, res, n]
             have hnOut : n.outShape = mid₀ := by
               simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
+                     parents := #[xIdx.id]
                      kind := .reshape inS mid₀
                      outShape := mid₀ } : NN.IR.Node) := by
               simp [n, res, lowerNode]
@@ -461,111 +392,75 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
                 Except.ok
-                  (Spec.PackedTensor.mk (α := α) mid₀
+                  (Spec.SomeTensor.mk (α := α) mid₀
                     (Tensor.reshapeSpec (α := α) (s₁ := inS) (s₂ := mid₀) tx h)) := by
               simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
                 NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
                 getElem?_eq_some_packedAt vals xIdx hShapes, hExpectX, h,
                 Bind.bind, Except.bind, Pure.pure, Except.pure]
-            simpa [evalNode, hGetValX, Spec.PackedTensor.mk, h, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
-        | swap_first_two m nDim rest xIdx =>
-            have hnKind : n.kind = .swap_first_two := by
-              simp [lowerNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [lowerNode, res, n]
-            have hnOut : n.outShape = .dim nDim (.dim m rest) := by
-              simp [lowerNode, res, n]
+            simpa [evalNode, hGetValX, Spec.SomeTensor.mk, h, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
+        | transpose axis₁ axis₂ hOut xIdx =>
+            rename_i s
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
-                     kind := .swap_first_two
-                     outShape := .dim nDim (.dim m rest) } : NN.IR.Node) := by
+                     parents := #[xIdx.id]
+                     kind := .transpose axis₁ axis₂
+                     outShape := mid₀ } : NN.IR.Node) := by
               simp [n, res, lowerNode]
-            let tx : Tensor α (.dim m (.dim nDim rest)) := tensorAt vals xIdx hShapes
-            have hExpectX :
-                NN.IR.Graph.expectShape (α := α) (expected := .dim m (.dim nDim rest))
-                  (packedAt vals xIdx hShapes) =
-                  Except.ok tx := by
-              simpa [tx] using expectShape_packedAt_eq_ok vals xIdx hShapes
+            let tx : Tensor α s := tensorAt vals xIdx hShapes
             have hGetValX :
-                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := .dim m (.dim nDim rest)) vals
-                  xIdx =
+                getVal (α := α) (inShape := inShape) (ss := ss₀) (s := s) vals xIdx =
                   Except.ok tx := by
               simpa [tx] using getVal_eq_ok_of_shapesOfVals_eq vals xIdx hShapes
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok
-                  (Spec.PackedTensor.mk (α := α) (.dim nDim (.dim m rest))
-                    (Tensor.swapFirstTwoSpec (α := α) (m := m) (n := nDim) (s := rest) tx)) := by
-              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
-                getElem?_eq_some_packedAt vals xIdx hShapes, hExpectX,
-                Bind.bind, Except.bind, Pure.pure, Except.pure]
-            simpa [evalNode, hGetValX, Spec.PackedTensor.mk, tx, hnOut, Except.bind, Except.pure, bind, pure] using hEvalAt
-        | transpose3dLastTwo a b c xIdx =>
-            have hnKind : n.kind = .transpose3dLastTwo := by
-              simp [lowerNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [lowerNode, res, n]
-            have hnOut : n.outShape = .dim a (.dim c (.dim b .scalar)) := by
-              simp [lowerNode, res, n]
+            have hPacked :
+                Spec.SomeTensor.ofTensor tx = packedAt vals xIdx hShapes := by
+              simpa [tx] using ofTensor_tensorAt_eq_packedAt vals xIdx hShapes
+            cases hPerm : OpContracts.transposePerm s.rank axis₁ axis₂ with
+            | error e =>
+                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                  NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
+                  hGetNode, hn,
+                  getElem?_eq_some_packedAt vals xIdx hShapes, ← hPacked,
+                  evalNode, hGetValX, hPerm,
+                  Bind.bind, Except.bind, Pure.pure, Except.pure]
+            | ok perm =>
+                cases hEval : NN.IR.Graph.permuteSomeTensor (α := α)
+                    (Spec.SomeTensor.mk (α := α) s tx) perm with
+                | error e =>
+                    simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                      NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
+                      hGetNode, hn,
+                      getElem?_eq_some_packedAt vals xIdx hShapes, ← hPacked,
+                      evalNode, hGetValX, hPerm, hEval,
+                      Bind.bind, Except.bind, Pure.pure, Except.pure]
+                | ok y =>
+                    cases hShape : NN.IR.Graph.expectShape (α := α) (expected := mid₀) y with
+                    | error e =>
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                          NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
+                          hGetNode, hn,
+                          getElem?_eq_some_packedAt vals xIdx hShapes, ← hPacked,
+                          evalNode, hGetValX, hPerm, hEval, hShape,
+                          Bind.bind, Except.bind, Pure.pure, Except.pure]
+                    | ok ty =>
+                        simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                          NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
+                          NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
+                          getElem?_eq_some_packedAt vals xIdx hShapes, ← hPacked,
+                          evalNode, hGetValX, hPerm, hEval, hShape,
+                          Bind.bind, Except.bind, Pure.pure, Except.pure]
+        | softmax axis hAxis xIdx =>
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
-                     kind := .transpose3dLastTwo
-                     outShape := .dim a (.dim c (.dim b .scalar)) } : NN.IR.Node) := by
-              simp [n, res, lowerNode]
-            let tx : Tensor α (.dim a (.dim b (.dim c .scalar))) :=
-              tensorAt vals xIdx hShapes
-            have hExpectX :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim a (.dim b (.dim c .scalar))) (packedAt vals xIdx hShapes) =
-                  Except.ok tx := by
-              simpa [tx] using expectShape_packedAt_eq_ok vals xIdx hShapes
-            have hGetValX :
-                getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim a (.dim b (.dim c .scalar))) vals xIdx =
-                  Except.ok tx := by
-              simpa [tx] using getVal_eq_ok_of_shapesOfVals_eq vals xIdx hShapes
-            have hEvalAt :
-                NN.IR.Graph.evalAt (α := α)
-                    (g := cOut.graph)
-                    (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
-                    (vals := vals) (i := id)
-                  =
-                Except.ok
-                  (Spec.PackedTensor.mk (α := α) (.dim a (.dim c (.dim b .scalar)))
-                    (Tensor.transpose3DLastTwoSpec (α := α) (a := a) (b := b) (c := c) tx)) :=
-                      by
-              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
-                getElem?_eq_some_packedAt vals xIdx hShapes, hExpectX,
-                Bind.bind, Except.bind, Pure.pure, Except.pure]
-            simpa [evalNode, hGetValX, Spec.PackedTensor.mk, tx, hnOut, Except.bind, Except.pure, bind, pure] using hEvalAt
-        | softmaxLast hRank xIdx =>
-            have hnKind : n.kind = .softmax (Spec.Shape.rank mid₀ - 1) := by
-              simp [lowerNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [lowerNode, res, n]
-            have hnOut : n.outShape = mid₀ := by
-              simp [lowerNode, res, n]
-            have hn :
-                n =
-                  ({ id := id
-                     parents := [xIdx.id]
-                     kind := .softmax (Spec.Shape.rank mid₀ - 1)
+                     parents := #[xIdx.id]
+                     kind := .softmax axis
                      outShape := mid₀ } : NN.IR.Node) := by
               simp [n, res, lowerNode]
             let tx : Tensor α mid₀ := tensorAt vals xIdx hShapes
@@ -581,135 +476,90 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
                 Except.ok
-                  (Spec.PackedTensor.mk (α := α) mid₀
-                    (Activation.softmaxLastSpec (α := α) tx)) := by
-              cases hAxis : Shape.axisInBounds? (Shape.rank mid₀ - 1) mid₀ with
+                  (Spec.SomeTensor.mk (α := α) mid₀
+                    (@Activation.softmaxSpec α _ mid₀ axis hAxis tx)) := by
+              cases hDynamic : Shape.axisInBounds? axis mid₀ with
               | none =>
                   have hSome := Shape.axisInBounds?_isSome
-                    (axis := Shape.rank mid₀ - 1) (s := mid₀)
-                    (h := Shape.axisInBoundsLast hRank)
-                  simp [hAxis] at hSome
+                    (axis := axis) (s := mid₀) (h := hAxis)
+                  simp [hDynamic] at hSome
               | some h =>
                   simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                    NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
                     NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
-                    getElem?_eq_some_packedAt vals xIdx hShapes, hAxis,
+                    getElem?_eq_some_packedAt vals xIdx hShapes, hDynamic,
                     hExpectX, Bind.bind, Except.bind, Pure.pure, Except.pure]
-                  exact Activation.softmaxSpec_last (α := α) hRank tx
-            simpa [evalNode, hGetValX, Spec.PackedTensor.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
-        | layernorm2d seqLen embedDim hSeq hEmb xIdx =>
-            have hParams :
-                OpContracts.layerNormMatrixDims 1
-                    (Shape.dim seqLen (Shape.dim embedDim Shape.scalar)) =
-                  .ok (seqLen, embedDim) := by
-              have hSeqNe : seqLen ≠ 0 := Nat.ne_of_gt hSeq
-              have hEmbNe : embedDim ≠ 0 := Nat.ne_of_gt hEmb
-              -- For a `(seqLen × embedDim)` tensor, `axis=1` normalizes the last dimension.
-              simp [OpContracts.layerNormMatrixDims, OpContracts.checkAxisValid,
-                OpContracts.checkPositive, Shape.toList, hSeqNe, hEmbNe]
-              rfl
-            have hxF : (packedAt vals xIdx hShapes).shape =
-                .dim seqLen (.dim embedDim .scalar) :=
-              packedAt_shape vals xIdx hShapes
-            have hnKind : n.kind = .layernorm 1 := by
-              simp [lowerNode, res, n]
-            have hnParents : n.parents = [xIdx.id] := by
-              simp [lowerNode, res, n]
-            have hnOut : n.outShape = .dim seqLen (.dim embedDim .scalar) := by
-              simp [lowerNode, res, n]
+            simpa [evalNode, hGetValX, Spec.SomeTensor.mk, tx, Except.bind, Except.pure, bind, pure] using hEvalAt
+        | layerNorm op xIdx =>
+            let matrixShape : Shape := .dim op.rows (.dim op.width .scalar)
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
-                     kind := .layernorm 1
-                     outShape := .dim seqLen (.dim embedDim .scalar) } : NN.IR.Node) := by
+                     parents := #[xIdx.id]
+                     kind := .layernorm op.axis
+                     outShape := mid₀ } : NN.IR.Node) := by
               simp [n, res, lowerNode]
-            have hGetNodeLN :
-                NN.IR.Graph.getNode (g := cOut.graph) id =
-                  pure
-                    ({ id := id
-                       parents := [xIdx.id]
-                       kind := .layernorm 1
-                       outShape := .dim seqLen (.dim embedDim .scalar) } : NN.IR.Node) := by
-              simp [hGetNode, hn]
-            cases hnOut
-            let tx : Tensor α (.dim seqLen (.dim embedDim .scalar)) :=
-              tensorAt vals xIdx hShapes
+            let tx : Tensor α mid₀ := tensorAt vals xIdx hShapes
             have hExpect :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim seqLen (.dim embedDim .scalar)) (packedAt vals xIdx hShapes) =
+                NN.IR.Graph.expectShape (α := α) (expected := mid₀)
+                    (packedAt vals xIdx hShapes) =
                   Except.ok tx := by
               simpa [tx] using expectShape_packedAt_eq_ok vals xIdx hShapes
             have hGetVal :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim seqLen (.dim embedDim .scalar)) vals xIdx =
+                    (s := mid₀) vals xIdx =
                   Except.ok tx := by
               simpa [tx] using getVal_eq_ok_of_shapesOfVals_eq vals xIdx hShapes
+            let xMatrix : Tensor α matrixShape :=
+              Tensor.reshapeSpec (α := α) (s₁ := mid₀) (s₂ := matrixShape) tx op.size_eq
+            let yMatrix : Tensor α matrixShape :=
+              Spec.layerNorm (α := α) (seqLen := op.rows) (embedDim := op.width)
+                (x := xMatrix)
+                (gamma := Spec.fill (α := α) 1 (.dim op.width .scalar))
+                (beta := Spec.fill (α := α) 0 (.dim op.width .scalar))
+                (h_seq_pos := op.rows_pos) (h_embed_pos := op.width_pos)
             have hLN :
-                NN.IR.Graph.layerNormWithoutAffine (α := α) (seqLen := seqLen) (embedDim := embedDim)
-                    (Tensor.reshapeSpec (α := α)
-                      (s₁ := .dim seqLen (.dim embedDim .scalar))
-                      (s₂ := .dim seqLen (.dim embedDim .scalar))
-                      tx rfl)
-                  =
-                Except.ok
-                  (Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
-                    (x := Tensor.reshapeSpec (α := α)
-                      (s₁ := .dim seqLen (.dim embedDim .scalar))
-                      (s₂ := .dim seqLen (.dim embedDim .scalar))
-                      tx rfl)
-                    (gamma := Spec.fill (α := α) 1 (.dim embedDim .scalar))
-                    (beta := Spec.fill (α := α) 0 (.dim embedDim .scalar))
-                    (h_seq_pos := hSeq) (h_embed_pos := hEmb)) := by
-              simp [NN.IR.Graph.layerNormWithoutAffine, hSeq, hEmb]
+                NN.IR.Graph.layerNormWithoutAffine (α := α) op.rows op.width xMatrix =
+                  Except.ok yMatrix := by
+              simp [NN.IR.Graph.layerNormWithoutAffine, op.rows_pos, op.width_pos, yMatrix]
               rfl
-            have hNumel :
-                Spec.Shape.size (.dim seqLen (.dim embedDim .scalar)) =
-                  Spec.Shape.size (.dim seqLen (.dim embedDim .scalar)) := rfl
+            have hNoLayerNorm :
+                (payloadOfParamStore (α := α) cOut.ps).layerNorm? id = none := by
+              rw [IRStep.payloadOfParamStore_layerNorm?_eq, hLayerNorm]
+              simp [c', res, lowerNode, ps']
+            have hLayerNormMatrix :
+                NN.IR.Graph.layerNormMatrix op.rows op.width xMatrix
+                    (Spec.fill (α := α) 1 [op.width]) (Spec.fill (α := α) 0 [op.width])
+                    Numbers.normalizationEpsilon = .ok yMatrix := by
+              simpa [NN.IR.Graph.layerNormWithoutAffine, NN.IR.Graph.layerNormMatrix] using hLN
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
                 Except.ok
-                  (Spec.PackedTensor.mk (α := α) (.dim seqLen (.dim embedDim .scalar))
-                    (Tensor.reshapeSpec (α := α)
-                      (s₁ := .dim seqLen (.dim embedDim .scalar))
-                      (s₂ := .dim seqLen (.dim embedDim .scalar))
-                      (Spec.layerNorm (α := α) (seqLen := seqLen) (embedDim := embedDim)
-                        (x := Tensor.reshapeSpec (α := α)
-                          (s₁ := .dim seqLen (.dim embedDim .scalar))
-                          (s₂ := .dim seqLen (.dim embedDim .scalar))
-                          tx rfl)
-                        (gamma := Spec.fill (α := α) 1 (.dim embedDim .scalar))
-                        (beta := Spec.fill (α := α) 0 (.dim embedDim .scalar))
-                        (h_seq_pos := hSeq) (h_embed_pos := hEmb))
-                      rfl)) := by
-                simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                  NN.IR.Graph.normalizeNodeOutput, hGetNodeLN,
-                  getElem?_eq_some_packedAt vals xIdx hShapes, hExpect, hParams,
-                  throw, throwThe, MonadExceptOf.throw]
-                simpa [hExpect, hParams, hNumel, Spec.PackedTensor.mk, Except.bind, Except.pure, bind, pure] using
-                  congrArg
-                    (fun e =>
-                      (fun a : Tensor α (.dim seqLen (.dim embedDim .scalar)) =>
-                        Spec.PackedTensor.mk (α := α) (.dim seqLen (.dim embedDim .scalar))
-                          (Tensor.reshapeSpec (α := α)
-                            (s₁ := .dim seqLen (.dim embedDim .scalar))
-                            (s₂ := .dim seqLen (.dim embedDim .scalar))
-                            a rfl)) <$> e)
-                    hLN
-            simpa [evalNode, hGetVal, Spec.PackedTensor.shape, Spec.PackedTensor.tensor, hxF, Spec.PackedTensor.mk,
-              tx, Tensor.reshapeSpec, Tensor.flatten_unflatten_inverse] using hEvalAt
+                  (Spec.SomeTensor.mk (α := α) mid₀
+                    (Tensor.reshapeSpec (α := α) (s₁ := matrixShape) (s₂ := mid₀)
+                      yMatrix op.size_eq.symm)) := by
+              simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
+                NN.IR.Graph.unaryParentId, NN.IR.unaryParent?,
+                NN.IR.Graph.normalizeNodeOutput, hGetNode, hn,
+                    getElem?_eq_some_packedAt vals xIdx hShapes, hExpect, op.matrixDims,
+                op.size_eq, matrixShape, xMatrix, hNoLayerNorm,
+                NN.IR.Graph.resolveLayerNormAffine, hLayerNormMatrix,
+                Bind.bind, Except.bind, Pure.pure, Except.pure]
+            simpa [evalNode, hGetVal, matrixShape, xMatrix, yMatrix,
+              Spec.SomeTensor.mk, Except.bind, Except.pure, bind, pure] using hEvalAt
         | linear inDim outDim w b xIdx =>
-            let wT : Tensor α (.dim outDim (.dim inDim .scalar)) :=
+            let wT : Tensor α [outDim, inDim] :=
               getParam (α := α) (paramShapes := paramShapes) params w
-            let bT : Tensor α (.dim outDim .scalar) :=
+            let bT : Tensor α [outDim] :=
               getParam (α := α) (paramShapes := paramShapes) params b
             have hxF : (packedAt vals xIdx hShapes).shape = .dim inDim .scalar :=
               packedAt_shape vals xIdx hShapes
@@ -718,7 +568,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
+                     parents := #[xIdx.id]
                      kind := .linear
                      outShape := .dim outDim .scalar } : NN.IR.Node) := by
               simp [n, res, lowerNode]
@@ -726,11 +576,11 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                 NN.IR.Graph.getNode (g := cOut.graph) id =
                   pure
                     ({ id := id
-                       parents := [xIdx.id]
+                       parents := #[xIdx.id]
                        kind := .linear
                        outShape := .dim outDim .scalar } : NN.IR.Node) := by
               simp [hGetNode, hn]
-            let xT : Tensor α (.dim inDim .scalar) :=
+            let xT : Tensor α [inDim] :=
               tensorAt vals xIdx hShapes
             have hExpectIn :
                 NN.IR.Graph.expectShape (α := α)
@@ -752,93 +602,164 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
                 Except.ok
-                  (Spec.PackedTensor.mk (α := α) (.dim outDim .scalar)
+                  (Spec.SomeTensor.mk (α := α) (.dim outDim .scalar)
                       (Tensor.addSpec (α := α)
                         (Tensor.matVecMulSpec (α := α) (m := outDim) (n := inDim) wT xT) bT)) := by
               simpa [Spec.matVecMulSpec] using
                 IRStep.evalAt_linear_from_paramStore_of_getNode
                   (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
-                  (pId := xIdx.id) (outDim := outDim) (inDim := inDim)
+                  (parentId := xIdx.id) (outDim := outDim) (inDim := inDim)
                   (inputShape := inShape) (input := x) (vals := vals)
-                  (W := wT) (b := bT) (parent := packedAt vals xIdx hShapes) (x := xT)
+                  (weight := wT) (bias := bT) (parent := packedAt vals xIdx hShapes) (x := xT)
                   hGetNodeLinear (getElem?_eq_some_packedAt vals xIdx hShapes)
                   hExpectIn hLinearStore
-            simpa [evalNode, hGetVal, Spec.PackedTensor.shape, Spec.PackedTensor.tensor, Spec.PackedTensor.mk, hxF, xT, wT, bT] using
+            simpa [evalNode, hGetVal, Spec.SomeTensor.shape, Spec.SomeTensor.tensor, Spec.SomeTensor.mk, hxF, xT, wT, bT] using
               hEvalAt
-        | conv2d inC outC kH kW stride padding inH inW hIn hKH hKW hStride hHeight hWidth kernel bias xIdx =>
-            let kT : Tensor α (.dim outC (.dim inC (.dim kH (.dim kW .scalar)))) :=
+        | conv inC outC kernelShape stride padding inSpatial hIn hKernel hStride hInfer
+            kernel bias xIdx =>
+            rename_i d
+            let inputShape' : Shape := Shape.ofList (inC :: inSpatial.toList)
+            let outputShape' : Shape := Shape.ofList
+              (outC :: (Spec.convOutSpatial inSpatial kernelShape stride padding).toList)
+            let config : ConvConfig :=
+              { spatialRank := d
+                kernel := kernelShape
+                stride := stride
+                padding := padding
+                dilation := Spec.fill 1 [d]
+                paddingAfter := padding
+                groups := 1
+                channelAxis := 0
+                inChannels := inC
+                outChannels := outC }
+            let kT : Tensor α (Shape.ofList (outC :: inC :: kernelShape.toList)) :=
               getParam (α := α) (paramShapes := paramShapes) params kernel
-            let bT : Tensor α (.dim outC .scalar) :=
+            let bT : Tensor α [outC] :=
               getParam (α := α) (paramShapes := paramShapes) params bias
-            let outShape : Shape :=
-              .dim outC
-                (.dim (Spec.Shape.slidingWindowOutDim inH kH stride padding)
-                  (.dim (Spec.Shape.slidingWindowOutDim inW kW stride padding) .scalar))
-            have hxF : (packedAt vals xIdx hShapes).shape =
-                .dim inC (.dim inH (.dim inW .scalar)) :=
-              packedAt_shape vals xIdx hShapes
+            let spec : Spec.ConvSpec d inC outC kernelShape stride padding α :=
+              { kernel := kT, bias := bT }
+            let cfg : NN.IR.ConvParams α :=
+              { spatialRank := d
+                inChannels := inC
+                outChannels := outC
+                kernel := kernelShape
+                stride := stride
+                padding := padding
+                dilation := Spec.fill 1 [d]
+                paddingAfter := padding
+                groups := 1
+                inputSpatial := inSpatial
+                inChannelsNonzero := hIn
+                kernelNonzero := hKernel
+                strideNonzero := hStride
+                spec := spec }
+            have hxF : (packedAt vals xIdx hShapes).shape = inputShape' := by
+              simp [inputShape']
             have hn :
                 n =
                   ({ id := id
-                     parents := [xIdx.id]
-                     kind := .conv2d inC outC kH kW stride padding
-                     outShape := outShape } : NN.IR.Node) := by
-              simp [n, res, lowerNode, outShape]
+                     parents := #[xIdx.id]
+                     kind := .conv config
+                     outShape := outputShape' } : NN.IR.Node) := by
+              simp [n, res, lowerNode, config, outputShape', Spec.fill]
             have hGetNodeConv :
                 NN.IR.Graph.getNode (g := cOut.graph) id =
                   pure
                     ({ id := id
-                       parents := [xIdx.id]
-                       kind := .conv2d inC outC kH kW stride padding
-                       outShape := outShape } : NN.IR.Node) := by
-              simp [hGetNode, hn]
-            let xT : Tensor α (.dim inC (.dim inH (.dim inW .scalar))) :=
-              tensorAt vals xIdx hShapes
+                       parents := #[xIdx.id]
+                       kind := .conv config
+                       outShape := cfg.outputShape .scalar } : NN.IR.Node) := by
+              have hOutput : cfg.outputShape .scalar = outputShape' := by
+                simp only [cfg, ConvParams.outputShape, Shape.concat, Shape.ofList]
+                rw [Spec.convOutSpatialDilated_one_symmetric]
+              simpa [hOutput] using hGetNode.trans (congrArg pure hn)
+            let xT : Tensor α inputShape' := tensorAt vals xIdx hShapes
             have hExpectIn :
-                NN.IR.Graph.expectShape (α := α)
-                    (expected := .dim inC (.dim inH (.dim inW .scalar))) (packedAt vals xIdx hShapes) =
-                  Except.ok xT := by
-              simpa [xT] using expectShape_packedAt_eq_ok vals xIdx hShapes
+                NN.IR.Graph.expectShape (α := α) (expected := cfg.inputShape .scalar)
+                    (packedAt vals xIdx hShapes) = Except.ok xT := by
+              simpa [cfg, ConvParams.inputShape, Shape.concat, inputShape', xT] using
+                expectShape_packedAt_eq_ok vals xIdx hShapes
             have hGetVal :
                 getVal (α := α) (inShape := inShape) (ss := ss₀)
-                    (s := .dim inC (.dim inH (.dim inW .scalar))) vals xIdx =
-                  Except.ok xT := by
+                    (s := inputShape') vals xIdx = Except.ok xT := by
               simpa [xT] using getVal_eq_ok_of_shapesOfVals_eq vals xIdx hShapes
-            let spec : Spec.Conv2dSpec inC outC kH kW stride padding α hIn hKH hKW :=
-              { kernel := kT, bias := bT }
-            let cfg : NN.IR.Conv2dParams α :=
-              { inC := inC, outC := outC, kH := kH, kW := kW
-                stride := stride, padding := padding
-                inH := inH, inW := inW
-                hIn := hIn, hKH := hKH, hKW := hKW, hStride := hStride,
-                spec := spec }
-            have hConvStore :
-                cOut.ps.conv2dCfg.get? id = some cfg := by
+            have hConvStore : cOut.ps.convCfg.get? id = some cfg := by
               rw [hConv]
               simp [c', res, lowerNode, ps', cfg, spec, kT, bT]
+            have hConfig : cfg.matchesConfig config = true := by
+              simp [cfg, config, ConvParams.matchesConfig]
+            have hInfer' :
+                OpContracts.inferConvConfigOutShape "conv" config
+                    (packedAt vals xIdx hShapes).shape =
+                  .ok (cfg.outputShape .scalar) := by
+              have hOutput : cfg.outputShape .scalar = outputShape' := by
+                simp only [cfg, ConvParams.outputShape, Shape.concat, Shape.ofList]
+                rw [Spec.convOutSpatialDilated_one_symmetric]
+              simpa [OpContracts.inferConvOutShape, config, hxF, hOutput] using hInfer
+            have hLeading :
+                Shape.ofList
+                    ((packedAt vals xIdx hShapes).shape.toList.take config.channelAxis) =
+                  .scalar := by
+              rfl
             have hEvalAt :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id)
                   =
-                Except.ok
-                  (Spec.PackedTensor.mk (α := α) outShape
-                    (Spec.conv2dSpec (α := α) (layer := spec) (input := xT))) := by
-              simpa [cfg, spec, outShape] using
-                IRStep.evalAt_conv2d_from_paramStore_of_getNode
+                .ok (Spec.SomeTensor.ofTensor
+                  (Tensor.mapEach .scalar
+                    (Spec.groupedConvSpec (α := α) (stride := cfg.stride)
+                      (dilation := cfg.dilation) (paddingBefore := cfg.padding)
+                      (paddingAfter := cfg.paddingAfter) cfg.groups cfg.spec.kernel cfg.spec.bias)
+                    xT)) := by
+              simpa using
+                IRStep.evalAt_conv_from_paramStore_of_getNode
                   (α := α) (g := cOut.graph) (ps := cOut.ps) (i := id) (id := id)
-                  (pId := xIdx.id) (cfg := cfg) (inputShape := inShape) (input := x)
+                  (parentId := xIdx.id) (params := cfg) (config := config)
+                  (leading := .scalar) (inputShape := inShape) (input := x)
                   (vals := vals) (parent := packedAt vals xIdx hShapes) (x := xT)
                   hGetNodeConv (getElem?_eq_some_packedAt vals xIdx hShapes)
-                  hExpectIn hConvStore hHeight hWidth
-            simpa [evalNode, hGetVal, Spec.PackedTensor.shape, Spec.PackedTensor.tensor, Spec.PackedTensor.mk, hxF, xT, kT, bT,
-              spec, outShape] using hEvalAt
+                  hExpectIn hConvStore hConfig hInfer' hLeading
+            have hPacked :
+                Spec.SomeTensor.ofTensor
+                    (Tensor.mapEach .scalar
+                      (Spec.groupedConvSpec (α := α) (stride := cfg.stride)
+                        (dilation := cfg.dilation) (paddingBefore := cfg.padding)
+                        (paddingAfter := cfg.paddingAfter) cfg.groups cfg.spec.kernel cfg.spec.bias)
+                      xT) =
+              Spec.SomeTensor.mk (α := α) outputShape'
+                    (Spec.convSpec (α := α) (layer := spec) (input := xT)) := by
+              let generalConv :=
+                Spec.groupedConvSpec (α := α) (stride := stride)
+                  (dilation := Spec.fill 1 [d]) (paddingBefore := padding)
+                  (paddingAfter := padding) 1 kT bT xT
+              let denseConv := Spec.convSpec (α := α) (layer := spec) (input := xT)
+              let shapeEq :=
+                congrArg (fun spatial => Shape.ofList (outC :: spatial.toList))
+                  (Spec.convOutSpatialDilated_one_symmetric inSpatial kernelShape stride padding)
+              have hCast : Tensor.castShape generalConv shapeEq = denseConv := by
+                simpa [generalConv, denseConv, shapeEq, spec] using
+                  Spec.castShape_groupedConvSpec_one_symmetric
+                    (α := α) (weights := kT) (bias := bT) (input := xT)
+              have hErased :
+                  Spec.SomeTensor.ofTensor generalConv = Spec.SomeTensor.ofTensor denseConv := by
+                calc
+                  Spec.SomeTensor.ofTensor generalConv =
+                      Spec.SomeTensor.ofTensor (Tensor.castShape generalConv shapeEq) :=
+                    (Spec.SomeTensor.ofTensor_castShape generalConv shapeEq).symm
+                  _ = Spec.SomeTensor.ofTensor denseConv :=
+                    congrArg Spec.SomeTensor.ofTensor hCast
+              simpa [generalConv, denseConv, cfg, spec, outputShape', Tensor.mapEach,
+                Shape.concat] using hErased
+            have hEvalAt' := hEvalAt.trans (congrArg Except.ok hPacked)
+            simpa [evalNode, hGetVal, Spec.SomeTensor.shape, Spec.SomeTensor.tensor,
+              Spec.SomeTensor.mk, hxF, xT, kT, bT, spec, inputShape', outputShape'] using hEvalAt'
         | mseLoss yhat target =>
             rename_i s
             let yV := packedAt vals yhat hShapes
@@ -853,14 +774,14 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
               packedAt_shape vals target hShapes
             have hnKind : n.kind = .mseLoss := by
               simp [lowerNode, res, n]
-            have hnParents : n.parents = [yhat.id, target.id] := by
+            have hnParents : n.parents = #[yhat.id, target.id] := by
               simp [lowerNode, res, n]
             have hnOut : n.outShape = .scalar := by
               simp [lowerNode, res, n]
             have hn :
                 n =
                   ({ id := id
-                     parents := [yhat.id, target.id]
+                     parents := #[yhat.id, target.id]
                      kind := .mseLoss
                      outShape := .scalar } : NN.IR.Node) := by
               simp [n, res, lowerNode]
@@ -872,16 +793,17 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             let mean : α :=
               (Tensor.mulSpec (α := α) diff diff).sumSpec /
                 (↑(NN.IR.Graph.meanDenom yV.shape) : α)
-            let result : Spec.PackedTensor α := Spec.PackedTensor.mk (α := α) .scalar (Tensor.scalar mean)
+            let result : Spec.SomeTensor α := Spec.SomeTensor.mk (α := α) .scalar (Tensor.scalar mean)
             have hIREval :
                 NN.IR.Graph.evalAt (α := α)
                     (g := cOut.graph)
                     (payload := payloadOfParamStore (α := α) cOut.ps)
-                    (input := Spec.PackedTensor.mk (α := α) inShape x)
+                    (input := Spec.SomeTensor.mk (α := α) inShape x)
                     (vals := vals) (i := id) =
                   Except.ok result := by
               simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode,
-                NN.IR.Graph.normalizeNodeOutput, NN.IR.Graph.mseLossPackedTensor,
+                NN.IR.Graph.binaryParentIds, NN.IR.binaryParents?,
+                NN.IR.Graph.normalizeNodeOutput, NN.IR.Graph.mseLossSomeTensor,
                 hGetNode, hn, hSomeY, hSomeT, result, mean, diff, yT, tT, yV, tV,
                 Bind.bind, Except.bind, Pure.pure, Except.pure]
             have hTypedEval :
@@ -896,17 +818,17 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
       have hStart :
           NN.IR.Graph.denoteAllFrom (α := α) (g := cOut.graph)
               (payload := payloadOfParamStore (α := α) cOut.ps)
-              (input := Spec.PackedTensor.mk (α := α) inShape x)
+              (input := Spec.SomeTensor.mk (α := α) inShape x)
               (i := id) (vals := vals)
             =
           (do
             let v ← NN.IR.Graph.evalAt (α := α) (g := cOut.graph)
               (payload := payloadOfParamStore (α := α) cOut.ps)
-              (input := Spec.PackedTensor.mk (α := α) inShape x)
+              (input := Spec.SomeTensor.mk (α := α) inShape x)
               (vals := vals) (i := id)
             NN.IR.Graph.denoteAllFrom (α := α) (g := cOut.graph)
               (payload := payloadOfParamStore (α := α) cOut.ps)
-              (input := Spec.PackedTensor.mk (α := α) inShape x)
+              (input := Spec.SomeTensor.mk (α := α) inShape x)
               (i := id + 1) (vals := vals.push v)) := by
         -- Unfold `denoteAllFrom` once at the top-level; don't simp-recursively unfold the recursive
         -- call.
@@ -916,7 +838,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
       have hStart' :
           NN.IR.Graph.denoteAllFrom (α := α) (g := cOut.graph)
               (payload := payloadOfParamStore (α := α) cOut.ps)
-              (input := Spec.PackedTensor.mk (α := α) inShape x)
+              (input := Spec.SomeTensor.mk (α := α) inShape x)
               (i := id) (vals := vals)
             =
           (do
@@ -925,10 +847,10 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
               node params vals
             NN.IR.Graph.denoteAllFrom (α := α) (g := cOut.graph)
               (payload := payloadOfParamStore (α := α) cOut.ps)
-              (input := Spec.PackedTensor.mk (α := α) inShape x)
+              (input := Spec.SomeTensor.mk (α := α) inShape x)
               (i := id + 1) (vals := vals.push vOut)) := by
         -- Rewrite `denoteAllFrom` once, then replace `evalAt` with the already-verified `hStep`.
-        -- Doing this explicitly avoids `simp` unfolding `Spec.PackedTensor.mk` too early, which can prevent
+        -- Doing this explicitly avoids `simp` unfolding `Spec.SomeTensor.mk` too early, which can prevent
         -- matching on the `hStart` rewrite.
         rw [hStart]
         have hStep' :
@@ -939,7 +861,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
               =
             evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀) (out := mid₀)
               node params vals := by
-          simpa [Spec.PackedTensor.mk] using hStep
+          simpa [Spec.SomeTensor.mk] using hStep
         simp [hStep']
       -- Now split on the result of `evalNode`.
       cases hEval : evalNode (α := α) (paramShapes := paramShapes) (inShape := inShape) (ss := ss₀)
@@ -951,7 +873,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
             -- `cOut`.
             simp [lowerForwardLetChain, evalForwardLetChainVals]
             -- The simp step above rewrites the lowered graph to `cOut.graph`, but may unfold
-            -- `Spec.PackedTensor.mk` to `⟨_,_⟩`. Normalize before rewriting with `hStart'`.
+            -- `Spec.SomeTensor.mk` to `⟨_,_⟩`. Normalize before rewriting with `hStart'`.
             have hStart'' :
                 cOut.graph.denoteAllFrom
                     (payloadOfParamStore (α := α) cOut.ps) (⟨inShape, x⟩) id vals
@@ -961,7 +883,7 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                     (ss := ss₀) (out := mid₀) node params vals
                   cOut.graph.denoteAllFrom
                     (payloadOfParamStore (α := α) cOut.ps) (⟨inShape, x⟩) (id + 1) (vals.push vOut)) := by
-              simpa [Spec.PackedTensor.mk] using hStart'
+              simpa [Spec.SomeTensor.mk] using hStart'
             rw [hStart'']
             simp [hEval]
             rfl
@@ -992,13 +914,13 @@ theorem denoteAllFrom_lowerForwardLetChain_eq_evalForwardLetChainVals
                   (ss := ss₀) (out := mid₀) node params vals
                 cOut.graph.denoteAllFrom
                   (payloadOfParamStore (α := α) cOut.ps) (⟨inShape, x⟩) (id + 1) (vals.push vOut)) := by
-            simpa [Spec.PackedTensor.mk] using hStart'
+            simpa [Spec.SomeTensor.mk] using hStart'
           rw [hStart'']
           simp [hEval]
           -- now the goal is exactly the suffix IH (start index is `id+1 = c'.graph.nodes.size`).
-          -- `Spec.PackedTensor.mk` is definitional `⟨_,_⟩`, but the pretty-printer may choose either form; normalize
+          -- `Spec.SomeTensor.mk` is definitional `⟨_,_⟩`, but the pretty-printer may choose either form; normalize
           -- before applying the IH.
-          simpa [c', id, Spec.PackedTensor.mk, Except.bind, Except.pure, bind, pure] using hIH
+          simpa [c', id, Spec.SomeTensor.mk, Except.bind, Except.pure, bind, pure] using hIH
 end Correctness
 
 end NN.Verification.TorchLean.Proved

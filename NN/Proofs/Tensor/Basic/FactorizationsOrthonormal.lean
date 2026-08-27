@@ -235,7 +235,7 @@ theorem isQR_of_pos (A : Fin m → Fin n → ℝ) (hrank : ∀ j : Fin n, 0 < Rm
 
 /-- **Tensor-level orthonormality.** For a tensor `A` with positive `qrRSpec` pivots, the `Q` factor
 `qrQSpec A` has orthonormal columns: `Σ_i Q[i,a]·Q[i,b] = δₐᵦ`. -/
-theorem qrSpec_orthonormal (A : Spec.Tensor ℝ (.dim m (.dim n .scalar)))
+theorem qrSpec_orthonormal (A : Spec.Tensor ℝ [m, n])
     (hrank : ∀ j : Fin n, 0 < Spec.get2 (Spec.qrRSpec A) j j) (a b : Fin n) :
     (∑ i, Spec.get2 (Spec.qrQSpec A) i a * Spec.get2 (Spec.qrQSpec A) i b)
       = if a = b then 1 else 0 := by

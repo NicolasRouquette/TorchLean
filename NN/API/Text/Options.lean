@@ -30,14 +30,14 @@ causal language modeling. Missing tokens are padded with `padId`, matching
 `Data.CausalLM.oneHotPair`.
 -/
 def tokenWindow (t : Tokenizer) (n : Nat) (input : String) (offset : Nat := 0)
-    (padId : Nat := 0) : Vector Nat n :=
+    (padId : Nat := 0) : Tensor Nat [n] :=
   let toks := t.encode input
-  Vector.ofFn (fun i => toks.getD (offset + i.val) padId)
+  Spec.Tensor.ofFn (fun i => toks.getD (offset + i.val) padId)
 
 /-- Decode a fixed token window extracted by `tokenWindow`. -/
 def decodeWindow (t : Tokenizer) (n : Nat) (input : String) (offset : Nat := 0)
     (padId : Nat := 0) : String :=
-  t.decode (tokenWindow t n input (offset := offset) (padId := padId)).toList
+  t.decode (tokenWindow t n input (offset := offset) (padId := padId)).toArray
 
 /--
 Escape a short text fragment for one-line terminal output.

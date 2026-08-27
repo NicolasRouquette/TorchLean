@@ -242,12 +242,12 @@ theorem discountedBackup_eq_ok
 /--
 Checked fixed-horizon discounted returns (no `done` flags), specialized to `IEEE32Exec`.
 
-This is the checked/finite counterpart to `Runtime.RL.Core.discountedReturnsVecFrom`.
+This is the checked/finite counterpart to `Runtime.RL.Core.discountedReturnsTensorFrom`.
 -/
 def discountedReturnsChecked {n : Nat}
-    (gamma : Float32Exec) (rewards : Tensor Float32Exec (.dim n .scalar))
+    (gamma : Float32Exec) (rewards : Tensor Float32Exec [n])
     (bootstrap : Float32Exec := (0 : Float32Exec)) :
-    Except String (Tensor Float32Exec (.dim n .scalar)) := do
+    Except String (Tensor Float32Exec [n]) := do
   let rArr : Array Float32Exec :=
     Array.ofFn (fun i : Fin n => Tensor.item (get rewards i))
 

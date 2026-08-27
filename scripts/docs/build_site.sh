@@ -66,26 +66,7 @@ echo "==> Building interactive import graph HTML"
 # reflects the same module graph users get from the current checkout.
 mkdir -p home_page/importgraph
 lake exe graph --to NN home_page/importgraph/index.html
-python3 - <<'PY'
-import re
-from pathlib import Path
-
-page = Path("home_page/importgraph/index.html")
-html = page.read_text(encoding="utf-8")
-html = html.replace('  <link rel="stylesheet" href="style.css" />\n', "")
-html = html.replace(
-    'var docs_url = params.get("docs_url") || "https://leanprover-community.github.io/mathlib4_docs/";',
-    'var docs_url = params.get("docs_url") || new URL("../docs/", window.location.href).href;',
-)
-html = re.sub(
-    r'(?:    // [^\n]*\n)?    labelRenderedSizeThreshold: preferDark \? 1000000000 : 9,',
-    "    // Sigma's label color is fixed in this generated viewer; dark mode favors graph structure over labels.\n"
-    '    labelRenderedSizeThreshold: preferDark ? 1000000000 : 9,',
-    html,
-    count=1,
-)
-page.write_text(html, encoding="utf-8")
-PY
+python3 scripts/docs/postprocess_importgraph.py home_page/importgraph/index.html
 
 echo "==> Installing Jekyll bundle"
 # Prefer the lockfile Bundler version when installed, but keep local previewing

@@ -310,11 +310,11 @@ noncomputable def runIBP (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore FP
     Array (Option (_root_.NN.MLTheory.CROWN.FlatBox FP32)) :=
   NN.MLTheory.CROWN.Graph.runIBP (α := FP32) g ps
 
-/-- Run the one-dimensional derivative IBP pass over `FP32` graph semantics. -/
-noncomputable def runFirstDerivative1D (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore FP32)
+/-- Run the scalar-input derivative IBP pass over `FP32` graph semantics. -/
+noncomputable def runScalarDerivative (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore FP32)
     (ibp : Array (Option (_root_.NN.MLTheory.CROWN.FlatBox FP32))) :
     Array (Option (_root_.NN.MLTheory.CROWN.FlatBox FP32)) :=
-  NN.MLTheory.CROWN.Graph.runFirstDerivative1D (α := FP32) g ps ibp
+  NN.MLTheory.CROWN.Graph.runScalarDerivative (α := FP32) g ps ibp
 
 /-- Run a first-derivative pass from an arbitrary interval-valued direction. -/
 noncomputable def runDirectionalDerivative (g : Graph)
@@ -332,11 +332,11 @@ noncomputable def runMixedSecondDerivative (g : Graph)
   NN.MLTheory.CROWN.Graph.runMixedSecondDerivative (α := FP32) g ps ibp dLeft dRight
 
 /-- Run the second-derivative IBP pass over `FP32` graph semantics. -/
-noncomputable def runSecondDerivative1D (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore FP32)
+noncomputable def runScalarSecondDerivative (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore FP32)
     (ibp : Array (Option (_root_.NN.MLTheory.CROWN.FlatBox FP32)))
     (d1 : Array (Option (_root_.NN.MLTheory.CROWN.FlatBox FP32))) :
     Array (Option (_root_.NN.MLTheory.CROWN.FlatBox FP32)) :=
-  NN.MLTheory.CROWN.Graph.runSecondDerivative1D (α := FP32) g ps ibp d1
+  NN.MLTheory.CROWN.Graph.runScalarSecondDerivative (α := FP32) g ps ibp d1
 
 /-- Run the forward affine CROWN pass over `FP32` graph semantics. -/
 noncomputable def runAffine (g : Graph) (ps : NN.MLTheory.CROWN.Graph.ParamStore FP32)

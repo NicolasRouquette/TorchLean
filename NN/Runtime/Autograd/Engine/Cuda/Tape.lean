@@ -21,7 +21,7 @@ Notes:
 module
 
 
-public import NN.Runtime.Context
+public import NN.Spec.Core.Tensor.SomeTensor
 public import NN.Runtime.Autograd.Engine.Cuda.Buffer
 
 /-!
@@ -46,7 +46,7 @@ abbrev Result (α : Type) := Except String α
 /--
 Runtime, shape-erased CUDA buffer.
 
-This plays the same role as `Spec.PackedTensor` in the CPU tape: it pairs runtime `Shape`
+This plays the same role as `Spec.SomeTensor` in the CPU tape: it pairs runtime `Shape`
 metadata with an opaque `Cuda.Buffer` handle.
 -/
 structure AnyBuffer where
@@ -134,21 +134,21 @@ structure Node where
   /-- Whether reverse-mode propagation should visit this node. -/
   requiresGrad : Bool := true
   /-- Parent node ids (dependencies) in the tape. -/
-  parents : List Nat := []
+  parents : Array Nat := #[]
   /--
   Forward workspace buffers retained only because this node's backward closure may need them.
 
   The eager runtime releases these buffers explicitly after backprop consumes the tape, so long CUDA
   training loops do not wait on Lean external-object finalizers for large intermediate allocations.
   -/
-  cleanup : List Buffer := []
+  cleanup : Array Buffer := #[]
   /--
   Local VJP rule for this node.
 
-  Given an upstream cotangent for `value`, return a list of `(parentId, parentCotangent)`
+  Given an upstream cotangent for `value`, return an array of `(parentId, parentCotangent)`
   contributions (one per parent, usually).
   -/
-  backward : AnyBuffer → Result (List (Nat × AnyBuffer))
+  backward : AnyBuffer → Result (Array (Nat × AnyBuffer))
 
 /-- CUDA autograd tape: a grow-only array of nodes. Node ids are array indices. -/
 structure Tape where
@@ -205,8 +205,8 @@ def leaf (t : Tape) (value : AnyBuffer) (name : Option String := none) (requires
     { name := name
       value := value
       requiresGrad := requiresGrad
-      parents := []
-      backward := fun _ => .ok [] }
+      parents := #[]
+      backward := fun _ => .ok #[] }
 
 /--
 Read a buffer value from a tape node id, requiring a specific runtime shape.
@@ -259,11 +259,11 @@ def unary
     { name := some opName
       value := { s := τ, buf := y }
       requiresGrad := true
-      parents := [xId]
+      parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny τ
         let dx := backward x dLdy.buf
-        pure [(xId, { s := σ, buf := dx })] }
+        pure #[(xId, { s := σ, buf := dx })] }
   pure (t.addNode node)
 
 /--
@@ -288,11 +288,11 @@ def binary
     { name := some opName
       value := { s := τ, buf := y }
       requiresGrad := true
-      parents := [aId, bId]
+      parents := #[aId, bId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad dLdyAny τ
         let (da, db) := backward a b dLdy.buf
-        pure [(aId, { s := σ₁, buf := da }), (bId, { s := σ₂, buf := db })] }
+        pure #[(aId, { s := σ₁, buf := da }), (bId, { s := σ₂, buf := db })] }
   pure (t.addNode node)
 
 /-

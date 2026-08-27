@@ -34,8 +34,8 @@ inductive GroupKind where
 
 /-- One scheduling and audit group, with source IR nodes retained for diagnostics. -/
 structure KernelGroup where
-  nodeIds : List Nat
-  kinds : List NN.IR.OpKind
+  nodeIds : Array Nat
+  kinds : Array NN.IR.OpKind
   op : BackendOp
   capsule : KernelCapsule
   kind : GroupKind := .singleton
@@ -43,7 +43,7 @@ structure KernelGroup where
 
 /-- A node-level graph plan grouped for scheduling and trust-boundary audit. -/
 structure GroupedKernelPlan where
-  groups : List KernelGroup
+  groups : Array KernelGroup
   deriving Repr
 
 namespace KernelGroup
@@ -63,8 +63,8 @@ def canAppend (g : KernelGroup) (k : IR.PlannedNodeKernel) : Bool :=
 /-- Append a node to an existing backend group, preserving source-node provenance. -/
 def appendNode (g : KernelGroup) (k : IR.PlannedNodeKernel) : KernelGroup :=
   { g with
-    nodeIds := g.nodeIds ++ [k.nodeId]
-    kinds := g.kinds ++ [k.kind]
+    nodeIds := g.nodeIds.push k.nodeId
+    kinds := g.kinds.push k.kind
     kind := .sameCapsuleBoundary }
 
 end KernelGroup
@@ -72,11 +72,11 @@ end KernelGroup
 namespace GroupedKernelPlan
 
 /-- Source IR node ids covered by the grouped plan, in graph order. -/
-def nodeIds (p : GroupedKernelPlan) : List Nat :=
-  p.groups.foldr (fun g acc => g.nodeIds ++ acc) []
+def nodeIds (p : GroupedKernelPlan) : Array Nat :=
+  p.groups.flatMap (·.nodeIds)
 
 /-- Selected capsule names, in group order. -/
-def capsuleNames (p : GroupedKernelPlan) : List String :=
+def capsuleNames (p : GroupedKernelPlan) : Array String :=
   p.groups.map fun g => g.capsule.name
 
 /-- Project groups to the capsule rows consumed by the trust-boundary gate. -/
@@ -99,8 +99,8 @@ namespace PlannedNodeKernel
 
 /-- Place one graph-planned node in a singleton scheduling group. -/
 def toSingletonGroup (k : PlannedNodeKernel) : KernelGroup :=
-  { nodeIds := [k.nodeId]
-    kinds := [k.kind]
+  { nodeIds := #[k.nodeId]
+    kinds := #[k.kind]
     op := k.op
     capsule := k.capsule
     kind := .singleton }
@@ -115,21 +115,21 @@ def toSingletonGroups (p : GraphKernelPlan) : GroupedKernelPlan :=
 
 /-- Fold state for conservative same-boundary grouping. -/
 structure GroupingState where
-  groupsRev : List KernelGroup
+  groups : Array KernelGroup
   deriving Repr
 
 namespace GroupingState
 
 /-- Add one planned node, sharing the preceding group when the boundary is identical. -/
 def pushKernel (s : GroupingState) (k : PlannedNodeKernel) : GroupingState :=
-  match s.groupsRev with
-  | [] =>
-      { groupsRev := [k.toSingletonGroup] }
-  | g :: rest =>
+  match s.groups.back? with
+  | none =>
+      { groups := #[k.toSingletonGroup] }
+  | some g =>
       if g.canAppend k then
-        { groupsRev := g.appendNode k :: rest }
+        { groups := s.groups.pop.push (g.appendNode k) }
       else
-        { groupsRev := k.toSingletonGroup :: s.groupsRev }
+        { groups := s.groups.push k.toSingletonGroup }
 
 end GroupingState
 
@@ -141,8 +141,8 @@ This does not claim that one kernel invocation implements the group. A future fu
 declare its multi-node pattern and execution contract explicitly.
 -/
 def toCoalescedGroups (p : GraphKernelPlan) : GroupedKernelPlan :=
-  let s := p.kernels.foldl GroupingState.pushKernel { groupsRev := [] }
-  { groups := s.groupsRev.reverse }
+  let s := p.kernels.foldl GroupingState.pushKernel { groups := #[] }
+  { groups := s.groups }
 
 end GraphKernelPlan
 

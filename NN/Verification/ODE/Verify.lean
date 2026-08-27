@@ -155,11 +155,11 @@ private structure DerivBuildState (α : Type) [Context α] where
 private abbrev DerivBuildM (α : Type) [Context α] := StateT (DerivBuildState α) IO
 
 /-- Build a constant vector value of length `n`, filled with `x`. -/
-private def constVecFill {α : Type} [Context α] (n : Nat) (x : α) : FlatVec α :=
+private def constVecFill {α : Type} [Context α] (n : Nat) (x : α) : FlatTensor α :=
   { n := n, v := Spec.fill (α := α) x (.dim n .scalar) }
 
 /-- Insert a constant value payload for a `.const` node id. -/
-private def addConstVal {α : Type} [Context α] (ps : ParamStore α) (id : Nat) (v : FlatVec α) :
+private def addConstVal {α : Type} [Context α] (ps : ParamStore α) (id : Nat) (v : FlatTensor α) :
   ParamStore α :=
   { ps with constVals := ps.constVals.insert id v }
 
@@ -186,7 +186,7 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
   | none =>
     throw <| IO.userError "buildDerivativeGraph1D: empty graph"
 
-  let pushNode : List Nat → OpKind → Shape → DerivBuildM α Nat := fun parents kind outShape => do
+  let pushNode : Array Nat → OpKind → Shape → DerivBuildM α Nat := fun parents kind outShape => do
     let st ← get
     let id := st.nodes.size
     let nodes' := st.nodes.push { id := id, parents := parents, kind := kind, outShape := outShape }
@@ -194,7 +194,7 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
     pure id
 
   let mkConstFill : Shape → α → DerivBuildM α Nat := fun outShape x => do
-    let id ← pushNode [] (.const outShape) outShape
+    let id ← pushNode #[] (.const outShape) outShape
     modify fun st =>
       { st with ps := addConstVal (α := α) st.ps id (constVecFill (α := α) (Spec.Shape.size outShape) x) }
     pure id
@@ -235,37 +235,37 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
           let did ← mkConstFill outShape Numbers.zero
           setDerivativeId i did
       | .add =>
-          match node.parents with
-          | p1 :: p2 :: _ =>
+          match NN.IR.binaryParents? node.parents with
+          | some (p1, p2) =>
               let st ← get
               let d1 ← derivativeId st i p1
               let d2 ← derivativeId st i p2
-              let did ← pushNode [d1, d2] .add outShape
+              let did ← pushNode #[d1, d2] .add outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at add node {i}"
       | .sub =>
-          match node.parents with
-          | p1 :: p2 :: _ =>
+          match NN.IR.binaryParents? node.parents with
+          | some (p1, p2) =>
               let st ← get
               let d1 ← derivativeId st i p1
               let d2 ← derivativeId st i p2
-              let did ← pushNode [d1, d2] .sub outShape
+              let did ← pushNode #[d1, d2] .sub outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at sub node {i}"
       | .mul_elem =>
-          match node.parents with
-          | p1 :: p2 :: _ =>
+          match NN.IR.binaryParents? node.parents with
+          | some (p1, p2) =>
               let st ← get
               let d1 ← derivativeId st i p1
               let d2 ← derivativeId st i p2
-              let t1 ← pushNode [d1, p2] .mul_elem outShape
-              let t2 ← pushNode [p1, d2] .mul_elem outShape
-              let did ← pushNode [t1, t2] .add outShape
+              let t1 ← pushNode #[d1, p2] .mul_elem outShape
+              let t2 ← pushNode #[p1, d2] .mul_elem outShape
+              let did ← pushNode #[t1, t2] .add outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at mul_elem node {i}"
       | .linear =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               match st.ps.linearWB[i]? with
               | none =>
@@ -273,14 +273,14 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
                     s!"buildDerivativeGraph1D: missing linearWB params at node {i}"
               | some p =>
                   let d1 ← derivativeId st i p1
-                  let did ← pushNode [d1] .matmul outShape
+                  let did ← pushNode #[d1] .matmul outShape
                   modify fun st =>
                     { st with ps := addMatmulW (α := α) st.ps did { m := p.m, n := p.n, w := p.w } }
                   setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at linear node {i}"
       | .matmul =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               match st.ps.matmulW[i]? with
               | none =>
@@ -288,123 +288,123 @@ private def buildDerivativeGraph1D {α : Type} [Context α]
                     s!"buildDerivativeGraph1D: missing matmulW params at node {i}"
               | some p =>
                   let d1 ← derivativeId st i p1
-                  let did ← pushNode [d1] .matmul outShape
+                  let did ← pushNode #[d1] .matmul outShape
                   modify fun st => { st with ps := addMatmulW (α := α) st.ps did p }
                   setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at matmul node {i}"
       | .tanh =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let y2 ← pushNode [i, i] .mul_elem outShape
+              let y2 ← pushNode #[i, i] .mul_elem outShape
               let one ← mkConstFill outShape Numbers.one
-              let fac ← pushNode [one, y2] .sub outShape
-              let did ← pushNode [fac, d1] .mul_elem outShape
+              let fac ← pushNode #[one, y2] .sub outShape
+              let did ← pushNode #[fac, d1] .mul_elem outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at tanh node {i}"
       | .sigmoid =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
               let one ← mkConstFill outShape Numbers.one
-              let oneMy ← pushNode [one, i] .sub outShape
-              let yFac ← pushNode [i, oneMy] .mul_elem outShape
-              let did ← pushNode [yFac, d1] .mul_elem outShape
+              let oneMy ← pushNode #[one, i] .sub outShape
+              let yFac ← pushNode #[i, oneMy] .mul_elem outShape
+              let did ← pushNode #[yFac, d1] .mul_elem outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at sigmoid node {i}"
       | .exp =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [i, d1] .mul_elem outShape
+              let did ← pushNode #[i, d1] .mul_elem outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at exp node {i}"
       | .log =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let invz ← pushNode [p1] .inv outShape
-              let did ← pushNode [invz, d1] .mul_elem outShape
+              let invz ← pushNode #[p1] .inv outShape
+              let did ← pushNode #[invz, d1] .mul_elem outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at log node {i}"
       | .sin =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let cosz ← pushNode [p1] .cos outShape
-              let did ← pushNode [cosz, d1] .mul_elem outShape
+              let cosz ← pushNode #[p1] .cos outShape
+              let did ← pushNode #[cosz, d1] .mul_elem outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at sin node {i}"
       | .cos =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let sinz ← pushNode [p1] .sin outShape
+              let sinz ← pushNode #[p1] .sin outShape
               let neg1 ← mkConstFill outShape Numbers.negOne
-              let negsin ← pushNode [neg1, sinz] .mul_elem outShape
-              let did ← pushNode [negsin, d1] .mul_elem outShape
+              let negsin ← pushNode #[neg1, sinz] .mul_elem outShape
+              let did ← pushNode #[negsin, d1] .mul_elem outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at cos node {i}"
       | .sum =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] .sum outShape
+              let did ← pushNode #[d1] .sum outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at sum node {i}"
       | .reshape inS outS =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] (.reshape inS outS) outShape
+              let did ← pushNode #[d1] (.reshape inS outS) outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at reshape node {i}"
       | .flatten s =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] (.flatten s) outShape
+              let did ← pushNode #[d1] (.flatten s) outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at flatten node {i}"
       | .permute perm =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] (.permute perm) outShape
+              let did ← pushNode #[d1] (.permute perm) outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at permute node {i}"
       | .broadcastTo s₁ s₂ =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] (.broadcastTo s₁ s₂) outShape
+              let did ← pushNode #[d1] (.broadcastTo s₁ s₂) outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at broadcastTo node {i}"
       | .reduceSum axis =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] (.reduceSum axis) outShape
+              let did ← pushNode #[d1] (.reduceSum axis) outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at reduce_sum node {i}"
       | .reduceMean axis =>
-          match node.parents with
-          | p1 :: _ =>
+          match NN.IR.unaryParent? node.parents with
+          | some p1 =>
               let st ← get
               let d1 ← derivativeId st i p1
-              let did ← pushNode [d1] (.reduceMean axis) outShape
+              let did ← pushNode #[d1] (.reduceMean axis) outShape
               setDerivativeId i did
           | _ => throw <| IO.userError s!"buildDerivativeGraph1D: bad arity at reduce_mean node {i}"
       | k =>
@@ -431,7 +431,7 @@ private def seedInput1D {α : Type} [Context α]
     (ps : ParamStore α) (ofFloat : Float → α) (tCenter tRad : Float) : ParamStore α :=
   let tC := ofFloat tCenter
   let tR := ofFloat tRad
-  let t0 : Tensor α (.dim 1 .scalar) := Tensor.dim (fun _ => Tensor.scalar tC)
+  let t0 : Tensor α [1] := Tensor.dim (fun _ => Tensor.scalar tC)
   ps.seedLInfBall 0 t0 tR
 
 /--
@@ -513,8 +513,8 @@ private def loadModelDirectWith {α : Type} [Context α] (ofFloat : Float → α
 
 /-- Linear-layer payload extracted from a PINN export (`w`, `b`). -/
 private structure LinLayer (inDim outDim : Nat) where
-  w : Tensor Float (.dim outDim (.dim inDim .scalar))
-  b : Tensor Float (.dim outDim .scalar)
+  w : Tensor Float [outDim, inDim]
+  b : Tensor Float [outDim]
 
 /--
 Simple representation of an MLP as a chain of linear layers.
@@ -556,7 +556,7 @@ graph, and then builds the derivative graph from that lowered graph.
 -/
 private def loadModelTorchLean (path : String) : IO (Model Float) := do
   let sd ← loadPinnState path
-  match chainOfPinnLayers sd.layers with
+  match chainOfPinnLayers sd.layers.toList with
   | .error e => throw <| IO.userError s!"Bad layer chain in {path}: {e}"
   | .ok ⟨inDim, outDim, chain⟩ =>
     if outDim ≠ 1 then
@@ -580,14 +580,14 @@ private def loadModelTorchLean (path : String) : IO (Model Float) := do
                   (s := .dim outD (.dim inD .scalar)) l.w
                 let bR ← Runtime.Autograd.TorchLean.const (m := m) (α := Float)
                   (s := .dim outD .scalar) l.b
-                Runtime.Autograd.TorchLean.linear (m := m) (α := Float)
+                Runtime.Autograd.Torch.linear (m := m) (α := Float)
                   (inDim := inD) (outDim := outD) wR bR x
               | .cons l tail =>
                 let wR ← Runtime.Autograd.TorchLean.const (m := m) (α := Float)
                   (s := .dim _ (.dim _ .scalar)) l.w
                 let bR ← Runtime.Autograd.TorchLean.const (m := m) (α := Float)
                   (s := .dim _ .scalar) l.b
-                let z ← Runtime.Autograd.TorchLean.linear (m := m) (α := Float)
+                let z ← Runtime.Autograd.Torch.linear (m := m) (α := Float)
                   (inDim := inD) (outDim := _) wR bR x
                 let a ← Runtime.Autograd.TorchLean.tanh (m := m) (α := Float) (s := .dim _ .scalar)
                   z
@@ -618,14 +618,14 @@ private def loadModelTorchLean (path : String) : IO (Model Float) := do
                   (s := .dim outD (.dim inD .scalar)) l.w
                 let bR ← Runtime.Autograd.TorchLean.const (m := m) (α := Float)
                   (s := .dim outD .scalar) l.b
-                Runtime.Autograd.TorchLean.linear (m := m) (α := Float)
+                Runtime.Autograd.Torch.linear (m := m) (α := Float)
                   (inDim := inD) (outDim := outD) wR bR x
               | .cons l tail =>
                 let wR ← Runtime.Autograd.TorchLean.const (m := m) (α := Float)
                   (s := .dim _ (.dim _ .scalar)) l.w
                 let bR ← Runtime.Autograd.TorchLean.const (m := m) (α := Float)
                   (s := .dim _ .scalar) l.b
-                let z ← Runtime.Autograd.TorchLean.linear (m := m) (α := Float)
+                let z ← Runtime.Autograd.Torch.linear (m := m) (α := Float)
                   (inDim := inD) (outDim := _) wR bR x
                 let a ← Runtime.Autograd.TorchLean.relu (m := m) (α := Float) (s := .dim _ .scalar)
                   z
@@ -727,7 +727,7 @@ structure ODECertificate where
   /-- ODE RHS expression (string parsed by `NN.Verification.ODE.Parse`). -/
   rhs : String
   /-- Time segments to check. -/
-  segments : List ODECertificateSegment
+  segments : Array ODECertificateSegment
   /-- Optional settings record (defaults apply when omitted). -/
   settings : ODEVerifierSettings := {}
   deriving Repr
@@ -834,7 +834,7 @@ private def parseSegment (j : Json) : Except String ODECertificateSegment := do
 /--
 Parse the top-level certificate JSON object into an `ODECertificate`.
 
-Parsing fails closed on an empty segment list, non-finite or unordered interval data, negative or
+Parsing fails closed on an empty segment array, non-finite or unordered interval data, negative or
 non-finite numerical settings, and unrecognized model-backend or scalar tags.
 -/
 def parseODECertificate (j : Json) : Except String ODECertificate := do
@@ -842,7 +842,7 @@ def parseODECertificate (j : Json) : Except String ODECertificate := do
   let rhs ← NN.Verification.Json.expectFieldStringE "ode certificate" "rhs" j
   let segArr ← TorchLean.Json.expectArrayE "ode certificate.segments" <|
     ← TorchLean.Json.expectFieldE "ode certificate" "segments" j
-  let segs ← segArr.toList.mapM parseSegment
+  let segs ← segArr.mapM parseSegment
   if segs.isEmpty then
     throw "ode certificate.segments must contain at least one segment"
   let settings ←

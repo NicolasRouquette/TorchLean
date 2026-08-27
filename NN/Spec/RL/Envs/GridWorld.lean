@@ -179,7 +179,7 @@ def toFiniteMDP (gw : GridWorld width height) : FiniteMDP ℝ (height * width) 4
     discount := gw.discount }
 
 /-- One-hot transition kernel for a deterministic next state. -/
-def oneHot (next : Fin (height * width)) : Tensor ℝ (.dim (height * width) .scalar) :=
+def oneHot (next : Fin (height * width)) : Tensor ℝ [height * width] :=
   Tensor.dim (fun i => Tensor.scalar (if i = next then (1 : ℝ) else 0))
 
 /-- Finite-stochastic MDP view of GridWorld where $P(\mathord{\cdot}\mid s,a)$ is a one-hot row. -/

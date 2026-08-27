@@ -133,17 +133,17 @@ instance : NeZero horizon := ⟨by decide⟩
 instance : NeZero nActions := ⟨by decide⟩
 
 /-- The observation tensor shape used by this run: `[..., stateDim]`. -/
-def obsShape : Shape := shape![stateDim]
+def obsShape : List Nat := [stateDim]
 
-def pfxBatch : Shape := shape![horizon]
+def pfxBatch : List Nat := [horizon]
 def sStateBatch : Shape := rl.ppo.StateBatchShape horizon obsShape
 def sLogitsBatch : Shape := rl.ppo.LogitsBatchShape horizon nActions
 def sScalarBatch : Shape := rl.ppo.ScalarBatchShape horizon
 def sValueBatch : Shape := rl.ppo.ValueBatchShape horizon
 
-def stateShape : Shape := obsShape
-def logitsShape : Shape := shape![nActions]
-def valueShape : Shape := shape![1]
+def stateShape : List Nat := obsShape
+def logitsShape : List Nat := [nActions]
+def valueShape : List Nat := [1]
 
 /-!
 ## Model (Actor + Critic)
@@ -156,13 +156,15 @@ def modelCfg : nn.models.PPO.Config :=
   { obsDim := stateDim, hiddenDim := hiddenDim, nActions := nActions }
 
 /-- Construct the actor network as an MLP mapping observations to action logits. -/
-def actorMk (leading : Shape) :
-    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim nActions)) :=
+def actorMk (leading : List Nat) :
+    nn.Builder (nn.Sequential (nn.models.PPO.inputShape modelCfg leading)
+      (nn.models.PPO.actorOutputShape modelCfg leading)) :=
   nn.models.PPO.actor modelCfg leading
 
 /-- Construct the critic network as an MLP mapping observations to a scalar value estimate. -/
-def criticMk (leading : Shape) :
-    nn.Builder (nn.Sequential (leading.appendDim stateDim) (leading.appendDim 1)) :=
+def criticMk (leading : List Nat) :
+    nn.Builder (nn.Sequential (nn.models.PPO.inputShape modelCfg leading)
+      (nn.models.PPO.criticOutputShape modelCfg leading)) :=
   nn.models.PPO.critic modelCfg leading
 
 /-!
@@ -198,6 +200,7 @@ def main (args : List String) : IO UInt32 := do
       exeName
       s!"PPO on {envId} (horizon={horizon})"
       "  env: Python Gymnasium subprocess (JSON-lines bridge) + Lean boundary contract")
+    (usage? := some <| rl.cli.ppoUsage exeName)
     (k := fun opts rest => do
       let (ppo, rest) ← ModelZoo.orThrow exeName <|
         rl.cli.parsePpoFlags exeName rest Runtime.RL.Artifacts.DefaultPaths.ppoCartPoleTrainLog
@@ -222,9 +225,9 @@ def main (args : List String) : IO UInt32 := do
         let seedActor ← rand.nextSeedGlobal
         let seedCritic ← rand.nextSeedGlobal
         let actorObs : nn.Sequential stateShape logitsShape :=
-          nn.build seedActor (actorMk .scalar)
+          nn.build seedActor (actorMk [])
         let criticObs : nn.Sequential stateShape valueShape :=
-          nn.build seedCritic (criticMk .scalar)
+          nn.build seedCritic (criticMk [])
         let actorRollout : nn.Sequential sStateBatch sLogitsBatch :=
           nn.build seedActor (actorMk pfxBatch)
         let criticRollout : nn.Sequential sStateBatch sValueBatch :=
@@ -247,7 +250,7 @@ def main (args : List String) : IO UInt32 := do
         -- Training curve: greedy-policy evaluation return before training, then at each
         -- `evalEvery` checkpoint. We keep this as a compact `Curve` (arrays) because it is
         -- destined for JSON/widget display; the actual learning data is stored as typed tensors.
-        let mut curve : rl.train.Curve := {}
+        let mut curve : Training.Curve := {}
 
         let mkSession : Nat → rl.session.CheckedSession obsShape nActions :=
           fun seed =>
