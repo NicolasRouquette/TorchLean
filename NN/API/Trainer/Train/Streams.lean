@@ -48,7 +48,7 @@ def trainStream {inputShape outputShape : List Nat}
         (Tensor.map (Runtime.ofFloat (α := α)) (Sample.x sample))
         (Tensor.map (Runtime.ofFloat (α := α)) (Sample.y sample))
     let scalarToFloat (value : α) : IO Float := do
-      let valueFloat ← Runtime.toFloatTensor (Spec.Tensor.scalar value)
+      let valueFloat ← Runtime.readFloatTensor (Spec.Tensor.scalar value)
       pure (Spec.Tensor.item valueFloat)
     let cfg := trainOpts.toTrainConfig run.optimizer
     let stepper ← TorchLean.Trainer.Manual.stepper
@@ -58,7 +58,7 @@ def trainStream {inputShape outputShape : List Nat}
         Manual.Runner.eval (task := trainer.task) runner
         let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Manual.Runner.run (task := trainer.task) runner x
-        Runtime.toFloatTensor yhat
+        Runtime.readFloatTensor yhat
     let evalLoss := do
       Manual.Runner.eval (task := trainer.task) runner
       TorchLean.Trainer.Manual.Runner.moduleLoss (task := trainer.task) runner
@@ -161,13 +161,13 @@ def trainPairStreams {inputShape₁ outputShape₁ inputShape₂ outputShape₂ 
         Manual.Runner.eval (task := first.task) firstRunner
         let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Manual.Runner.run (task := first.task) firstRunner x
-        Runtime.toFloatTensor yhat
+        Runtime.readFloatTensor yhat
     let predictSecond :=
       fun (xFloat : Tensor Float inputShape₂) => do
         Manual.Runner.eval (task := second.task) secondRunner
         let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Manual.Runner.run (task := second.task) secondRunner x
-        Runtime.toFloatTensor yhat
+        Runtime.readFloatTensor yhat
     let beforeLoss ← evalTotal predictFirst predictSecond
     let mut curve : Training.Curve := {}
     curve := curve.push 0 beforeLoss

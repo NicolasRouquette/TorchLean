@@ -41,7 +41,7 @@ def stateToFloatIO {α : Type} [_root_.Context α]
     {ss : List Shape} → _root_.TorchLean.TensorPack α ss → IO (_root_.TorchLean.TensorPack Float ss)
   | [], .nil => pure .nil
   | _s :: ss, .cons x xs => do
-      let xF ← Runtime.toFloatTensor x
+      let xF ← Runtime.readFloatTensor x
       let xsF ← stateToFloatIO (α := α) (ss := ss) xs
       pure (.cons xF xsF)
 

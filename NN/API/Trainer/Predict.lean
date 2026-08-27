@@ -37,7 +37,7 @@ def predict {inputShape outputShape : List Nat}
           Manual.Runner.eval runner
           let x' := Spec.Tensor.map (Runtime.ofFloat (α := α)) x
           let y ← Manual.Runner.run runner x'
-          Runtime.toFloatTensor y)
+          Runtime.readFloatTensor y)
   | @Task.oneHotCrossEntropy _ axis validAxis reduction =>
       letI := validAxis
       let impl := Internal.SelectedTask.oneHotCrossEntropy trainer axis reduction
@@ -46,7 +46,7 @@ def predict {inputShape outputShape : List Nat}
           Manual.Runner.eval runner
           let x' := Spec.Tensor.map (Runtime.ofFloat (α := α)) x
           let y ← Manual.Runner.run runner x'
-          Runtime.toFloatTensor y)
+          Runtime.readFloatTensor y)
   | .custom loss =>
       let opts := trainer.runtime.toRuntimeOptions
       let runFor
@@ -57,7 +57,7 @@ def predict {inputShape outputShape : List Nat}
         let m ← Module.instantiate (α := α) opts objectiveDef
         let x' := Tensor.map (Runtime.ofFloat (α := α)) x
         let y ← Module.Supervised.predict (α := α) opts trainer.model m x'
-        Runtime.toFloatTensor y
+        Runtime.readFloatTensor y
       if opts.usesCuda && trainer.runtime.scalar != .float32 then
         throw <| IO.userError
           "TorchLean.Trainer.predict: CUDA execution currently requires --scalar float32"

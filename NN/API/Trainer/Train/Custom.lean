@@ -93,7 +93,7 @@ def trainCore {inputShape outputShape : List Nat} {β : Type}
       fun (xFloat : Tensor Float inputShape) => do
         let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
         let yhat ← Module.Supervised.predict (α := α) runtimeOpts model m x
-        Runtime.toFloatTensor yhat
+        Runtime.readFloatTensor yhat
     let predictMany :=
       fun (xsFloat : Array (Tensor Float inputShape)) => xsFloat.mapM predict
     let result : TrainResult inputShape outputShape :=

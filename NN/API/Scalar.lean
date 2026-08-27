@@ -24,6 +24,10 @@ Runtime commands may choose native binary32, reference IEEE binary32, or complex
 `ScalarMode` records that semantic choice. `FromFloat` supplies the one additional
 operation needed by commands that construct values from Lean binary64 `Float` literals.
 
+The generic runtime dispatcher supports all three modes. The public supervised trainer accepts the
+two real modes; complex training needs a real-valued objective, conjugate-aware reverse mode, and a
+complex result boundary rather than treating a complex scalar objective as an ordinary real loss.
+
 Model definitions remain polymorphic over the existing `Context α` interface. The runtime mode
 does not replace that mathematical interface; it selects a concrete executable scalar type that
 satisfies it. Proof-only models such as `ℝ` and rounded-real binary32 are selected directly in
@@ -123,7 +127,7 @@ def parseAndStripWithDefault (args : List String) (default : ScalarMode) :
   | none => pure (default, rest)
   | some value => pure (← parse value, rest)
 
-/-- Parse and remove `--scalar`; executable IEEE binary32 is the default. -/
+/-- Parse and remove `--scalar`; native binary32 is the default. -/
 def parseAndStrip (args : List String) : Except String (ScalarMode × List String) :=
   parseAndStripWithDefault args .float32
 

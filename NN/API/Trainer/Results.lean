@@ -50,7 +50,7 @@ def toTrainResult {inputShape outputShape : List Nat} {α : Type}
     Manual.Runner.eval (task := selected.task) runner
     let x := Tensor.map (Runtime.ofFloat (α := α)) xFloat
     let yhat ← Manual.Runner.run (task := selected.task) runner x
-    Runtime.toFloatTensor yhat
+    Runtime.readFloatTensor yhat
   { report := { steps := steps, before := toString before, after := toString after }
     predict := predict
     predictMany := fun xs => xs.mapM predict }

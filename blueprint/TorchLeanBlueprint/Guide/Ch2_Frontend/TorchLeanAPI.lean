@@ -244,8 +244,9 @@ binary64 type. The dataset builder converts those values once the trainer select
 semantics. This is an input boundary, not a claim that training itself uses binary64.
 
 Proofs choose `ℝ` or `TorchLean.Floats.FP32` directly. They are not runtime modes because
-they are noncomputable. The high-level trainer also rejects complex prediction until it has a
-public host readback path.
+they are noncomputable. The high-level trainer accepts the real runtime modes. Genuine complex
+training needs a real-valued loss, conjugate-aware reverse mode, and complex prediction results, so
+the generic runtime's `complex64` mode is not presented as a supervised trainer option.
 
 One run follows the scalar contract from *Tensors And Shapes*.
 

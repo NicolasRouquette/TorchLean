@@ -142,6 +142,10 @@ def parseRuntimeArgs (args : List String) (base : RunConfig := {}) :
     Except String (RunConfig × List String) := do
   let (exec, rest) ←
     TorchLean.Module.ExecConfig.parseWithScalar args base.scalar
+  if exec.scalar == .complex64 then
+    throw <|
+      "TorchLean.Trainer: supervised training supports --scalar float32 or ieee32-exec; " ++
+        "complex64 requires an explicit complex-valued training API"
   let _ ← match _root_.NN.Backend.BackendProfile.maintainedForDevice? exec.device with
     | some profile => pure profile
     | none =>
@@ -217,8 +221,9 @@ def withRunnerFor {inputShape outputShape : List Nat} {β : Type}
         (task := selected.task) (α := TorchLean.Floats.IEEE32Exec) (opts := opts)
       ieee32Exec runner
   | .complex64 =>
-      throw <| IO.userError
-        "TorchLean.Trainer: supervised training currently supports real scalar backends"
+      throw <| IO.userError <|
+        "TorchLean.Trainer: supervised training supports real scalar backends; " ++
+          "complex64 requires an explicit complex-valued training API"
 
 /-- Run a selected task with the scalar capabilities shared by trainer implementations. -/
 def withRunner {inputShape outputShape : List Nat} {β : Type}
@@ -254,7 +259,7 @@ def withReadableRuntime {β : Type}
       pure (.ok out)
   | .complex64 =>
       pure (.error
-        "complex runtime trainer predictions do not yet have a public Float readback path")
+        "complex64 is not supported by the real-valued Trainer result API")
 
 end Internal
 

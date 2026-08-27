@@ -200,6 +200,17 @@ if [[ "$run_default" == true ]]; then
   run "$LAKE" exe torchlean quickstart_autograd
   run "$LAKE" exe torchlean quickstart_mlp \
     --steps 1 --scalar float32 --execution eager --log "$tmp_dir/quickstart_mlp.json"
+  run "$LAKE" exe torchlean quickstart_mlp \
+    --steps 1 --scalar ieee32-exec --execution eager
+  run "$LAKE" exe torchlean quickstart_mlp \
+    --steps 1 --scalar ieee32-exec --execution typed-graph
+  if "$LAKE" exe torchlean quickstart_mlp \
+      --steps 1 --scalar complex64 --execution eager >"$tmp_dir/complex_trainer.out" 2>&1; then
+    echo "error: the real-valued quickstart accepted complex64" >&2
+    exit 1
+  fi
+  rg -Fq "complex64 requires an explicit complex-valued training API" \
+    "$tmp_dir/complex_trainer.out"
   run "$LAKE" exe torchlean quickstart_minibatch_mlp \
     --data-dir "$data_dir" --steps 1 --batch 5 --scalar float32 --execution eager \
     --log "$tmp_dir/minibatch_mlp.json"

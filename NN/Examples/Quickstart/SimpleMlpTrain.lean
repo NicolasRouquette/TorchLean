@@ -92,7 +92,7 @@ def usage : String :=
     , "Options:"
     , "  --seed N"
     , "  --steps N"
-    , "  --scalar float32|ieee32-exec|complex64"
+    , "  --scalar float32|ieee32-exec"
     , "  --execution eager|typed-graph"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --show-backend                    print backend capsules as they execute"

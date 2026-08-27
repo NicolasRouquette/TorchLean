@@ -46,7 +46,7 @@ def ppoUsage (exeName : String) (artifactOptions : Array String := #[]) : String
     "Runtime:",
     "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external",
     "  --execution eager|typed-graph",
-    "  --scalar float32|ieee32-exec|complex64",
+    "  --scalar float32",
     "  --seed N --show-backend"
   ]).toList
 

@@ -30,6 +30,10 @@ The provided `Context` instance is designed to be:
 
 This is *not* meant to be a full replacement for complex analysis; for deep analytic theorems, use
 mathlib’s `ℂ` directly.
+
+The `Context` instance supports explicit complex forward programs. It does not turn the ordinary
+real-valued trainer into a complex optimizer: that requires real losses on complex tensors,
+conjugate-aware reverse-mode rules, and result and checkpoint APIs that preserve both components.
 -/
 
 @[expose] public section

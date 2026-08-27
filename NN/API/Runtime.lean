@@ -28,7 +28,7 @@ namespace Runtime
 export _root_.Runtime.Autograd.Torch (Ops)
 export _root_.Runtime.Autograd.TorchLean (Program)
 export _root_.Runtime.Autograd.Torch (TensorTransfer)
-export _root_.Runtime.Autograd.Torch.TensorTransfer (toFloatTensor)
+export _root_.Runtime.Autograd.Torch.TensorTransfer (readFloatTensor toFloatTensor)
 
 open _root_.Spec
 

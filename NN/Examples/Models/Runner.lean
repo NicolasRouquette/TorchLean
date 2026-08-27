@@ -60,6 +60,7 @@ def usage : String :=
     , "  --choose                         ask for runtime choices before running"
     , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --scalar float32|ieee32-exec|complex64"
+    , "      scalar availability depends on the example; check its --help"
     , "  --execution eager|typed-graph"
     , "  --seed N"
     , "  --show-backend"

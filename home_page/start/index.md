@@ -53,7 +53,7 @@ certificates, and two-stage Lyapunov experiments.
 
 ## Common Next Steps
 
-- Train a model: `lake exe torchlean mlp --device cpu --steps 100 --scalar ieee32-exec`.
+- Train a model: `lake exe torchlean quickstart_mlp --device cpu --steps 100 --scalar ieee32-exec`.
 - Inspect a scientific ML run: [Scientific ML]({{ '/examples/scientific-ml/' | relative_url }}).
 - Check a certificate or bound pass: [Verification Bounds]({{ '/examples/verification/' | relative_url }}).
 - Start application code with `import NN.API; open TorchLean`.

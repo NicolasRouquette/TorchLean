@@ -36,7 +36,7 @@ lake exe torchlean quickstart_mlp --help
 The quickstart's common flags are:
 
 ```
---scalar float32|ieee32-exec|complex64
+--scalar float32|ieee32-exec
 --execution eager|typed-graph
 --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
 --seed N
@@ -157,8 +157,10 @@ does not model overflow, NaN, infinity, or signed zero. The floating-point chapt
 finite/no-overflow bridge to `IEEE32Exec` is stated.
 
 The lower scalar dispatcher also recognizes executable complex binary32. The high-level trainer
-currently rejects it because prediction has no Float readback path. All supported selections follow
-the one-scalar-per-run contract from *Tensors And Shapes*.
+does not expose it as a training mode: its objectives are real supervised losses, while genuine
+complex training needs a real-valued complex loss, conjugate-aware gradients, and a result type that
+preserves complex predictions. All supported selections follow the one-scalar-per-run contract from
+*Tensors And Shapes*.
 
 # The Same Choices In Lean
 

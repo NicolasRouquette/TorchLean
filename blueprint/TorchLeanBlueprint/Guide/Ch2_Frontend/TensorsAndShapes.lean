@@ -252,8 +252,9 @@ These tensors have the same shape and different semantics:
 
 The trainer's `scalar` field selects executable arithmetic for the run. Proofs instantiate tensors
 over `ℝ` or `.fp32` directly; those noncomputable types do not appear as command-line runtime
-choices. The high-level trainer currently rejects complex prediction because it has no public
-host-`Float` readback path. The executable binary32 constructor is:
+choices. The generic runtime can execute complex scalar programs, but the supervised trainer only
+offers its two real modes. Complex training needs a real-valued loss, conjugate-aware gradients,
+and a result boundary that preserves complex predictions. The executable binary32 constructor is:
 
 ```
 def x32 :

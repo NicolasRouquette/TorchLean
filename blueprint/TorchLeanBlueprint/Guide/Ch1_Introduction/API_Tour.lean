@@ -195,8 +195,9 @@ def trainer : Trainer [2] [1] :=
 The default execution profile is checked CPU, using the eager runtime and native `Float32`. A
 trainer configuration may instead select typed graph execution or the bit-level `IEEE32Exec`
 reference. The generic scalar dispatcher also has an executable complex-binary32 scalar, but the
-high-level trainer does not yet expose complex prediction readback. Device and provider selection
-are runtime concerns; they do not change the model's input and output shapes.
+high-level trainer remains real-valued. Complex training needs a real scalar loss,
+conjugate-aware gradients, and complex prediction results. Device and provider selection are
+runtime concerns; they do not change the model's input and output shapes.
 
 Training options belong to the call:
 
