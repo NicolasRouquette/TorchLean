@@ -19,6 +19,16 @@ log is asserted against what each build should have compiled:
   TORCHLEAN_CUDA_ARCH=sm_90      -arch=sm_90, the environment fallback
   both, option and environment   the option wins
   -K cuda_arch=-gencode ...      passed through verbatim, for multi-architecture binaries
+  -K cuda=true without -R        nothing compiled: Lake reuses the stored configuration
+  the same build with -R         compiled, because the configuration is re-elaborated
+
+The last pair is the one worth stating plainly. `-K` is read when the package configuration is
+elaborated, not when the build runs, so a `-K cuda=true` that omits `-R` after a stub build is
+accepted, ignored, and links the CPU stubs. That build reports success, and the test suite it
+produces passes every test without executing a single kernel; only `ldd` on the executable, or
+the suite's own "CUDA kernels: skipped (CPU build)" line, tells the difference. The pair is
+checked together because either row alone proves nothing: 0 compilations is also what an
+up-to-date target reports.
 
 The stand-in's objects are removed afterwards, so a later real CUDA build cannot mistake them
 for its own. Any genuine object for that library goes with them, which costs one recompilation
@@ -142,6 +152,17 @@ check "an explicit flag list passes through" 1 "-gencode arch=compute_120,code=[
   "$LAKE" -R -K cuda=true \
   -K cuda_arch="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_120,code=[sm_120,compute_120]" \
   build "$lib"
+
+# `-K` reaches the build only through a reconfiguration. Return to the stub flavour first, so the
+# pair below starts from a build that holds no CUDA object at all; then run the SAME command twice,
+# differing only in `-R`. Asserting the two together is what makes them evidence — a lone "no
+# compilations" result is indistinguishable from an up-to-date target.
+"$LAKE" -R build "$lib" >/dev/null 2>&1 || true
+
+check "-K cuda=true without -R reuses the stored configuration" 0 "" \
+  "$LAKE" -K cuda=true -K cuda_arch=sm_86 build "$lib"
+check "the same build with -R re-elaborates it" 1 "-arch=sm_86" \
+  "$LAKE" -R -K cuda=true -K cuda_arch=sm_86 build "$lib"
 
 if [[ "$failures" -ne 0 ]]; then
   echo "$failures check(s) failed" >&2
