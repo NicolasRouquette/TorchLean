@@ -44,8 +44,8 @@ namespace Proofs
 namespace Autograd
 namespace Builder
 
-open Spec
-open Tensor
+open Spec TorchLean
+open TorchLean TorchLean.Tensor
 open Runtime.Autograd (Tape TapeM Result)
 
 variable {α : Type}
@@ -197,7 +197,7 @@ theorem run_min_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α → α
     (TapeM.min (s := s) aId bId).run t = .ok (id, t') :=
   opM_run_ok (g := fun tt => Runtime.Autograd.Tape.min (t := tt) (s := s) aId bId) h
 
-theorem run_relu_ok {α : Type} [Mul α] [Zero α] [Max α] [One α] [LT α]
+theorem run_relu_ok {α : Type} [Mul α] [Zero α] [Max α] [BEq α] [One α] [LT α]
     [DecidableRel ((· > ·) : α → α → Prop)] [DecidableEq Shape] {s : Shape} (xId : Nat)
     {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.relu (t := t) (s := s) xId = .ok (t', id)) :
@@ -220,7 +220,7 @@ theorem run_matmul_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α →
     bId) h
 
 theorem run_conv_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-    [DecidableEq Shape] {d inC outC : Nat} {kernel stride padding inSpatial : Spec.Tensor Nat [d]}
+    [DecidableEq Shape] {d inC outC : Nat} {kernel stride padding inSpatial : TorchLean.Tensor Nat [d]}
     (kernelId biasId inputId : Nat) (name : String) {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.conv (t := t) (d := d) (inC := inC) (outC := outC) (kernel := kernel)
       (stride := stride) (padding := padding) (inSpatial := inSpatial) kernelId biasId inputId
@@ -233,8 +233,8 @@ theorem run_conv_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α → �
     (inSpatial := inSpatial) kernelId biasId inputId (name := name)) h
 
 theorem run_convTranspose_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-    [DecidableEq Shape] {d inC outC : Nat} {kernel stride padding : Spec.Tensor Nat [d]}
-    {inSpatial : Spec.Tensor Nat [d]} (kernelId biasId inputId : Nat) (name : String)
+    [DecidableEq Shape] {d inC outC : Nat} {kernel stride padding : TorchLean.Tensor Nat [d]}
+    {inSpatial : TorchLean.Tensor Nat [d]} (kernelId biasId inputId : Nat) (name : String)
     {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.convTranspose (t := t) (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial) kernelId
@@ -247,40 +247,34 @@ theorem run_convTranspose_ok {α : Type} [Context α] [DecidableRel ((· > ·) :
     (inSpatial := inSpatial) kernelId biasId inputId (name := name)) h
 
 theorem run_maxPool_ok {α : Type} [Context α] [DecidableEq Shape] {d C : Nat}
-    {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
-    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0} (xId : Nat) {t t' : Tape α} {id : Nat}
+    {inSpatial kernel stride padding : TorchLean.Tensor Nat [d]}
+    (xId : Nat) {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.maxPool (t := t) (d := d) (C := C) (inSpatial := inSpatial)
-      (kernel := kernel) (stride := stride) (padding := padding) (hKernel := hKernel)
-      xId = .ok (t', id)) :
+      (kernel := kernel) (stride := stride) (padding := padding) xId = .ok (t', id)) :
     (TapeM.maxPool (d := d) (C := C) (inSpatial := inSpatial) (kernel := kernel) (stride := stride)
-      (padding := padding) (hKernel := hKernel) xId).run t = .ok (id, t') :=
+      (padding := padding) xId).run t = .ok (id, t') :=
   opM_run_ok (g := fun tt => Runtime.Autograd.Tape.maxPool (t := tt) (d := d) (C := C)
-    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
-    (hKernel := hKernel) xId) h
+    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) xId) h
 
 theorem run_smoothMaxPool_ok {α : Type} [Context α] [DecidableEq α] [DecidableEq Shape] {d C : Nat}
-    {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
-    {hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0} (xId : Nat) (beta : α) {t t' : Tape α}
-    {id : Nat}
+    {inSpatial kernel stride padding : TorchLean.Tensor Nat [d]}
+    (xId : Nat) (beta : α) {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.smoothMaxPool (t := t) (d := d) (C := C) (inSpatial := inSpatial)
-      (kernel := kernel) (stride := stride) (padding := padding) (hKernel := hKernel) xId
-      beta = .ok (t', id)) :
+      (kernel := kernel) (stride := stride) (padding := padding) xId beta = .ok (t', id)) :
     (TapeM.smoothMaxPool (d := d) (C := C) (inSpatial := inSpatial) (kernel := kernel)
-      (stride := stride) (padding := padding) (hKernel := hKernel) xId beta).run t = .ok (id, t') :=
+      (stride := stride) (padding := padding) xId beta).run t = .ok (id, t') :=
   opM_run_ok (g := fun tt => Runtime.Autograd.Tape.smoothMaxPool (t := tt) (d := d) (C := C)
-    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
-    (hKernel := hKernel) xId beta) h
+    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) xId beta) h
 
 theorem run_avgPool_ok {α : Type} [Context α] [DecidableEq Shape] {d C : Nat}
-    {inSpatial kernel stride padding : Spec.Tensor Nat [d]}
-    (hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0) (xId : Nat) {t t' : Tape α} {id : Nat}
+    {inSpatial kernel stride padding : TorchLean.Tensor Nat [d]}
+    (xId : Nat) {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.avgPool (t := t) (d := d) (C := C) (inSpatial := inSpatial)
-      (kernel := kernel) (stride := stride) (padding := padding) hKernel xId = .ok (t', id)) :
+      (kernel := kernel) (stride := stride) (padding := padding) xId = .ok (t', id)) :
     (TapeM.avgPool (d := d) (C := C) (inSpatial := inSpatial) (kernel := kernel) (stride := stride)
-      (padding := padding) hKernel xId).run t = .ok (id, t') :=
+      (padding := padding) xId).run t = .ok (id, t') :=
   opM_run_ok (g := fun tt => Runtime.Autograd.Tape.avgPool (t := tt) (d := d) (C := C)
-    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) hKernel
-    xId) h
+    (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) xId) h
 
 theorem run_layerNorm_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
     [DecidableEq Shape] {seqLen embedDim : Nat} (h_seq_pos : seqLen > 0)
@@ -316,7 +310,7 @@ theorem run_multiHeadAttention_ok {α : Type} [Context α] [DecidableRel ((· > 
     (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1) wqId wkId wvId woId
     xId mask) h
 
-theorem run_mseLoss_ok {α : Type} [Add α] [Sub α] [Mul α] [Div α] [Zero α] [One α] [Coe Nat α]
+theorem run_mseLoss_ok {α : Type} [Add α] [Sub α] [Mul α] [Div α] [Zero α] [One α] [NatCast α]
     [DecidableEq Shape] {s : Shape} (yhatId targetId : Nat) {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.mseLoss (t := t) (s := s) yhatId targetId = .ok (t', id)) :
     (TapeM.mseLoss (s := s) yhatId targetId).run t = .ok (id, t') :=

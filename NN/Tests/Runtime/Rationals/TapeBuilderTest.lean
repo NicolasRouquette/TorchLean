@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Proofs.Autograd.Tape.Builder
+public import NN.Spec.Core.Context.Rational
 public import NN.Runtime.Autograd.Train
 public import NN.Tensor
 
@@ -22,12 +23,12 @@ statement in the block. The proof is the peel: `exec_inv`, then `run_bind_inv` o
 then `run_leaf` or `opM_run_inv` at each op.
 -/
 
-open scoped NN.Spec.RationalAlgebraic
+open scoped Spec.RationalAlgebraic
 
 @[expose] public section
 
-open Spec
-open Tensor
+open Spec TorchLean
+open TorchLean TorchLean.Tensor
 
 namespace Tests
 namespace Rationals
@@ -39,10 +40,10 @@ open Proofs.Autograd.Builder
 abbrev tag : String := "tape_builder_test (Rat)"
 
 /-- First input. -/
-def xa : Tensor ℚ [2] := tensorOfArray! [2] #[2, 3]
+def xa : Tensor ℚ [2] := (Tensor.from #[(2 : ℚ), 3]).reshape [2] (by dsimp; decide)
 
 /-- Second input. -/
-def xb : Tensor ℚ [2] := tensorOfArray! [2] #[5, 7]
+def xb : Tensor ℚ [2] := (Tensor.from #[(5 : ℚ), 7]).reshape [2] (by dsimp; decide)
 
 /-- The scaling constant. -/
 def c : ℚ := 4
@@ -82,7 +83,7 @@ theorem prog_peel {t t' : Tape ℚ} (h : TapeM.exec t prog = .ok t') :
 def checkProg : Result Bool := do
   let (id, t) ← TapeM.run (Tape.empty) prog
   let out ← Tape.requireValue (t := t) (s := [2]) id
-  pure (decide (pretty out = pretty (tensorOfArray! [2] #[40, 84] : Tensor ℚ [2])))
+  pure (decide (pretty out = pretty ((Tensor.from #[(40 : ℚ), 84]).reshape [2] (by dsimp; decide) : Tensor ℚ [2])))
 
 -- `Tape.empty` has no native implementation available to the elaborator, so `checkProg` cannot be
 -- forced by a compile-time `#guard`; `run` below is what executes it, under the test suite.

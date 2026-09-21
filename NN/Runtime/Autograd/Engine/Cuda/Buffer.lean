@@ -279,7 +279,7 @@ deriving Repr
 
 /-- Read the current device's identity, or `none` when there is no device to name (the CPU stub, or
 a CUDA build on a host where no card answers). -/
-def deviceInfo : IO (Option DeviceInfo) := do
+@[no_expose] def deviceInfo : IO (Option DeviceInfo) := do
   let name := deviceNameRaw 0
   if name.isEmpty then return none
   return some
