@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Engine.Cuda.Buffer
+public import NN.Runtime.Autograd.Engine.Cuda.TexTable
 public import NN.Runtime.Autograd.Engine.Cuda.ConvPool
 public import NN.Runtime.Autograd.Engine.Cuda.Convert
 public import NN.Runtime.Autograd.Engine.Cuda.DGemm

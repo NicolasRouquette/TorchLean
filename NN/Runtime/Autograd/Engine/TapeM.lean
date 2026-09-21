@@ -84,7 +84,7 @@ The state reshuffle every op wrapper below is made of: read the tape, run the pu
 it, write the new tape back, and return the fresh node id.
 
 Each wrapper in this namespace whose pure counterpart returns `Result (Tape α × Nat)` is
-*definitionally* `opM` applied to that counterpart — `TapeM.mul aId bId` is
+*definitionally* `opM` applied to that counterpart: `TapeM.mul aId bId` is
 `opM fun t => Tape.mul (t := t) aId bId`, and so on for the rest. Writing the shared shape once
 gives the wrappers a single point to reason about: `NN.Proofs.Autograd.Tape.Builder` proves how a
 successful, failing, and inverted `run` of `opM g` relate to `g`, and every per-op run lemma there

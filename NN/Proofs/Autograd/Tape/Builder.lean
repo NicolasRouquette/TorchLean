@@ -25,8 +25,8 @@ counterpart, so the whole surface reduces through one lemma:
   what peels a `do`-block one statement at a time, and `exec_inv` turns a successful `exec` into
   such a `run`.
 - The `run_<op>_ok` family below is `opM_run_ok` instantiated at each op's own pure counterpart.
-  Each is a definitional instantiation — the proof term is `opM_run_ok` with `g` supplied, with no
-  unfolding lemma in between — so the family stays correct by construction as ops are added.
+  Each is a definitional instantiation (the proof term is `opM_run_ok` with `g` supplied, with no
+  unfolding lemma in between), so the family stays correct by construction as ops are added.
 
 `TapeM.leaf` is not in the family: it is total, so its pure counterpart returns a bare pair rather
 than a `Result`, and `run_leaf` states its (unconditional) run directly. `TapeM.backwardScalar` is
@@ -133,7 +133,7 @@ theorem run_leaf {s : Shape} (value : Tensor α s) (name : Option String := none
 /-! ## The per-op family: `opM_run_ok` at each op's own pure counterpart
 
 Each proof below is `opM_run_ok` with `g` supplied and nothing else. If one of them ever stops
-typechecking, the wrapper it names has stopped being `opM` at its pure op — which is the fact
+typechecking, the wrapper it names has stopped being `opM` at its pure op, which is the fact
 worth learning.
 -/
 
@@ -220,7 +220,8 @@ theorem run_matmul_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α →
     bId) h
 
 theorem run_conv_ok {α : Type} [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
-    [DecidableEq Shape] {d inC outC : Nat} {kernel stride padding inSpatial : TorchLean.Tensor Nat [d]}
+    [DecidableEq Shape] {d inC outC : Nat}
+    {kernel stride padding inSpatial : TorchLean.Tensor Nat [d]}
     (kernelId biasId inputId : Nat) (name : String) {t t' : Tape α} {id : Nat}
     (h : Runtime.Autograd.Tape.conv (t := t) (d := d) (inC := inC) (outC := outC) (kernel := kernel)
       (stride := stride) (padding := padding) (inSpatial := inSpatial) kernelId biasId inputId

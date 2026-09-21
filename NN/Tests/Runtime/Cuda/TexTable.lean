@@ -19,7 +19,7 @@ Validates `Runtime.Autograd.Cuda.TexTable` against an executable `Float32` refer
   CUDA kernel evaluate the same clamp/floor/lerp in float32 with FMA contraction blocked);
 - **hardware mode** is compared by tolerance (`2⁻⁸` of the local sample gap): CUDA's texture unit
   uses a 9-bit fixed-point lerp weight whose rounding is unspecified;
-- **integer-node fetches** must be bit-exact in *both* modes (the lerp weight is exactly 0 there) —
+- **integer-node fetches** must be bit-exact in *both* modes (the lerp weight is exactly 0 there);
   this probe catches any texel-center (`±0.5`) coordinate-convention error;
 - edge behavior: clamping below/above the abscissa range, layer-index clamping, `width = 1`,
   and empty coordinate buffers.

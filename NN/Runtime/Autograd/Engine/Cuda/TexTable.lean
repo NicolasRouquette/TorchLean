@@ -27,7 +27,7 @@ namespace TexTable
 # Lookup-table textures
 
 A `TexTable` holds a small, immutable, *layered* 1-D table of float32 samples over a uniform
-abscissa — tabulated transfer functions, calibration curves, and similar tabulated 1-D functions
+abscissa: tabulated transfer functions, calibration curves, and similar tabulated 1-D functions
 whose analytic form is expensive or unavailable (common in signal processing and radar/optical
 remote sensing). On the CUDA build it is backed by a layered `cudaArray` bound to a texture
 object, so fetches go through the GPU's dedicated texture cache; the default build uses a
@@ -39,13 +39,13 @@ host-memory parity stub.
 `u ∈ [0, width − 1]` (unnormalized; clamped at both ends), in the layer selected by an
 integral-valued float index (clamped to `[0, layers − 1]`; layers are **not** interpolated
 across). With `i = ⌊clamp(u, 0, width−1)⌋` and `f = u − i`, the result is
-`table[layer][i] + f · (table[layer][i+1] − table[layer][i])` — the uniform-grid analogue of
+`table[layer][i] + f · (table[layer][i+1] − table[layer][i])`, the uniform-grid analogue of
 `np.interp`. The native kernels add any texel-center offset internally; callers never add `0.5`.
 
 ## Filter modes (fixed at construction)
 
 - `hwFilter := false` (**point mode**, default): two point fetches plus an explicit float32 lerp.
-  Bit-reproducible — the CUDA build and the CPU stub return identical float32 results.
+  Bit-reproducible: the CUDA build and the CPU stub return identical float32 results.
 - `hwFilter := true` (**hardware mode**): the texture unit interpolates in hardware at zero ALU
   cost. CUDA specifies a 9-bit fixed-point lerp weight (8 fractional bits), so results carry a
   weight-quantization error of at most `2⁻⁸ · |table[i+1] − table[i]|` per fetch and must be

@@ -18,7 +18,7 @@ Exercises `NN.Proofs.Autograd.Tape.Builder` on a user-style eager program over `
 
 The point of the module under test is that a `do`-block written in `TapeM` can be reasoned about,
 not merely run. So this file does both to the same program: it runs it and checks the value, and it
-*proves* — from nothing but "the block executed successfully" — the pure-`Tape` fact behind every
+*proves*, from nothing but "the block executed successfully", the pure-`Tape` fact behind every
 statement in the block. The proof is the peel: `exec_inv`, then `run_bind_inv` once per statement,
 then `run_leaf` or `opM_run_inv` at each op.
 -/
@@ -83,7 +83,8 @@ theorem prog_peel {t t' : Tape ℚ} (h : TapeM.exec t prog = .ok t') :
 def checkProg : Result Bool := do
   let (id, t) ← TapeM.run (Tape.empty) prog
   let out ← Tape.requireValue (t := t) (s := [2]) id
-  pure (decide (pretty out = pretty ((Tensor.from #[(40 : ℚ), 84]).reshape [2] (by dsimp; decide) : Tensor ℚ [2])))
+  let expected : Tensor ℚ [2] := (Tensor.from #[(40 : ℚ), 84]).reshape [2] (by dsimp; decide)
+  pure (decide (pretty out = pretty expected))
 
 -- `Tape.empty` has no native implementation available to the elaborator, so `checkProg` cannot be
 -- forced by a compile-time `#guard`; `run` below is what executes it, under the test suite.
