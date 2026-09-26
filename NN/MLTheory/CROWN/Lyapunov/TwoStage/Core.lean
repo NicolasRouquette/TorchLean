@@ -188,7 +188,7 @@ def Internal.closedLoopDynamics
     (s₂ := [1]) x2 (by simp [Spec.Shape.size])
   let dx2V ← Runtime.Autograd.Model.reshape (m := m) (α := β) (s₁ := [])
     (s₂ := [1]) dx2 (by simp [Spec.Shape.size])
-  Runtime.Autograd.Model.concatLeadingAxis (m := m) (α := β) (s := [])
+  Runtime.Autograd.Model.concat (m := m) (α := β) (s := [])
     (nDim := 1) (mDim := 1) x2V dx2V
 
 /-- Form the positivity and decrease penalties from `V`, `∇V`, and the closed-loop dynamics. -/

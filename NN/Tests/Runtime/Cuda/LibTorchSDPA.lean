@@ -27,7 +27,7 @@ namespace LibTorchSDPA
 
 open Spec TorchLean
 open Tests.Cuda.Attention (checked)
-open Runtime.Autograd.Cuda
+open Runtime.Autograd.LibTorch
 
 abbrev batch : Nat := 2
 abbrev n : Nat := 2
@@ -80,7 +80,7 @@ def hardMask : Tensor Float maskShape :=
 /-- For this two-key case, the first probability is the logistic of the score difference. -/
 @[no_expose] def referenceForward (qs ks vs : FloatArray) (masked : Bool) (scale : Float) :
     FloatArray := FloatArray.mk <| Id.run do
-  let maskValues := Runtime.Autograd.Cuda.Convert.flattenFloat (s := maskShape) hardMask
+  let maskValues := Runtime.Autograd.LibTorch.Convert.flattenFloat (s := maskShape) hardMask
   let mut values : Array Float := #[]
   for b in [:batch] do
     for i in [:n] do
@@ -110,7 +110,7 @@ def hardMask : Tensor Float maskShape :=
 @[no_expose] def referenceLoss (qs ks vs : FloatArray) (masked : Bool) (scale : Float) : Float :=
   Id.run do
     let ys := referenceForward qs ks vs masked scale
-    let seed := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) dOut
+    let seed := Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) dOut
     let mut loss : Float := 0.0
     for i in [:ys.size] do
       loss := loss + ys.get! i * seed.get! i
@@ -118,16 +118,16 @@ def hardMask : Tensor Float maskShape :=
 
 /-- Check all raw Q/K/V gradients against an independent reference. -/
 @[no_expose] def checkReference (masked : Bool) (scale : Float)
-    (output dq dk dv : Runtime.Autograd.Cuda.Buffer) : IO Unit := do
-  let qs := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) q
-  let ks := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) k
-  let vs := Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) v
+    (output dq dk dv : Runtime.Autograd.LibTorch.Buffer) : IO Unit := do
+  let qs := Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) q
+  let ks := Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) k
+  let vs := Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) v
   Tests.Cuda.Utils.assertFloatArrayApprox "attention two-key reference"
-    (Runtime.Autograd.Cuda.Buffer.toFloatArray output)
+    (Runtime.Autograd.LibTorch.Buffer.toFloatArray output)
     (referenceForward qs ks vs masked scale) 1e-4
-  let qGrad := Runtime.Autograd.Cuda.Buffer.toFloatArray dq
-  let kGrad := Runtime.Autograd.Cuda.Buffer.toFloatArray dk
-  let vGrad := Runtime.Autograd.Cuda.Buffer.toFloatArray dv
+  let qGrad := Runtime.Autograd.LibTorch.Buffer.toFloatArray dq
+  let kGrad := Runtime.Autograd.LibTorch.Buffer.toFloatArray dk
+  let vGrad := Runtime.Autograd.LibTorch.Buffer.toFloatArray dv
   let step : Float := 1e-4
   for i in [:qs.size] do
     let expectedQ :=
@@ -157,30 +157,31 @@ def hardMask : Tensor Float maskShape :=
     IO NN.Backend.KernelCapsule := do
   let options := Runtime.Autograd.Torch.Config.withBackendProfile
     ({} : Runtime.Autograd.Torch.Config) profile
-  match Runtime.Autograd.Cuda.Buffer.runtimeStatus with
+  match Runtime.Autograd.LibTorch.Buffer.runtimeStatus with
   | .notLinked =>
       let planned ← Tests.Cuda.Utils.okOrThrow <|
-        options.planBackendOp .scaledDotProductAttention
+        options.planBackendOp .attention
       pure planned.capsule
   | _ =>
       let session ← Runtime.Autograd.Torch.Internal.EagerSession.new (α := Float) options
-      session.selectedCapsule .scaledDotProductAttention
+      session.selectedCapsule .attention
 
 /-- Aligned float32 heads also exercise a shape eligible for the efficient pair, when available. -/
 @[no_expose] def checkAlignedPair : IO Unit := do
-  let zeros ← Runtime.Autograd.Cuda.Buffer.zerosIO 256
-  let values := Runtime.Autograd.Cuda.Buffer.ofFloatArray <|
+  let zeros ← Runtime.Autograd.LibTorch.Buffer.zerosIO 256
+  let values := Runtime.Autograd.LibTorch.Buffer.ofFloatArray <|
     FloatArray.mk <| (Array.range 256).map fun i => Float.ofNat (i / 32)
-  let maskValues := Runtime.Autograd.Cuda.Buffer.ofFloatArray <|
+  let maskValues := Runtime.Autograd.LibTorch.Buffer.ofFloatArray <|
     FloatArray.mk <| (Array.range 64).map fun i => if i < 8 then 0.0 else 1.0
-  let seed := Runtime.Autograd.Cuda.Buffer.full 256 1.0
-  let output ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+  let seed := Runtime.Autograd.LibTorch.Buffer.full 256 1.0
+  let output ← checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
     zeros zeros values maskValues 1 1 8 32 0.25
-  let (dq, dk, dv) ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd output seed
-  let ys := Runtime.Autograd.Cuda.Buffer.toFloatArray output
-  let dqs := Runtime.Autograd.Cuda.Buffer.toFloatArray dq
-  let dks := Runtime.Autograd.Cuda.Buffer.toFloatArray dk
-  let dvs := Runtime.Autograd.Cuda.Buffer.toFloatArray dv
+  let (dq, dk, dv) ← checked fun _ =>
+    Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd output seed
+  let ys := Runtime.Autograd.LibTorch.Buffer.toFloatArray output
+  let dqs := Runtime.Autograd.LibTorch.Buffer.toFloatArray dq
+  let dks := Runtime.Autograd.LibTorch.Buffer.toFloatArray dk
+  let dvs := Runtime.Autograd.LibTorch.Buffer.toFloatArray dv
   for i in [:256] do
     Tests.Utils.assertApprox s!"aligned attention output[{i}]" (ys.get! i)
       (if i < 32 then 0.0 else 3.5) 1e-4
@@ -188,27 +189,27 @@ def hardMask : Tensor Float maskShape :=
     Tests.Utils.assertApprox s!"aligned attention dK[{i}]" (dks.get! i) 0.0 1e-4
     Tests.Utils.assertApprox s!"aligned attention dV[{i}]" (dvs.get! i) 0.875 1e-4
   for buffer in #[zeros, values, maskValues, seed, output, dq, dk, dv] do
-    discard <| Runtime.Autograd.Cuda.Buffer.releaseIO buffer
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
 
-@[no_expose] def sdpBackends : Array (String × LibTorch.SDPBackend) :=
+@[no_expose] def sdpBackends : Array (String × Runtime.Autograd.LibTorch.SDPBackend) :=
   #[("flash", .flash), ("efficient", .efficient), ("math", .math), ("cudnn", .cuDNN)]
 
 @[no_expose] def configureProviders (selection : String) : IO Unit := do
   for (name, backend) in sdpBackends do
-    LibTorch.setSDPEnabled backend (selection == "auto" || selection == name)
+    Runtime.Autograd.LibTorch.setSDPEnabled backend (selection == "auto" || selection == name)
 
 @[no_expose] def withProviderSettings (action : IO Unit) : IO Unit := do
   let flags ← sdpBackends.mapM fun (_, backend) => do
-    let enabled ← LibTorch.getSDPEnabled backend
+    let enabled ← Runtime.Autograd.LibTorch.getSDPEnabled backend
     pure (backend, enabled)
-  let precision ← LibTorch.getMatmulPrecision
+  let precision ← Runtime.Autograd.LibTorch.getMatmulPrecision
   try
-    LibTorch.setMatmulPrecision .ieee
+    Runtime.Autograd.LibTorch.setMatmulPrecision .ieee
     action
   finally
     for (backend, enabled) in flags do
-      LibTorch.setSDPEnabled backend enabled
-    LibTorch.setMatmulPrecision precision
+      Runtime.Autograd.LibTorch.setSDPEnabled backend enabled
+    Runtime.Autograd.LibTorch.setMatmulPrecision precision
 
 /-- Bounded, nonconstant inputs with aligned head width and nonzero Q/K derivatives. -/
 @[no_expose] def providerValues (multiplier offset modulus : Nat) (divisor : Float) :
@@ -383,151 +384,103 @@ def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: LibTorch SDPA ==="
   Tests.Cuda.Attention.checkPairedBuffers
 
-  let qBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) q)
-  let kBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) k)
-  let vBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) v)
-  let dOutBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) dOut)
-  let emptyMask ← Runtime.Autograd.Cuda.Buffer.zerosIO 0
+  let qBuf := Runtime.Autograd.LibTorch.Buffer.ofFloatArray
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) q)
+  let kBuf := Runtime.Autograd.LibTorch.Buffer.ofFloatArray
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) k)
+  let vBuf := Runtime.Autograd.LibTorch.Buffer.ofFloatArray
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) v)
+  let dOutBuf := Runtime.Autograd.LibTorch.Buffer.ofFloatArray
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) dOut)
+  let emptyMask ← Runtime.Autograd.LibTorch.Buffer.zerosIO 0
 
   let batch32 := UInt32.ofNat batch
   let n32 := UInt32.ofNat n
   let d32 := UInt32.ofNat d
   let scale : Float := 1.0 / Float.sqrt (Float.ofNat d)
 
-  let libTorchY ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+  let libTorchY ← checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
     qBuf kBuf vBuf emptyMask 0 batch32 n32 d32 scale
   let (libTorchDQ, libTorchDK, libTorchDV) ← checked fun _ =>
-    Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd libTorchY dOutBuf
+    Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd libTorchY dOutBuf
   checkReference false scale libTorchY libTorchDQ libTorchDK libTorchDV
 
-  let maskBuf := Runtime.Autograd.Cuda.Buffer.ofFloatArray
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := maskShape) hardMask)
-  let libTorchMaskedY ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+  let maskBuf := Runtime.Autograd.LibTorch.Buffer.ofFloatArray
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := maskShape) hardMask)
+  let libTorchMaskedY ← checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
     qBuf kBuf vBuf maskBuf 1 batch32 n32 d32 scale
   let (libTorchMaskedDQ, libTorchMaskedDK, libTorchMaskedDV) ← checked fun _ =>
-    Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd libTorchMaskedY dOutBuf
+    Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd libTorchMaskedY dOutBuf
   checkReference true scale libTorchMaskedY libTorchMaskedDQ libTorchMaskedDK libTorchMaskedDV
   checkAlignedPair
 
   for testScale in #[0.0, -0.7] do
-    let output ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+    let output ← checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
       qBuf kBuf vBuf maskBuf 1 batch32 n32 d32 testScale
     let (dq, dk, dv) ← checked fun _ =>
-      Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd output dOutBuf
+      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd output dOutBuf
     checkReference true testScale output dq dk dv
     for buffer in #[output, dq, dk, dv] do
-      discard <| Runtime.Autograd.Cuda.Buffer.releaseIO buffer
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
 
   -- Forward state owns its inputs and supports repeated VJPs until the output is released.
-  let savedQ ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <|
-    Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) q
-  let savedK ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <|
-    Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) k
-  let savedV ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <|
-    Runtime.Autograd.Cuda.Convert.flattenFloat (s := s) v
-  let savedMask ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <|
-    Runtime.Autograd.Cuda.Convert.flattenFloat (s := maskShape) hardMask
-  let retainedY ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+  let savedQ ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) q
+  let savedK ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) k
+  let savedV ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    Runtime.Autograd.LibTorch.Convert.flattenFloat (s := s) v
+  let savedMask ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    Runtime.Autograd.LibTorch.Convert.flattenFloat (s := maskShape) hardMask
+  let retainedY ← checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
     savedQ savedK savedV savedMask 1 batch32 n32 d32 scale
   for input in #[savedQ, savedK, savedV, savedMask] do
-    discard <| Runtime.Autograd.Cuda.Buffer.releaseIO input
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO input
   for _ in [:2] do
     let (dq, dk, dv) ← checked fun _ =>
-      Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd retainedY dOutBuf
+      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd retainedY dOutBuf
     checkReference true scale retainedY dq dk dv
     for gradient in #[dq, dk, dv] do
-      discard <| Runtime.Autograd.Cuda.Buffer.releaseIO gradient
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO retainedY
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO gradient
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO retainedY
   expectFailure "attention accepted a released forward buffer" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd retainedY dOutBuf
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd retainedY dOutBuf
   expectFailure "attention accepted an unrelated buffer as forward state" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd qBuf dOutBuf
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd qBuf dOutBuf
 
   -- Exercise capsule routing and the global TorchLean tape with the paired ATen backward.
   let selectedAttention ← selectAttention NN.Backend.BackendProfile.checkedCuda
-  unless selectedAttention.sameIdentity NN.Backend.Attention.libTorchDirectAttention do
+  unless selectedAttention.sameIdentity NN.Backend.LibTorch.attention do
     throw <| IO.userError <|
       s!"default checkedCuda selected unexpected attention capsule `{selectedAttention.name}`"
-  let compositionProfile : NN.Backend.BackendProfile :=
-    { NN.Backend.BackendProfile.checkedCuda with
-      policy :=
-        { NN.Backend.BackendProfile.checkedCuda.policy with
-          provider := .only .torchLean
-          vjpMode := .torchLeanTape } }
-  let comparisonAttention ← selectAttention compositionProfile
-  unless comparisonAttention.sameIdentity NN.Backend.Attention.torchLeanComposed do
-    throw <| IO.userError "explicit composition profile did not select composed attention"
-  let base0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (base1, wqId) := Runtime.Autograd.Cuda.Tape.leaf (t := base0)
+  let base0 : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (base1, wqId) := Runtime.Autograd.LibTorch.Tape.leaf (t := base0)
     (Tests.Cuda.Utils.tensorToAnyBuffer Tests.Cuda.Attention.wq)
-  let (base2, wkId) := Runtime.Autograd.Cuda.Tape.leaf (t := base1)
+  let (base2, wkId) := Runtime.Autograd.LibTorch.Tape.leaf (t := base1)
     (Tests.Cuda.Utils.tensorToAnyBuffer Tests.Cuda.Attention.wk)
-  let (base3, wvId) := Runtime.Autograd.Cuda.Tape.leaf (t := base2)
+  let (base3, wvId) := Runtime.Autograd.LibTorch.Tape.leaf (t := base2)
     (Tests.Cuda.Utils.tensorToAnyBuffer Tests.Cuda.Attention.wv)
-  let (base4, woId) := Runtime.Autograd.Cuda.Tape.leaf (t := base3)
+  let (base4, woId) := Runtime.Autograd.LibTorch.Tape.leaf (t := base3)
     (Tests.Cuda.Utils.tensorToAnyBuffer Tests.Cuda.Attention.wo)
-  let (base5, xId) := Runtime.Autograd.Cuda.Tape.leaf (t := base4)
+  let (base5, xId) := Runtime.Autograd.LibTorch.Tape.leaf (t := base4)
     (Tests.Cuda.Utils.tensorToAnyBuffer Tests.Cuda.Attention.x)
-  if Runtime.Autograd.Cuda.Buffer.runtimeStatus == .nativeAvailable then
+  if Runtime.Autograd.LibTorch.Buffer.runtimeStatus == .nativeAvailable then
     withProviderSettings do
       configureProviders "all-disabled"
-      let rejected ← Runtime.Autograd.Cuda.Tape.multiHeadAttention (t := base5)
+      let rejected ← Runtime.Autograd.LibTorch.Tape.attention (t := base5)
         (n := Tests.Cuda.Attention.n) (numHeads := Tests.Cuda.Attention.numHeads)
         (dModel := Tests.Cuda.Attention.dModel) (headDim := Tests.Cuda.Attention.headDim)
         (h1 := Tests.Cuda.Attention.n_ne_zero) wqId wkId wvId woId xId
-        (mask := some Tests.Cuda.Attention.mask) (attentionCapsule := selectedAttention)
+        (mask := some Tests.Cuda.Attention.mask)
       match rejected with
       | .error message =>
           unless unsupportedProvider message do
             throw <| IO.userError s!"unexpected attention tape error: {message}"
       | .ok _ => throw <| IO.userError "attention tape ignored disabled providers"
-  let libTorchTapeResult ← Runtime.Autograd.Cuda.Tape.multiHeadAttention (t := base5)
-    (n := Tests.Cuda.Attention.n) (numHeads := Tests.Cuda.Attention.numHeads)
-    (dModel := Tests.Cuda.Attention.dModel) (headDim := Tests.Cuda.Attention.headDim)
-    (h1 := Tests.Cuda.Attention.n_ne_zero) wqId wkId wvId woId xId
-    (mask := some Tests.Cuda.Attention.mask)
-    (attentionCapsule := selectedAttention)
-  let (libTorchTape, libTorchOutId) ← Tests.Cuda.Utils.okOrThrow libTorchTapeResult
-  let composedTapeResult ← Runtime.Autograd.Cuda.Tape.multiHeadAttention (t := base5)
-    (n := Tests.Cuda.Attention.n) (numHeads := Tests.Cuda.Attention.numHeads)
-    (dModel := Tests.Cuda.Attention.dModel) (headDim := Tests.Cuda.Attention.headDim)
-    (h1 := Tests.Cuda.Attention.n_ne_zero) wqId wkId wvId woId xId
-    (mask := some Tests.Cuda.Attention.mask)
-    (attentionCapsule := comparisonAttention)
-  let (composedTape, composedOutId) ← Tests.Cuda.Utils.okOrThrow composedTapeResult
-  let modelOutShape : Shape :=
-    [Tests.Cuda.Attention.n, Tests.Cuda.Attention.dModel]
-  let libTorchTapeOut ← Tests.Cuda.Utils.cudaValue
-    (s := modelOutShape) libTorchTape libTorchOutId
-  let composedTapeOut ← Tests.Cuda.Utils.cudaValue
-    (s := modelOutShape) composedTape composedOutId
-  Tests.Cuda.Utils.assertTensorApprox (s := modelOutShape)
-    "LibTorch attention capsule output" libTorchTapeOut composedTapeOut (tol := 2e-2)
-  let seed : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := modelOutShape
-      buf := Runtime.Autograd.Cuda.Buffer.full
-        (UInt32.ofNat (Spec.Shape.size modelOutShape)) 1.0 }
-  let libTorchGrads ← Tests.Cuda.Utils.okOrThrow <|
-    Runtime.Autograd.Cuda.Tape.backwardDenseAll libTorchTape libTorchOutId seed
-  let composedSeed : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := modelOutShape
-      buf := Runtime.Autograd.Cuda.Buffer.full
-        (UInt32.ofNat (Spec.Shape.size modelOutShape)) 1.0 }
-  let composedGrads ← Tests.Cuda.Utils.okOrThrow <|
-    Runtime.Autograd.Cuda.Tape.backwardDenseAll composedTape composedOutId composedSeed
-  let libTorchDx ← Tests.Cuda.Utils.cudaGrad (s := modelOutShape) libTorchGrads xId
-  let composedDx ← Tests.Cuda.Utils.cudaGrad (s := modelOutShape) composedGrads xId
-  Tests.Cuda.Utils.assertTensorApprox (s := modelOutShape)
-    "LibTorch attention capsule TorchLean backward" libTorchDx composedDx (tol := 2e-2)
-
-  let shortQ ← Runtime.Autograd.Cuda.Buffer.zerosIO 1
+  let shortQ ← Runtime.Autograd.LibTorch.Buffer.zerosIO 1
   let rejected ← do
     try
-      let _ ← checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+      let _ ← checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
         shortQ kBuf vBuf emptyMask 0 batch32 n32 d32 scale
       pure false
     catch _ =>
@@ -535,18 +488,18 @@ def run : IO Unit := do
   unless rejected do
     throw <| IO.userError "libtorch sdpa accepted a Q buffer with the wrong size"
   expectFailure "attention accepted a dOut buffer with the wrong size" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd libTorchY shortQ
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd libTorchY shortQ
   expectFailure "attention accepted a mask buffer with the wrong size" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
       qBuf kBuf vBuf shortQ 1 batch32 n32 d32 scale
   expectFailure "attention accepted an invalid hasMask flag" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
       qBuf kBuf vBuf maskBuf 2 batch32 n32 d32 scale
   expectFailure "attention accepted a non-finite scale" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
       qBuf kBuf vBuf emptyMask 0 batch32 n32 d32 (1.0 / 0.0)
   expectFailure "attention accepted an overflowing shape" <|
-    checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+    checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
       qBuf kBuf vBuf emptyMask 0 4294967295 4294967295 4294967295 scale
   runProviderTests "all"
   IO.println "== LibTorch SDPA bridge: OK =="

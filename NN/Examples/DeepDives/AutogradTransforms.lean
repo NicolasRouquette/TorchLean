@@ -71,10 +71,10 @@ def runDemo : IO Unit := do
   IO.println s!"Hessian of mean(x^2): {reprStr hessian}"
 
   let state : autograd.model.State model Float :=
-    autograd.model.initialState model
+    nn.initialState model
   let target : Tensor Float [3] := [0.7, 0.1, -0.5]
   let direction : autograd.model.State model Float :=
-    autograd.model.fullState model 0.1
+    nn.State.full 0.1
   let mse : autograd.model.Loss [3] [3] := autograd.model.Loss.mse
 
   let directionalDerivative ←

@@ -136,8 +136,9 @@ private def layerSummaries :
       output := τ
       layers := layers
       layerCount := layers.size
-      totalParameterCount := trainableCount (stateShapes model) (requiresGrad model)
-      totalStateElementCount := elementCount (stateShapes model) }
+      totalParameterCount := layers.foldl (fun total layer => total + layer.parameterCount) 0
+      totalStateElementCount :=
+        layers.foldl (fun total layer => total + layer.stateElementCount) 0 }
 
 /--
 Print the structured summary of a checked sequential model.

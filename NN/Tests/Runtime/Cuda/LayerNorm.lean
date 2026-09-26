@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Ops
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops
 public import NN.Tensor
 public import NN.Tests.Runtime.Cuda.Utils
 
@@ -66,22 +66,22 @@ def run : IO Unit := do
   let dBetaCpu ← Utils.cpuGrad (s := [embedDim]) gradsCpu bId
 
   -- CUDA tape
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
+  let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (t1c, xIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
-  let (t2c, gIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer gamma)
+  let (t2c, gIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer gamma)
     (name := some "gamma")
-  let (t3c, bIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t2c) (Utils.tensorToAnyBuffer beta)
+  let (t3c, bIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t2c) (Utils.tensorToAnyBuffer beta)
     (name := some "beta")
   let (t4c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.layerNorm (t := t3c) (seqLen := seqLen) (embedDim := embedDim)
+    (Runtime.Autograd.LibTorch.Tape.layerNorm (t := t3c) (seqLen := seqLen) (embedDim := embedDim)
       (h_seq_pos := seqLen_pos) (h_embed_pos := embedDim_pos) xIdc gIdc bIdc)
   let yCuda ← Utils.cudaValue (s := outShape) t4c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
+  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
     { s := outShape,
-      buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size outShape)) 1.0 }
+      buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size outShape)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t4c) yIdc seedCuda)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t4c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := outShape) gradsCuda xIdc
   let dGammaCuda ← Utils.cudaGrad (s := [embedDim]) gradsCuda gIdc
   let dBetaCuda ← Utils.cudaGrad (s := [embedDim]) gradsCuda bIdc

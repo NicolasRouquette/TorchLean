@@ -45,13 +45,6 @@ def tokenSample {β : Type} [TorchLean.Storage β]
         (fun row : Tensor β [sequenceLength + 1] => Tensor.ofFn fun position : Fin sequenceLength =>
           row[position.succ]) window }
 
-/-- One-hot encode every bounded token id along a new final vocabulary dimension. -/
-def oneHotInputs
-    {α : Type} [TorchLean.Storage α] [Zero α] [One α]
-    {shape : Shape} (vocabularySize : Nat) (tokens : Tensor (Fin vocabularySize) shape) :
-    Tensor α (shape.appendDim vocabularySize) :=
-  TorchLean.Tensor.oneHotIndices (α := α) vocabularySize tokens
-
 /--
 Build a one-hot causal-language-model sample over an arbitrary batch shape.
 
@@ -65,8 +58,8 @@ def oneHotSample
       ((batchShape.appendDim sequenceLength).appendDim vocabularySize)
       ((batchShape.appendDim sequenceLength).appendDim vocabularySize) :=
   let sample := tokenSample batchShape sequenceLength tokens
-  { input := oneHotInputs vocabularySize sample.input
-    target := oneHotInputs vocabularySize sample.target }
+  { input := Tensor.oneHotIndices vocabularySize sample.input
+    target := Tensor.oneHotIndices vocabularySize sample.target }
 
 /--
 Build an indexed-token causal-language-model batch from a tensor corpus.

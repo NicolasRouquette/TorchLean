@@ -127,15 +127,10 @@ def layer (config : Config) (inputWidth : Nat) :
                 Runtime.Autograd.Torch.scatterAdd (m := m) (α := α)
                   (s := [config.gridSize, inputWidth]) 0 1 acc basisRow
                   (Runtime.Autograd.Torch.dataConst (m := m) (α := α) index))
-              let flat ← Runtime.Autograd.Torch.reshape (m := m) (α := α)
-                (s₁ := [config.gridSize, inputWidth])
-                (s₂ := [config.gridSize * inputWidth])
-                out (by
-                  simp [Spec.Shape.size, Nat.mul_comm])
               Runtime.Autograd.Torch.reshape (m := m) (α := α)
-                (s₁ := [config.gridSize * inputWidth])
+                (s₁ := [config.gridSize, inputWidth])
                 (s₂ := [inputWidth * config.gridSize])
-                flat (by
+                out (by
                   simp [Spec.Shape.size, Nat.mul_comm])
             ) : m (Runtime.Autograd.Model.RefTy (m := m) (α := α)
               [inputWidth * config.gridSize]))

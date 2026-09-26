@@ -304,7 +304,7 @@ Concatenate two tensors along dimension 0.
 
 PyTorch comparison: `torch.cat([a, b], dim=0)`.
 -/
-def concatLeadingAxis {α : Type} [TorchLean.Storage α]
+def concat {α : Type} [TorchLean.Storage α]
     (s : TypedGraphSession α) [Context α]
   {n m : Nat} {sh : Shape}
   (a : TensorRef α (.dim n sh))
@@ -313,7 +313,7 @@ def concatLeadingAxis {α : Type} [TorchLean.Storage α]
   commitGraphM (α := α) s (β := TensorRef α (.dim (n + m) sh))
       (refs := #[a.identity?, b.identity?]) (fun {Γ} {ss} x nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.concatLeadingAxis (α := α) (Γ := Γ) (n := n) (m := m)
+      (Runtime.Autograd.TypedGraph.GraphM.concat (α := α) (Γ := Γ) (n := n) (m := m)
         (s := sh) { id := a.id } { id := b.id })
       ss g
     let ⟨ss', g'⟩ := st'
@@ -326,7 +326,7 @@ Slice a tensor along dimension 0.
 This returns `x[start : start+len]`. The proof argument `h` enforces bounds.
 PyTorch comparison: `x[start:start+len]` for tensors with a leading dimension.
 -/
-def sliceLeadingAxisRange {α : Type} [TorchLean.Storage α]
+def slice {α : Type} [TorchLean.Storage α]
     (s : TypedGraphSession α) [Zero α]
   {n : Nat} {sh : Shape}
   (x : TensorRef α (.dim n sh)) (start len : Nat) (h : start + len ≤ n) :
@@ -334,7 +334,7 @@ def sliceLeadingAxisRange {α : Type} [TorchLean.Storage α]
   commitGraphM (α := α) s (β := TensorRef α (.dim len sh)) (refs := #[x.identity?])
       (fun {Γ} {ss} xv nat g => do
     let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.sliceLeadingAxisRange (α := α) (Γ := Γ) (n := n) (s := sh)
+      (Runtime.Autograd.TypedGraph.GraphM.slice (α := α) (Γ := Γ) (n := n) (s := sh)
         { id := x.id } start len h)
       ss g
     let ⟨ss', g'⟩ := st'

@@ -6,8 +6,8 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Kernels
-public import NN.Runtime.Autograd.Engine.Cuda.ConvPool
+public import NN.Runtime.Autograd.Engine.LibTorch.Kernels
+public import NN.Runtime.Autograd.Engine.LibTorch.ConvPool
 public import NN.Tests.Runtime.Cuda.Utils
 
 /-!
@@ -26,9 +26,9 @@ namespace Tests
 namespace Cuda
 namespace DeterministicReductions
 
-open Runtime.Autograd.Cuda
+open Runtime.Autograd.LibTorch
 
--- Exact numerical buffer comparison, shared with `Stress` through `Cuda.Utils`.
+-- Exact numerical buffer comparison, shared with `Stress` through `LibTorch.Utils`.
 -- Signed-zero preservation is checked separately through `toBits`.
 open Tests.Cuda.Utils (assertFloatArrayEq)
 
@@ -98,20 +98,21 @@ def run : IO Unit := do
   let previousSettings : Option (Bool × Bool) ←
     match Buffer.runtimeStatus with
     | .nativeAvailable =>
-        pure (some (← LibTorch.getDeterministic, ← LibTorch.getCuDNNBenchmark))
+        pure (some (← Runtime.Autograd.LibTorch.getDeterministic, ←
+          Runtime.Autograd.LibTorch.getCuDNNBenchmark))
     | .notLinked => pure none
     | .nativeUnavailable =>
         throw <| IO.userError "deterministic reduction tests require a usable CUDA device"
   try
     if previousSettings.isSome then
-      LibTorch.setDeterministic true
+      Runtime.Autograd.LibTorch.setDeterministic true
     runScatterAddTwice
     runScatterAddBaseOrder
     runAvgPoolBwdTwice
   finally
     if let some (deterministic, benchmark) := previousSettings then
-      LibTorch.setDeterministic deterministic
-      LibTorch.setCuDNNBenchmark benchmark
+      Runtime.Autograd.LibTorch.setDeterministic deterministic
+      Runtime.Autograd.LibTorch.setCuDNNBenchmark benchmark
   IO.println "== CUDA deterministic reductions: OK =="
 
 end DeterministicReductions

@@ -25,7 +25,7 @@ open Spec TorchLean TorchLean.Tensor
 
 /-- Download dense CUDA gradients in reference order, retaining each buffer's stored shape. -/
 private def Internal.gradsOfRefsCuda {α : Type} [TorchLean.Storage α] [TensorTransfer α] :
-    {ss : List Shape} → Array Runtime.Autograd.Cuda.AnyBuffer → RefList (TensorRef α) ss →
+    {ss : List Shape} → Array Runtime.Autograd.LibTorch.AnyBuffer → RefList (TensorRef α) ss →
     IO (TorchLean.TensorPack α ss)
   | .nil, _, .nil => pure .nil
   | s :: ss, gradients, .cons ref refs => do
@@ -92,7 +92,7 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
   let finishRecording : IO Unit := do
     session.resetTape
     if options.usesCuda then
-      Runtime.Autograd.Cuda.Buffer.collectGarbage
+      Runtime.Autograd.LibTorch.Buffer.collectGarbage
   let backwardParameterGradients (lossRef : TensorRef α [])
       (parameterRefs : RefList (TensorRef α) paramShapes) :
       IO (TorchLean.TensorPack α paramShapes) := do
@@ -143,7 +143,7 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
     checkOptimizerPath .native
     let accumulator ← IO.mkRef
       (Std.HashMap.emptyWithCapacity : Internal.EagerSession.CudaGradMap)
-    let lossAccumulator ← IO.mkRef (none : Option Runtime.Autograd.Cuda.Buffer)
+    let lossAccumulator ← IO.mkRef (none : Option Runtime.Autograd.LibTorch.Buffer)
     let sampleWeight := 1.0 / batch.size.toFloat
     try
       for (inputs, dataInputs) in batch do
@@ -152,12 +152,12 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
           -- Weight before adding: finite losses can overflow an unnormalized batch sum.
           let tape ← session.cudaTape.get
           let sampleLoss ← okOrThrow <|
-            Runtime.Autograd.Cuda.Tape.requireValue tape lossRef.id []
+            Runtime.Autograd.LibTorch.Tape.requireValue tape lossRef.id []
           let previous ← lossAccumulator.get
-          let weighted := Runtime.Autograd.Cuda.Buffer.scale sampleLoss sampleWeight
+          let weighted := Runtime.Autograd.LibTorch.Buffer.scale sampleLoss sampleWeight
           let summed := match previous with
             | none => weighted
-            | some total => Runtime.Autograd.Cuda.Buffer.add total weighted
+            | some total => Runtime.Autograd.LibTorch.Buffer.add total weighted
           lossAccumulator.set (some summed)
           if let some previous := previous then
             Internal.EagerSession.releaseCudaBuffer previous

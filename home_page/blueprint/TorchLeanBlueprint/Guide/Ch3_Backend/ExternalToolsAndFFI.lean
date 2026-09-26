@@ -6,8 +6,8 @@ import NN.IR.Semantics
 import NN.Tensor
 import NN.Runtime.PyTorch.Import.TorchExport
 import NN.Verification.Util.Json
-import NN.Runtime.Autograd.Engine.Cuda.Buffer
-import NN.Runtime.Autograd.Engine.Cuda.Tape
+import NN.Runtime.Autograd.Engine.LibTorch.Buffer
+import NN.Runtime.Autograd.Engine.LibTorch.Tape
 import TorchLeanBlueprint.Bib
 import TorchLeanBlueprint.Roles
 
@@ -48,13 +48,13 @@ The common process helper is small:
 ```
 -- Require a successful process and one complete JSON
 -- document on stdout.
-def runJsonStdoutChecked
+def runJson
     (ctx : String)
     (cmd : String)
     (args : Array String)
     (cwd : Option String := some ".") :
     IO Json := do
-  let stdout ← runStdoutChecked ctx cmd args cwd
+  let stdout ← run ctx cmd args cwd
   match Json.parse stdout with
   | .ok value => pure value
   | .error message =>
@@ -62,8 +62,8 @@ def runJsonStdoutChecked
         s!"{ctx}: JSON parse error: {message}\nstdout:\n{stdout}"
 ```
 
-`runStdoutChecked` starts the process, captures its streams, and rejects a nonzero exit code with
-the command, arguments, status, and standard error in the diagnostic. `runJsonStdoutChecked` then
+`run` starts the process, captures its streams, and rejects a nonzero exit code with
+the command, arguments, status, and standard error in the diagnostic. `runJson` then
 requires all of standard output to be one JSON document.
 
 Suppose Python prints:
@@ -572,7 +572,8 @@ that native code can allocate, mutate, alias, or free. Parsing cannot establish 
 allocation remains live.
 
 The CUDA buffer boundary in
-{src "NN/Runtime/Autograd/Engine/Cuda/Buffer.lean"}[`Buffer.lean`] contains declarations such as:
+{src "NN/Runtime/Autograd/Engine/LibTorch/Buffer.lean"}[`Buffer.lean`] contains
+declarations such as:
 
 ```
 -- These declarations expose native ownership operations
@@ -602,7 +603,7 @@ native code must not consume the borrowed reference. Retaining it beyond the cal
 its own reference, with the matching release later. Getting this wrong produces a
 use-after-free or a leak that no type in the Lean source mentions. Native translation units also
 repeat critical length and geometry checks. The file-to-symbol map in
-`NN.Runtime.Autograd.Engine.Cuda.Trusted` identifies the native implementations behind these
+`NN.Runtime.Autograd.Engine.LibTorch.Trusted` identifies the native implementations behind these
 declarations.
 
 `never_extract` prevents closed-term extraction and common-subexpression elimination for calls
@@ -617,7 +618,7 @@ buffer as separate fields, so nothing structural forces them to agree, and the c
 ```lean (name := ffiValidate)
 -- Check the native allocation length against the
 -- shape-erased metadata.
-open Runtime.Autograd.Cuda in
+open Runtime.Autograd.LibTorch in
 #check @AnyBuffer.validate
 ```
 ```leanOutput ffiValidate
@@ -653,9 +654,9 @@ pure primitive with the checked `IO` entry point for the same host upload:
 ```lean (name := ffiToken)
 -- Compare the pure allocation primitive with the checked
 -- IO upload.
-open Runtime.Autograd.Cuda in
+open Runtime.Autograd.LibTorch in
 #check @Buffer.ofFloatArray
-open Runtime.Autograd.Cuda in
+open Runtime.Autograd.LibTorch in
 #check @Buffer.ofFloatArrayIO
 ```
 ```leanOutput ffiToken
@@ -728,9 +729,9 @@ threaded through a value that is still used:
 ```lean (name := ffiWorkspace)
 -- The returned keep buffer makes cleanup part of a used
 -- result dependency.
-open Runtime.Autograd.Cuda in
+open Runtime.Autograd.LibTorch in
 #check @Buffer.WithWorkspace.releaseWorkspaceThen
-open Runtime.Autograd.Cuda in
+open Runtime.Autograd.LibTorch in
 #check @Buffer.WithWorkspace.releaseAllThen
 ```
 ```leanOutput ffiWorkspace (whitespace := lax)

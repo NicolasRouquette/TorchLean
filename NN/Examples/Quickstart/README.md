@@ -70,7 +70,7 @@ let (gradient, value) ← autograd.grad loss x (value := true)
 `autograd.model` differentiates through a model:
 
 ```lean
-let state := autograd.model.initialState model
+let state := nn.initialState model
 let (gradient, lossValue) ←
   autograd.model.grad model lossFn state x target (value := true)
 IO.println s!"loss = {lossValue}"

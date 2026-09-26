@@ -990,7 +990,7 @@ tensor shapes, as these checks show:
 #check transposed
 ```
 ```leanOutput transposedType
-transposed : TorchLean.Tensor Float [3, 2]
+transposed : Tensor Float (Shape.ofList [3, 2])
 ```
 
 ```lean (name := productType)
@@ -999,7 +999,7 @@ transposed : TorchLean.Tensor Float [3, 2]
 #check product
 ```
 ```leanOutput productType
-product : TorchLean.Tensor Float [2, 4]
+product : Tensor Float (Shape.ofList [2, 4])
 ```
 
 For the definitions above, Lean infers:

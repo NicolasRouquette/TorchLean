@@ -159,7 +159,7 @@ Labels are stored as floats (common when exporting from NumPy); we validate each
 integer in `[0, classes)` before returning the stream. Input conversion and one-hot encoding
 happen only when a sample is requested.
 -/
-private def labeledFromLeadingAxis {α : Type} [TorchLean.Storage α]
+private def classificationSamples {α : Type} [TorchLean.Storage α]
     [Context α]
     [TorchLean.Runtime.FromFloat α]
     (tag : String) (classes : Nat)
@@ -451,7 +451,7 @@ opaque load {α : Type} [TorchLean.Storage α]
       | .ok labels =>
           let typedInputs : Tensor Float (source.input.prependDim source.sampleCount) := inputs
           let typedLabels : Tensor Float [source.sampleCount] := labels
-          match labeledFromLeadingAxis (α := α) (σ := source.input)
+          match classificationSamples (α := α) (σ := source.input)
               "LabeledSource.load" source.classCount typedInputs typedLabels with
           | .ok samples => pure samples
           | .error message =>

@@ -12,7 +12,7 @@ public import FloatLib.Floats.Formats.IEEE754.Native
 /-!
 # Native binary32 parity: the test behind the CUDA float32 contract
 
-`Runtime.Autograd.Cuda.Float32Contract.NativePrimitiveAgreement` records assumptions that
+`Runtime.Autograd.LibTorch.Float32Contract.NativePrimitiveAgreement` records assumptions that
 native `add`, `mul`, `div`, `fma`, and `sqrt` agree bit-for-bit with `ExecFloat.Binary 8 23`.
 This regression harness compares selected host results with that reference; passing a finite set of
 cases does not establish the universal contract or verify a GPU implementation.

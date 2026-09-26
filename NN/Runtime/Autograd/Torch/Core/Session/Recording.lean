@@ -80,7 +80,7 @@ def input {α : Type} [Storage α] [TensorTransfer α]
   if Config.device s.options == .cuda then
     let buffer ← CudaBridge.toAnyBuffer (α := α) (s := sh) v
     let id ← s.recordCudaPure fun tape =>
-      Runtime.Autograd.Cuda.Tape.leaf (t := tape) (value := buffer)
+      Runtime.Autograd.LibTorch.Tape.leaf (t := tape) (value := buffer)
         (name := name) (requiresGrad := requiresGrad)
     s.makeTensorRef id
   else
@@ -111,15 +111,15 @@ def detach {α : Type} [Storage α] [Context α] [TensorTransfer α]
       | some v => pure v
       | none => throw <| IO.userError "torch: detach: invalid tensor id (missing CUDA value)"
     if _h : stored.s = sh then
-      let stored' : Runtime.Autograd.Cuda.AnyBuffer := { s := sh, buf := stored.buf }
-      let node : Runtime.Autograd.Cuda.Node :=
+      let stored' : Runtime.Autograd.LibTorch.AnyBuffer := { s := sh, buf := stored.buf }
+      let node : Runtime.Autograd.LibTorch.Node :=
         { name := name
           value := stored'
           ownsValue := false
           requiresGrad := false
           parents := #[x.id]
           backward := fun _ => .ok #[] }
-      let id ← s.recordCudaPure fun tape => Runtime.Autograd.Cuda.Tape.addNode tape node
+      let id ← s.recordCudaPure fun tape => Runtime.Autograd.LibTorch.Tape.addNode tape node
       s.makeTensorRef id
     else
       throw <| IO.userError <|

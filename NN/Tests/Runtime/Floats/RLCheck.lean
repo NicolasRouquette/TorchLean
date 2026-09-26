@@ -265,7 +265,7 @@ def checkValueLearning : IO Unit := do
   let onlineQ (_ : Tensor Float [2]) : Tensor Float [3] := qPred
   let targetQ (_ : Tensor Float [2]) : Tensor Float [3] := qNext
   let replayLoss :=
-    Runtime.RL.DQN.minibatchMSELoss (α := Float) onlineQ targetQ 0.9 replayBatch
+    Runtime.RL.DQN.loss (α := Float) onlineQ targetQ 0.9 replayBatch (batch := true)
   assertApprox "replay dqn minibatch loss" replayLoss dqnLoss 1e-6
   let soft := Runtime.RL.DQN.softUpdateScalar (α := Float) 0.1 10.0 0.0
   assertApprox "soft target update" soft 1.0 1e-6
@@ -280,10 +280,10 @@ def checkValueLearning : IO Unit := do
   assertBool "truncated replay transition should bootstrap" (!truncatedTr.done)
   assertBool "terminated replay transition should not bootstrap" terminatedTr.done
   assertApprox "truncated replay dqn loss"
-    (Runtime.RL.DQN.minibatchMSELoss (α := Float) onlineQ targetQ 0.9 #[truncatedTr])
+    (Runtime.RL.DQN.loss (α := Float) onlineQ targetQ 0.9 #[truncatedTr] (batch := true))
     dqnLoss 1e-6
   assertApprox "terminated replay dqn loss"
-    (Runtime.RL.DQN.minibatchMSELoss (α := Float) onlineQ targetQ 0.9 #[terminatedTr])
+    (Runtime.RL.DQN.loss (α := Float) onlineQ targetQ 0.9 #[terminatedTr] (batch := true))
     ((2.0 - 1.0) * (2.0 - 1.0)) 1e-6
 
   let logits : Tensor Float [2] := [0.0, 1.0]

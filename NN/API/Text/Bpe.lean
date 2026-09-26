@@ -94,10 +94,6 @@ def bytesLatin1B : Array Nat :=
 def baseBytes : Array Nat :=
   bytesVisible ++ bytesLatin1A ++ bytesLatin1B
 
-/-- Boolean membership test used while constructing the byte escape table. -/
-def containsNat (xs : Array Nat) (x : Nat) : Bool :=
-  xs.any (fun y => y == x)
-
 /-- GPT-2 byte-to-Unicode code-point table for all 256 byte values. -/
 def byteCodeTable : Array Nat := Id.run do
   let mut codes := Array.replicate 256 0
@@ -105,7 +101,7 @@ def byteCodeTable : Array Nat := Id.run do
     codes := codes.set! b b
   let mut next := 0
   for b in Array.range 256 do
-    if !Internal.containsNat baseBytes b then
+    if !baseBytes.contains b then
       codes := codes.set! b (256 + next)
       next := next + 1
   return codes
@@ -619,18 +615,12 @@ def load (vocabularyFile mergesFile : System.FilePath)
   if progress then
     IO.eprintln
       s!"{label}: parsing BPE vocab.json chars={vocabularyText.length}"
-  let vocabulary ←
-    match Internal.parseVocabularyText vocabularyText with
-    | .ok parsed => pure parsed
-    | .error message => throw <| IO.userError message
+  let vocabulary ← IO.ofExcept <| Internal.parseVocabularyText vocabularyText
   if progress then
     IO.eprintln s!"{label}: parsed BPE vocabulary entries={vocabulary.size}"
     IO.eprintln s!"{label}: reading BPE merges.txt"
   let mergesText ← IO.FS.readFile mergesFile
-  let merges ←
-    match Internal.parseMerges mergesText with
-    | .ok parsed => pure parsed
-    | .error message => throw <| IO.userError message
+  let merges ← IO.ofExcept <| Internal.parseMerges mergesText
   if progress then
     IO.eprintln s!"{label}: parsed BPE merges={merges.size}"
     IO.eprintln s!"{label}: building BPE lookup maps"

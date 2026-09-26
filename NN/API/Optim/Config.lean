@@ -86,15 +86,7 @@ structure Adam.Config where
 deriving Repr
 
 /-- Public AdamW optimizer configuration. -/
-structure AdamW.Config where
-  /-- Learning rate. -/
-  learningRate : Float
-  /-- First moment coefficient. -/
-  beta1 : Float := 0.9
-  /-- Second moment coefficient. -/
-  beta2 : Float := 0.999
-  /-- Numerical stabilizer. -/
-  epsilon : Float := 1e-8
+structure AdamW.Config extends Adam.Config where
   /-- Decoupled weight decay. -/
   weightDecay : Float := 0.01
 deriving Repr

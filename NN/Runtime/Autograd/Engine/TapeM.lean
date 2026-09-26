@@ -286,15 +286,15 @@ def batchNorm {α : Type} [TorchLean.Storage α] [Context α] [DecidableRel ((·
   set t'
   pure id
 
-/-- StateT wrapper around `Tape.multiHeadAttention`. PyTorch comparison:
+/-- StateT wrapper around `Tape.attention`. PyTorch comparison:
   `torch.nn.MultiheadAttention` / scaled dot-product attention. -/
-def multiHeadAttention {α : Type} [TorchLean.Storage α] [Context α]
+def attention {α : Type} [TorchLean.Storage α] [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (wqId wkId wvId woId xId : Nat)
   (mask : Option (Tensor Bool [n, n]) := none) : TapeM α Nat := do
   let t ← get
-  let (t', id) ← liftM (Tape.multiHeadAttention (t := t)
+  let (t', id) ← liftM (Tape.attention (t := t)
     (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)
     wqId wkId wvId woId xId mask)
   set t'

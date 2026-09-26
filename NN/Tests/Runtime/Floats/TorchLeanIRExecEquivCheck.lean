@@ -280,10 +280,10 @@ def checkBatchedAttentionLowering : IO Unit := do
     let prog :
         Runtime.Autograd.Model.Program Float (paramShapes ++ [inputShape]) inputShape :=
       fun {m} _ _ wqR wkR wvR woR xR =>
-        Runtime.Autograd.Torch.batchedMultiHeadAttention
-          (m := m) (α := Float) (batch := batch) (n := n)
+        Runtime.Autograd.Torch.attention
+          (m := m) (α := Float) (batch := some batch) (n := n)
           (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
-          hBatch hSeq wqR wkR wvR woR xR mask
+          hSeq wqR wkR wvR woR xR mask (hBatch := hBatch)
 
     let lowered ←
       match NN.Verification.Builtin.lowerForwardToIR

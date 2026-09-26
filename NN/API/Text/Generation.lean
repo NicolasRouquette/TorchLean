@@ -344,29 +344,6 @@ def autoregressiveTokenIds {vocabularySize promptLength : Nat}
       tokens := Tensor.set tokens (outputIndex, PUnit.unit) nextToken.val
     return tokens
 
-/-!
-The next six declarations come in three pairs: an operation on `(sequenceLength × vocabularySize)`
-logits, and the same operation on a batch, which takes an extra `batchIndex` and works on one row.
-The batched member of a pair is the unbatched name with a `batch` prefix, always in that position,
-so knowing one spelling gives you the other.
--/
-
-/-- Extract the vocabulary-score row at one statically valid sequence position. -/
-def logitScoresAt {α : Type} [TorchLean.Storage α] {sequenceLength vocabularySize : Nat}
-    (logits : Tensor α [sequenceLength, vocabularySize])
-    (position : Fin sequenceLength) : Tensor α [vocabularySize] :=
-  Tensor.get logits position
-
-/-- Extract a vocabulary-score row from batched logits. -/
-def batchLogitScoresAt
-    {α : Type} [TorchLean.Storage α]
-    {batchSize sequenceLength vocabularySize : Nat}
-    (logits : Tensor α [batchSize, sequenceLength, vocabularySize])
-    (batchIndex : Fin batchSize)
-    (position : Fin sequenceLength) :
-    Tensor α [vocabularySize] :=
-  logitScoresAt (Tensor.get logits batchIndex) position
-
 /--
 Decode a matrix of token logits by taking `argmax` independently at each sequence position.
 
@@ -390,15 +367,6 @@ def decodeArgmaxLogits {α : Type} [TorchLean.Storage α] [LT α]
     (logits : Tensor α [sequenceLength, vocabularySize]) :
     String :=
   tokenizer.decode ((argmaxTokens (α := α) logits).to (Array Nat))
-
-/-- Extract `batchIndex` from batched logits and return the per-position argmax token ids. -/
-def batchArgmaxTokens {α : Type} [TorchLean.Storage α] [LT α]
-    [DecidableRel ((· > ·) : α → α → Prop)]
-    {batchSize sequenceLength vocabularySize : Nat}
-    (logits : Tensor α [batchSize, sequenceLength, vocabularySize])
-    (batchIndex : Fin batchSize) :
-    Tensor Nat [sequenceLength] :=
-  argmaxTokens (α := α) (Tensor.get logits batchIndex)
 
 end text
 end TorchLean

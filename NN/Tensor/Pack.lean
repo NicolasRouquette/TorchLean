@@ -125,6 +125,16 @@ def map (f : ∀ {shape : Shape}, TorchLean.Tensor α shape → TorchLean.Tensor
   | [], .nil => .nil
   | _ :: ss, .cons x xs => .cons (f x) (map (f := f) (ss := ss) xs)
 
+/-- Apply a shape-preserving effectful function to each tensor, from left to right. -/
+def mapM {m : Type → Type} [Monad m]
+    (f : ∀ {shape : Shape}, Tensor α shape → m (Tensor β shape)) :
+    {shapes : List Shape} → TensorPack α shapes → m (TensorPack β shapes)
+  | [], .nil => pure .nil
+  | _ :: _, .cons x xs => do
+      let y ← f x
+      let ys ← mapM f xs
+      pure (.cons y ys)
+
 /-- Combine two packs pointwise with a shape-preserving binary function. -/
 def zipWith
     (f : ∀ {shape : Shape},

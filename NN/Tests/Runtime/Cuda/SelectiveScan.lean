@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Kernels
+public import NN.Runtime.Autograd.Engine.LibTorch.Kernels
 public import NN.Tests.Runtime.Cuda.Utils
 
 /-!
@@ -22,7 +22,7 @@ namespace Tests
 namespace Cuda
 namespace SelectiveScan
 
-open Runtime.Autograd.Cuda
+open Runtime.Autograd.LibTorch
 
 -- Shared buffer assertions check tolerances and reject nonfinite values.
 open Tests.Cuda.Utils (floatArray assertFloatArrayApprox)

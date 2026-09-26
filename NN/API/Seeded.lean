@@ -47,7 +47,7 @@ export Runtime.Autograd.Model.F
    addB mulB
    embedding mean
    dropoutSeeded
-   fft rfft1d irfft1d selectiveScanDiag selectiveScanDiagVar spectralConv1dRfft SpectralPath)
+   fft rfft irfft selectiveScanDiag selectiveScanDiagVar spectralConv SpectralPath)
 end functional
 
 open Spec TorchLean
@@ -549,7 +549,12 @@ def groupNorm {d channels : Nat}
       (batchShape.concat ((spatial.to Shape).prependDim channels))) :=
   pure <| Impl.groupNorm batchShape spatial groups (eps := eps) (affine := affine) (bias := bias)
 
-/-- Build an embedding lookup layer from a freshly seeded embedding table. -/
+/--
+Build an embedding layer for dense vocabulary weights.
+
+One-hot inputs select a table row; other inputs form weighted combinations of rows.
+For token indices, use `embedding` instead, without constructing one-hot tensors.
+-/
 def oneHotEmbedding (vocabularySize embeddingWidth : Nat)
     (config : Embedding.Config := {})
     (batchShape : Shape := []) :
@@ -685,18 +690,18 @@ Example:
 -- Two heads of width 4 give an internal attention width of 8, which here happens to match the
 -- model width; the two are independent, so `headCount * headWidth` may differ from it.
 def model : nn.Builder (nn.Sequential [4, 8] [4, 8]) :=
-  nn.multiHeadAttention { headCount := 2, headWidth := 4 }
+  nn.attention { headCount := 2, headWidth := 4 }
     (sequenceLength := 4) (modelWidth := 8)
 
 -- Causal masking is a separate argument rather than a config field, because the mask is a value
 -- with the sequence length in its type.
 def causal : nn.Builder (nn.Sequential [4, 8] [4, 8]) :=
-  nn.multiHeadAttention { headCount := 2, headWidth := 4 }
+  nn.attention { headCount := 2, headWidth := 4 }
     (mask := some (Spec.causalMask 4)) (sequenceLength := 4) (modelWidth := 8)
 ```
 -/
-def multiHeadAttention {sequenceLength modelWidth : Nat}
-    (config : MultiHeadAttention.Config)
+def attention {sequenceLength modelWidth : Nat}
+    (config : Attention.Options)
     (mask : Option (Tensor Bool [sequenceLength, sequenceLength]) := none)
     (batchShape : Shape := []) :
     Builder (Sequential
@@ -718,7 +723,7 @@ def multiHeadAttention {sequenceLength modelWidth : Nat}
           withInitializationSeed projectionInitialization fun valueWeightSeed =>
             withInitializationSeed outputInitialization fun outputWeightSeed =>
               withOptionalDropoutSeed config.dropout? fun dropoutSeed =>
-                pure <| Impl.multiHeadAttention batchShape
+                pure <| Impl.attention batchShape
                   (sequenceLength := sequenceLength) (modelWidth := modelWidth)
                   config
                   (queryWeightSeed := queryWeightSeed)

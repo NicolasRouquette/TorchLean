@@ -63,7 +63,7 @@ def checkEvaluationMode : IO Unit := do
 
 /-- Reject a shape whose element count wraps to zero in the CUDA size ABI. -/
 def checkBufferSizeBoundary : IO Unit := do
-  let buffer := Runtime.Autograd.Cuda.Buffer.zeros 0
+  let buffer := Runtime.Autograd.LibTorch.Buffer.zeros 0
   let check := Runtime.Autograd.Torch.Internal.EagerSession.checkCudaAnyBufferSize
   check "empty buffer" { s := [0], buf := buffer }
   let rejected ← try
@@ -76,7 +76,7 @@ def checkBufferSizeBoundary : IO Unit := do
 /-- A public CPU typed-graph session must read the current value of a CUDA parameter. -/
 def checkTypedGraphCudaParameter : IO Unit := do
   let parameter ← Runtime.Autograd.Torch.Param.Internal.create (Tensor.scalar 1.0)
-  let current := Runtime.Autograd.Cuda.Buffer.full 1 2.0
+  let current := Runtime.Autograd.LibTorch.Buffer.full 1 2.0
   Runtime.Autograd.Torch.Internal.setParamCudaValue parameter { s := [], buf := current }
   let session ← Runtime.Autograd.Model.Session.new (α := Float) { execution := .typedGraph }
   let reference ← session.use parameter
@@ -215,7 +215,7 @@ def checkAdamEpsilon : IO Unit := do
     let config ← IO.mkRef (none : Option CudaAdamConfig)
     let state ← IO.mkRef (Std.HashMap.emptyWithCapacity : CudaAdamState)
     discard <| session.use parameter
-    let zero ← Runtime.Autograd.Cuda.Buffer.zerosIO 1
+    let zero ← Runtime.Autograd.LibTorch.Buffer.zerosIO 1
     let gradients := (Std.HashMap.emptyWithCapacity : CudaGradMap)
       |>.insert 0 { s := [], buf := zero }
     let step := fun (epsilon : Float) =>
@@ -224,12 +224,12 @@ def checkAdamEpsilon : IO Unit := do
       | .adamW => session.adamWStepAllCudaMap config state 0.1 0.0 0.9 0.999 epsilon gradients
     try
       for epsilon in #[1e-50, 1e50] do
-        let before ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+        let before ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
         let rejected ← try
           step epsilon
           pure false
         catch error => pure (error.toString.contains "float32")
-        let after ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+        let after ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
         unless rejected && (← config.get).isNone && (← state.get).size == 0 &&
             after.allocCount == before.allocCount do
           throw <| IO.userError "CUDA Adam accepted epsilon outside the float32 denominator range"
@@ -245,7 +245,7 @@ def checkAdamEpsilon : IO Unit := do
       unless entry.t == 1 do
         throw <| IO.userError "valid CUDA Adam epsilon produced an incorrect step count"
       for buffer in #[entry.m, entry.v] do
-        let values ← Runtime.Autograd.Cuda.Buffer.toFloatArrayIO buffer
+        let values ← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO buffer
         unless values.size == 1 && values.get! 0 == 0.0 do
           throw <| IO.userError "CUDA Adam zero-gradient update produced invalid moments"
     finally
@@ -260,12 +260,12 @@ def checkAdamCheckpointEpsilon : IO Unit := do
       { shapes := #[[]], requiresGrad := #[true] }
     for kind in #[CudaAdamKind.adam, CudaAdamKind.adamW] do
       let config ← IO.mkRef (none : Option CudaAdamConfig)
-      let m ← Runtime.Autograd.Cuda.Buffer.fullIO 1 1.25
-      let v ← Runtime.Autograd.Cuda.Buffer.fullIO 1 2.5
+      let m ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 1.25
+      let v ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 2.5
       let state ← IO.mkRef <| (Std.HashMap.emptyWithCapacity : CudaAdamState)
         |>.insert 0 { m, v, t := 7 }
-      let mBytes ← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO m
-      let vBytes ← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO v
+      let mBytes ← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO m
+      let vBytes ← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO v
       try
         for epsilon in #[1e-50, 1e50, 1e-8] do
           let candidate : CudaAdamConfig :=
@@ -280,14 +280,14 @@ def checkAdamCheckpointEpsilon : IO Unit := do
               CheckpointIO.writeNat64 checkpointName handle value
             handle.write mBytes
             handle.write vBytes
-          let before ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+          let before ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
           let rejected ← try
             readCudaAdamStateFloat32 path schema config state
             pure false
           catch error =>
             unless error.toString.contains "float32" do throw error
             pure true
-          let after ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+          let after ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
           if epsilon == 1e-8 then
             let some restored := ← config.get
               | throw <| IO.userError "valid CUDA Adam checkpoint omitted its configuration"
@@ -299,8 +299,8 @@ def checkAdamCheckpointEpsilon : IO Unit := do
           let some entry := (← state.get).get? 0
             | throw <| IO.userError "CUDA Adam checkpoint discarded live moments"
           unless entry.t == 7 &&
-              (← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.m) == mBytes &&
-              (← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.v) == vBytes do
+              (← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.m) == mBytes &&
+              (← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.v) == vBytes do
             throw <| IO.userError "CUDA Adam checkpoint changed retained moment values"
       finally
         releaseCudaAdamState (← state.get)

@@ -24,13 +24,6 @@ namespace TorchLean.Tensor.Internal.Report.Impl
 
 open Lean Elab Tactic Meta
 
-/-!
-`instantiateOuterLets` is not defined here. It is `Tensor.Internal.instantiateOuterLets` from
-`NN/Tactic/Einops/Proof.lean`, which this module already imports, and which had the
-identical four-line body.
-`Report.Impl` sits inside `Tensor.Internal`, so the uses below find it by walking outward.
--/
-
 /-- Normalize reflected report data after instantiating pending metavariables. -/
 def reportWhnf (expression : Expr) : MetaM Expr := do
   withTransparency .all <| whnf (← instantiateMVars expression)
@@ -137,11 +130,6 @@ def formatShape (shape : List Nat) : String :=
 def formatShapes (shapes : List (List Nat)) : String :=
   "[" ++ String.intercalate ", " (shapes.map formatShape) ++ "]"
 
-/-- Compute the number of scalar entries described by a concrete shape. -/
-def shapeSize : List Nat → Nat
-  | [] => 1
-  | dimension :: shape => dimension * shapeSize shape
-
 /-- Pretty-print an elaborated type using the current local context. -/
 def formatType (typeExpression : Expr) : MetaM String := do
   return (← ppExpr (← instantiateMVars typeExpression)).pretty
@@ -149,13 +137,6 @@ def formatType (typeExpression : Expr) : MetaM String := do
 /-- Infer and pretty-print the type of an elaborated expression. -/
 def inferredType (expression : Expr) : MetaM String := do
   formatType (← inferType expression)
-
-/-- Test whether a reflected term contains an application of a named constant. -/
-def containsConstant (expression : Expr) (name : Name) : Bool :=
-  (expression.find? fun subterm =>
-    match subterm.getAppFn with
-    | .const candidate _ => candidate == name
-    | _ => false).isSome
 
 /-- Pretty-print one concrete tensor type without evaluating a tensor value. -/
 def concreteTensorType (scalarType : Expr)
@@ -177,10 +158,7 @@ def typeCheckSection
 def performanceFooter : List String :=
   reportSection "Performance note"
     ["Work estimates use only static shapes; `einops?` never executes or \
-        times user terms.",
-     "Native benchmark:",
-     "  lake build performanceComparison",
-     "  ./.lake/build/bin/performanceComparison field 0"]
+        times user terms."]
 
 /-- Render a flat logical-axis list. -/
 def formatAxes (axes : List (Expr × String)) : String :=

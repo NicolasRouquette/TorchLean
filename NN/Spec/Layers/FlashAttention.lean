@@ -16,7 +16,7 @@ the attention computation and maintains online softmax summaries so the full `n 
 matrix does not need to be materialized. TorchLean models that idea in three layers:
 
 - this file gives the proof layer semantic contract for a fused FlashAttention operator;
-- the runtime path is the LibTorch CUDA attention bridge (`NN/Backend/Attention.lean`,
+- the runtime path is the LibTorch CUDA attention bridge (`NN/Backend/LibTorch.lean`,
   `libtorch.direct_attention`);
 - that FFI boundary is documented separately because Lean does not verify LibTorch or CUDA code.
 

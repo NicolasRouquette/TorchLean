@@ -8,6 +8,7 @@ End-to-end PPO example: train an actor-critic on a Lean-native GridWorld environ
 
 module
 
+public import Mathlib.Data.Nat.Dist
 public import NN.API
 public import NN.Examples.Support
 public import NN.Runtime.RL.Artifacts.GridWorld
@@ -50,8 +51,9 @@ environment or an external sampler.
 Run (from the repo root):
 
 ```bash
-lake -R -K cuda=true build
-lake -R -K cuda=true exe torchlean ppo_gridworld --device cuda --updates 1 --eval-every 1 \
+scripts/lake.sh -Kcuda=true build
+scripts/lake.sh -Kcuda=true exe torchlean ppo_gridworld --device cuda \
+    --updates 1 --eval-every 1 \
   --eval-episodes 1 --eval-max-steps 8
 ```
 
@@ -88,7 +90,6 @@ References (primary):
 @[expose] public section
 
 open Spec TorchLean TorchLean.Tensor
-open TorchLean
 
 namespace NN.Examples.Models.RL.PPOGridWorld
 
@@ -217,15 +218,11 @@ def startState : Fin stateCount :=
 def observationOfState (s : Fin stateCount) : Tensor Float observation :=
   Tensor.oneHot (α := Float) stateCount s
 
-/-- Absolute difference on natural-number coordinates, returned as a `Float`. -/
-def coordDist (a b : Nat) : Float :=
-  Float.ofNat (if a ≤ b then b - a else a - b)
-
 /-- Manhattan distance to the goal. -/
 def goalDistance (pos : Spec.RL.Envs.GridWorld.State width height) : Float :=
   let (x, y) := pos
   let (goalX, goalY) := goalPos
-  coordDist x.val goalX.val + coordDist y.val goalY.val
+  Float.ofNat (Nat.dist x.val goalX.val) + Float.ofNat (Nat.dist y.val goalY.val)
 
 /--
 Deterministic GridWorld transition function with dense progress rewards.
@@ -313,7 +310,7 @@ def critic (batchShape : Shape := []) :
 
 /-- Collect a fixed-horizon PPO rollout from the Lean-native environment using a checked session.
 
-This is an example-local rollout operation around `rl.ppo.collectRolloutFromSession` that packages:
+This is an example-local rollout operation around `rl.ppo.collect` that packages:
 - a `Spec.RL.Env` as a `rl.session.CheckedSession`, and
 - the (actor, critic) prediction functions at observation shape.
 -/
@@ -327,7 +324,7 @@ def collectRolloutFromEnvironment
     rl.session.ofEnv
       (State := Fin stateCount) (obsShape := observation) (nActions := actionCount)
       env contract (resetOnDone := resetOnDone)
-  rl.ppo.collectRolloutFromSession
+  rl.ppo.collect
     (α := Float) (obsShape := observation) (nActions := actionCount)
     (horizon := horizon)
     sess (castObservation := id) (castReward := id)
@@ -344,7 +341,7 @@ Evaluation APIs live in `rl.eval`.
 ## Main Training Loop
 -/
 
-/-- Entry point for `lake exe torchlean ppo_gridworld`.
+/-- Entry point for `scripts/lake.sh exe torchlean ppo_gridworld`.
 
 This executable:
 - runs PPO updates against a Lean-native GridWorld environment,
@@ -355,11 +352,12 @@ This executable:
 def main (args : List String) : IO UInt32 := do
   Module.Command.run
     (config := {
-      banner? := some <| Support.bannerWithDeviceDetails
+      banner? := some <| Support.banner
         exeName
         s!"PPO on Lean-native GridWorld ({width}x{height}, horizon={horizon})"
-        "  env: pure Lean dynamics + boundary contract check + formal MDP validity proof available"
-      usage? := some <| rl.cli.PPOOptions.usage exeName #[
+        (details := some <| "  env: pure Lean dynamics + boundary contract check " ++
+          "+ formal MDP validity proof available")
+      usage? := some <| rl.cli.Options.usage exeName #[
         "",
         "Artifacts:",
         "  --policy PATH      greedy-policy JSON output",
@@ -374,7 +372,7 @@ def main (args : List String) : IO UInt32 := do
       let (pathPath, rest) ← CLI.orThrow exeName <|
         CLI.takePathFlag rest "path" (default := Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldPath)
       let (ppo, rest) ← CLI.orThrow exeName <|
-        rl.cli.PPOOptions.parse
+        rl.cli.Options.parse
           exeName rest Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldTrainLog
           (defaultUpdateCount := maxUpdates)
           (defaultEvaluationInterval := defaultEvaluationInterval)
@@ -382,10 +380,6 @@ def main (args : List String) : IO UInt32 := do
           (defaultMaximumEvaluationSteps := 128)
       CLI.orThrow exeName <| CLI.checkNoArgs rest
 
-      let updateCount : Nat := ppo.updateCount
-      let evaluationInterval : Nat := ppo.evaluationInterval
-      let evaluationEpisodes : Nat := ppo.evaluationEpisodes
-      let maximumEvaluationSteps : Nat := ppo.maximumEvaluationSteps
 
       let seedActor ← rand.nextSeedGlobal
       let seedCritic ← rand.nextSeedGlobal
@@ -431,8 +425,8 @@ def main (args : List String) : IO UInt32 := do
         rl.eval.averageEpisodeTotalReward
           (obsShape := observation) (nActions := actionCount)
           evaluationSessionAt policyLogits0 (baseSeed := runtime.seed)
-          (episodes := evaluationEpisodes)
-          (maxSteps := maximumEvaluationSteps)
+          (episodes := ppo.evaluationEpisodes)
+          (maxSteps := ppo.maximumEvaluationSteps)
       curve := curve.push 0 avg0
       IO.println s!"  eval(step=0) avg_return={avg0}"
 
@@ -443,9 +437,9 @@ def main (args : List String) : IO UInt32 := do
           (rl.eval.greedyActionFromLogits
             (α := Float) (nActions := actionCount) logits).val)
       let pathBeforeStates ←
-        rl.eval.episodeSessPath (obsShape := observation) (nActions := actionCount)
+        rl.eval.episodePath (obsShape := observation) (nActions := actionCount)
           (evaluationSessionAt runtime.seed) policyLogits0
-          (maxSteps := maximumEvaluationSteps)
+          (maxSteps := ppo.maximumEvaluationSteps)
       let pathBefore : Array (Nat × Nat) :=
         pathBeforeStates.map (fun s =>
           let (x, y) :=
@@ -453,8 +447,8 @@ def main (args : List String) : IO UInt32 := do
           (x.val, y.val))
 
       curve ← rl.ppo.train discountFactor gaeLambda
-        { updates := updateCount, epochs := updateEpochs,
-          evaluationEvery := evaluationInterval, seed := runtime.seed }
+        { updates := ppo.updateCount, epochs := updateEpochs,
+          evaluationEvery := ppo.evaluationInterval, seed := runtime.seed }
         (fun _update rngSeed rngCounter => do
             let psAll ← rl.ppo.state (α := Float) m
             let predictLogits : Tensor Float observation → Tensor Float [actionCount] :=
@@ -475,8 +469,8 @@ def main (args : List String) : IO UInt32 := do
               rl.eval.averageEpisodeTotalReward
                 (obsShape := observation) (nActions := actionCount)
                 evaluationSessionAt policyLogits (baseSeed := runtime.seed)
-                (episodes := evaluationEpisodes)
-                (maxSteps := maximumEvaluationSteps)
+                (episodes := ppo.evaluationEpisodes)
+                (maxSteps := ppo.maximumEvaluationSteps)
             IO.println s!"  update={completedUpdates} avg_return={avg}"
             pure (avg, false))
         curve
@@ -492,9 +486,9 @@ def main (args : List String) : IO UInt32 := do
           (rl.eval.greedyActionFromLogits
             (α := Float) (nActions := actionCount) logits).val)
       let pathAfterStates ←
-        rl.eval.episodeSessPath (obsShape := observation) (nActions := actionCount)
+        rl.eval.episodePath (obsShape := observation) (nActions := actionCount)
           (evaluationSessionAt runtime.seed) policyLogitsF
-          (maxSteps := maximumEvaluationSteps)
+          (maxSteps := ppo.maximumEvaluationSteps)
       let pathAfter : Array (Nat × Nat) :=
         pathAfterStates.map (fun s =>
           let (x, y) :=
@@ -513,10 +507,10 @@ def main (args : List String) : IO UInt32 := do
           s!"gamma={discountFactor}",
           s!"lambda={gaeLambda}",
           s!"lr={learningRate}",
-          s!"updates={updateCount}",
-          s!"eval_every={evaluationInterval}",
-          s!"eval_episodes={evaluationEpisodes}",
-          s!"eval_max_steps={maximumEvaluationSteps}",
+          s!"updates={ppo.updateCount}",
+          s!"eval_every={ppo.evaluationInterval}",
+          s!"eval_episodes={ppo.evaluationEpisodes}",
+          s!"eval_max_steps={ppo.maximumEvaluationSteps}",
           Support.deviceNote runtime
         ]
 

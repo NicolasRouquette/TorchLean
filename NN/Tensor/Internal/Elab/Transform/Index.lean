@@ -127,12 +127,11 @@ partial def flatIndexProgramCost (map : Expr) (fuel : Nat := 1024) : Nat :=
           0
 
 /--
-Maximum inherited flat-index cost that remains cheaper to fuse than to
-materialize through the native transform kernel.
+Heuristic cost limit for fusing an inherited flat-index map.
 
 The weighted estimate reflects native arithmetic cost: quotient and remainder
 are more expensive than addition or multiplication. The threshold is
-independent of tensor rank and transformation kind.
+independent of tensor rank and transformation kind. It is not a timing guarantee.
 -/
 def maxFusedFlatIndexCost : Nat := 48
 

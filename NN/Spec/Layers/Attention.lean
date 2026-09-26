@@ -174,7 +174,7 @@ ordinary finite-scalar encoding of softmax with true `-∞` masked logits.
 The maximum and denominator are computed only over allowed entries. Subtracting the allowed-row
 maximum gives the usual numerically stable softmax formula. If every mask entry is false, the result
 is the zero vector, matching PyTorch SDPA and the LibTorch CUDA attention bridge
-(`NN/Backend/Attention.lean`).
+(`NN/Backend/LibTorch.lean`).
 -/
 def hardMaskedSoftmaxVecSpec {n : Nat}
     (scores : Tensor α [n])

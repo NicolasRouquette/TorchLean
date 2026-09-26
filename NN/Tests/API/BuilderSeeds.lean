@@ -293,7 +293,7 @@ def run : IO Unit := do
       11
   expectCounter "invalid attention dimensions consume no keys" 0 <|
     counterAfter
-      (nn.multiHeadAttention
+      (nn.attention
         (sequenceLength := 3) (modelWidth := 2)
         { headCount := 0, headWidth := 2 })
       11

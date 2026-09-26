@@ -174,14 +174,14 @@ def run : IO Unit := do
       Trainer.Scheduler.step 1e300 2,
       Trainer.Scheduler.exponential 1e300 0.9,
       Trainer.Scheduler.warmupCosine 1e300 0.0 2 4] do
-    unless (Trainer.Scheduler.validate schedule).isOk &&
-        !(Trainer.Scheduler.validateFloat32 schedule).isOk do
+    unless schedule.validate.isOk &&
+        !(schedule.validate (round := fun value => value.toFloat32.toFloat)).isOk do
       fail "schedule must reject a rate that overflows binary32"
-  unless (Trainer.Scheduler.validateFloat32
-      (Trainer.Scheduler.warmupCosine 0.01 0.001 2 4)).isOk do
+  unless ((Trainer.Scheduler.warmupCosine 0.01 0.001 2 4).validate
+      (round := fun value => value.toFloat32.toFloat)).isOk do
     fail "ordinary warmup schedule should be valid in binary32"
   let peak := 1e308
-  unless Trainer.Scheduler.learningRateAt
+  unless Trainer.Scheduler.Config.rate
       (Trainer.Scheduler.warmupCosine peak 0.0 2 4) 1 == peak do
     fail "the final warmup update must reach a finite peak without intermediate overflow"
 

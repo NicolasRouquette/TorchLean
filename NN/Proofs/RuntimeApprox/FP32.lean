@@ -8,7 +8,6 @@ module
 
 public import NN.Floats.FP32.Notation
 public import NN.Proofs.RuntimeApprox.Core.Tolerance
-import Mathlib.Algebra.Order.Algebra
 import NN.Floats.FP32.Error
 
 /-!

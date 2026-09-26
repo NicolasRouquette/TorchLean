@@ -216,7 +216,7 @@ def usage (exeName : String) : String :=
     , ""
     , "Runtime flags:"
     , "  -h, --help"
-    , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
+    , "  --device auto|cpu|gpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "      cpu and cuda are implemented by the current eager runtime;"
     , "      other names are planning targets and fail until a runtime is registered."
     , "  --arithmetic native|ieee|complex"

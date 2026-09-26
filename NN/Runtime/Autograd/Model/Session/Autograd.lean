@@ -23,6 +23,7 @@ namespace Autograd
 namespace Model
 
 open Spec TorchLean
+open Runtime.Autograd.Torch.Internal (EagerSession)
 open TorchLean TorchLean.Tensor
 
 namespace Session
@@ -38,7 +39,7 @@ def backwardDenseAll {α : Type} [TorchLean.Storage α] (s : Session α) [Add α
   IO (Array (Spec.SomeTensor α)) := do
   match s.state with
   | .eager sess =>
-      sess.inner.validateTensorRef out
+      sess.validateTensorRef out
       EagerSession.backwardDenseAll (α := α) sess (sh := sh) out seed
   | .typedGraph sess =>
       sess.validateTensorRef out
@@ -100,7 +101,7 @@ def grad {α : Type} [TorchLean.Storage α] (s : Session α) {sh : Shape}
   (grads : Array (Spec.SomeTensor α)) (x : Runtime.Autograd.Torch.TensorRef α sh) :
   IO (Tensor α sh) := do
   match s.state with
-  | .eager sess => sess.inner.validateTensorRef x
+  | .eager sess => sess.validateTensorRef x
   | .typedGraph sess => sess.validateTensorRef x
   let gAny ← match grads[x.id]? with
     | some g => pure g

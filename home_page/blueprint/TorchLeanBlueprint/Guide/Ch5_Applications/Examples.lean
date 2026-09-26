@@ -277,7 +277,7 @@ def exModel : nn.Sequential [2] [1] :=
 
 #eval show IO Unit from do
   let state : autograd.model.State exModel Float :=
-    autograd.model.initialState exModel
+    nn.initialState exModel
   let input : Tensor Float [2] := [0.5, -1.0]
   let target : Tensor Float [1] := [0.25]
   let (g, loss) ← autograd.model.grad exModel
@@ -311,7 +311,7 @@ gradient; the following calculation uses the negative sign from this example's b
 -- gradient sign.
 #eval show IO Unit from do
   let state : autograd.model.State exModel Float :=
-    autograd.model.initialState exModel
+    nn.initialState exModel
   let input : Tensor Float [2] := [0.5, -1.0]
   let target : Tensor Float [1] := [0.25]
   let (_, loss) ← autograd.model.grad exModel

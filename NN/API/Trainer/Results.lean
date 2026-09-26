@@ -8,7 +8,7 @@ module
 
 public import NN.API.Verification.Core
 public import NN.API.Trainer.Core -- shake: keep
-public import NN.API.Trainer.BatchInput
+public import NN.Runtime.BatchInput
 
 /-!
 # Training Results
@@ -107,10 +107,10 @@ Run evaluation-mode prediction through the trained snapshot.
 opaque predict {σ τ inputShape : Shape}
     (result : Result σ τ α) (input : Tensor α inputShape)
     (batch : Bool := false) (batchSize : Nat := 1)
-    [Trainer.Internal.BatchInput
+    [TorchLean.Internal.BatchInput
       (Tensor α σ) (Tensor α (σ.prependDim batchSize)) batch (Tensor α inputShape)] :
     IO (Tensor α (match batch with | false => τ | true => τ.prependDim batchSize)) := by
-  have inputType := Trainer.Internal.BatchInput.type_eq
+  have inputType := TorchLean.Internal.BatchInput.type_eq
     (single := Tensor α σ) (many := Tensor α (σ.prependDim batchSize)) (batch := batch)
   cases batch with
   | false => exact result.predictOne (inputType.mp input)
@@ -170,37 +170,40 @@ end Result
 A trained model returned by step-indexed stream training.
 
 Generated or resampled workloads may not have one static dataset to summarize. The ordinary training
-result is paired with the evaluation curve collected from a caller-provided sample.
+result is paired with the evaluation curve collected from a caller-provided sample. Predictions
+retain the result's scalar `α`; the recorded curve uses `Float` metrics.
 -/
-structure StreamResult (σ τ : Shape) where
+structure StreamResult (σ τ : Shape) (α : Type := Float) [Storage α] where
   /-- Trained model result. -/
-  trained : Result σ τ
+  trained : Result σ τ α
   /-- Evaluation loss curve recorded during stream training. -/
   curve : Training.Curve
 
 namespace StreamResult
 
+variable {α : Type} [Storage α]
+
 /-- One-line summary for the trained stream run. -/
-def summary {σ τ : Shape}
-    (result : StreamResult σ τ) : String :=
+def summary {σ τ : Shape} [ToString α]
+    (result : StreamResult σ τ α) : String :=
   result.trained.summary
 
 /-- Print the stream training summary. -/
-def printSummary {σ τ : Shape}
-    (result : StreamResult σ τ) : IO Unit :=
+def printSummary {σ τ : Shape} [ToString α]
+    (result : StreamResult σ τ α) : IO Unit :=
   IO.println result.summary
 
 /-- Predict one input, or map a leading tensor batch, through the trained stream result. -/
 def predict {σ τ inputShape : Shape}
-    (result : StreamResult σ τ) (input : Tensor Float inputShape)
+    (result : StreamResult σ τ α) (input : Tensor α inputShape)
     (batch : Bool := false) (batchSize : Nat := 1)
-    [Trainer.Internal.BatchInput
-      (Tensor Float σ) (Tensor Float (σ.prependDim batchSize)) batch (Tensor Float inputShape)] :
-    IO (Tensor Float (match batch with | false => τ | true => τ.prependDim batchSize)) :=
+    [TorchLean.Internal.BatchInput
+      (Tensor α σ) (Tensor α (σ.prependDim batchSize)) batch (Tensor α inputShape)] :
+    IO (Tensor α (match batch with | false => τ | true => τ.prependDim batchSize)) :=
   result.trained.predict input (batch := batch) (batchSize := batchSize)
 
-instance {σ τ : Shape} :
-    ToString (StreamResult σ τ) where
+instance {σ τ : Shape} [ToString α] :
+    ToString (StreamResult σ τ α) where
   toString := summary
 
 end StreamResult

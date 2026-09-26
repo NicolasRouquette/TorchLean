@@ -108,7 +108,7 @@ optional boolean `(n,n)` mask and returns the attended output of shape `(n,dMode
 
 PyTorch comparison: similar to `torch.nn.MultiheadAttention` / scaled dot-product attention.
 -/
-@[inline] def multiHeadAttention {α : Type} [TorchLean.Storage α] [Context α]
+@[inline] def attention {α : Type} [TorchLean.Storage α] [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)]
   {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (t : Tape α) (wqId wkId wvId woId xId : Nat)

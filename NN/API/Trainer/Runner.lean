@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.API.Trainer.Core
-public import NN.API.Trainer.BatchInput
+public import NN.Runtime.BatchInput
 public import NN.API.Trainer.Scheduler
 public import NN.Data.SampleStream
 
@@ -84,7 +84,7 @@ opaque predictor {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ τ}
   | ⟨_, _, evaluationPredictor, _⟩, .eval => evaluationPredictor
 
 /-- Reusable evaluator for the evaluation-mode loss. -/
-opaque evaluationEvaluator {σ τ : Spec.Shape}
+opaque lossEvaluator {σ τ : Spec.Shape}
     {model : TorchLean.nn.Sequential σ τ}
     {α : Type} [TorchLean.Storage α] [Context α]
     (runner : Runner α model) :
@@ -187,7 +187,7 @@ def loss {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ τ}
       TorchLean.Module.Objective.loss (objectiveModule runner)
         (TorchLean.Sample.Internal.arguments sample) TorchLean.Arguments.empty
     | .eval =>
-      Runtime.Autograd.Model.Module.Evaluator.run (evaluationEvaluator runner)
+      Runtime.Autograd.Model.Module.Evaluator.run (lossEvaluator runner)
         (TorchLean.Arguments.Internal.toTensorPack (TorchLean.Sample.Internal.arguments sample))
         TorchLean.TensorPack.empty
   pure value.item
@@ -205,17 +205,15 @@ def withBoundOptimizer {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ 
     (continuation :
       (optimizer : Runtime.Autograd.Model.Optim.Optimizer α (TorchLean.nn.stateShapes model)) →
       optimizer.State → (Nat → optimizer.State → optimizer.State) → IO β) : IO β := do
-  match config.validateFor (α := α) with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
+  IO.ofExcept (config.validateFor (α := α))
   match scheduler with
   | some schedule => do
-      IO.ofExcept <| TorchLean.Trainer.Scheduler.validateWith
-        (TorchLean.Runtime.FromFloat.roundForValidation (α := α)) schedule
+      IO.ofExcept <| schedule.validate
+        (round := TorchLean.Runtime.FromFloat.roundForValidation (α := α))
   | none => pure ()
   let objective := Runner.objectiveModule runner
-  let learningRateAtStep (step : Nat) : Float :=
-    scheduler.map (fun config => TorchLean.Trainer.Scheduler.learningRateAt config step)
+  let rate (step : Nat) : Float :=
+    scheduler.map (fun config => config.rate step)
       |>.getD config.learningRate
   let rec mapStateList
       {State : (α : Type) → [TorchLean.Storage α] → Spec.Shape → Type} :
@@ -236,7 +234,7 @@ def withBoundOptimizer {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ 
       (setRate : {s : Spec.Shape} → α → State α s → State α s) (step : Nat) :
       Runtime.Autograd.Model.Optim.StateList State α shapes →
       Runtime.Autograd.Model.Optim.StateList State α shapes :=
-    mapStateList (setRate (TorchLean.Runtime.ofFloat (learningRateAtStep step)))
+    mapStateList (setRate (TorchLean.Runtime.ofFloat (rate step)))
   match TorchLean.optim.Optimizer.Internal.view config with
   | .sgd learningRate momentum =>
       if momentum == 0.0 then
@@ -290,19 +288,6 @@ def withBoundOptimizer {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ 
 
 /-! ## Gradient accumulation and optimizer updates -/
 
-/-- Add two shape-aligned model-state gradients. -/
-def addGradients {α : Type} [TorchLean.Storage α] [Add α]
-    {shapes : List Spec.Shape}
-    (first second : nn.State α shapes) : nn.State α shapes :=
-  first.zipWith second fun firstTensor secondTensor =>
-    TorchLean.Tensor.add firstTensor secondTensor
-
-/-- Scale every tensor in a model-state gradient. -/
-def scaleGradients {α : Type} [TorchLean.Storage α] [Mul α]
-    {shapes : List Spec.Shape} (factor : α)
-    (gradient : nn.State α shapes) : nn.State α shapes :=
-  gradient.map fun tensor => TorchLean.Tensor.scale tensor factor
-
 /--
 Mean parameter gradient and mean loss for a nonempty batch at one parameter point.
 
@@ -333,9 +318,10 @@ def meanGradAndLoss {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ τ}
       for sample in batch.drop 1 do
         let (gradient, lossValue) ← sampleGradient sample
         lossSum := lossSum + lossValue
-        gradientSum := addGradients gradientSum gradient
+        gradientSum := gradientSum.zipWith gradient Tensor.add
       let reciprocalCount : α := 1 / (batch.size : α)
-      pure (scaleGradients reciprocalCount gradientSum, lossSum * reciprocalCount)
+      pure (gradientSum.map (fun tensor => tensor.scale reciprocalCount),
+        lossSum * reciprocalCount)
 
 /--
 Compute mean parameter gradients for a nonempty batch at one parameter point.
@@ -458,10 +444,11 @@ counter advances once for the whole batch. `loss := false` avoids reading the lo
 def step {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ τ} {Input : Type}
     {α : Type} [TorchLean.Storage α] [Context α]
     (stepper : Stepper α model) (sample : Input) (batch : Bool := false) (loss : Bool := false)
-    [BatchInput (TorchLean.Sample.Supervised α σ τ)
+    [TorchLean.Internal.BatchInput (TorchLean.Sample.Supervised α σ τ)
       (Array (TorchLean.Sample.Supervised α σ τ)) batch Input] :
     IO (match loss with | false => Unit | true => α) := by
-  have inputType := BatchInput.type_eq (single := TorchLean.Sample.Supervised α σ τ)
+  have inputType := TorchLean.Internal.BatchInput.type_eq
+    (single := TorchLean.Sample.Supervised α σ τ)
     (many := Array (TorchLean.Sample.Supervised α σ τ)) (batch := batch)
   subst Input
   let samples : Array (TorchLean.Sample.Supervised α σ τ) := by

@@ -69,7 +69,7 @@ def archAutoencoder : nn.Builder (nn.Sequential [3] [3]) :=
 /-- Two-head self-attention over a length-four sequence of width eight. -/
 def archMHA :
     nn.Builder (nn.Sequential [1, 4, 8] [1, 4, 8]) :=
-  nn.multiHeadAttention { headCount := 2, headWidth := 4 }
+  nn.attention { headCount := 2, headWidth := 4 }
     (batchShape := [1]) (sequenceLength := 4) (modelWidth := 8)
 
 /-- A causal mask: position `i` may attend only to positions `j ≤ i`. -/
@@ -82,7 +82,7 @@ The same attention block with the causal mask applied, so the export can be comp
 -/
 def archMHAMasked :
     nn.Builder (nn.Sequential [1, 4, 8] [1, 4, 8]) :=
-  nn.multiHeadAttention { headCount := 2, headWidth := 4 }
+  nn.attention { headCount := 2, headWidth := 4 }
     (mask := some archMHAMask) (batchShape := [1])
     (sequenceLength := 4) (modelWidth := 8)
 

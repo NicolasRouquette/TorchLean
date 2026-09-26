@@ -44,7 +44,7 @@ LibTorch check that native counters are zero and skip the GPU memory probes.
 
 ## Coverage
 
-- `NN/Runtime/Autograd/Engine/Cuda/Float32Contract.lean` defines exact finite bits
+- `NN/Runtime/Autograd/Engine/LibTorch/Float32Contract.lean` defines exact finite bits
   and `AgreeUpToNaN`, with no finite tolerance. This regression follows that relation
   and separately counts differing NaN encodings.
 - Adam's three outputs are checked bitwise with hand-derived fixtures and

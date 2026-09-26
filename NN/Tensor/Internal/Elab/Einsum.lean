@@ -96,9 +96,12 @@ def elabEinsum : TermElab := fun stx expectedType? => withRef stx do
           pure
             (checked, compactOutputShape, outputShapeAgreement,
               inputShapes, axisExpressions)
-    let compactResultType :=
-      mkAppN (mkConst ``Rep [scalarLevel]) #[
-        scalarType, compactOutputShape, storage]
+    let compactResultType ←
+      if scalarLevel == .zero then
+        publicTensorType scalarType compactOutputShape storage
+      else
+        pure <| mkAppN (mkConst ``Rep [scalarLevel]) #[
+          scalarType, compactOutputShape, storage]
     if let some expectedType := expectedType? then
       unless ←
           withTransparency .reducible <|

@@ -10,7 +10,6 @@ public meta import NN.Tensor.Internal.Elab.Transform.Index
 public meta import NN.Tensor.Internal.Elab.Transform.ViewAttribute
 public import NN.Tensor.Internal.Elab.Native.Tensor -- shake: keep
 public import NN.Tensor.Internal.Elab.Transform.Index
-import Mathlib.Algebra.Order.Field.Basic
 import NN.Tensor.Internal.Elab.Transform.ViewAttribute
 
 /-!
@@ -222,6 +221,14 @@ partial def fusedTransformInput?
                   hTensor, logicalTensor, hLogicalTensor)
       | _ => do
           let candidate := candidate.consumeMData
+          -- Public tensor type hints wrap generated values in `id`.
+          if candidate.isAppOfArity ``id 2 then
+            return ← visit candidate.appArg!
+          if candidate.isAppOfArity ``Rep.castShape 6 then
+            let arguments := candidate.getAppArgs
+            -- Generated shape annotations need no transport when their shapes reduce equally.
+            if ← withTransparency .reducible <| isDefEq arguments[2]! arguments[3]! then
+              return ← visit arguments[5]!
           if let some (rewritten, hRewritten) ←
               rewriteCertifiedViews? candidate then
             let rewritten ←

@@ -6,7 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Proofs.Autograd.Runtime.ShapeErasure
 public import NN.Proofs.Autograd.Tape.Algebra.Soundness
 public import NN.Runtime.Autograd.Engine.Core.Base
 

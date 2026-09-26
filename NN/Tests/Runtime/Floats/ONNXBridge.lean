@@ -90,12 +90,12 @@ def runRealONNXRoundtrip : IO Unit := do
   IO.FS.createDirAll workDir
   IO.FS.writeFile bridgePath (generateBridgeScript {})
   IO.FS.writeFile (workDir / "make_batchnorm_relu.py") sampleModelScript
-  let _ ← TorchLean.External.Process.runStdoutChecked
+  let _ ← TorchLean.External.Process.run
     (ctx := "onnx_bridge: build representative ONNX model")
     (cmd := "python3")
     (args := #[(workDir / "make_batchnorm_relu.py").toString])
     (cwd := some ".")
-  let _ ← TorchLean.External.Process.runStdoutChecked
+  let _ ← TorchLean.External.Process.run
     (ctx := "onnx_bridge: lower representative ONNX model")
     (cmd := "python3")
     (args := #[bridgePath.toString, modelPath.toString, jsonPath.toString])
@@ -273,7 +273,7 @@ def runParityChecks : IO Unit := do
   IO.FS.createDirAll workDir
   IO.FS.writeFile bridgePath (generateBridgeScript {})
   IO.FS.writeFile (workDir / "make_parity_models.py") parityModelScript
-  let _ ← TorchLean.External.Process.runStdoutChecked
+  let _ ← TorchLean.External.Process.run
     (ctx := "onnx_bridge: build parity models")
     (cmd := "python3")
     (args := #[(workDir / "make_parity_models.py").toString])

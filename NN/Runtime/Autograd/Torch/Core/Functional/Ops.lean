@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.TensorReductionShape.Reductions
-public import NN.Spec.Layers.Conv
 public import NN.Spec.Layers.Pooling.Spatial
 public import NN.Tensor.Conversion
 public import NN.Runtime.Autograd.Torch.Core.Functional.Curried
@@ -106,12 +105,12 @@ class Ops (m : Type → Type) (α : Type) [Storage α] [Context α] where
       Ref (batchB.concat [nDim, pDim]) →
       m (Ref (batch.concat [mDim, pDim]))
   /-- Concatenate tensors along their leading axis. -/
-  concatLeadingAxis {nDim mDim : Nat} {s : Shape} :
+  concat {nDim mDim : Nat} {s : Shape} :
       Ref (s.prependDim nDim) →
       Ref (s.prependDim mDim) →
       m (Ref (s.prependDim (nDim + mDim)))
   /-- Take `len` entries of the leading axis, starting at `start`. -/
-  sliceLeadingAxisRange {nDim : Nat} {s : Shape} :
+  slice {nDim : Nat} {s : Shape} :
       (start len : Nat) → (h : start + len ≤ nDim) →
       Ref (s.prependDim nDim) → m (Ref (s.prependDim len))
   /-- Apply spatial max pooling to one channels-first sample. -/
@@ -214,31 +213,23 @@ class Ops (m : Type → Type) (α : Type) [Storage α] [Context α] where
       (x : Ref (sSpatial.prependDim channels)) (gamma beta : Ref [channels])
       (epsilon : α := TorchLean.normalizationEpsilon) :
       m (Ref (sSpatial.prependDim channels))
-  /-- Apply multi-head self-attention to one sequence, using the optional mask. -/
-  multiHeadAttention {n numHeads dModel headDim : Nat} (h1 : n ≠ 0) :
-      Ref [dModel, numHeads * headDim] →
-      Ref [dModel, numHeads * headDim] →
-      Ref [dModel, numHeads * headDim] →
-      Ref [numHeads * headDim, dModel] →
-      Ref [n, dModel] →
-      Option (Tensor Bool [n, n]) →
-      m (Ref [n, dModel])
   /--
-  Multi-head self-attention with an explicit leading batch axis.
+  Self-attention, optionally over a leading batch dimension.
 
-  Its mathematical meaning is the leading-axis map of `multiHeadAttention`; implementations may
-  execute the samples together, but may not change the mask convention or the per-sample
-  forward/VJP semantics.
+  `batch := none` selects one sequence; `some b` selects `b` independent sequences with
+  shared projections and mask. Batching preserves the per-sequence forward and VJP semantics.
   -/
-  batchedMultiHeadAttention {batch n numHeads dModel headDim : Nat}
-      (hBatch : batch ≠ 0) (h1 : n ≠ 0) :
+  attention {n numHeads dModel headDim : Nat} {batch : Option Nat}
+      (hBatch : batch.getD 1 ≠ 0) (h1 : n ≠ 0) :
       Ref [dModel, numHeads * headDim] →
       Ref [dModel, numHeads * headDim] →
       Ref [dModel, numHeads * headDim] →
       Ref [numHeads * headDim, dModel] →
-      Ref [batch, n, dModel] →
+      Ref (match (generalizing := false) batch with
+        | none => [n, dModel] | some b => [b, n, dModel]) →
       Option (Tensor Bool [n, n]) →
-      m (Ref [batch, n, dModel])
+      m (Ref (match (generalizing := false) batch with
+        | none => [n, dModel] | some b => [b, n, dModel]))
   /-- Apply spatial convolution to one channels-first sample. -/
   conv {d inC outC : Nat}
       {kernel stride padding : Tensor Nat [d]}

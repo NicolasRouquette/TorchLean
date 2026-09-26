@@ -80,14 +80,12 @@ def checkedCpu : BackendProfile :=
         provider := .auto
         assurance := .checked
         vjpMode := .torchLeanTape }
-    availability := Availability.cpu
-    capsuleModules := Registry.maintainedModules }
+    availability := Availability.cpu }
 
 /--
 Maintained LibTorch CUDA profile with TorchLean tape traversal and selected local VJPs.
 
-LibTorch is preferred for every operation, including the direct attention bridge. Callers can
-select the composed attention path for comparison by setting `provider := .prefer .torchLean`.
+LibTorch supplies every maintained CUDA operation, including attention.
 
 `checked` means runtime guards and regression evidence. Capsules supported only by explicit
 trusted-boundary evidence are not admitted, and no LibTorch autograd graph is recorded.
@@ -99,8 +97,7 @@ def checkedCuda : BackendProfile :=
         provider := .prefer .libTorch
         assurance := .checked
         vjpMode := .torchLeanTape }
-    availability := Availability.cuda
-    capsuleModules := Registry.maintainedModules }
+    availability := Availability.cuda }
 
 /--
 Maintained execution profile for a device, when TorchLean currently provides one.
@@ -115,8 +112,8 @@ def maintainedForDevice? : Device → Option BackendProfile
 
 /-- Whether this profile registers at least one capsule for its selected device. -/
 def hasDeviceCapsule (profile : BackendProfile) : Bool :=
-  profile.registry.any fun capsule =>
-    capsule.device == profile.policy.device
+  profile.capsuleModules.any fun contribution =>
+    contribution.capsules.any fun capsule => capsule.device == profile.policy.device
 
 end BackendProfile
 

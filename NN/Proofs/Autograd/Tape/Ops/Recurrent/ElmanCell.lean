@@ -93,11 +93,11 @@ def elmanCellDGraph {inputSize hiddenSize : Nat}
   let dg1 :
       DGraph (ΓElman inputSize hiddenSize) [.dim (inputSize + hiddenSize) .scalar] :=
     DGraph.snoc (dg := dg0)
-      (node := concatLeadingAxis
+      (node := concat
         (Γ := ΓElman inputSize hiddenSize) (n := inputSize) (m := hiddenSize) (s := .scalar)
         (idxInput (inputSize := inputSize) (hiddenSize := hiddenSize) (ss := []))
         (idxHidden (inputSize := inputSize) (hiddenSize := hiddenSize) (ss := [])))
-      (hn := concatLeadingAxisFderiv
+      (hn := concatFderiv
         (Γ := ΓElman inputSize hiddenSize) (n := inputSize) (m := hiddenSize) (s := .scalar)
         (idxInput (inputSize := inputSize) (hiddenSize := hiddenSize) (ss := []))
         (idxHidden (inputSize := inputSize) (hiddenSize := hiddenSize) (ss := [])))

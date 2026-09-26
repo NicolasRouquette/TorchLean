@@ -8,7 +8,7 @@ module
 
 public import NN.Runtime.Autograd.Torch.Core.Ops.Dispatch
 public import NN.Runtime.Autograd.Engine.Core.Indexing
-public import NN.Runtime.Autograd.Engine.Cuda.Ops.Indexing
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Indexing
 
 /-!
 # Eager Tensor Operations
@@ -43,9 +43,9 @@ def select {α : Type} [TorchLean.Storage α] (session : EagerSession α) [Zero 
     pure { id }
   let cuda := do
     let id ← session.recordCuda fun tape => keepTapeOnError tape <|
-      Runtime.Autograd.Cuda.Tape.select (t := tape) x.id axis index
+      Runtime.Autograd.LibTorch.Tape.select (t := tape) x.id axis index
     pure (some { id := id })
-  dispatchCudaOpt (α := α) session .gather #[x.identity?] cpu cuda
+  execute (α := α) session .gather #[x.identity?] cpu cuda
 
 /-- Select several bounded coordinates from an arbitrary tensor axis. -/
 def indexSelect {α : Type} [TorchLean.Storage α] (session : EagerSession α) [Add α] [Zero α]
@@ -59,9 +59,9 @@ def indexSelect {α : Type} [TorchLean.Storage α] (session : EagerSession α) [
     pure { id }
   let cuda := do
     let id ← session.recordCuda fun tape => keepTapeOnError tape <|
-      Runtime.Autograd.Cuda.Tape.indexSelect (t := tape) x.id axis count indices
+      Runtime.Autograd.LibTorch.Tape.indexSelect (t := tape) x.id axis count indices
     pure (some { id := id })
-  dispatchCudaOpt (α := α) session .gather #[x.identity?] cpu cuda
+  execute (α := α) session .gather #[x.identity?] cpu cuda
 
 /-- Add source slices into an arbitrary tensor axis at bounded coordinates. -/
 def scatterAdd {α : Type} [TorchLean.Storage α] (session : EagerSession α) [Add α] [Zero α]
@@ -75,9 +75,9 @@ def scatterAdd {α : Type} [TorchLean.Storage α] (session : EagerSession α) [A
     pure { id }
   let cuda := do
     let id ← session.recordCuda fun tape => keepTapeOnError tape <|
-      Runtime.Autograd.Cuda.Tape.scatterAdd (t := tape) base.id source.id axis count indices
+      Runtime.Autograd.LibTorch.Tape.scatterAdd (t := tape) base.id source.id axis count indices
     pure (some { id := id })
-  dispatchCudaOpt (α := α) session .scatterAdd #[base.identity?, source.identity?] cpu cuda
+  execute (α := α) session .scatterAdd #[base.identity?, source.identity?] cpu cuda
 
 end EagerSession
 

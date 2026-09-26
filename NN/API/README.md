@@ -176,7 +176,7 @@ let (gradient, value) ← autograd.grad loss x (value := true)
 uses a tensor function with no model parameters.
 
 ```lean
-let state := autograd.model.initialState model
+let state := nn.initialState model
 let (gradient, lossValue) ←
   autograd.model.grad model lossFn state input target (value := true)
 ```

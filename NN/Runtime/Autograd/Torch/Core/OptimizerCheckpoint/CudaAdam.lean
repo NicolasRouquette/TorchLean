@@ -29,9 +29,9 @@ namespace EagerSession
 /-- Device-side Adam moment buffers for one parameter leaf. -/
 structure CudaAdamParamState where
   /-- First moment buffer. -/
-  m : Runtime.Autograd.Cuda.Buffer
+  m : Runtime.Autograd.LibTorch.Buffer
   /-- Second moment buffer. -/
-  v : Runtime.Autograd.Cuda.Buffer
+  v : Runtime.Autograd.LibTorch.Buffer
   /-- Adam step counter for this parameter. -/
   t : Nat
 
@@ -234,11 +234,11 @@ def writeCudaAdamStateFloat32
       if entry.t == 0 then
         throw <| IO.userError s!"{checkpointName}: zero step counter for parameter {id}"
       let count := Spec.Shape.size shape
-      if (Runtime.Autograd.Cuda.Buffer.size entry.m).toNat != count ||
-          (Runtime.Autograd.Cuda.Buffer.size entry.v).toNat != count then
+      if (Runtime.Autograd.LibTorch.Buffer.size entry.m).toNat != count ||
+          (Runtime.Autograd.LibTorch.Buffer.size entry.v).toNat != count then
         throw <| IO.userError s!"{checkpointName}: moment-size mismatch for parameter {id}"
-      let mBytes ← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.m
-      let vBytes ← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.v
+      let mBytes ← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.m
+      let vBytes ← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.v
       if mBytes.size != count * 4 || vBytes.size != count * 4 then
         throw <| IO.userError s!"{checkpointName}: invalid float32 payload for parameter {id}"
       CheckpointIO.writeNat64 checkpointName handle id
@@ -294,9 +294,9 @@ def readCheckpoint
             s!"(file={count}, expected={Spec.Shape.size shape})"
       let mBytes ← CheckpointIO.readExact checkpointName handle (count * 4)
       let vBytes ← CheckpointIO.readExact checkpointName handle (count * 4)
-      let m ← Runtime.Autograd.Cuda.Buffer.ofFloat32BytesIO mBytes
+      let m ← Runtime.Autograd.LibTorch.Buffer.ofFloat32BytesIO mBytes
       let v ← try
-        Runtime.Autograd.Cuda.Buffer.ofFloat32BytesIO vBytes
+        Runtime.Autograd.LibTorch.Buffer.ofFloat32BytesIO vBytes
       catch error =>
         releaseCudaBuffer m
         throw error

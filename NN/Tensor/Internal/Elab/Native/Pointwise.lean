@@ -129,27 +129,9 @@ def nativeFloatAdd
     @Rep Float shape instFloatStorage where
   buffer := floatBufferAdd left.buffer right.buffer
   size_eq := by
-    have hLeft : left.buffer.data.size = Shape.size shape := by
-      calc
-        left.buffer.data.size =
-            @Storage.size Float instFloatStorage left.buffer :=
-          instFloatStorage.toArray_size left.buffer
-        _ = Shape.size shape := left.size_eq
-    have hRight : right.buffer.data.size = Shape.size shape := by
-      calc
-        right.buffer.data.size =
-            @Storage.size Float instFloatStorage right.buffer :=
-          instFloatStorage.toArray_size right.buffer
-        _ = Shape.size shape := right.size_eq
-    calc
-      @Storage.size Float instFloatStorage
-          (floatBufferAdd left.buffer right.buffer) =
-          (floatBufferAdd left.buffer right.buffer).data.size :=
-        (instFloatStorage.toArray_size
-          (floatBufferAdd left.buffer right.buffer)).symm
-      _ = (Array.zipWith (· + ·)
-          left.buffer.data right.buffer.data).size := rfl
-      _ = Shape.size shape := by simp [hLeft, hRight]
+    rw [← instFloatStorage.toArray_size]
+    change (Array.zipWith (· + ·) left.data right.data).size = _
+    simp
 
 /-- Subtract two packed Float tensors in one preallocated native loop. -/
 def nativeFloatSub
@@ -158,27 +140,9 @@ def nativeFloatSub
     @Rep Float shape instFloatStorage where
   buffer := floatBufferSub left.buffer right.buffer
   size_eq := by
-    have hLeft : left.buffer.data.size = Shape.size shape := by
-      calc
-        left.buffer.data.size =
-            @Storage.size Float instFloatStorage left.buffer :=
-          instFloatStorage.toArray_size left.buffer
-        _ = Shape.size shape := left.size_eq
-    have hRight : right.buffer.data.size = Shape.size shape := by
-      calc
-        right.buffer.data.size =
-            @Storage.size Float instFloatStorage right.buffer :=
-          instFloatStorage.toArray_size right.buffer
-        _ = Shape.size shape := right.size_eq
-    calc
-      @Storage.size Float instFloatStorage
-          (floatBufferSub left.buffer right.buffer) =
-          (floatBufferSub left.buffer right.buffer).data.size :=
-        (instFloatStorage.toArray_size
-          (floatBufferSub left.buffer right.buffer)).symm
-      _ = (Array.zipWith (· - ·)
-          left.buffer.data right.buffer.data).size := rfl
-      _ = Shape.size shape := by simp [hLeft, hRight]
+    rw [← instFloatStorage.toArray_size]
+    change (Array.zipWith (· - ·) left.data right.data).size = _
+    simp
 
 /-- Multiply two packed Float tensors in one preallocated native loop. -/
 def nativeFloatMul
@@ -187,27 +151,9 @@ def nativeFloatMul
     @Rep Float shape instFloatStorage where
   buffer := floatBufferMul left.buffer right.buffer
   size_eq := by
-    have hLeft : left.buffer.data.size = Shape.size shape := by
-      calc
-        left.buffer.data.size =
-            @Storage.size Float instFloatStorage left.buffer :=
-          instFloatStorage.toArray_size left.buffer
-        _ = Shape.size shape := left.size_eq
-    have hRight : right.buffer.data.size = Shape.size shape := by
-      calc
-        right.buffer.data.size =
-            @Storage.size Float instFloatStorage right.buffer :=
-          instFloatStorage.toArray_size right.buffer
-        _ = Shape.size shape := right.size_eq
-    calc
-      @Storage.size Float instFloatStorage
-          (floatBufferMul left.buffer right.buffer) =
-          (floatBufferMul left.buffer right.buffer).data.size :=
-        (instFloatStorage.toArray_size
-          (floatBufferMul left.buffer right.buffer)).symm
-      _ = (Array.zipWith (· * ·)
-          left.buffer.data right.buffer.data).size := rfl
-      _ = Shape.size shape := by simp [hLeft, hRight]
+    rw [← instFloatStorage.toArray_size]
+    change (Array.zipWith (· * ·) left.data right.data).size = _
+    simp
 
 /-- Divide two packed Float tensors in one preallocated native loop. -/
 def nativeFloatDiv
@@ -216,27 +162,9 @@ def nativeFloatDiv
     @Rep Float shape instFloatStorage where
   buffer := floatBufferDiv left.buffer right.buffer
   size_eq := by
-    have hLeft : left.buffer.data.size = Shape.size shape := by
-      calc
-        left.buffer.data.size =
-            @Storage.size Float instFloatStorage left.buffer :=
-          instFloatStorage.toArray_size left.buffer
-        _ = Shape.size shape := left.size_eq
-    have hRight : right.buffer.data.size = Shape.size shape := by
-      calc
-        right.buffer.data.size =
-            @Storage.size Float instFloatStorage right.buffer :=
-          instFloatStorage.toArray_size right.buffer
-        _ = Shape.size shape := right.size_eq
-    calc
-      @Storage.size Float instFloatStorage
-          (floatBufferDiv left.buffer right.buffer) =
-          (floatBufferDiv left.buffer right.buffer).data.size :=
-        (instFloatStorage.toArray_size
-          (floatBufferDiv left.buffer right.buffer)).symm
-      _ = (Array.zipWith (· / ·)
-          left.buffer.data right.buffer.data).size := rfl
-      _ = Shape.size shape := by simp [hLeft, hRight]
+    rw [← instFloatStorage.toArray_size]
+    change (Array.zipWith (· / ·) left.data right.data).size = _
+    simp
 
 /--
 Promote packed bytes and add them to packed floats in one native output loop.
@@ -250,27 +178,9 @@ def nativeUInt8FloatAdd
     @Rep Float shape instFloatStorage where
   buffer := byteFloatBufferAdd left.buffer right.buffer
   size_eq := by
-    have hLeft : left.buffer.data.size = Shape.size shape := by
-      calc
-        left.buffer.data.size =
-            @Storage.size UInt8 instUInt8Storage left.buffer :=
-          instUInt8Storage.toArray_size left.buffer
-        _ = Shape.size shape := left.size_eq
-    have hRight : right.buffer.data.size = Shape.size shape := by
-      calc
-        right.buffer.data.size =
-            @Storage.size Float instFloatStorage right.buffer :=
-          instFloatStorage.toArray_size right.buffer
-        _ = Shape.size shape := right.size_eq
-    calc
-      @Storage.size Float instFloatStorage
-          (byteFloatBufferAdd left.buffer right.buffer) =
-          (byteFloatBufferAdd left.buffer right.buffer).data.size :=
-        (instFloatStorage.toArray_size
-          (byteFloatBufferAdd left.buffer right.buffer)).symm
-      _ = (Array.zipWith (fun x y => x.toFloat + y)
-          left.buffer.data right.buffer.data).size := rfl
-      _ = Shape.size shape := by simp [hLeft, hRight]
+    rw [← instFloatStorage.toArray_size]
+    change (Array.zipWith (fun x y => x.toFloat + y) left.data right.data).size = _
+    simp
 
 /--
 Add packed floats to promoted packed bytes in one native output loop.
@@ -285,27 +195,9 @@ def nativeFloatUInt8Add
     @Rep Float shape instFloatStorage where
   buffer := floatByteBufferAdd left.buffer right.buffer
   size_eq := by
-    have hLeft : left.buffer.data.size = Shape.size shape := by
-      calc
-        left.buffer.data.size =
-            @Storage.size Float instFloatStorage left.buffer :=
-          instFloatStorage.toArray_size left.buffer
-        _ = Shape.size shape := left.size_eq
-    have hRight : right.buffer.data.size = Shape.size shape := by
-      calc
-        right.buffer.data.size =
-            @Storage.size UInt8 instUInt8Storage right.buffer :=
-          instUInt8Storage.toArray_size right.buffer
-        _ = Shape.size shape := right.size_eq
-    calc
-      @Storage.size Float instFloatStorage
-          (floatByteBufferAdd left.buffer right.buffer) =
-          (floatByteBufferAdd left.buffer right.buffer).data.size :=
-        (instFloatStorage.toArray_size
-          (floatByteBufferAdd left.buffer right.buffer)).symm
-      _ = (Array.zipWith (fun x y => x + y.toFloat)
-          left.buffer.data right.buffer.data).size := rfl
-      _ = Shape.size shape := by simp [hLeft, hRight]
+    rw [← instFloatStorage.toArray_size]
+    change (Array.zipWith (fun x y => x + y.toFloat) left.data right.data).size = _
+    simp
 
 /-- The ordinary array observation of packed addition is pointwise addition. -/
 @[simp] theorem nativeFloatAdd_data

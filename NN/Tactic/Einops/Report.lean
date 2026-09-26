@@ -105,8 +105,8 @@ Traverse a target for distinct recognized lowerings and visible constants,
 following runtime tensor inputs while skipping certificate internals.
 -/
 private partial def collectTargetReportData (expression : Expr)
-    (found : Array Expr × Array Name := (#[], #[])) :
-    MetaM (Array Expr × Array Name) := do
+    (found : Array String × Array Name := (#[], #[])) :
+    MetaM (Array String × Array Name) := do
   let expression := expression.consumeMData
   let head := expression.getAppFn
   let headName? :=
@@ -128,9 +128,11 @@ private partial def collectTargetReportData (expression : Expr)
     return found
   match reportedApplication? head headName? arguments with
   | some (application, tensorInputs, resultArguments) =>
+      -- Render before leaving the local context of any enclosing binder.
+      let report ← Report.renderApplication application
       let mut found :=
-        if found.1.any fun existing => existing == application then found
-        else (found.1.push application, found.2)
+        if found.1.contains report then found
+        else (found.1.push report, found.2)
       for tensorInput in tensorInputs do
         found ← collectTargetReportData tensorInput found
       for argument in resultArguments do
@@ -378,13 +380,8 @@ formulas without invented concrete dimensions.
 elab (name := einopsSuggestionTactic) token:"einops?" : tactic =>
     withMainContext do
       let target ← instantiateMVars (← getMainTarget)
-      let (applications, visibleConstants) :=
+      let (reports, visibleConstants) :=
         ← collectTargetReportData target
-      let mut reports : Array String := #[]
-      for application in applications do
-        let report ← Report.renderApplication application
-        unless reports.any fun existing => existing == report do
-          reports := reports.push report
       unless reports.isEmpty do
         let operations :=
           String.intercalate ", " <| reports.toList.map reportOperation

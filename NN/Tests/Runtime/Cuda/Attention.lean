@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Ops
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops
 public import NN.Tensor
 public import NN.Tests.Runtime.Cuda.Utils
 
@@ -87,75 +87,75 @@ def mask : Tensor Bool [n, n] :=
   Utils.okOrThrow result
 
 @[no_expose] def rejectsPairedBackward
-    (output seed : Runtime.Autograd.Cuda.Buffer) : IO Bool := do
+    (output seed : Runtime.Autograd.LibTorch.Buffer) : IO Bool := do
   try
-    discard <| checked fun _ => Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd output seed
+    discard <| checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd output seed
     pure false
   catch _ =>
     pure true
 
 @[no_expose] def checkDeterministicPolicy
-    (output seed : Runtime.Autograd.Cuda.Buffer) : IO Unit := do
-  match Runtime.Autograd.Cuda.Buffer.runtimeStatus with
+    (output seed : Runtime.Autograd.LibTorch.Buffer) : IO Unit := do
+  match Runtime.Autograd.LibTorch.Buffer.runtimeStatus with
   | .notLinked => pure ()
   | _ =>
-    let deterministic ← Runtime.Autograd.Cuda.LibTorch.getDeterministic
-    let benchmark ← Runtime.Autograd.Cuda.LibTorch.getCuDNNBenchmark
+    let deterministic ← Runtime.Autograd.LibTorch.getDeterministic
+    let benchmark ← Runtime.Autograd.LibTorch.getCuDNNBenchmark
     try
-      Runtime.Autograd.Cuda.LibTorch.setDeterministic (!deterministic)
+      Runtime.Autograd.LibTorch.setDeterministic (!deterministic)
       unless ← rejectsPairedBackward output seed do
         throw <| IO.userError "paired attention accepted a changed deterministic policy"
     finally
-      Runtime.Autograd.Cuda.LibTorch.setDeterministic deterministic
-      Runtime.Autograd.Cuda.LibTorch.setCuDNNBenchmark benchmark
+      Runtime.Autograd.LibTorch.setDeterministic deterministic
+      Runtime.Autograd.LibTorch.setCuDNNBenchmark benchmark
 
 /-- The paired attention ABI keeps its forward output usable after the inputs are released, supports
 repeated backward calls, rejects a released forward buffer, and returns empty results for empty
 shapes. -/
 def checkPairedBuffers : IO Unit := do
-  let q ← Runtime.Autograd.Cuda.Buffer.zerosIO 2
-  let k ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, -1.0]
-  let v ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <| FloatArray.mk #[2.0, 4.0]
-  let allowed ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <|
+  let q ← Runtime.Autograd.LibTorch.Buffer.zerosIO 2
+  let k ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, -1.0]
+  let v ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[2.0, 4.0]
+  let allowed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
     FloatArray.mk #[1.0, 1.0, 0.0, 0.0]
-  let seed ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, 7.0]
+  let seed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, 7.0]
   let output ← checked fun _ =>
-    Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd q k v allowed 1 1 2 1 1.0
+    Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd q k v allowed 1 1 2 1 1.0
   for input in #[q, k, v, allowed] do
-    discard <| Runtime.Autograd.Cuda.Buffer.releaseIO input
-  let ys ← Runtime.Autograd.Cuda.Buffer.toFloatArrayIO output
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO input
+  let ys ← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output
   Utils.assertFloatArrayApprox "paired attention forward after input release"
     ys (FloatArray.mk #[3.0, 0.0]) 1e-5
   for _ in [:2] do
     let (dq, dk, dv) ← checked fun _ =>
-      Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd output seed
+      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd output seed
     Utils.assertFloatArrayApprox "paired attention dQ"
-      (← Runtime.Autograd.Cuda.Buffer.toFloatArrayIO dq) (FloatArray.mk #[-1.0, 0.0]) 1e-5
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dq) (FloatArray.mk #[-1.0, 0.0]) 1e-5
     Utils.assertFloatArrayApprox "paired attention dK"
-      (← Runtime.Autograd.Cuda.Buffer.toFloatArrayIO dk) (FloatArray.mk #[0.0, 0.0]) 1e-5
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dk) (FloatArray.mk #[0.0, 0.0]) 1e-5
     Utils.assertFloatArrayApprox "paired attention dV ignores blocked cotangent"
-      (← Runtime.Autograd.Cuda.Buffer.toFloatArrayIO dv) (FloatArray.mk #[0.5, 0.5]) 1e-5
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dv) (FloatArray.mk #[0.5, 0.5]) 1e-5
     for gradient in #[dq, dk, dv] do
-      discard <| Runtime.Autograd.Cuda.Buffer.releaseIO gradient
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO gradient
   checkDeterministicPolicy output seed
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO output
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO output
   unless ← rejectsPairedBackward output seed do
     throw <| IO.userError "paired attention accepted a released forward buffer"
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO seed
-  let empty ← Runtime.Autograd.Cuda.Buffer.zerosIO 0
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO seed
+  let empty ← Runtime.Autograd.LibTorch.Buffer.zerosIO 0
   for shape in (#[(0, 2, 1), (1, 0, 1), (1, 2, 0)] :
       Array (UInt32 × UInt32 × UInt32)) do
     let (batch, rows, cols) := shape
     let emptyOutput ← checked fun _ =>
-      Runtime.Autograd.Cuda.Buffer.libTorchAttentionFwd
+      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
         empty empty empty empty 0 batch rows cols 1.0
     let (dq, dk, dv) ← checked fun _ =>
-      Runtime.Autograd.Cuda.Buffer.libTorchAttentionBwd emptyOutput empty
+      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd emptyOutput empty
     for result in #[emptyOutput, dq, dk, dv] do
-      unless Runtime.Autograd.Cuda.Buffer.size result == 0 do
+      unless Runtime.Autograd.LibTorch.Buffer.size result == 0 do
         throw <| IO.userError "paired attention returned a nonempty result for an empty shape"
-      discard <| Runtime.Autograd.Cuda.Buffer.releaseIO result
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO empty
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO result
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO empty
 
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: multi_head_attention ==="
@@ -178,22 +178,22 @@ def run : IO Unit := do
 
   -- A blocked extreme score must not influence stabilization. The second row checks the explicit
   -- all-blocked convention used by both composed and fused hard-masked attention.
-  let extremeScores := Runtime.Autograd.Cuda.Buffer.ofFloatArray <|
+  let extremeScores := Runtime.Autograd.LibTorch.Buffer.ofFloatArray <|
     FloatArray.mk #[1000.0, -1000.0, 3.0, 4.0]
-  let extremeMask := Runtime.Autograd.Cuda.Buffer.ofFloatArray <|
+  let extremeMask := Runtime.Autograd.LibTorch.Buffer.ofFloatArray <|
     FloatArray.mk #[0.0, 1.0, 0.0, 0.0]
-  let extremeOut := Runtime.Autograd.Cuda.Buffer.hardMaskedSoftmaxByRow
+  let extremeOut := Runtime.Autograd.LibTorch.Buffer.hardMaskedSoftmaxByRow
     extremeScores extremeMask 2 2
-  let extremeHost := Runtime.Autograd.Cuda.Buffer.toFloatArray extremeOut
+  let extremeHost := Runtime.Autograd.LibTorch.Buffer.toFloatArray extremeOut
   Utils.assertApprox "hard mask ignores blocked row maximum[0]" (extremeHost.get! 0) 0.0
     (tol := 1e-3)
   Utils.assertApprox "hard mask preserves allowed probability[1]" (extremeHost.get! 1) 1.0
     (tol := 1e-3)
   Utils.assertApprox "all-blocked hard mask row[0]" (extremeHost.get! 2) 0.0 (tol := 1e-3)
   Utils.assertApprox "all-blocked hard mask row[1]" (extremeHost.get! 3) 0.0 (tol := 1e-3)
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeScores
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeMask
-  discard <| Runtime.Autograd.Cuda.Buffer.releaseIO extremeOut
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO extremeScores
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO extremeMask
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO extremeOut
 
   let outShape : Shape := [n, dModel]
 
@@ -205,7 +205,7 @@ def run : IO Unit := do
   let (t4, woId) := Tape.leaf (t := t3) wo (name := some "wo")
   let (t5, xId) := Tape.leaf (t := t4) x (name := some "x")
   let (t6, yId) ← Utils.okOrThrow
-    (Tape.multiHeadAttention (α := Float) (t := t5)
+    (Tape.attention (α := Float) (t := t5)
       (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
       (h1 := n_ne_zero) wqId wkId wvId woId xId (mask := some mask))
   let yCpu ← Utils.cpuValue (s := outShape) t6 yId
@@ -219,62 +219,32 @@ def run : IO Unit := do
   let dWoCpu ← Utils.cpuGrad (s := [projDim, dModel]) gradsCpu woId
 
   -- CUDA tape
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, wqIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer wq)
+  let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (t1c, wqIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer wq)
     (name := some "wq")
-  let (t2c, wkIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer wk)
+  let (t2c, wkIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer wk)
     (name := some "wk")
-  let (t3c, wvIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t2c) (Utils.tensorToAnyBuffer wv)
+  let (t3c, wvIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t2c) (Utils.tensorToAnyBuffer wv)
     (name := some "wv")
-  let (t4c, woIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t3c) (Utils.tensorToAnyBuffer wo)
+  let (t4c, woIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t3c) (Utils.tensorToAnyBuffer wo)
     (name := some "wo")
-  let (t5c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t4c) (Utils.tensorToAnyBuffer x)
+  let (t5c, xIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t4c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
-  let directResult ← Runtime.Autograd.Cuda.Tape.multiHeadAttention (t := t5c)
+  let directResult ← Runtime.Autograd.LibTorch.Tape.attention (t := t5c)
       (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
       (h1 := n_ne_zero) wqIdc wkIdc wvIdc woIdc xIdc (mask := some mask)
   let (t6c, yIdc) ← Utils.okOrThrow directResult
   let yCuda ← Utils.cudaValue (s := outShape) t6c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
+  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
     { s := outShape,
-      buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size outShape)) 1.0 }
+      buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size outShape)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t6c) yIdc seedCuda)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t6c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := outShape) gradsCuda xIdc
   let dWqCuda ← Utils.cudaGrad (s := [dModel, projDim]) gradsCuda wqIdc
   let dWkCuda ← Utils.cudaGrad (s := [dModel, projDim]) gradsCuda wkIdc
   let dWvCuda ← Utils.cudaGrad (s := [dModel, projDim]) gradsCuda wvIdc
   let dWoCuda ← Utils.cudaGrad (s := [projDim, dModel]) gradsCuda woIdc
-
-  -- Composition is selected explicitly for comparison with the default paired ATen path
-  -- and the independent CPU tape.
-  let t0s : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1s, wqIds) := Runtime.Autograd.Cuda.Tape.leaf (t := t0s) (Utils.tensorToAnyBuffer wq)
-    (name := some "wq")
-  let (t2s, wkIds) := Runtime.Autograd.Cuda.Tape.leaf (t := t1s) (Utils.tensorToAnyBuffer wk)
-    (name := some "wk")
-  let (t3s, wvIds) := Runtime.Autograd.Cuda.Tape.leaf (t := t2s) (Utils.tensorToAnyBuffer wv)
-    (name := some "wv")
-  let (t4s, woIds) := Runtime.Autograd.Cuda.Tape.leaf (t := t3s) (Utils.tensorToAnyBuffer wo)
-    (name := some "wo")
-  let (t5s, xIds) := Runtime.Autograd.Cuda.Tape.leaf (t := t4s) (Utils.tensorToAnyBuffer x)
-    (name := some "x")
-  let composedResult ← Runtime.Autograd.Cuda.Tape.multiHeadAttention (t := t5s)
-      (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
-      (h1 := n_ne_zero) wqIds wkIds wvIds woIds xIds (mask := some mask)
-      (attentionCapsule := NN.Backend.Attention.torchLeanComposed)
-  let (t6s, yIds) ← Utils.okOrThrow composedResult
-  let yCudaComposed ← Utils.cudaValue (s := outShape) t6s yIds
-  let seedComposed : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := outShape,
-      buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size outShape)) 1.0 }
-  let gradsComposed ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t6s) yIds seedComposed)
-  let dxCudaComposed ← Utils.cudaGrad (s := outShape) gradsComposed xIds
-  let dWqCudaComposed ← Utils.cudaGrad (s := [dModel, projDim]) gradsComposed wqIds
-  let dWkCudaComposed ← Utils.cudaGrad (s := [dModel, projDim]) gradsComposed wkIds
-  let dWvCudaComposed ← Utils.cudaGrad (s := [dModel, projDim]) gradsComposed wvIds
-  let dWoCudaComposed ← Utils.cudaGrad (s := [projDim, dModel]) gradsComposed woIds
 
   -- Distinct samples are essential here: duplicated samples cannot expose a permutation that
   -- accidentally exchanges the batch and head axes.
@@ -298,82 +268,65 @@ def run : IO Unit := do
   let xBatch : Tensor Float [2, n, dModel] :=
     TorchLean.Tensor.stack 0 fun i => if i.val = 0 then xFirst else xSecond
   let batchShape : Shape := [2, n, dModel]
-  let tb0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
+  let tb0 : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
   let (tb1, bwq) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tb0) (Utils.tensorToAnyBuffer batchIdentity)
+    Runtime.Autograd.LibTorch.Tape.leaf (t := tb0) (Utils.tensorToAnyBuffer batchIdentity)
   let (tb2, bwk) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tb1) (Utils.tensorToAnyBuffer batchIdentity)
+    Runtime.Autograd.LibTorch.Tape.leaf (t := tb1) (Utils.tensorToAnyBuffer batchIdentity)
   let (tb3, bwv) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tb2) (Utils.tensorToAnyBuffer batchIdentity)
+    Runtime.Autograd.LibTorch.Tape.leaf (t := tb2) (Utils.tensorToAnyBuffer batchIdentity)
   let (tb4, bwo) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tb3) (Utils.tensorToAnyBuffer batchIdentity)
-  let (tb5, bx) := Runtime.Autograd.Cuda.Tape.leaf (t := tb4) (Utils.tensorToAnyBuffer xBatch)
-  let batchResult ← Runtime.Autograd.Cuda.Tape.batchedMultiHeadAttention (t := tb5)
-    (batch := 2) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
-    (by decide) n_ne_zero bwq bwk bwv bwo bx (mask := some mask)
-    (attentionCapsule := NN.Backend.Attention.torchLeanComposed)
+    Runtime.Autograd.LibTorch.Tape.leaf (t := tb3) (Utils.tensorToAnyBuffer batchIdentity)
+  let (tb5, bx) := Runtime.Autograd.LibTorch.Tape.leaf (t := tb4) (Utils.tensorToAnyBuffer xBatch)
+  let batchResult ← Runtime.Autograd.LibTorch.Tape.attention (t := tb5)
+    (batch := some 2) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+    (hBatch := by decide) n_ne_zero bwq bwk bwv bwo bx (mask := some mask)
   let (tb6, byId) ← Utils.okOrThrow batchResult
   let yBatch ← Utils.cudaValue (s := batchShape) tb6 byId
-  let batchSeed : Runtime.Autograd.Cuda.AnyBuffer :=
+  let batchSeed : Runtime.Autograd.LibTorch.AnyBuffer :=
     { s := batchShape,
-      buf := Runtime.Autograd.Cuda.Buffer.full
+      buf := Runtime.Autograd.LibTorch.Buffer.full
         (UInt32.ofNat (Spec.Shape.size batchShape)) 1.0 }
   let batchGrads ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := tb6) byId batchSeed)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := tb6) byId batchSeed)
   let dxBatch ← Utils.cudaGrad (s := batchShape) batchGrads bx
   let dWqBatch ← Utils.cudaGrad (s := [dModel, projDim]) batchGrads bwq
   let dWkBatch ← Utils.cudaGrad (s := [dModel, projDim]) batchGrads bwk
   let dWvBatch ← Utils.cudaGrad (s := [dModel, projDim]) batchGrads bwv
   let dWoBatch ← Utils.cudaGrad (s := [projDim, dModel]) batchGrads bwo
 
-  -- The default direct ATen pair implements the same batched operation.
-  -- Comparing distinct samples catches layout mistakes in the composed BMM path and its VJP.
-  let tn0 : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (tn1, nwq) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tn0) (Utils.tensorToAnyBuffer batchIdentity)
-  let (tn2, nwk) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tn1) (Utils.tensorToAnyBuffer batchIdentity)
-  let (tn3, nwv) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tn2) (Utils.tensorToAnyBuffer batchIdentity)
-  let (tn4, nwo) :=
-    Runtime.Autograd.Cuda.Tape.leaf (t := tn3) (Utils.tensorToAnyBuffer batchIdentity)
-  let (tn5, nx) := Runtime.Autograd.Cuda.Tape.leaf (t := tn4) (Utils.tensorToAnyBuffer xBatch)
-  let directBatchResult ← Runtime.Autograd.Cuda.Tape.batchedMultiHeadAttention (t := tn5)
-    (batch := 2) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
-    (by decide) n_ne_zero nwq nwk nwv nwo nx (mask := some mask)
-  let (tn6, nyId) ← Utils.okOrThrow directBatchResult
-  let yBatchDirect ← Utils.cudaValue (s := batchShape) tn6 nyId
-  let directBatchSeed : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := batchShape,
-      buf := Runtime.Autograd.Cuda.Buffer.full
-        (UInt32.ofNat (Spec.Shape.size batchShape)) 1.0 }
-  let directBatchGrads ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := tn6) nyId directBatchSeed)
-  let dxBatchDirect ← Utils.cudaGrad (s := batchShape) directBatchGrads nx
-  let dWqBatchDirect ← Utils.cudaGrad (s := [dModel, projDim]) directBatchGrads nwq
-  let dWkBatchDirect ← Utils.cudaGrad (s := [dModel, projDim]) directBatchGrads nwk
-  let dWvBatchDirect ← Utils.cudaGrad (s := [dModel, projDim]) directBatchGrads nwv
-  let dWoBatchDirect ← Utils.cudaGrad (s := [projDim, dModel]) directBatchGrads nwo
-  Utils.assertTensorApprox "batched mha forward" yBatch yBatchDirect (tol := 1e-4)
-  Utils.assertTensorApprox "batched mha dx" dxBatch dxBatchDirect (tol := 1e-4)
-  Utils.assertTensorApprox "batched mha dWq" dWqBatch dWqBatchDirect (tol := 1e-4)
-  Utils.assertTensorApprox "batched mha dWk" dWkBatch dWkBatchDirect (tol := 1e-4)
-  Utils.assertTensorApprox "batched mha dWv" dWvBatch dWvBatchDirect (tol := 1e-4)
-  Utils.assertTensorApprox "batched mha dWo" dWoBatch dWoBatchDirect (tol := 1e-4)
-
-  -- Attention is numerically "busy" (exp/softmax + multiple matmuls). Use a slightly looser tol.
-  Utils.assertTensorApprox (s := outShape) "direct vs composed mha forward" yCuda yCudaComposed
-    (tol := 2e-2)
-  Utils.assertTensorApprox (s := outShape) "direct vs composed mha dx" dxCuda dxCudaComposed
-    (tol := 2e-2)
-  Utils.assertTensorApprox (s := [dModel, projDim]) "direct vs composed mha dWq"
-    dWqCuda dWqCudaComposed (tol := 2e-2)
-  Utils.assertTensorApprox (s := [dModel, projDim]) "direct vs composed mha dWk"
-    dWkCuda dWkCudaComposed (tol := 2e-2)
-  Utils.assertTensorApprox (s := [dModel, projDim]) "direct vs composed mha dWv"
-    dWvCuda dWvCudaComposed (tol := 2e-2)
-  Utils.assertTensorApprox (s := [projDim, dModel]) "direct vs composed mha dWo"
-    dWoCuda dWoCudaComposed (tol := 2e-2)
+  -- Compare the batch with two independent CPU tapes, summing shared weight gradients.
+  let cpuSample := fun (input : Tensor Float [n, dModel]) => do
+    let (tc1, cq) := Tape.leaf (t := Tape.empty) batchIdentity
+    let (tc2, ck) := Tape.leaf (t := tc1) batchIdentity
+    let (tc3, cv) := Tape.leaf (t := tc2) batchIdentity
+    let (tc4, co) := Tape.leaf (t := tc3) batchIdentity
+    let (tc5, cx) := Tape.leaf (t := tc4) input
+    let (tc6, cy) ← Utils.okOrThrow <|
+      Tape.attention (t := tc5) (dModel := dModel)
+        (numHeads := numHeads) (headDim := headDim)
+        n_ne_zero cq ck cv co cx (some mask)
+    let output ← Utils.cpuValue (s := outShape) tc6 cy
+    let gradients ← Utils.okOrThrow <|
+      Tape.backwardDenseAll tc6 cy (Spec.SomeTensor.ofTensor (Tensor.full outShape (1.0 : Float)))
+    let dx ← Utils.cpuGrad (s := outShape) gradients cx
+    let dq ← Utils.cpuGrad (s := [dModel, projDim]) gradients cq
+    let dk ← Utils.cpuGrad (s := [dModel, projDim]) gradients ck
+    let dv ← Utils.cpuGrad (s := [dModel, projDim]) gradients cv
+    let dw ← Utils.cpuGrad (s := [projDim, dModel]) gradients co
+    pure (output, dx, dq, dk, dv, dw)
+  let (y0, dx0, dq0, dk0, dv0, dw0) ← cpuSample xFirst
+  let (y1, dx1, dq1, dk1, dv1, dw1) ← cpuSample xSecond
+  let expectedY : Tensor Float batchShape :=
+    Tensor.stack 0 fun i => if i.val = 0 then y0 else y1
+  let expectedDx : Tensor Float batchShape :=
+    Tensor.stack 0 fun i => if i.val = 0 then dx0 else dx1
+  Utils.assertTensorApprox "batched mha forward" yBatch expectedY (tol := 2e-2)
+  Utils.assertTensorApprox "batched mha dx" dxBatch expectedDx (tol := 2e-2)
+  Utils.assertTensorApprox "batched mha dWq" dWqBatch (Tensor.add dq0 dq1) (tol := 2e-2)
+  Utils.assertTensorApprox "batched mha dWk" dWkBatch (Tensor.add dk0 dk1) (tol := 2e-2)
+  Utils.assertTensorApprox "batched mha dWv" dWvBatch (Tensor.add dv0 dv1) (tol := 2e-2)
+  Utils.assertTensorApprox "batched mha dWo" dWoBatch (Tensor.add dw0 dw1) (tol := 2e-2)
 
   Utils.assertTensorApprox (s := outShape) "mha forward" yCuda yCpu (tol := 2e-2)
   Utils.assertTensorApprox (s := outShape) "mha dx" dxCuda dxCpu (tol := 2e-2)

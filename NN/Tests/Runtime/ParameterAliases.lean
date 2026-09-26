@@ -52,7 +52,7 @@ def checkStorage : IO Unit := do
   let p ← scalar
   let q ← scalar
   let value ← IO.mkRef (Tensor.scalar 2.0)
-  let cudaValue ← IO.mkRef (none : Option Runtime.Autograd.Cuda.AnyBuffer)
+  let cudaValue ← IO.mkRef (none : Option Runtime.Autograd.LibTorch.AnyBuffer)
   let hostCurrent ← IO.mkRef true
   let vector ← Param.Internal.create ([2.0] : Tensor Float [1])
   let entries := #[
@@ -206,7 +206,7 @@ private def recordTriple (session : EagerSession Float) (p q : Param Float []) :
 private def firstMomentBytes (state : CudaAdamState) (index : Nat) : IO ByteArray := do
   let some entry := state.get? index
     | throw <| IO.userError "parameter aliases: missing CUDA Adam state"
-  Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.m
+  Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.m
 
 /-- Separate histories left by a former untied layout are rejected without updating storage. -/
 def checkCudaRetie : IO Unit := do
@@ -261,10 +261,10 @@ private def sameCudaState (left right : CudaAdamState) : IO Bool := do
   for (id, entry) in left.toList do
     let some other := right.get? id | return false
     unless entry.t == other.t do return false
-    unless (← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.m) ==
-        (← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO other.m) do return false
-    unless (← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO entry.v) ==
-        (← Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO other.v) do return false
+    unless (← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.m) ==
+        (← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO other.m) do return false
+    unless (← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO entry.v) ==
+        (← Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO other.v) do return false
   pure true
 
 /-- Tied CUDA AdamW follows an independent run with gradients summed before the optimizer. -/
@@ -394,12 +394,12 @@ def runCpu : IO Unit := do
   IO.println "PARAMETER_ALIAS_CPU_PASSED"
 
 def runCuda : IO Unit := do
-  Runtime.Autograd.Cuda.Buffer.requireNativeRuntime
+  Runtime.Autograd.LibTorch.Buffer.requireNativeRuntime
   checkSnapshots .cuda
   checkCudaRetie
   checkCudaOptimizer
   checkCudaCheckpoint
-  Runtime.Autograd.Cuda.Buffer.collectGarbage
+  Runtime.Autograd.LibTorch.Buffer.collectGarbage
   IO.println "PARAMETER_ALIAS_CUDA_PASSED"
 
 end NN.Tests.Runtime.ParameterAliases

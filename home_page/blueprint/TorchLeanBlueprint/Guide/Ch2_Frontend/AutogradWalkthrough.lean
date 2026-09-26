@@ -478,7 +478,7 @@ def agModel : nn.Sequential [2] [3] :=
 /-- Every weight and bias pinned to `0.1`, so the numbers
 below can be checked by hand. -/
 def agState : autograd.model.State agModel Float :=
-  autograd.model.fullState agModel 0.1
+  nn.State.full 0.1
 
 def agIn : Tensor Float [2] := [0.5, -1.2]
 
@@ -902,7 +902,7 @@ $`H_f(x)v` without ever forming $`H_f(x)`, which is Pearlmutter's trick
 -- and the change in its gradient.
 #eval show IO Unit from do
   let direction : autograd.model.State agModel Float :=
-    autograd.model.fullState agModel 0.1
+    nn.State.full 0.1
   let d ←
     autograd.model.jvp agModel agMse agState agIn agTarget
       direction
@@ -1082,7 +1082,7 @@ one independently:
 1. Replacing `nn.functional.mean` with a sum in `agSumSq` doubles the gradient by removing the
    division by two.
 2. The seed $`(0,1)` in `autograd.vjp agSquare` selects the second Jacobian row.
-3. Setting `agState` to `autograd.model.fullState agModel 0.2` changes the loss through the
+3. Setting `agState` to `nn.State.full 0.2` changes the loss through the
    affine model output. The same residual calculation predicts the new value.
 4. Setting one coordinate of `agIn` to $`0` makes the corresponding weight-gradient column zero.
 5. Evaluating `agRelu` at `[-1.0, 1.0e-30, 1.0]` and then at `[-1.0, -1.0e-30, 1.0]` crosses the

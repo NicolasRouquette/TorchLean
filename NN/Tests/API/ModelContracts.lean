@@ -318,25 +318,25 @@ def zeroGroupNorm : nn.Sequential [2, 1] [2, 1] :=
 def nondivisibleGroupNorm : nn.Sequential [3, 1] [3, 1] :=
   nn.build 7 (nn.groupNorm ([1] : Tensor Nat [1]) 2 (channels := 3))
 
-def attentionConfig : nn.MultiHeadAttention.Config :=
+def attentionConfig : nn.Attention.Options :=
   { headCount := 1, headWidth := 4 }
 
 def zeroSequenceAttention : nn.Sequential [0, 4] [0, 4] :=
   nn.build 7
-    (nn.multiHeadAttention (sequenceLength := 0) (modelWidth := 4) attentionConfig)
+    (nn.attention (sequenceLength := 0) (modelWidth := 4) attentionConfig)
 
 def zeroModelWidthAttention : nn.Sequential [2, 0] [2, 0] :=
   nn.build 7
-    (nn.multiHeadAttention (sequenceLength := 2) (modelWidth := 0) attentionConfig)
+    (nn.attention (sequenceLength := 2) (modelWidth := 0) attentionConfig)
 
 def zeroHeadCountAttention : nn.Sequential [2, 4] [2, 4] :=
   nn.build 7
-    (nn.multiHeadAttention (sequenceLength := 2) (modelWidth := 4)
+    (nn.attention (sequenceLength := 2) (modelWidth := 4)
       { headCount := 0, headWidth := 4 })
 
 def zeroHeadWidthBiasedAttention : nn.Sequential [2, 4] [2, 4] :=
   nn.build 7
-    (nn.multiHeadAttention (sequenceLength := 2) (modelWidth := 4)
+    (nn.attention (sequenceLength := 2) (modelWidth := 4)
       { headCount := 1, headWidth := 0, outputBias := true })
 
 def transformerConfig : nn.TransformerEncoder.Stack.Config :=
@@ -536,7 +536,7 @@ def malformedIndexed : nn.IndexedModel [2] [2, 3] (Fin 2) :=
 /-- Invalid builders must fail before their placeholder forward can produce derivatives. -/
 def checkInvalidAutograd : IO Unit := do
   let model := nn.build 0 (nn.softmax (shape := [2]) 9)
-  let state := autograd.model.initialState model (α := Float)
+  let state := nn.initialState model (α := Float)
   let input : Tensor Float [2] := [1.0, 2.0]
   for action in [
       (do let _ ← autograd.model.vjp model state input input; pure ()),
@@ -551,8 +551,8 @@ def checkInvalidAutograd : IO Unit := do
 /-- Parameter HVPs preserve the coupled weight and bias curvature. -/
 def checkHigherDerivatives : IO Unit := do
   let model := nn.build 0 (nn.linear 1 1)
-  let state : autograd.model.State model Float := autograd.model.initialState model
-  let direction : autograd.model.State model Float := autograd.model.fullState model 1.0
+  let state : autograd.model.State model Float := nn.initialState model
+  let direction : autograd.model.State model Float := nn.State.full 1.0
   let curvature ← autograd.model.hvp model autograd.model.Loss.mse
     state ([2.0] : Tensor Float [1]) ([0.0] : Tensor Float [1]) direction
   let weight := curvature.get ⟨0, by decide⟩

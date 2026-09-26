@@ -202,13 +202,6 @@ def parseEquation (raw : String) : Except String Parsed := do
   | _ =>
       throw s!"einsum: invalid equation `{raw}` (expected `lhs` or `lhs->rhs`)"
 
-/-- Detect whether a list of labels contains any duplicates (order-preserving scan). -/
-def hasDupLabels (xs : List Label) : Bool :=
-  let rec go (seen : List Label) : List Label → Bool
-    | .nil => false
-    | .cons x xs => if seen.contains x then true else go (x :: seen) xs
-  go [] xs
-
 /--
 Convert a permutation of axes into a sequence of adjacent swaps.
 
@@ -368,12 +361,6 @@ def permuteBySwapsTyped {α : Type} [TorchLean.Storage α] [Context α]
   | .cons depth depths => do
       let moved ← swapAdjacentAtDepth (m := m) (α := α) (s := s) depth x
       permuteBySwapsTyped (m := m) (α := α) moved depths
-
-/-- Remove the element at index `n` (0-based), leaving the list unchanged if out of bounds. -/
-def removeAt {α : Type} : List α → Nat → List α
-  | .nil, _ => []
-  | .cons _ xs, 0 => xs
-  | .cons x xs, n + 1 => x :: removeAt xs n
 
 /--
 Compute a permutation that maps `src` to `tgt` when duplicates are present.

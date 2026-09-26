@@ -87,11 +87,14 @@ abbrev Recurrent.Config.outputShape (config : Recurrent.Config)
 namespace Recurrent.Internal
 
 /-- Compose the recurrent layers in order, then apply the same linear head at every time step. -/
-def build (config : Recurrent.Config) (batchShape : Shape)
+def build (kind : String) (config : Recurrent.Config) (batchShape : Shape)
     (core : (inputWidth hiddenWidth : Nat) →
       Builder (Sequential (batchShape.concat [config.sequenceLength, inputWidth])
         (batchShape.concat [config.sequenceLength, hiddenWidth]))) :
-    Builder (Sequential (config.inputShape batchShape) (config.outputShape batchShape)) :=
+    Builder (Sequential (config.inputShape batchShape) (config.outputShape batchShape)) := do
+  if let .error message := validateConfig kind config then
+    return nn.Internal.invalidConfiguration
+      (config.inputShape batchShape) (config.outputShape batchShape) kind message
   let rec buildLayers (inputWidth : Nat) (hiddenWidths : List Nat) :
       Builder (Sequential (batchShape.concat [config.sequenceLength, inputWidth])
         (config.outputShape batchShape)) :=
@@ -112,15 +115,10 @@ end Recurrent.Internal
 Vanilla RNN layers followed by a time-distributed linear head.
 -/
 def rnn (config : Recurrent.Config) (batchShape : Shape := []) :
-    nn.Builder (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) := by
-  match Recurrent.Internal.validateConfig "RNN" config with
-  | .error message =>
-      exact pure <| nn.Internal.invalidConfiguration
-        (config.inputShape batchShape) (config.outputShape batchShape) "RNN" message
-  | .ok () =>
-      exact Recurrent.Internal.build config batchShape fun inputWidth hiddenWidth => by
-        simpa only [Shape.appendDim_appendDim_eq_concat] using
-          (nn.rnn config.sequenceLength inputWidth hiddenWidth (batchShape := batchShape))
+    nn.Builder (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) :=
+  Recurrent.Internal.build "RNN" config batchShape fun inputWidth hiddenWidth => by
+    simpa only [Shape.appendDim_appendDim_eq_concat] using
+      (nn.rnn config.sequenceLength inputWidth hiddenWidth (batchShape := batchShape))
 
 /--
 Gated recurrent layers followed by a time-distributed linear head.
@@ -160,30 +158,20 @@ final-state result, and hidden state is not carried between calls.
 -/
 def gru (config : Recurrent.Config) (batchShape : Shape := [])
     (convention : Spec.GRUConvention := .resetBefore) :
-    nn.Builder (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) := by
-  match Recurrent.Internal.validateConfig "GRU" config with
-  | .error message =>
-      exact pure <| nn.Internal.invalidConfiguration
-        (config.inputShape batchShape) (config.outputShape batchShape) "GRU" message
-  | .ok () =>
-      exact Recurrent.Internal.build config batchShape fun inputWidth hiddenWidth => by
-        simpa only [Shape.appendDim_appendDim_eq_concat] using
-          (nn.gru config.sequenceLength inputWidth hiddenWidth
-            (batchShape := batchShape) (convention := convention))
+    nn.Builder (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) :=
+  Recurrent.Internal.build "GRU" config batchShape fun inputWidth hiddenWidth => by
+    simpa only [Shape.appendDim_appendDim_eq_concat] using
+      (nn.gru config.sequenceLength inputWidth hiddenWidth
+        (batchShape := batchShape) (convention := convention))
 
 /--
 LSTM layers followed by a time-distributed linear head.
 -/
 def lstm (config : Recurrent.Config) (batchShape : Shape := []) :
-    nn.Builder (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) := by
-  match Recurrent.Internal.validateConfig "LSTM" config with
-  | .error message =>
-      exact pure <| nn.Internal.invalidConfiguration
-        (config.inputShape batchShape) (config.outputShape batchShape) "LSTM" message
-  | .ok () =>
-      exact Recurrent.Internal.build config batchShape fun inputWidth hiddenWidth => by
-        simpa only [Shape.appendDim_appendDim_eq_concat] using
-          (nn.lstm config.sequenceLength inputWidth hiddenWidth (batchShape := batchShape))
+    nn.Builder (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) :=
+  Recurrent.Internal.build "LSTM" config batchShape fun inputWidth hiddenWidth => by
+    simpa only [Shape.appendDim_appendDim_eq_concat] using
+      (nn.lstm config.sequenceLength inputWidth hiddenWidth (batchShape := batchShape))
 
 end models
 end nn

@@ -245,7 +245,7 @@ def tensorFloat32Bytes {α : Type} [TorchLean.Storage α] (encode : α → Float
         throw <| IO.userError <|
           s!"StateIO: CUDA state-tensor shape mismatch "
             ++ s!"(buffer={Shape.pretty value.s}, expected={Shape.pretty shape})"
-      Runtime.Autograd.Cuda.Buffer.toFloat32BytesIO value.buf
+      Runtime.Autograd.LibTorch.Buffer.toFloat32BytesIO value.buf
   | none =>
       let tensor ← tensorRef.value.get
       pure <| tensorToFloat32Bytes encode tensor
@@ -293,7 +293,7 @@ def readTensorFloat32Into {α : Type} [TorchLean.Storage α] (decode : Float32 �
   let bytes ← Torch.Internal.CheckpointIO.readExact
     "StateIO" handle (Shape.size shape * 4)
   if useCuda then
-    let buffer ← Runtime.Autograd.Cuda.Buffer.ofFloat32BytesIO bytes
+    let buffer ← Runtime.Autograd.LibTorch.Buffer.ofFloat32BytesIO bytes
     Torch.Internal.setParamCudaValue tensorRef { s := shape, buf := buffer }
   else
     let tensor ← match tensorFromFloat32Bytes decode shape bytes with

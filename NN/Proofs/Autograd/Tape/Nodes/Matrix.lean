@@ -109,46 +109,6 @@ abbrev vecSize (n : Nat) : Nat :=
       simp
     exact (tensorToVec_get2 (A := vecToTensor (s := .dim m (.dim n .scalar)) v) i j).symm.trans htv
 
-  /-- Entrywise formula for matrix addition: `(A + B)[i,j] = A[i,j] + B[i,j]`. -/
-  private theorem get2_add_spec {m n : Nat} (A B : Tensor ℝ [m, n]) (i : Fin m) (j
-    : Fin n) :
-      Spec.get2 (addSpec A B) i j = Spec.get2 A i j + Spec.get2 B i j := by
-    simp [addSpec]
-
-  /-- Vectorization commutes with matrix addition:
-  `tensorToVec (A + B) = tensorToVec A + tensorToVec B`. -/
-  theorem tensorToVec_add_spec_mat {m n : Nat} (A B : Tensor ℝ [m, n]) :
-      tensorToVec (t := addSpec A B) = tensorToVec (t := A) + tensorToVec (t := B) := by
-    classical
-    ext ip
-    let hp : vecSize n = n := by simp [vecSize, Spec.Shape.size]
-    let i : Fin m := ip.divNat (m := m) (n := vecSize n)
-    let j' : Fin (vecSize n) := ip.modNat (m := m) (n := vecSize n)
-    let j : Fin n := Fin.cast hp j'
-    have hip : idxMN (m := m) (n := n) i j = ip := by
-      have hCast : idxMN i j = finProdFinEquiv (i, j') := idxMN_cast_vecSize i j' hp
-      have hPair : finProdFinEquiv (i, j') = ip := by
-        apply Fin.ext
-        change j'.val + vecSize n * i.val = ip.val
-        exact Nat.mod_add_div _ _
-      exact hCast.trans hPair
-    -- Convert the LHS via `get2`, use elementwise addition, then convert back.
-    have hgetL : tensorToVec (t := addSpec A B) ip = Spec.get2 (addSpec A B) i j := by
-      -- rewrite the index to match `tensorToVec_get2`
-      rw [←hip]
-      exact tensorToVec_get2 (A := addSpec A B) i j
-    have hgetA : tensorToVec (t := A) ip = Spec.get2 A i j := by
-      rw [←hip]
-      exact tensorToVec_get2 (A := A) i j
-    have hgetB : tensorToVec (t := B) ip = Spec.get2 B i j := by
-      rw [←hip]
-      exact tensorToVec_get2 (A := B) i j
-    calc
-      tensorToVec (t := addSpec A B) ip
-          = Spec.get2 (addSpec A B) i j := hgetL
-      _ = Spec.get2 A i j + Spec.get2 B i j := get2_add_spec (A := A) (B := B) i j
-      _ = tensorToVec (t := A) ip + tensorToVec (t := B) ip := by simp [hgetA, hgetB]
-
 /-- A bilinear map on flattened matrices: `(m×n) × (n×p) → (m×p)` on `Vec (Spec.Shape.size ...)`. -/
 def matmulVec {m n p : Nat} (a : Vec (matSize m n)) (b : Vec (matSize n p)) : Vec (matSize m p) :=
   vecOfFun (n := matSize m p) fun ip =>
@@ -830,7 +790,7 @@ by
     -- `Matmul.matmulVec a b`.
     ext ip
     -- After expanding, the two bilinear terms may appear in the opposite order.
-    simp [matmul, Node.jvpVec_ofFn, fA, fB, Bmul, Matmul.tensorToVec_add_spec_mat,
+    simp [matmul, Node.jvpVec_ofFn, fA, fB, Bmul, tensorToVec_addSpec,
       Matmul.forward_eq_matmulVec, ContinuousLinearMap.comp_apply,
       CtxVec.getCLM_apply]
     ring

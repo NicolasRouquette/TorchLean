@@ -53,11 +53,11 @@ def sample (options : Runtime.Autograd.Torch.Config)
   if !options.usesCuda || watchEvery = 0 || (done != 0 && done % watchEvery != 0) then
     pure state?
   else
-    let stats ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+    let stats ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
     IO.println s!"  cuda_mem step={done}: {stats.format}"
     let allocated := stats.allocatedBytes.toNat
     let unusedReserved := stats.reservedBytes.toNat - allocated
-    let fraction ← Runtime.Autograd.Cuda.LibTorch.getMemoryFraction
+    let fraction ← Runtime.Autograd.LibTorch.getMemoryFraction
     let total := stats.deviceTotalBytes.toNat
     let budget := Nat.min total ((Float.ofNat total * fraction).toUInt64.toNat)
     let availableNow := Nat.min

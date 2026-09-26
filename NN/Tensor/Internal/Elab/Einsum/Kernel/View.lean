@@ -83,7 +83,7 @@ def compileInputViewRead
         withTransparency .all <|
           mkExpectedTypeHint hOptimizedSourceIndexValue
             (← mkEq optimizedSourceIndexValue certifiedSourceIndexValue)
-      let sourceTensorType ← inferType sourceTensor
+      let sourceTensorType ← whnf (← inferType sourceTensor)
       let sourceTensorType := sourceTensorType.consumeMData
       unless sourceTensorType.isAppOfArity ``Rep 3 do
         throwError

@@ -57,13 +57,12 @@ device agree. This prevents a backend report from naming one provider while its 
 runs another. The binding proves only that identity agreement; it does not prove the handler's
 arithmetic, FFI code, compiler output, driver, or hardware. Those obligations retain the evidence
 and trust level stated by the capsule. CUDA primitives are registered under `Provider.libTorch`,
-with names such as `libtorch.matmul`. Attention also exposes `torchlean.composed_attention`, where
-Lean composes LibTorch primitives, and `libtorch.direct_attention`, where the native bridge evaluates
-forward and the selected local VJP. Both keep the global tape in TorchLean.
+with names such as `libtorch.matmul`. The single GPU attention implementation is
+`libtorch.direct_attention`: the native bridge evaluates forward and the selected local VJP,
+while TorchLean owns the global tape.
 
 The maintained `checkedCuda` profile prefers LibTorch, including direct attention, and retains
-TorchLean's global tape. An explicit `.prefer .torchLean` provider preference selects composed
-attention for comparison. The profile requires runtime guards and named regression evidence. Its
+TorchLean's global tape. The profile requires runtime guards and named regression evidence. Its
 `checked` classification does not mean that LibTorch is inside Lean's proof kernel. Likewise,
 `KernelPlanAudit.hasTrustedExternal = false` means no capsule has the `trustedExternal`
 classification; it does not mean that no foreign code runs. A descriptor naming a regression suite
@@ -72,8 +71,8 @@ records the required validation, not a proof or a stored result from a particula
 ## Lean Axioms and Hidden Implementations
 
 TorchLean currently declares no custom Lean axioms. The CUDA handle type is instead carried by
-`Runtime.Autograd.Cuda.BufferImpl`, an opaque `NonemptyType` in
-`NN/Runtime/Autograd/Engine/Cuda/Trusted.lean`. Its `Nonempty` instance is obtained from that data
+`Runtime.Autograd.LibTorch.BufferImpl`, an opaque `NonemptyType` in
+`NN/Runtime/Autograd/Engine/LibTorch/Trusted.lean`. Its `Nonempty` instance is obtained from that data
 carrier rather than asserted as a proposition. This lets compiled extern functions return buffers,
 but it neither allocates a buffer nor proves anything about native memory.
 
@@ -206,7 +205,7 @@ local or global LibTorch autograd graph. `VJPMode.backendVJP` means a bridge rou
 selected local reverse rule, not that LibTorch owns differentiation.
 
 - `csrc/libtorch/` contains the native tensor operations. The Lean boundary remains under
-  `NN/Runtime/Autograd/Engine/Cuda/`; its CUDA names identify the execution device and FFI ABI.
+  `NN/Runtime/Autograd/Engine/LibTorch/`; its CUDA names identify the execution device and FFI ABI.
   LibTorch, its CUDA dependencies, the compiler, and the driver remain outside Lean's proof kernel.
 - Shape-erased tape values must match their native tensor element counts. Dimensions, indices, and
   output sizes must fit the `UInt32` FFI ABI. Native guards must also check dtype, device, and
@@ -253,8 +252,7 @@ selected local reverse rule, not that LibTorch owns differentiation.
   not proof of numerical agreement. Builds without LibTorch return zero for known settings and
   memory fraction, reject unknown setting IDs, and reject configuration requests.
 - Attention retains its proof-facing denotation in `NN/Spec/Layers/FlashAttention.lean`. The
-  composed route evaluates matrix products and hard-masked softmax through LibTorch primitives;
-  the direct bridge returns forward values and local `dQ`, `dK`, and `dV`. Neither capsule promises
+  LibTorch bridge returns forward values and local `dQ`, `dK`, and `dV`. It does not promise
   a particular FlashAttention algorithm. Boolean masks retain zero contributions at blocked
   coordinates and zero fully blocked rows. Finite additive attention biases remain a separate
   semantic operation.

@@ -1105,6 +1105,28 @@ abbrev mmFno : nn.models.FNO.Config 1 :=
 ([8, 64], [8, 64])
 ```
 
+The defaults describe scalar fields. `inputFeatures` and `outputFeatures` instead let each grid
+point carry a vector or a tensor. For example, three measured quantities can predict a two-by-two
+tensor at each point without changing the spatial grid:
+
+```lean (name := mmFnoFeatures)
+abbrev mmTensorFno : nn.models.FNO.Config 1 :=
+  { mmFno with
+    inputFeatures := [3]
+    outputFeatures := [2, 2] }
+
+#eval (mmTensorFno.inputShape [8],
+  mmTensorFno.outputShape [8])
+```
+```leanOutput mmFnoFeatures
+([8, 64, 3], [8, 64, 2, 2])
+```
+
+The lift combines the input features into the latent channels; the projection produces the output
+features. Fourier transforms still act only on spatial axes. Feature shapes must have a positive
+number of entries, while an empty batch is allowed. `[]` means one scalar per point,
+not zero entries.
+
 On each full-DFT axis, `modes` is the width of each of two index bands. A width of four on a
 sixteen-point axis therefore retains eight indices. The second example uses an eight-point axis
 whose bands overlap:
@@ -1153,10 +1175,10 @@ dense per-axis operations. Setting `spectralPath := .denseReference` selects ful
 without changing the weights or checkpoint layout. Both paths compute the same full-spectrum
 model, up to floating-point differences in their transform algorithms.
 
-The CUDA Burgers command deliberately selects a separate one-dimensional real-FFT parameterization
-evaluated through LibTorch. It has the same typed field-to-field boundary, but its one-sided weights
-are not interchangeable with the full-spectrum model's weights. The spectral-block chapter in
-{ref "scientific-forward-models"}[Scientific Forward Models] says which parts are shared.
+The Burgers command uses this same constructor on a one-dimensional grid. Its CPU and CUDA runs
+share the model and weight layout; the selected runtime determines how the transforms execute.
+The spectral-block chapter in
+{ref "scientific-forward-models"}[Scientific Forward Models] follows that computation in detail.
 
 The field shape $`[8,64]` records eight independent sampled fields, each with sixty-four spatial
 values. It does not describe the hidden channel width, the retained Fourier bands, or how samples

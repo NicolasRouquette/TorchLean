@@ -100,7 +100,7 @@ An internal registration without a storage descriptor supplies its current host 
 `AnyParam.get`. Its custom getter must honor that contract; a tape leaf is not a substitute.
 -/
 def ParameterGroup.currentCudaValue {α : Type} [Storage α] [TensorTransfer α]
-    (group : ParameterGroup α) : IO Runtime.Autograd.Cuda.AnyBuffer := do
+    (group : ParameterGroup α) : IO Runtime.Autograd.LibTorch.AnyBuffer := do
   let value ← match group.storage? with
     | some storage => getParamCudaValue (parameterOfStorage storage)
     | none => do
@@ -138,21 +138,21 @@ both success and failure; the optimizer action must not retain that temporary gr
 -/
 def withCudaGroupGradient {α β : Type} [Storage α]
     (group : ParameterGroup α) (gradients : CudaGradMap)
-    (action : Runtime.Autograd.Cuda.AnyBuffer → IO β) : IO β := do
+    (action : Runtime.Autograd.LibTorch.AnyBuffer → IO β) : IO β := do
   let first ← match gradients.get? group.id with
     | some gradient => pure gradient
     | none => throw <| IO.userError "torch: missing CUDA gradient during grouped update"
   if group.leaves.size == 1 then
     action first
   else
-    let owned ← IO.mkRef (none : Option Runtime.Autograd.Cuda.AnyBuffer)
+    let owned ← IO.mkRef (none : Option Runtime.Autograd.LibTorch.AnyBuffer)
     try
       let mut total := first
       for id in group.leaves.toList.drop 1 do
         let gradient ← match gradients.get? id with
           | some gradient => pure gradient
           | none => throw <| IO.userError "torch: missing shared CUDA gradient"
-        let next ← okOrThrow <| Runtime.Autograd.Cuda.AnyBuffer.add total gradient
+        let next ← okOrThrow <| Runtime.Autograd.LibTorch.AnyBuffer.add total gradient
         let previous ← owned.swap (some next)
         if let some previous := previous then
           releaseCudaAnyBuffer previous

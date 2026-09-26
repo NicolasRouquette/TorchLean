@@ -1170,7 +1170,7 @@ a rate of `0.1` is halved after every three step indices:
 def tfDecay := Trainer.Scheduler.step 0.1 3 0.5
 
 #eval (List.range 10).map
-  (Trainer.Scheduler.learningRateAt tfDecay)
+  tfDecay.rate
 ```
 
 ```leanOutput tfDecay (whitespace := lax)
@@ -1253,7 +1253,7 @@ def tfWarmup :=
   Trainer.Scheduler.warmupCosine 0.001 0.0001 4 12
 
 #eval (List.range 13).map
-  (Trainer.Scheduler.learningRateAt tfWarmup)
+  tfWarmup.rate
 ```
 
 ```leanOutput tfWarmup (whitespace := lax)
@@ -1279,7 +1279,7 @@ def tfPretraining :=
   Trainer.Scheduler.warmupCosine 0.0006 0.00006 2000 162761
 
 #eval [0, 1, 1000, 2000, 100000, 162761].map
-  (Trainer.Scheduler.learningRateAt tfPretraining)
+  tfPretraining.rate
 ```
 
 ```leanOutput tfPretraining (whitespace := lax)
@@ -1289,7 +1289,7 @@ def tfPretraining :=
 The first entry is not zero, it is $`3\times10^{-7}` displayed with six decimals, and the second is
 $`6\times10^{-7}`. Halfway through warm-up the rate is half the peak, at update 2000 it is the peak
 `0.0006`, and at the final update it is the floor `0.00006`. At and after `totalSteps`,
-`learningRateAt` returns the floor exactly. The scheduler changes optimizer state only. It does not
+`Config.rate` returns the floor exactly. The scheduler changes optimizer state only. It does not
 depend on a particular model, loss, dataset, or device. If the requested warm-up is longer than the
 run, TorchLean clamps it to `totalSteps`.
 

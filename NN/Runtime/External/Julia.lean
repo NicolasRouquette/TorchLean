@@ -81,7 +81,7 @@ integrations.
 def run (args : Array String) (cwd : Option String := some ".") (juliaCmd : String := "julia") :
     IO String := do
   let cmd ← ensureAvailable juliaCmd
-  TorchLean.External.Process.runStdoutChecked (ctx := "Julia") (cmd := cmd) (args := args)
+  TorchLean.External.Process.run (ctx := "Julia") (cmd := cmd) (args := args)
     (cwd := cwd)
 
 /--
@@ -93,7 +93,7 @@ Julia process and parses that payload.
 def runJson (args : Array String) (cwd : Option String := some ".") (juliaCmd : String := "julia") :
     IO Json := do
   let cmd ← ensureAvailable juliaCmd
-  TorchLean.External.Process.runJsonStdoutChecked (ctx := "Julia")
+  TorchLean.External.Process.runJson (ctx := "Julia")
     (cmd := cmd) (args := args) (cwd := cwd)
 
 end Julia

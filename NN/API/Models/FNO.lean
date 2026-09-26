@@ -23,7 +23,7 @@ Equations*, ICLR 2021.
 
 namespace TorchLean.nn.models
 
-/-- Configuration for a scalar-field FNO over `d` spatial axes. -/
+/-- Configuration for an FNO over `d` spatial axes with tensor-valued fields. -/
 structure FNO.Config (d : Nat) where
   /-- Size of each sampled grid axis. -/
   spatial : Tensor Nat [d]
@@ -34,6 +34,10 @@ structure FNO.Config (d : Nat) where
   `spatial - modes` are retained. Overlapping bands retain the entire axis.
   -/
   modes : Tensor Nat [d]
+  /-- Feature axes at each input grid point; `[]` is a scalar field. -/
+  inputFeatures : Spec.Shape := []
+  /-- Feature axes at each output grid point; `[]` is a scalar field. -/
+  outputFeatures : Spec.Shape := []
   /-- Width of the latent channel representation. -/
   width : Nat
   /-- Number of spectral residual blocks. -/
@@ -51,21 +55,29 @@ def validate {d : Nat} (config : FNO.Config d) : Except String Unit := do
     throw "FNO: spatial grid must contain at least one point"
   if config.width = 0 then
     throw "FNO: width must be positive"
+  if config.inputFeatures.size = 0 then
+    throw "FNO: input features must contain at least one value"
+  if config.outputFeatures.size = 0 then
+    throw "FNO: output features must contain at least one value"
 
 end FNO.Config
 
-/-- Scalar-field input shape with an arbitrary batch shape. -/
+/-- Batch axes followed by spatial axes and input feature axes. -/
 abbrev FNO.Config.inputShape {d : Nat} (config : FNO.Config d)
     (batchShape : Spec.Shape := []) : Spec.Shape :=
-  batchShape.concat (config.spatial.to Spec.Shape)
+  batchShape.concat ((config.spatial.to Spec.Shape).concat config.inputFeatures)
 
-/-- Scalar-field output shape with the same batch shape as the input. -/
+/-- Batch axes followed by spatial axes and output feature axes. -/
 abbrev FNO.Config.outputShape {d : Nat} (config : FNO.Config d)
     (batchShape : Spec.Shape := []) : Spec.Shape :=
-  batchShape.concat (config.spatial.to Spec.Shape)
+  batchShape.concat ((config.spatial.to Spec.Shape).concat config.outputFeatures)
 
 /--
-Build a multidimensional FNO model, independently of spatial rank and batch shape.
+Build a multidimensional FNO model, independently of spatial rank, feature shape and batch shape.
+
+The pointwise lift and projection flatten only the feature axes. Spectral blocks still transform
+the spatial axes separately. Empty feature shapes select scalar fields, preserving the default
+parameter layout; feature shapes containing a zero extent are rejected before initialization.
 
 `automatic` uses separable transforms, with cuFFT on supported eager CUDA interpreters and dense
 per-axis transforms otherwise. `denseReference` uses the full-grid DFT matrices. Both paths retain
@@ -99,15 +111,13 @@ def fno {d : Nat} (config : FNO.Config d) (batchShape : Spec.Shape := []) :
         nn.withSeed fun projectWeightSeed =>
           let lift :=
             Runtime.Autograd.Model.Layers.FNO.pointwiseAffine
-              grid 1 config.width liftWeightSeed
+              grid config.inputFeatures.size config.width liftWeightSeed
           let project :=
             Runtime.Autograd.Model.Layers.FNO.pointwiseAffine
-              grid config.width 1 projectWeightSeed
+              grid config.width config.outputFeatures.size projectWeightSeed
           let model :=
-            Runtime.Autograd.Model.Layers.Seq.cons
-              (Runtime.Autograd.Model.Layers.FNO.Internal.addScalarChannel config.spatial) <|
-            Runtime.Autograd.Model.Layers.Seq.cons
-              (Runtime.Autograd.Model.Layers.FNO.Internal.flattenSpatial config.spatial) <|
+            Runtime.Autograd.Model.Layers.Seq.comp
+              (nn.Impl.reshape (config.inputShape []) [grid, config.inputFeatures.size]) <|
             Runtime.Autograd.Model.Layers.Seq.cons lift <|
             Runtime.Autograd.Model.Layers.Seq.cons
               (Runtime.Autograd.Model.Layers.FNO.Internal.restoreSpatial config.spatial) <|
@@ -115,11 +125,7 @@ def fno {d : Nat} (config : FNO.Config d) (batchShape : Spec.Shape := []) :
             Runtime.Autograd.Model.Layers.Seq.cons
               (Runtime.Autograd.Model.Layers.FNO.Internal.flattenSpatial config.spatial) <|
             Runtime.Autograd.Model.Layers.Seq.cons project <|
-            Runtime.Autograd.Model.Layers.Seq.cons
-              (Runtime.Autograd.Model.Layers.FNO.Internal.restoreSpatial config.spatial) <|
-            Runtime.Autograd.Model.Layers.Seq.cons
-              (Runtime.Autograd.Model.Layers.FNO.Internal.removeScalarChannel config.spatial)
-              (nn.Sequential.identity _)
+              nn.Impl.reshape [grid, config.outputFeatures.size] (config.outputShape [])
           pure (nn.mapLeading batchShape model)
 
 end TorchLean.nn.models

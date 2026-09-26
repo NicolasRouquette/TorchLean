@@ -105,11 +105,11 @@ def audit (p : KernelPlan) : KernelPlanAudit :=
 
 /-- Whether any selected capsule has the `trustedExternal` evidence classification. -/
 def hasTrustedExternal (p : KernelPlan) : Bool :=
-  p.audit.hasTrustedExternal
+  p.kernels.any fun kernel => kernel.capsule.isTrustedExternal
 
 /-- Operation names whose selected capsules are trusted external. -/
 def trustedExternalOps (p : KernelPlan) : Array String :=
-  p.audit.trustedExternalOps
+  (p.kernels.filter fun kernel => kernel.capsule.isTrustedExternal).map (·.op.name)
 
 end KernelPlan
 

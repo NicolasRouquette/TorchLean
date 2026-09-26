@@ -97,19 +97,6 @@ def forwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule 
     s!"Reference `{op.name}` is a forward-only capsule with no registered VJP."
     .none
 
-/-- Build a portable capsule for channel-first convolution or pooling. -/
-def convPoolCapsule (op : BackendOp) : KernelCapsule :=
-  capsule
-    s!"reference.{op.name}"
-    op
-    s!"Reference `{op.name}` follows the channel-first runtime contract."
-    s!"TorchLean tape supplies the `{op.name}` VJP where differentiable."
-
-/-- Reference window selection with deterministic traversal and tie handling. -/
-def selectionCapsule (op : BackendOp) : KernelCapsule :=
-  { convPoolCapsule op with
-    numericalPolicy.reduction := .fixedLeft }
-
 /-- Reference ReLU activation. -/
 def relu : KernelCapsule :=
   capsule
@@ -282,7 +269,11 @@ def convTranspose : KernelCapsule :=
 
 /-- Reference max pooling. -/
 def maxPool : KernelCapsule :=
-  selectionCapsule .maxPool
+  let op := BackendOp.maxPool
+  accumulationCapsule
+    s!"reference.{op.name}" op
+    s!"Reference `{op.name}` follows the channel-first runtime contract."
+    s!"TorchLean tape supplies the `{op.name}` VJP where differentiable."
 
 /-- Reference smooth max pooling. -/
 def smoothMaxPool : KernelCapsule :=
@@ -303,25 +294,25 @@ def avgPool : KernelCapsule :=
 /-- Reference attention path using the composed TorchLean expression. -/
 def attention : KernelCapsule :=
   { name := "reference.attention"
-    op := .scaledDotProductAttention
+    op := .attention
     provider := .reference
     device := .cpu
     trustLevel := .checked
     supportsForward := true
     vjpMode := .torchLeanTape
-    shapeContract := ContractDescriptor.guarded (.shapeSafety .scaledDotProductAttention)
+    shapeContract := ContractDescriptor.guarded (.shapeSafety .attention)
       "Q/K/V and mask shapes are checked by the typed tensor layer."
       "typed attention shapes"
     layoutContract := ContractDescriptor.guarded
-      (.layoutCompatibility .scaledDotProductAttention .canonicalTensor)
+      (.layoutCompatibility .attention .canonicalTensor)
       "Reference attention uses TorchLean tensor semantics rather than a foreign layout."
       "typed tensor layout"
     valueContract := ContractDescriptor.tested
-      (.valueRefinement .scaledDotProductAttention)
+      (.valueRefinement .attention)
       "Composed reference attention uses hard-mask zero-numerator semantics."
       "NN.Tests.Runtime.Floats.Suite"
     vjpContract := ContractDescriptor.tested
-      (.vjpRefinement .scaledDotProductAttention .torchLeanTape)
+      (.vjpRefinement .attention .torchLeanTape)
       "TorchLean tape supplies the composed VJP."
       "NN.Tests.Runtime.Floats.Suite"
     numericalPolicy := { reduction := .fixedLeft } }

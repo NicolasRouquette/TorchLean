@@ -280,11 +280,7 @@ def fromLoss {β : Type} [TorchLean.Storage β] {σ τ υ : Spec.Shape}
                         (m (TorchLean.Runtime.ValueRef (m := m) (α := α) τ)))
                       (Internal.program model mode (α := α)) state
                     let prediction ← withInput indices
-                    Runtime.Autograd.Torch.CurriedRef.uncurry
-                      (Ref := fun s =>
-                        TorchLean.Runtime.ValueRef (m := m) (α := α) s)
-                      (ss := [τ, υ]) (loss (α := α) (m := m))
-                      (.cons prediction (.cons target .nil)))) }
+                    loss (α := α) (m := m) prediction target)) }
 
 /-- Pair an indexed-input model with mean-squared error. -/
 def mse {β : Type} [TorchLean.Storage β]
@@ -438,17 +434,10 @@ def model {vocabularySize embeddingWidth : Nat}
         [weightShape]
         (State.empty.push table.initialWeight)
         (fun _ {α} _ _ =>
-          fun {m} _ _ => fun weight =>
-            Runtime.Autograd.Torch.CurriedRef.curry
-              (Ref := fun s => Runtime.Autograd.Torch.DataRef
-                (m := m) (α := α) (Fin vocabularySize) s)
-              (ss := [input])
-              (fun dataInputs =>
-                match dataInputs with
-                | .cons tokenIds .nil =>
-                    Runtime.Autograd.Model.F.embedding
-                      (m := m) (α := α) (vocabularySize := vocabularySize)
-                      (embeddingWidth := embeddingWidth) weight tokenIds))
+          fun {m} _ _ => fun weight tokenIds =>
+            Runtime.Autograd.Model.F.embedding
+              (m := m) (α := α) (vocabularySize := vocabularySize)
+              (embeddingWidth := embeddingWidth) weight tokenIds)
         (kind := s!"Embedding({vocabularySize}, {embeddingWidth})")
         (initializationPlan := some (Internal.initializationPlan table))
         (trainableMask := #[Internal.isTrainable table])

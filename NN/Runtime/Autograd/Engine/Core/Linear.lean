@@ -104,7 +104,7 @@ Concatenate two tensors along dimension 0.
 
 PyTorch comparison: `torch.cat([a, b], dim=0)`.
 -/
-@[inline] def concatLeadingAxis {α : Type} [TorchLean.Storage α]
+@[inline] def concat {α : Type} [TorchLean.Storage α]
   {n m : Nat} {s : Shape} (t : Tape α) (aId bId : Nat) : Result (Tape α × Nat) := do
   let a ← requireValue (α := α) (t := t) (s := .dim n s) aId
   let b ← requireValue (α := α) (t := t) (s := .dim m s) bId
@@ -132,11 +132,11 @@ Slice along dimension 0: `x[start : start+len]`.
 The proof argument `h` enforces bounds.
 PyTorch comparison: `x[start:start+len]` on tensors with a leading dimension.
 -/
-@[inline] def sliceLeadingAxisRange {α : Type} [TorchLean.Storage α] [Zero α]
+@[inline] def slice {α : Type} [TorchLean.Storage α] [Zero α]
   {n : Nat} {s : Shape} (t : Tape α) (xId : Nat) (start len : Nat) (h : start + len ≤ n) :
   Result (Tape α × Nat) :=
   unary (α := α) (t := t) (σ := .dim n s) (τ := .dim len s)
-    "slice_leading_axis_range" xId
+    "slice" xId
     (forward := fun x => Spec.sliceRangeSpec (α := α) (n := n) (shape := s) x start len h)
     (backward := fun _x dLdz =>
       TorchLean.Tensor.sliceAxisRangeBackwardSpec (α := α) (s := .dim n s) 0 start len h dLdz)

@@ -18,9 +18,6 @@ file := "The-TorchLean-API"
 Most user programs need two lines:
 
 ```
--- Import the application interface, then open the namespace
--- used by its public tensor and model
--- names.
 import NN.API
 open TorchLean
 ```

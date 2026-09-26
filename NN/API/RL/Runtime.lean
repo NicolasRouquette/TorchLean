@@ -81,7 +81,7 @@ namespace ppo
 export Runtime.RL.PPO
   (StateBatchShape LogitsBatchShape ScalarBatchShape ValueBatchShape
    Step Rollout TrainingBatch TrainConfig train
-   collectRolloutFromCallbacks collectRolloutFromSession collectRolloutFromGymnasium)
+   collect collectRolloutFromGymnasium)
 export Runtime.RL.PPO.Rollout (trainingBatch)
 
 /--

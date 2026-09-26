@@ -59,7 +59,7 @@ def stackRows {α : Type} [TorchLean.Storage α] [Context α]
       let half := (count + 2) / 2
       let left ← stackRows row start half (by omega) (by omega)
       let right ← stackRows row (start + half) (count + 2 - half) (by omega) (by omega)
-      let joined ← Runtime.Autograd.Model.concatLeadingAxis (m := m) (α := α)
+      let joined ← Runtime.Autograd.Model.concat (m := m) (α := α)
         (nDim := half) (mDim := count + 2 - half) (s := tail) left right
       have hCount : half + (count + 2 - half) = count + 2 := by omega
       pure (hCount ▸ joined)
@@ -197,7 +197,7 @@ def rnn (sequenceLength inputWidth hiddenWidth : Nat) (weightSeed : Nat := 0) :
           Internal.unrollLeading (m := m) (α := α) out0 h0 (fun t hPrev => do
             let x_t ← Runtime.Autograd.Model.select (m := m) (α := α)
               (s := [sequenceLength, inputWidth]) 0 xs t
-            let concat ← Runtime.Autograd.Model.concatLeadingAxis (m := m) (α := α) (s := .scalar)
+            let concat ← Runtime.Autograd.Model.concat (m := m) (α := α) (s := .scalar)
               (nDim := inputWidth) (mDim := hiddenWidth) x_t hPrev
             let pre ← Runtime.Autograd.Torch.linear (m := m) (α := α)
               (inDim := inputWidth + hiddenWidth) (outDim := hiddenWidth)
@@ -294,7 +294,7 @@ def gru (sequenceLength inputWidth hiddenWidth : Nat)
           Internal.unrollLeading (m := m) (α := α) out0 h0 (fun t hPrev => do
             let x_t ← Runtime.Autograd.Model.select (m := m) (α := α)
               (s := [sequenceLength, inputWidth]) 0 xs t
-            let concat ← Runtime.Autograd.Model.concatLeadingAxis (m := m) (α := α) (s := .scalar)
+            let concat ← Runtime.Autograd.Model.concat (m := m) (α := α) (s := .scalar)
               (nDim := inputWidth) (mDim := hiddenWidth) x_t hPrev
             let r_pre ← Runtime.Autograd.Torch.linear (m := m) (α := α)
               (inDim := inputWidth + hiddenWidth) (outDim := hiddenWidth)
@@ -305,7 +305,7 @@ def gru (sequenceLength inputWidth hiddenWidth : Nat)
               wUpdate bUpdate concat
             let z ← Runtime.Autograd.Model.sigmoid (m := m) (α := α) (s := [hiddenWidth]) z_pre
             let r_hPrev ← Runtime.Autograd.Model.mul (m := m) (α := α) (s := [hiddenWidth]) r hPrev
-            let concat2 ← Runtime.Autograd.Model.concatLeadingAxis (m := m) (α := α) (s := .scalar)
+            let concat2 ← Runtime.Autograd.Model.concat (m := m) (α := α) (s := .scalar)
               (nDim := inputWidth) (mDim := hiddenWidth) x_t r_hPrev
             let n_pre ← Runtime.Autograd.Torch.linear (m := m) (α := α)
               (inDim := inputWidth + hiddenWidth) (outDim := hiddenWidth)
@@ -345,7 +345,7 @@ def gruResetAfterCell {α : Type} [TorchLean.Storage α] [Context α]
     (inDim := hiddenWidth) (outDim := 3 * hiddenWidth)
     hiddenWeight hiddenBias previous
   let gate := fun (values : Ref (m := m) (α := α) [3 * hiddenWidth]) (index : Fin 3) =>
-    sliceLeadingAxisRange (m := m) (α := α) (s := .scalar)
+    slice (m := m) (α := α) (s := .scalar)
       (index.val * hiddenWidth) hiddenWidth (by
         simpa [Nat.add_mul] using
           Nat.mul_le_mul_right hiddenWidth (Nat.succ_le_of_lt index.isLt)) values
@@ -471,7 +471,7 @@ def lstm (sequenceLength inputWidth hiddenWidth : Nat)
             let (hPrev, cPrev) := st
             let x_t ← Runtime.Autograd.Model.select (m := m) (α := α)
               (s := [sequenceLength, inputWidth]) 0 xs t
-            let concat ← Runtime.Autograd.Model.concatLeadingAxis (m := m) (α := α) (s := .scalar)
+            let concat ← Runtime.Autograd.Model.concat (m := m) (α := α) (s := .scalar)
               (nDim := inputWidth) (mDim := hiddenWidth) x_t hPrev
             let f_pre ← Runtime.Autograd.Torch.linear (m := m) (α := α)
               (inDim := inputWidth + hiddenWidth) (outDim := hiddenWidth)

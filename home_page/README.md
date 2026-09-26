@@ -77,7 +77,7 @@ python3 scripts/docs/polish_docgen.py --docs home_page/docs
 ```
 
 Native CUDA/C source notes are documented by the Lean module
-`NN.Runtime.Autograd.Engine.Cuda.Trusted`, so they are generated as part of `/docs/`.
+`NN.Runtime.Autograd.Engine.LibTorch.Trusted`, so they are generated as part of `/docs/`.
 
 `scripts/docs/polish_docgen.py` keeps the generated docs focused on TorchLean's `NN` modules. It
 removes local copies of Lean, Std, Mathlib, and other dependency pages, then rewrites dependency

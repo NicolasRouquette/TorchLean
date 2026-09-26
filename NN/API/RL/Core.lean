@@ -118,9 +118,7 @@ end replay
 
 namespace dqn
 export Runtime.RL.DQN
-  (transitionMSELoss transitionHuberLoss transitionDoubleHuberLoss
-   minibatchMSELoss minibatchHuberLoss minibatchDoubleHuberLoss
-   softUpdateScalar)
+  (loss softUpdateScalar)
 
 namespace autograd
 /-!
@@ -162,7 +160,7 @@ end policy
 
 namespace eval
 export Runtime.RL.Eval
-  (greedyActionFromLogits episodeTotalReward episodeSessPath averageEpisodeTotalReward)
+  (greedyActionFromLogits episodeTotalReward episodePath averageEpisodeTotalReward)
 end eval
 
 end rl

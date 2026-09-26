@@ -10,12 +10,8 @@ The backend is built as one shared library:
 
 | LibTorch source | Responsibility |
 | --- | --- |
-| `runtime.cpp` | Buffer ownership, allocation, transfers, RNG, and runtime controls. |
-| `elementwise.cpp` | Elementwise arithmetic, activations, and optimizer buffer operations. |
-| `kernels.cpp` | Views, indexing, reductions, normalization, matrix operations, and FFT. |
-| `conv_pool.cpp` | Convolution and pooling forward/backward operations. |
-| `attention.cpp` | Attention forward/backward operations and retained SDK contexts. |
-| `blas.cpp` | Double-precision matrix multiplication bridge. |
+| `torchlean.cpp` | All runtime, tensor-operation, and backward adapters to ATen. |
+| `operations.h` | Shared list generating common operation exports for both build configurations. |
 | `torchlean_libtorch.h` | Buffer representation, Lean object and size helpers. |
 
 `unavailable.c` is linked instead when TorchLean is built without LibTorch. It exports the same
@@ -51,7 +47,7 @@ development toolkit, even though TorchLean itself compiles only C++ sources.
 
 This tree was tested locally against pip torch 2.13.0+cu130 with CUDA 13.0 on A100, and previously
 against a PyTorch 2.12 nightly (revision 0291f960b6). The build reads the SDK's `TORCH_VERSION` and
-warns below 2.12, but it does not stop the build. `attention.cpp` includes the internal header
+warns below 2.12, but it does not stop the build. `torchlean.cpp` includes the internal header
 `ATen/native/transformers/cuda/sdp_utils.h` and calls private ATen operators such as
 `_fused_sdp_choice` and the `_scaled_dot_product_*_attention` forward and backward kernels. These
 are not a stable API, so another SDK release may fail to compile or change results. Rerun the CUDA
@@ -173,8 +169,8 @@ Current CUDA coverage:
 | `NN/Tests/Runtime/Cuda/Elementwise.lean` | Scalar elementwise ops, activations, safe logs, products, and `sum`. |
 | `NN/Tests/Runtime/Cuda/LayerNorm.lean` | Channel/feature normalization, parameter gradients, and input gradients. |
 | `NN/Tests/Runtime/Cuda/BatchNorm.lean` | Channel-first batchnorm forward and backward. |
-| `NN/Tests/Runtime/Cuda/Attention.lean` | Multi-head attention and fused attention parity against composed operations. |
-| `NN/Tests/Runtime/Cuda/ConvPool.lean` | 2D and N-D convolution, max pool, average pool, smooth max pool, padded max-pool edge cases. |
+| `NN/Tests/Runtime/Cuda/Attention.lean` | Attention values and gradients against the CPU reference, including batches. |
+| `NN/Tests/Runtime/Cuda/ConvPool.lean` | 2D and 3D convolution, max pool, average pool, smooth max pool, padded max-pool edge cases. |
 | `NN/Tests/Runtime/Cuda/ConvTranspose.lean` | 2D and 3D transposed convolution forward and backward. |
 | `NN/Tests/Runtime/Cuda/GatherScatter.lean` | Rank-one and row gather/scatter-add behavior, including gradients. |
 | `NN/Tests/Runtime/Cuda/DeterministicReductions.lean` | Repeatability under the deterministic reduction control. |
@@ -187,8 +183,14 @@ Current CUDA coverage:
 | `NN/Tests/Runtime/Cuda/Stress.lean` | RNG determinism, explicit release, duplicate-parent gradient accumulation, large buffers, reductions, and rectangular matmul. |
 | `NN/Tests/Runtime/Cuda/Suite.lean` | The unified entrypoint imported by the repository-level test suite. |
 
-When adding a CUDA symbol, add its failing export to `unavailable.c`, update this matrix, and add
-at least one test against the Lean CPU tape.
+Elementwise arithmetic, activations, and whole-buffer reductions share the operation list in
+`operations.h`. It generates both the LibTorch exports and their unavailable-build counterparts.
+The shared call adapter converts arguments, checks buffer lengths, disables native autograd, and
+boxes the result. Calls resolve at compile time, so this adds no string lookup or operator-ID switch.
+Operations with shape metadata or saved backward state keep their explicit adapters.
+
+When adding a CUDA symbol outside that list, add its failing export to `unavailable.c`,
+update this matrix, and add at least one test against the Lean CPU tape.
 If the symbol participates in autograd, test both the forward value and the relevant VJP/gradient
 buffers.  If it uses atomics, also decide whether deterministic mode needs a separate test.
 
@@ -199,20 +201,9 @@ It checks exact finite results and signed zeros, reports NaN encoding difference
 staged Adam and no-autograd regressions. A different SDK needs its own audit and regression
 results.
 
-The convolution and pooling harness in `tests/` compiles `conv_pool.cpp` directly, without the
-Lean FFI wrappers, and compares its general-rank composition against the SDK's own kernels on CPU
-and CUDA. No wrapper script runs it; configure it with the same SDK and Lean prefix as the
-production build:
-
-```bash
-cmake -S csrc/libtorch/tests -B /tmp/torchlean-conv-pool \
-  -DTORCHLEAN_LIBTORCH_HOME="$TORCHLEAN_LIBTORCH_HOME" \
-  -DTORCHLEAN_LEAN_PREFIX="$(lean --print-prefix)"
-cmake --build /tmp/torchlean-conv-pool
-ctest --test-dir /tmp/torchlean-conv-pool --output-on-failure
-```
-
-`ctest -L cpu` runs only the CPU case; the `cuda` case needs a visible GPU.
+Convolution and pooling checks live in `NN/Tests/Runtime/Cuda/ConvPool.lean` and run
+through the production FFI and tape. They compare CPU and CUDA values and gradients,
+including smooth-max overflow cases with positive and negative inverse temperatures.
 
 ## Review Notes
 
@@ -222,6 +213,6 @@ ctest --test-dir /tmp/torchlean-conv-pool --output-on-failure
 - Deterministic controls request supported deterministic SDK algorithms. Repeatability on the
   tested SDK/device does not imply bitwise agreement across releases, devices, or algorithms.
 - Attention uses SDK operations with retained forward context for backward. The attention tests
-  compare this path with composed `bmm -> mask -> softmax -> bmm` operations.
+  compare this path with the CPU reference and check native saved-state ownership.
   The focused `libtorch_sdpa_test` target links the entire numerical backend.
 - Run the GPU suite after changes to native exports, ownership, or numerics.

@@ -5,7 +5,7 @@ Authors: TorchLean Team
 
 Run:
   python3 scripts/datasets/download_example_data.py --cifar10
-  lake -R -K cuda=true exe torchlean resnet --device cuda --n-total 1 --steps 1
+  scripts/lake.sh -Kcuda=true exe torchlean resnet --device cuda --n-total 1 --steps 1
 -/
 
 module
@@ -75,7 +75,7 @@ def model : nn.Builder (nn.Sequential input output) :=
   nn.models.resnet modelConfig [batchSize]
 
 /-- Train the residual classifier with the public classification trainer. -/
-def train (runtime : Runtime.Config) (flags : RealData.CifarModelTrainFlags) :
+def train (runtime : Runtime.Config) (flags : Support.Training.Options Support.Npy.Options) :
     IO Trainer.Report := do
   let batches ←
     RealData.loadCifarBatches exeName batchSize flags.data.nRows flags.data.seed
@@ -94,16 +94,17 @@ def train (runtime : Runtime.Config) (flags : RealData.CifarModelTrainFlags) :
     (Data.fromSamples batches)
     (flags.training.trainOptions
       (logTitle := "ResNet CIFAR training")
-      (logNotes := RealData.cifarClassifierNotes batchSize flags
+      (logNotes := RealData.trainingNotes "cifar10" batchSize flags
         #[s!"spatial={cropHeight}x{cropWidth}",
           s!"hiddenChannels={hiddenChannels}"]))
   pure trained.report
 
 /-- CLI entrypoint for the CIFAR residual-classifier training path. -/
 def main (args : List String) : IO UInt32 :=
-  TrainCommand.classificationNpy exeName args
-    (fun rest => RealData.CifarModelTrainFlags.parse exeName rest defaultLogPath 1 1e-3)
-    (Support.bannerWithDevice exeName "ResNet CIFAR training")
-    train
+  TrainCommand.npy exeName args
+    (fun rest => Support.Training.Options.parse exeName rest defaultLogPath 1 1e-3
+      (parseData := RealData.NpyDatasets.parseCifar))
+    (Support.banner exeName "ResNet CIFAR training")
+    train (fun result => result.printSummary) (target := "class-label")
 
 end NN.Examples.Models.Vision.ResNet

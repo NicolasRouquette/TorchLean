@@ -35,12 +35,6 @@ abbrev State {σ τ : Shape}
     (model : nn.Sequential σ τ) (α : Type) [TorchLean.Storage α] :=
   nn.State α (Runtime.Autograd.Model.Layers.Seq.stateShapes model)
 
-/-- Construct a model-shaped state whose every tensor contains `value`. -/
-def fullState {σ τ : Shape}
-    (model : nn.Sequential σ τ)
-    {α : Type} [TorchLean.Storage α] (value : α) : State model α :=
-  nn.State.full value
-
 /-- A checked scalar loss computed from a model output and its target. -/
 structure Loss (τ υ : Shape) : Type 1 where
   /-- Operation-polymorphic loss program. -/
@@ -52,14 +46,6 @@ structure Loss (τ υ : Shape) : Type 1 where
         (m := m) (α := α) [])
   /-- Configuration checks performed before lowering or execution. -/
   validate : Except String Unit := pure ()
-
-/-- Initialize model state in an element type that accepts host `Float` values. -/
-def initialState {σ τ : Shape}
-    (model : nn.Sequential σ τ)
-    {α : Type} [TorchLean.Storage α] [Runtime.FromFloat α] : State model α :=
-  nn.State.Internal.fromTensorPack <|
-    Runtime.Autograd.Model.Module.castPack (Runtime.ofFloat (α := α))
-      (Runtime.Autograd.Model.Layers.Seq.initState model)
 
 namespace Loss
 
@@ -143,12 +129,8 @@ def Internal.lossProgram {σ τ υ : Shape}
 /-- Reject an invalid model or loss before lowering an autograd program. -/
 def Internal.validateLoss {σ τ υ : Shape}
     (model : nn.Sequential σ τ) (loss : Loss τ υ) : IO Unit := do
-  match nn.validate model with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
-  match loss.validate with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
+  IO.ofExcept (nn.validate model)
+  IO.ofExcept loss.validate
 
 /--
 Differentiate a model loss with respect to every tensor in the model state.

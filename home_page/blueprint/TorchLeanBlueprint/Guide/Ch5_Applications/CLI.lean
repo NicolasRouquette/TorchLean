@@ -126,7 +126,7 @@ Deep dives:
 
 Runtime flags:
   --choose                         ask for runtime choices before running
-  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
+  --device auto|cpu|gpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
   --arithmetic native|ieee|complex
       arithmetic availability depends on the example; check its --help
   --execution eager|typed-graph
@@ -544,7 +544,7 @@ Training:
   --cuda-mem-watch N sample CUDA allocator state every N updates
 
 Runtime:
-  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
+  --device auto|cpu|gpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
   --execution eager|typed-graph
   --arithmetic native
   --seed N --show-backend

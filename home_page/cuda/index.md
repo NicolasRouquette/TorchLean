@@ -49,7 +49,7 @@ Float32 addition is not associative, so a reduction's evaluation order can affec
 Request strict deterministic algorithms through the typed LibTorch controls:
 
 ```lean
-Runtime.Autograd.Cuda.LibTorch.setDeterministic true
+Runtime.Autograd.LibTorch.setDeterministic true
 ```
 
 `setDeterministic : Bool → IO Unit` checks the native setting and disables convolution

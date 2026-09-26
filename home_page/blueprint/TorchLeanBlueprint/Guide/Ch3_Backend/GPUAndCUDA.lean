@@ -7,8 +7,8 @@ import NN.Tensor
 import NN.Backend.Report
 import NN.Backend.LibTorch
 import NN.Backend.Reference
-import NN.Runtime.Autograd.Engine.Cuda.Buffer
-import NN.Runtime.Autograd.Engine.Cuda.LibTorch
+import NN.Runtime.Autograd.Engine.LibTorch.Buffer
+import NN.Runtime.Autograd.Engine.LibTorch.Controls
 import NN.Spec.Layers.Activation
 import NN.Spec.Layers.Attention
 import TorchLeanBlueprint.Bib
@@ -45,7 +45,8 @@ for the bias. The wrapper must put the right values in those buffers, select a k
 the operands its backward rule will need.
 
 TorchLean records the shape, layout, forward, and backward obligations in a kernel capsule.
-Its CUDA execution goes through ATen, the tensor library distributed with LibTorch. TorchLean
+LibTorch is the standard CUDA backend; TorchLean no longer supplies its own CUDA kernels.
+Execution goes through ATen, the tensor library distributed with LibTorch. TorchLean
 still owns the differentiation tape: it records each operation, retains its operands, selects its
 local vector-Jacobian product (VJP), and accumulates the resulting gradients. Calling an ATen
 backward operator does not create a second autograd graph.
@@ -59,6 +60,11 @@ device names currently have implementations.
 An ordinary CPU build compiles portable stubs for the CUDA symbols and needs no LibTorch SDK.
 Those stubs let CPU users import the same Lean modules, but they reject CUDA session creation.
 A CUDA build needs a CUDA-enabled LibTorch SDK:
+
+The public device selector accepts `.gpu` in Lean and `--device gpu` on the command line.
+Currently these select CUDA through LibTorch, the supported GPU target. They fail when that
+runtime is unavailable rather than silently moving the computation to CPU. Use `.cuda` when
+you want to name the device explicitly; the default plain build still runs on CPU.
 
 ```terminal
 scripts/lake.sh -R -K cuda=true \
@@ -344,7 +350,8 @@ At the first transition, `BackendProfile.acceptGraph` exposes an `AcceptedGraphK
 after planning, grouping, and the contract check accept every obligation. Binding then checks the
 handler identities shown above. Neither step probes the hardware: a profile's `Availability`
 declares which devices and providers planning may consider, while CUDA session creation calls
-`Cuda.Buffer.requireNativeRuntime` to distinguish native CUDA, a native build with no visible GPU,
+`LibTorch.Buffer.requireNativeRuntime` to distinguish native CUDA, a native build with no
+visible GPU,
 and a build without LibTorch.
 
 We can inspect profiles and plans on a machine with no GPU. The two maintained profiles are:
@@ -411,8 +418,7 @@ Availability and dispatch are checked at different points:
 1. a plan rejects providers marked unavailable in its supplied availability metadata;
 2. provider-aware wrappers reject a selected provider they have not wired up.
 
-CUDA primitive wrappers require the LibTorch provider; the attention wrapper also supports the
-explicit TorchLean composition, whose constituent tensor operations use ATen. If a profile selects
+CUDA wrappers, including attention, require the LibTorch provider. If a profile selects
 an unwired provider, execution fails with an error. There is no hidden CPU fallback for an
 unsupported CUDA operation, because moving a tensor between devices behind the user's back would
 change both performance and the execution claim.
@@ -430,7 +436,7 @@ scripts/lake.sh exe torchlean quickstart_mlp --device cuda --steps 1
 
 Without LibTorch, session initialization rejects the request. The CLI's `Device.cuda` value
 describes the requested target, while
-`Cuda.Buffer.requireNativeRuntime` probes whether this build can execute it.
+`LibTorch.Buffer.requireNativeRuntime` probes whether this build can execute it.
 
 Likewise, names such as `metal`, `rocm`, `tpu`, and `trainium` parse as devices so profiles and
 future integrations can describe them. The maintained profile lookup currently returns no runtime
@@ -479,7 +485,7 @@ predict its speed.
 
 The eager CUDA tape currently covers elementwise arithmetic and activations, reductions and
 broadcasting, shape transforms, gather/scatter, dense and batched matrix multiplication,
-normalization and softmax, rank-polymorphic convolution and transposed convolution,
+normalization and softmax, one-, two-, and three-dimensional convolution and transposed convolution,
 max/average/smooth-max pooling, attention, and spectral convolution. TorchLean records backward
 rules as tape nodes. Differentiable real FFT, inverse real FFT, and selective scan also have ATen
 routes, with generic differentiable reference implementations for interpreters that do not
@@ -492,24 +498,17 @@ changing who walks the tape. Matrix derivatives follow the same rule: TorchLean 
 such as $`A^\mathsf{T}B` and $`AB^\mathsf{T}`, and ATen evaluates them. Calling those products does
 not ask LibTorch autograd to reconstruct the model's graph.
 
-Convolution and pooling retain spatial ranks one through eight. Ordinary one-, two-, and
-three-dimensional cases use upstream convolution and pooling operators and their explicit backward
-operators where their domains agree. Higher ranks and exceptional shapes use ATen compositions.
-The rank remains part of the public operation even when no single upstream operator accepts it.
-Those compositions can launch operations for each kernel offset, so supporting a rank does not
-promise the performance of a specialized convolution kernel.
-
-The selected gradient matters just as much as the forward formula. Max pooling selects the first
-valid maximum in window order; a first valid NaN remains selected, while later NaNs do not replace
-the current candidate. Backward routes the cotangent to that selected input. The adapter corrects
-upstream indices where these conventions differ. Average pooling includes literal zero padding in
-the full kernel-size denominator. Smooth-max pooling keeps zero padding in its exponential sum
-and accepts finite nonzero Float32 values of $`\beta`, including negative values. These details
-belong to the operation's contract, even when an upstream operator uses a different convention.
+Convolution, transposed convolution, max pooling, and average pooling follow LibTorch's one-, two-,
+and three-dimensional operator families. The adapter handles TorchLean's typed shapes and tape ABI,
+then delegates the numerical work and explicit backward operation to ATen. It does not emulate
+higher-dimensional kernels or repair ATen's selection rules. Smooth-max pooling is the one
+deliberate composition here because PyTorch has no corresponding primitive; it uses the same
+one-to-three spatial-rank boundary and accepts finite nonzero Float32 values of $`\beta`, including
+negative values.
 
 This list does not mean every TorchLean operation has a CUDA implementation. Provider-aware
 wrappers reject unsupported capsules and shapes; they do not copy a tensor to CPU and continue
-silently. The native source map on `NN.Runtime.Autograd.Engine.Cuda.Trusted` identifies the
+silently. The native source map on `NN.Runtime.Autograd.Engine.LibTorch.Trusted` identifies the
 Lean declarations and the corresponding implementation boundary. The CUDA adapter sources live
 under `csrc/libtorch`.
 
@@ -528,14 +527,13 @@ The registry gives the capsule count and identifies operations with no registere
 ```
 
 ```leanOutput gpuCudaRegistry (whitespace := lax)
-registered: 46
+registered: 47
 forward only: 2
   libtorch.rand_uniform
   libtorch.bernoulli_mask
 ```
 
-The count excludes attention, which has a dedicated semantic split and appears through its own
-capsules rather than as one entry in `LibTorch.capsules`.
+The count includes attention alongside the other LibTorch operations.
 
 The two forward-only entries create random uniform buffers and Bernoulli masks from a seed.
 They have no differentiable tensor inputs. Selective scan has a backward recurrence for its
@@ -558,6 +556,13 @@ inverse result and have zero derivative. Generic execution uses dense specificat
 the CUDA route uses ATen's Fourier operators. Matching the operation does not fix their
 floating-point order.
 
+The public `nn.functional.rfft` and `nn.functional.irfft` operations transform the last axis and
+preserve any leading batch dimensions. For example, a real tensor with shape `[2, 3, 5]` produces
+packed coefficients with shape `[2, 3, 3, 2]`: there are six independent length-five transforms,
+each storing three complex bins. Pass `batch := [2, 3]` and the positive-length witness; the inverse
+also takes `n := 5`. Both operations accept `path := .denseReference` when you want the dense
+calculation explicitly. An empty batch is allowed, but the transform length must be positive.
+
 # Batched Attention
 
 A transformer block receives a tensor of shape `(batch, tokens, modelDim)`. The mathematical
@@ -568,7 +573,7 @@ for unbatched attention.
 
 The eager CUDA runtime schedules the work differently. It flattens `(batch, tokens)` for the four
 shared projections and folds `(batch, head)` into the batch axis of the matrix multiplications.
-The selected attention capsule supplies the local forward and backward computation. TorchLean
+LibTorch supplies the local native tensor computations. TorchLean
 retains the hard-mask semantics and sums the four projection-matrix gradients across the full
 batch.
 
@@ -585,24 +590,8 @@ from the surrounding loss reduction and must not be added a second time inside a
 
 # Forward Values And Backward Ownership
 
-Attention has two maintained CUDA routes:
-
-:::table +header
-*
-  * Capsule
-  * Local forward and backward
-  * Tape owner
-*
-  * `libtorch.direct_attention`
-  * paired ATen attention route
-  * TorchLean
-*
-  * `torchlean.composed_attention`
-  * matrix products, hard-masked softmax, and their VJPs
-  * TorchLean
-:::
-
-`BackendProfile.checkedCuda` prefers `Attention.libTorchDirectAttention`. Its adapter retains the
+GPU attention uses the single LibTorch route, registered as `LibTorch.attention`.
+Its adapter retains the
 chosen forward implementation and the state needed by that implementation's backward rule. The
 TorchLean tape later supplies the output cotangent and receives $`\mathrm dQ`, $`\mathrm dK`, and
 $`\mathrm dV`. All of this runs with LibTorch gradient recording disabled.
@@ -619,10 +608,7 @@ ATen softmax backward and matrix products. Keeping those probabilities also avoi
 potentially different forward softmax. The bridge does not promise that every shape uses Flash
 Attention or that every selected route avoids quadratic attention storage.
 
-The composed capsule remains useful for inspecting and comparing the stages. Select it by
-setting the CUDA profile's provider preference to `.prefer .torchLean`, as shown in
-{ref "backend-selection"}[Backend Selection]. Its matrix products and softmax still execute
-through ATen. Both routes need value and VJP evidence; owning the tape does not prove the native
+The native implementation needs value and VJP evidence; owning the tape does not prove its
 arithmetic correct.
 
 # Hard Attention Masks
@@ -784,12 +770,12 @@ their different rounding steps, or a policy that fixes the steps it assumes.
 # Runtime Precision And Determinism
 
 The controls in
-{src "NN/Runtime/Autograd/Engine/Cuda/LibTorch.lean"}[`Cuda.LibTorch`] configure the linked
+{src "NN/Runtime/Autograd/Engine/LibTorch/Controls.lean"}[`LibTorch`] configure the linked
 SDK. Set them before opening concurrent work, and record their readbacks with a numerical
 experiment. This definition configures a run when called; elaborating it does not touch a GPU:
 
 ```lean (name := gpuConfigure)
-open Runtime.Autograd.Cuda.LibTorch in
+open Runtime.Autograd.LibTorch in
 def gpuConfigure : IO Unit := do
   setMatmulPrecision .ieee
   setConvPrecision .ieee
@@ -823,8 +809,7 @@ measurement on its own measures speed.
 ## Attention Selection And Saved State
 
 `setSDPEnabled` accepts `.flash`, `.efficient`, `.math`, or `.cuDNN` and a Boolean permission.
-These settings apply to `libtorch.direct_attention`. They do not turn the explicitly composed
-TorchLean attention capsule into a fused implementation.
+These settings control the implementations available to `libtorch.direct_attention`.
 
 A permitted implementation still has to support the actual shape, dtype, device, mask, and
 forward/backward pair. The adapter may need the math route for a request that the enabled fused
@@ -858,7 +843,8 @@ Read both levels at the point in the workload whose lifetime matters:
 
 ```lean (name := gpuMemory)
 def gpuPrintMemory : IO Unit := do
-  let stats ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+  let stats ←
+    Runtime.Autograd.LibTorch.Buffer.allocatorStats
   IO.println stats.format
 ```
 
@@ -888,10 +874,10 @@ An application can set the selected device's allocation limit and later release 
 
 ```lean (name := gpuMemoryControls)
 def gpuLimitMemory : IO Unit :=
-  Runtime.Autograd.Cuda.LibTorch.setMemoryFraction 0.8
+  Runtime.Autograd.LibTorch.setMemoryFraction 0.8
 
 def gpuReleaseUnusedMemory : IO Unit :=
-  Runtime.Autograd.Cuda.LibTorch.emptyCache
+  Runtime.Autograd.LibTorch.emptyCache
 ```
 
 The fraction must be finite and lie in `(0, 1]`. It configures the upstream allocator's limit;
@@ -901,7 +887,7 @@ it is neither a cache-only allowance nor a reservation against other processes. 
 `emptyCache` releases unused allocator blocks. Live parameters, optimizer state, saved forward
 state, and library workspaces remain allocated, so both allocated and reserved bytes may remain
 after the call. Calling it after every operation can throw away useful reuse.
-For timing a completed phase, `LibTorch.synchronize` waits for the
+For timing a completed phase, `Runtime.Autograd.LibTorch.synchronize` waits for the
 selected device's work; record whether that synchronization is included in a measurement.
 
 # CUDA Test Coverage
@@ -915,8 +901,9 @@ scripts/checks/check.sh --cuda
 ```
 
 The CUDA suite covers allocation, uploads and downloads, shapes, operation values, gradients,
-error paths, and selected numerical behavior. Convolution and pooling fixtures include unusual
-ranks, padding, empty shapes, max-pool selections, and backward values. Attention fixtures inspect
+error paths, and selected numerical behavior. Convolution and pooling fixtures cover supported
+spatial ranks, padding, negative-infinity max-pool inputs, smooth-max overflow, and backward values.
+Attention fixtures inspect
 both forward values and the input cotangents, including hard masks and fully blocked rows.
 
 A capsule names its test source; it does not store a passing result for the current build. To

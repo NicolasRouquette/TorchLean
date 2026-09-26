@@ -8,7 +8,6 @@ module
 
 public import NN.GraphSpec.Chain.Syntax
 public import NN.GraphSpec.DAG.Syntax
-public import Mathlib.Algebra.Order.Field.Basic
 
 /-!
 # Structural conversion of sequential GraphSpec chains to DAG terms
@@ -75,17 +74,6 @@ def castEnvTerm {Γ Γ' : List Shape} {τ : Shape} (h : Γ = Γ') :
     DAG.Term Γ τ → DAG.Term Γ' τ :=
   fun x => DAG.Term.castEnv x h
 
-/-! ### `List.get` lemmas (small, self-contained) -/
-
-/-- `List.get` of the last element after appending a singleton list. -/
-theorem get_append_last {α : Type} :
-    ∀ (xs : List α) (x : α),
-      (xs ++ [x]).get ⟨xs.length, by simp [List.length_append]⟩ = x
-  | .nil, x => rfl
-  | .cons _a xs, x => by
-      -- Reduce to tail.
-      simp
-
 /-! ### Primitive embedding: `Primitive` → `DAG.PrimOp` -/
 
 /--
@@ -107,14 +95,6 @@ def Primitive.toDAGPrimOp {ps : List Shape} {σ τ : Shape} (p : Primitive ps σ
 
 /-! ### Building well-typed DAG arguments for a primitive call -/
 
-theorem get_succ
-    {α : Type} (a : α) (as : List α) (i : Fin as.length) :
-    (a :: as).get ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩ = as.get i := by
-  cases i with
-  | mk i hi =>
-    -- `List.get` on a successor index reduces definitionally to the tail.
-    rfl
-
 /--
 Build a typed `DAG.Args` list from an index-based family of argument terms.
 
@@ -133,7 +113,7 @@ def argsOfFn {Γ : List Shape} :
       let tail : DAG.Args Γ ss :=
         argsOfFn ss (fun i =>
           castTerm (Γ := Γ) (s := (s :: ss).get ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩) (t := ss.get i)
-            (get_succ (a := s) (as := ss) i) (f ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩))
+            List.get_cons_succ' (f ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩))
       .cons (by simpa using head) tail
 
 /-- Append one final term to a typed DAG argument list. -/
@@ -221,22 +201,8 @@ def toTerm
       -- Bound var in the body env (the last element, at index `Γ0.length`).
       let boundIdx : Fin bodyEnv.length := ⟨Γ0.length, by simp [bodyEnv, List.length_append]⟩
       let boundVar : DAG.Term bodyEnv τm :=
-        -- Align the index used in `get_append_last` with `boundIdx`.
-        let idx0 : Fin bodyEnv.length := ⟨Γ0.length, by simp [bodyEnv, List.length_append]⟩
-        have hGet0 : bodyEnv.get idx0 = τm := by
-          -- Avoid `simp` rewriting `Eq` goals into `True`.
-          dsimp [bodyEnv]
-          let idxStd : Fin (Γ0 ++ [τm]).length := ⟨Γ0.length, by simp [List.length_append]⟩
-          have hidx : idx0 = idxStd := by
-            apply Fin.ext
-            rfl
-          cases hidx
-          exact get_append_last (xs := Γ0) (x := τm)
-        have hIdx : boundIdx = idx0 := by
-          apply Fin.ext
-          rfl
         have hGet : bodyEnv.get boundIdx = τm := by
-          simpa [hIdx] using hGet0
+          simp [bodyEnv, boundIdx]
         castTerm hGet (DAG.Term.var (Γ := bodyEnv) (DAG.Var.ofFin boundIdx))
       -- Translate `g₂` under its own parenthesization, then cast back to `bodyEnv`.
       let rhsEnv : List Shape := ((pre ++ ps₁) ++ ps₂ ++ post) ++ (extra ++ [τm])

@@ -7,7 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.FloatInstances
-import Mathlib.Tactic.NormNum.GCD
 -- Supplies the `ReLUMlpBridge` namespace opened below. `lake shake` cannot see an import that
 -- only feeds an `open`, so it needs the annotation.
 public import NN.MLTheory.Proofs.ReLU.Bridge.ReLUMlpBridge -- shake: keep

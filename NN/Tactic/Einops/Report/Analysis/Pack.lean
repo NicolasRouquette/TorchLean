@@ -140,9 +140,9 @@ def concretePackReport (operation : String)
       s!"  Rep shape: {formatShape outputShape}"
     else
       s!"  Component shapes: {formatShapes inputShapes}"
-  let componentEntries := inputShapes.map shapeSize
+  let componentEntries := inputShapes.map List.prod
   let totalComponentEntries := componentEntries.sum
-  let packedEntries := shapeSize outputShape
+  let packedEntries := outputShape.prod
   let workEstimate :=
     if operation = "pack" then
       [s!"Component entries: {formatShape componentEntries}; total \

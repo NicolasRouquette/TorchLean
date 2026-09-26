@@ -31,7 +31,7 @@ session leaves the public `Param` record and its construction interface unchange
 structure ParameterStorage (α : Type) [Storage α] where
   shape : Shape
   value : IO.Ref (Tensor α shape)
-  cudaValue : IO.Ref (Option Runtime.Autograd.Cuda.AnyBuffer)
+  cudaValue : IO.Ref (Option Runtime.Autograd.LibTorch.AnyBuffer)
   hostCurrent : IO.Ref Bool
 
 /-- Compare mutable-cell identity using Lean's safe stateful reference operation. -/
@@ -116,7 +116,7 @@ structure EagerSession (α : Type) [Storage α] where
   /-- CPU eager tape used when `Config.device options = .cpu`. -/
   tape : IO.Ref (Runtime.Autograd.Tape α)
   /-- CUDA eager tape used when `Config.device options = .cuda`. -/
-  cudaTape : IO.Ref (Runtime.Autograd.Cuda.Tape)
+  cudaTape : IO.Ref (Runtime.Autograd.LibTorch.Tape)
   /-- Map from tape leaf ids to trainable parameter objects. -/
   paramsByLeaf : IO.Ref (Std.HashMap Nat (AnyParam α))
   /-- Storage identities for this recording's parameter leaves; no tensor snapshots are cached. -/
@@ -175,7 +175,7 @@ value, as in the backend dispatch.
 
 /-- `recordCpu` for the CUDA tape. -/
 @[inline] def recordCuda {α : Type} [Storage α] (s : EagerSession α)
-    (op : Runtime.Autograd.Cuda.Tape → Runtime.Autograd.Cuda.Tape × Except String Nat) :
+    (op : Runtime.Autograd.LibTorch.Tape → Runtime.Autograd.LibTorch.Tape × Except String Nat) :
     IO Nat := do
   let result ← s.cudaTape.modifyGet fun t =>
     let (t', result) := op t
@@ -184,7 +184,7 @@ value, as in the backend dispatch.
 
 /-- `recordCpuPure` for the CUDA tape. -/
 @[inline] def recordCudaPure {α : Type} [Storage α] (s : EagerSession α)
-    (op : Runtime.Autograd.Cuda.Tape → Runtime.Autograd.Cuda.Tape × Nat) : IO Nat :=
+    (op : Runtime.Autograd.LibTorch.Tape → Runtime.Autograd.LibTorch.Tape × Nat) : IO Nat :=
   s.cudaTape.modifyGet fun t =>
     let (t', id) := op t
     (id, t')

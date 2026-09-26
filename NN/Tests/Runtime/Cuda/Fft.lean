@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Ops
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops
 public import NN.Tests.Runtime.Cuda.Utils
 
 /-!
@@ -27,10 +27,11 @@ namespace Tests
 namespace Cuda
 namespace Fft
 
-open Runtime.Autograd.Cuda
+open Runtime.Autograd.LibTorch
 open Spec TorchLean
 
--- Buffer comparisons and the `floatArray` literal wrapper come from `Cuda.Utils`. The tolerances
+-- Buffer comparisons and the `floatArray` literal wrapper come from `Tests.Cuda.Utils`. The
+-- tolerances
 -- here are loose by the standards of the other CUDA suites because a packed real FFT accumulates
 -- float32 rounding across every butterfly stage.
 open Tests.Cuda.Utils (floatArray assertFloatArrayApprox)
@@ -237,15 +238,15 @@ def runSpectralConvTapeNode : IO Unit := do
   let dWIm ← Utils.cudaGrad (s := wShape) grads wImId
   let (directDX, directDWRe, directDWIm) := Buffer.spectralConv1dRfftBwd xB wReB wImB dYB 4 1 3
   assertFloatArrayApprox "spectralConv1dRfft tape dX"
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := xShape) dX)
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := xShape) dX)
     (Buffer.toFloatArray directDX)
     (tol := 2e-4)
   assertFloatArrayApprox "spectralConv1dRfft tape dWRe"
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := wShape) dWRe)
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := wShape) dWRe)
     (Buffer.toFloatArray directDWRe)
     (tol := 2e-4)
   assertFloatArrayApprox "spectralConv1dRfft tape dWIm"
-    (Runtime.Autograd.Cuda.Convert.flattenFloat (s := wShape) dWIm)
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat (s := wShape) dWIm)
     (Buffer.toFloatArray directDWIm)
     (tol := 2e-4)
 

@@ -71,8 +71,9 @@ trust, provider, device, and VJP mode must also agree. `AcceptedGraphKernelPlan`
 corresponding check for groups derived from its stored graph plan.
 :::
 
-:::definition "cuda_native_boundary" (parent := "backend_selection") (lean := "Runtime.Autograd.Cuda.Buffer")
-`Cuda.Buffer` is an opaque handle to a contiguous float32 buffer. A CUDA build stores an ATen tensor
+:::definition "cuda_native_boundary" (parent := "backend_selection") (lean := "Runtime.Autograd.LibTorch.Buffer")
+`LibTorch.Buffer` is an opaque handle to a contiguous float32 buffer. A CUDA build stores
+an ATen tensor
 behind the handle. The default build reports `.notLinked` and rejects buffer operations. Lean code
 cannot inspect the native representation directly. TorchLean owns the differentiation tape and
 calls ATen with LibTorch autograd recording disabled.
@@ -128,14 +129,14 @@ fixed. It does not cache tensor results or cotangents: later calls still execute
 inputs, and the operation remains responsible for recording dependencies on those inputs.
 :::
 
-:::definition "cuda_autograd_tape" (parent := "backend_selection") (lean := "Runtime.Autograd.Cuda.Tape")
+:::definition "cuda_autograd_tape" (parent := "backend_selection") (lean := "Runtime.Autograd.LibTorch.Tape")
 The CUDA tape stores {uses "cuda_native_boundary"}[device buffers], parent ids, and local VJP
 closures in evaluation order. `requireValue`, `requireGrad`, and backward accumulation check shape
 tags and native buffer lengths. Dense backward returns one buffer per node; sparse backward retains
 owned buffers only for selected node ids and requires the caller to release them.
 :::
 
-:::theorem "cuda_execution_contracts" (parent := "backend_selection") (lean := "Runtime.Autograd.Cuda.Float32Contract.native_add_eq_ieee32_of_isFinite")
+:::theorem "cuda_execution_contracts" (parent := "backend_selection") (lean := "Runtime.Autograd.LibTorch.Float32Contract.native_add_eq_ieee32_of_isFinite")
 Given the stated native bit-agreement hypothesis and a finite native result, decoded native scalar
 addition equals {uses "executable_binary32"}[`ExecFloat.add`]. Both the hypothesis and the
 finiteness side condition remain visible in the theorem type.

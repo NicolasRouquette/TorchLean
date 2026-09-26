@@ -64,10 +64,10 @@ def linear {α : Type} [TorchLean.Storage α] [Add α] [Mul α] [Sub α] [Zero �
     Tensor α (batchShape.appendDim outputWidth) := by
   let input' : Tensor α (batchShape.concat [inputWidth]) := by
     simpa only [Shape.appendDim_eq_concat] using input
+  let weight := effectiveWeight baseWeight parameters scale
   simpa only [Shape.appendDim_eq_concat] using
     TorchLean.Tensor.mapLeading batchShape
-      (fun row =>
-        Tensor.vecmat row (effectiveWeight baseWeight parameters scale))
+      (fun row => Tensor.vecmat row weight)
       input'
 
 end TorchLean.Adapters.LoRA

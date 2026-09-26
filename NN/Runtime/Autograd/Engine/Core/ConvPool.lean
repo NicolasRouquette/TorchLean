@@ -9,7 +9,6 @@ module
 
 public import NN.Runtime.Autograd.Engine.Core.Base
 public import NN.Tensor.Conversion
-public import NN.Spec.Layers.Conv
 public import NN.Spec.Layers.Pooling.Spatial
 
 /-!

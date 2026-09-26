@@ -169,7 +169,7 @@ def run : IO Unit := do
     return ()
   IO.FS.createDirAll workDir
   IO.FS.writeFile parityScriptPath parityScript
-  let out ← TorchLean.External.Process.runStdoutChecked
+  let out ← TorchLean.External.Process.run
     (ctx := "pytorch_roundtrip_parity")
     (cmd := "python3")
     (args := #[parityScriptPath.toString])

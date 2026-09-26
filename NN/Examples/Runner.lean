@@ -223,7 +223,7 @@ def usage : String :=
     [ ""
     , "Runtime flags:"
     , "  --choose                         ask for a device when the example supports --device"
-    , "  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
+    , "  --device auto|cpu|gpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
     , "  --arithmetic native|ieee|complex"
     , "      arithmetic availability depends on the example; check its --help"
     , "  --execution eager|typed-graph"

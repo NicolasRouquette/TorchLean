@@ -37,6 +37,10 @@ inductive Device where
 
 namespace Device
 
+/-- Request the supported GPU target. Currently this is CUDA through LibTorch.
+Runtime initialization fails if it is unavailable; this does not fall back to CPU. -/
+abbrev gpu : Device := .cuda
+
 /-- Stable spelling used in profile names, reports, and CLI bridges. -/
 def cliName : Device → String
   | .cpu => "cpu"
@@ -54,6 +58,7 @@ before calling this function. -/
 def parse? : String → Option Device
   | "cpu" => some .cpu
   | "cuda" => some .cuda
+  | "gpu" => some .gpu
   | "rocm" => some .rocm
   | "metal" => some .metal
   | "wasm" => some .wasm
@@ -68,8 +73,8 @@ def parse (value : String) : Except String Device :=
   match parse? value with
   | some device => pure device
   | none =>
-      throw <| s!"unknown device {value} (known targets: cpu | cuda | rocm | metal | wasm | tpu " ++
-        "| trainium | custom | external)"
+      throw <| s!"unknown device {value} (known targets: cpu | gpu | cuda | rocm | metal " ++
+        "| wasm | tpu | trainium | custom | external)"
 
 end Device
 
@@ -144,7 +149,7 @@ inductive BackendOp where
   | avgPool
   | fftFno
   | selectiveScan
-  | scaledDotProductAttention
+  | attention
   deriving DecidableEq, BEq, ReflBEq, LawfulBEq, Repr
 
 namespace BackendOp
@@ -197,7 +202,7 @@ def name : BackendOp → String
   | .avgPool => "avg_pool"
   | .fftFno => "fft_fno"
   | .selectiveScan => "selective_scan"
-  | .scaledDotProductAttention => "scaled_dot_product_attention"
+  | .attention => "attention"
 
 instance : ToString BackendOp where
   toString op := op.name

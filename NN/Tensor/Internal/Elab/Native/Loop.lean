@@ -113,23 +113,7 @@ theorem nativeArrayOfFn_size
     values semanticValues]
   · exact Array.size_ofFn
   · intro index hIndex
-    have hNativeIndex :
-        USize.ofNatLT index.toNat
-            (Nat.lt_trans hIndex (by
-              rw [← hBound]
-              exact USize.toNat_lt_size bound)) =
-          index := by
-      apply USize.toNat.inj
-      simp
-    change values index hIndex =
-      values
-        (USize.ofNatLT index.toNat
-          (Nat.lt_trans hIndex (by
-            rw [← hBound]
-            exact USize.toNat_lt_size bound)))
-        _
-    cases hNativeIndex
-    rfl
+    simp only [semanticValues, USize.ofNatLT_toNat]
 
 /--
 Fill the physical buffer selected for `α` in increasing native-index order.
@@ -191,23 +175,7 @@ theorem nativeBufferOfFn_size
     nativeBufferOfFn_toArray length bound hBound values semanticValues]
   · exact Array.size_ofFn
   · intro index hIndex
-    have hNativeIndex :
-        USize.ofNatLT index.toNat
-            (Nat.lt_trans hIndex (by
-              rw [← hBound]
-              exact USize.toNat_lt_size bound)) =
-          index := by
-      apply USize.toNat.inj
-      simp
-    change values index hIndex =
-      values
-        (USize.ofNatLT index.toNat
-          (Nat.lt_trans hIndex (by
-            rw [← hBound]
-            exact USize.toNat_lt_size bound)))
-        _
-    cases hNativeIndex
-    rfl
+    simp only [semanticValues, USize.ofNatLT_toNat]
 
 /--
 Fill a physical buffer by copying entries from another buffer.
@@ -303,24 +271,7 @@ theorem nativeBufferGather_size
       sourceIndices hSourceIndices values]
   · exact Array.size_ofFn
   · intro index hIndex
-    have hNativeIndex :
-        USize.ofNatLT index.toNat
-            (Nat.lt_trans hIndex (by
-              rw [← hBound]
-              exact USize.toNat_lt_size bound)) =
-          index := by
-      apply USize.toNat.inj
-      simp
-    change storage.uget source (sourceIndices index hIndex) _ =
-      storage.uget source
-        (sourceIndices
-          (USize.ofNatLT index.toNat
-            (Nat.lt_trans hIndex (by
-              rw [← hBound]
-              exact USize.toNat_lt_size bound)))
-          _) _
-    cases hNativeIndex
-    rfl
+    simp only [values, USize.ofNatLT_toNat]
 
 /--
 Fill a physical buffer with an executable update callback.

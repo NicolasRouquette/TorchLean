@@ -96,41 +96,32 @@ def convTranspose {α : Type} [TorchLean.Storage α]
       let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
       pure ({ id := v.id }, st1))
 
-/--
-Multi-head self-attention.
+/-- Record self-attention for one sequence or a batch, preserving reference ownership checks. -/
+def attention {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α) [Context α]
+    [DecidableRel ((· > ·) : α → α → Prop)]
+    {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
+    (wq wk wv : TensorRef α [dModel, numHeads * headDim])
+    (wo : TensorRef α [numHeads * headDim, dModel])
+    (batch : Option Nat := none)
+    (x : TensorRef α
+      (match batch with | none => [n, dModel] | some b => [b, n, dModel]))
+    (mask : Option (Tensor Bool [n, n]) := none) :
+    IO (TensorRef α (match (generalizing := false) batch with
+      | none => [n, dModel] | some b => [b, n, dModel])) :=
+  commitGraphM (α := α) s
+    (refs := #[wq.identity?, wk.identity?, wv.identity?, wo.identity?, x.identity?])
+    (fun {Γ} {ss} xv nat g => do
+      let (v, st') ← runGraphM (α := α) (Γ := Γ)
+        (Runtime.Autograd.TypedGraph.GraphM.attention (α := α) (Γ := Γ) (batch := batch)
+          (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) h1
+          { id := wq.id } { id := wk.id } { id := wv.id } { id := wo.id } { id := x.id }
+          (mask := mask))
+        ss g
+      let ⟨ss', g'⟩ := st'
+      let st1 : TypedGraphSessionState α :=
+        { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
+      pure ({ id := v.id }, st1))
 
-This is a shape-specialized attention primitive used by transformer-style examples:
-- input `x` has shape `(n, dModel)`
-- `wq`, `wk`, `wv` map `dModel → numHeads*headDim`
-- `wo` maps `numHeads*headDim → dModel`
-- optional `mask` is a boolean `(n,n)` attention mask
-
-PyTorch comparison: similar to `torch.nn.MultiheadAttention` / scaled dot-product attention, but
-encoded in a fully typed graph for lowering and later semantic analysis.
--/
-def multiHeadAttention {α : Type} [TorchLean.Storage α]
-    (s : TypedGraphSession α) [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)]
-  {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
-  (wq : TensorRef α [dModel, numHeads * headDim])
-  (wk : TensorRef α [dModel, numHeads * headDim])
-  (wv : TensorRef α [dModel, numHeads * headDim])
-  (wo : TensorRef α [numHeads * headDim, dModel])
-  (x : TensorRef α [n, dModel])
-  (mask : Option (Tensor Bool [n, n]) := none) :
-  IO (TensorRef α [n, dModel]) :=
-  commitGraphM (α := α) s (β := TensorRef α [n, dModel])
-      (refs := #[wq.identity?, wk.identity?, wv.identity?, wo.identity?, x.identity?])
-      (fun {Γ} {ss} xv nat g => do
-    let (v, st') ← runGraphM (α := α) (Γ := Γ)
-      (Runtime.Autograd.TypedGraph.GraphM.multiHeadAttention (α := α) (Γ := Γ)
-        (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) (h1 := h1)
-        { id := wq.id } { id := wk.id } { id := wv.id } { id := wo.id } { id := x.id } (mask :=
-          mask))
-      ss g
-    let ⟨ss', g'⟩ := st'
-    let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
-    pure ({ id := v.id }, st1))
 end TypedGraphSession
 
 end Internal

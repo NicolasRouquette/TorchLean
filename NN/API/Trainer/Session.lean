@@ -117,10 +117,10 @@ def descend (trainer : TorchLean.Trainer [2] [1]) : IO (Trainer.Result [2] [1]) 
 -/
 opaque step {σ τ : Shape} {trainer : TorchLean.Trainer σ τ} {Input : Type}
     (session : Session trainer α) (sample : Input) (batch : Bool := false) (loss : Bool := false)
-    [Trainer.Internal.BatchInput (Sample.Supervised α σ τ)
+    [TorchLean.Internal.BatchInput (Sample.Supervised α σ τ)
       (Array (Sample.Supervised α σ τ)) batch Input] :
     IO (match loss with | false => Unit | true => α) := by
-  have inputType := Trainer.Internal.BatchInput.type_eq (single := Sample.Supervised α σ τ)
+  have inputType := TorchLean.Internal.BatchInput.type_eq (single := Sample.Supervised α σ τ)
     (many := Array (Sample.Supervised α σ τ)) (batch := batch)
   subst Input
   let samples : Array (Sample.Supervised α σ τ) := by
@@ -160,9 +160,9 @@ Evaluation-mode loss under the current parameters.
 -/
 opaque loss [Context α] {σ τ : Shape} {trainer : TorchLean.Trainer σ τ} {Input : Type}
     (session : Session trainer α) (sample : Input) (batch : Bool := false)
-    [Trainer.Internal.BatchInput (Sample.Supervised α σ τ)
+    [TorchLean.Internal.BatchInput (Sample.Supervised α σ τ)
       (Data.SampleStream (Sample.Supervised α σ τ)) batch Input] : IO α := by
-  have inputType := Trainer.Internal.BatchInput.type_eq (single := Sample.Supervised α σ τ)
+  have inputType := TorchLean.Internal.BatchInput.type_eq (single := Sample.Supervised α σ τ)
     (many := Data.SampleStream (Sample.Supervised α σ τ)) (batch := batch)
   subst Input
   cases batch with
@@ -177,10 +177,10 @@ With `batch := true`, map over the leading axis of length `batchSize`, including
 opaque predict {σ τ inputShape : Shape} {trainer : TorchLean.Trainer σ τ}
     (session : Session trainer α) (input : Tensor α inputShape)
     (batch : Bool := false) (batchSize : Nat := 1)
-    [Trainer.Internal.BatchInput
+    [TorchLean.Internal.BatchInput
       (Tensor α σ) (Tensor α (σ.prependDim batchSize)) batch (Tensor α inputShape)] :
     IO (Tensor α (match batch with | false => τ | true => τ.prependDim batchSize)) := by
-  have inputType := Trainer.Internal.BatchInput.type_eq
+  have inputType := TorchLean.Internal.BatchInput.type_eq
     (single := Tensor α σ) (many := Tensor α (σ.prependDim batchSize)) (batch := batch)
   cases batch with
   | false => exact session.predictImpl (inputType.mp input)
@@ -242,16 +242,6 @@ end Session
 
 namespace Internal
 
-/-- Read a state pack using the opening path's scalar-preserving or binary32 readback operation. -/
-def readStatePack {α β : Type} [Storage α] [Storage β]
-    (readTensor : {shape : Shape} → Tensor α shape → IO (Tensor β shape)) :
-    {shapes : List Shape} → TensorPack α shapes → IO (TensorPack β shapes)
-  | [], .nil => pure .nil
-  | _ :: _, .cons tensor rest => do
-      let value ← readTensor tensor
-      let values ← readStatePack readTensor rest
-      pure (.cons value values)
-
 /--
 Build a session for a runtime scalar `α` and a public scalar `β`.
 
@@ -285,12 +275,12 @@ def openSession {σ τ : Shape} {α β : Type}
   let predict (input : Tensor β σ) : IO (Tensor β τ) := do
     readTensor (← runner.forward (Tensor.map toRuntime input) (mode := .eval))
   let readState : IO (nn.State β (nn.stateShapes trainer.model)) := do
-    let values ← readStatePack readTensor (nn.State.Internal.toTensorPack (← runner.state))
+    let values ← TensorPack.mapM readTensor (nn.State.Internal.toTensorPack (← runner.state))
     pure (nn.State.Internal.fromTensorPack values)
   let finish (loss : Training.LossProgress β) : IO (Result σ τ β) := do
     let steps ← stepper.steps
     let frozenState ← runner.state
-    let frozenPack ← readStatePack readTensor (nn.State.Internal.toTensorPack frozenState)
+    let frozenPack ← TensorPack.mapM readTensor (nn.State.Internal.toTensorPack frozenState)
     let frozenPublicState := nn.State.Internal.fromTensorPack frozenPack
     let parameters ← Runtime.Autograd.Torch.ParamList.ofPack
       (nn.State.Internal.toTensorPack frozenState)
@@ -345,14 +335,10 @@ def «open» {σ τ : Shape} (trainer : TorchLean.Trainer σ τ)
     (scheduler : Option Scheduler.Config := none)
     (initialState? : Option (nn.State Float (nn.stateShapes trainer.model)) := none) :
     IO (Session trainer) := do
-  match trainer.runtime.optimizer.validateFloat32 with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
+  IO.ofExcept trainer.runtime.optimizer.validateFloat32
   match scheduler with
   | some schedule =>
-      match Scheduler.validateFloat32 schedule with
-      | .ok () => pure ()
-      | .error message => throw <| IO.userError message
+      IO.ofExcept <| schedule.validate (round := fun value => value.toFloat32.toFloat)
   | none => pure ()
   if trainer.runtime.executionSettings.usesCuda && trainer.runtime.arithmetic != .native then
     throw <| IO.userError

@@ -6,17 +6,15 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Core.Numeric
 public import NN.Core.Numeric.Angle.Real
 public import NN.Spec.Core.Context
 
 /-!
 # The real scalar dictionary
 
-`Spec.SpecScalar` is `ℝ`, so every "paper theorem" ultimately runs through the instances here. They
-are kept out of `NN.Spec.Core.Context` because `Context ℝ` needs `MathFunctions ℝ`, and that drags
-in the whole real-analysis hierarchy; modules working at `Float` or at a general `[Context α]`
-should not pay for it.
+This module supplies the noncomputable `Context ℝ` instance and its compatibility laws with
+Mathlib's real field. Keeping these instances separate lets callers import the general `Context`
+interface without selecting the real scalar instance.
 -/
 
 @[expose] public section

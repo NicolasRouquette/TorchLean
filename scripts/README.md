@@ -78,7 +78,7 @@ scripts/checks/check.sh --libtorch-home "$TORCHLEAN_LIBTORCH_HOME" --ci-all
 `TORCHLEAN_REQUIRE_CUDA=1` rejects builds without LibTorch and missing CUDA devices.
 `check.sh --cuda`, its SDK/toolkit options, and the sanitizer wrapper enable this mode
 automatically. GPU execution needs a supported visible device; SDK configuration may also probe
-visible devices. TorchLean builds six ordinary C++ translation units and has no independent
+visible devices. TorchLean builds one shared C++ adapter and has no independent
 nvcc prerequisite. The SDK's own CMake package may require a matching CUDA development toolkit
 and invoke its compiler during discovery.
 
@@ -117,8 +117,8 @@ python3 scripts/libtorch_build.py --package-dir "$PWD" \
 export TORCHLEAN_BACKEND_LIBRARY="$torchlean_build_dir/libtorch/libtorchlean_libtorch.so"
 ```
 
-The helper builds `runtime.cpp`, `elementwise.cpp`, `kernels.cpp`, `conv_pool.cpp`, `attention.cpp`,
-and `blas.cpp` with `TORCHLEAN_LIBTORCH` defined. Its stdout is a cache fingerprint; CMake output
+The helper builds `torchlean.cpp` with `TORCHLEAN_LIBTORCH` defined.
+Its stdout is a cache fingerprint; CMake output
 goes to stderr. SDK/version/ABI headers, compiler identity, flags, sources, and discovered build
 dependencies are tracked in `libtorch/build.json`. SDK library replacements are tracked by file
 metadata; the backend output is hashed. Changed inputs trigger a clean private CMake build.

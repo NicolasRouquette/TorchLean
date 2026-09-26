@@ -8,7 +8,7 @@ module
 
 public import NN.Runtime.Autograd.Torch.Core.Ops.Dispatch
 public import NN.Runtime.Autograd.Engine.Core.ConvPool
-public import NN.Runtime.Autograd.Engine.Cuda.Ops.ConvPool
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops.ConvPool
 
 /-!
 # Eager Tensor Operations
@@ -54,12 +54,13 @@ def conv {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α]
       w.id b.id x.id
     pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Cuda.Tape.conv (t := t0)
+    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+      Runtime.Autograd.LibTorch.Tape.conv (t := t0)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       w.id b.id x.id
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .conv #[w.identity?, b.identity?, x.identity?] cpu cuda
+  execute (α := α) s .conv #[w.identity?, b.identity?, x.identity?] cpu cuda
 
 /--
 N-D transpose convolution for channels-first tensors `(inC, spatial...)` (no batch axis).
@@ -86,12 +87,12 @@ def convTranspose {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Cont
     pure { id := id }
   let cuda := do
     let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
-      Runtime.Autograd.Cuda.Tape.convTranspose (t := t0)
+      Runtime.Autograd.LibTorch.Tape.convTranspose (t := t0)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       w.id b.id x.id
     pure (some { id := id })
-  dispatchCudaOpt (α := α) s .convTranspose #[w.identity?, b.identity?, x.identity?] cpu cuda
+  execute (α := α) s .convTranspose #[w.identity?, b.identity?, x.identity?] cpu cuda
 
 end EagerSession
 

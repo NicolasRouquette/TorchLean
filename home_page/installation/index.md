@@ -61,6 +61,10 @@ runtime work.
 | Windows with WSL2 | &#10003; Linux path | &#10003; CUDA on WSL2 | Linux path | Recommended Windows setup |
 | Native Windows | Not yet | Not validated | Not wired | Native toolchain work remains; use WSL2 |
 
+LibTorch is the standard CUDA backend: build with `-Kcuda=true` and run with `--device cuda`.
+You can also request `--device gpu` (or `.gpu` in Lean). Currently it selects CUDA through
+LibTorch and fails if that GPU runtime is unavailable; it does not fall back to CPU.
+A plain build still uses the portable CPU runtime and does not link LibTorch.
 The GPU backend uses ATen, LibTorch's tensor library. TorchLean retains its own tape, backward
 traversal, and optimizer state. Native operations compute tensor values and local gradients with
 LibTorch autograd recording disabled. The CPU build remains independent of LibTorch.

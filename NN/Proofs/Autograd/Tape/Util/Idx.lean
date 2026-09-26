@@ -74,31 +74,6 @@ def getIdx {α : Type} [TorchLean.Storage α] {Γ : List Shape} {s : Shape}
 
 namespace Idx
 
-private theorem get_append_last {α : Type} (l : List α) (a : α) :
-    (l ++ [a]).get ⟨l.length, by simp⟩ = a := by
-  induction l with
-  | nil => simp
-  | cons _ xs ih =>
-      simp [List.length]
-
-private theorem get_append_left {α : Type} (l₁ l₂ : List α) (i : Fin l₁.length) :
-    (l₁ ++ l₂).get ⟨i.1, by
-        -- `i.1 < l₁.length` and `l₁.length ≤ l₁.length + l₂.length`.
-        simpa [List.length_append] using
-          Nat.lt_of_lt_of_le i.2 (Nat.le_add_right l₁.length l₂.length)⟩ =
-      l₁.get i := by
-  induction l₁ with
-  | nil =>
-      cases i with
-      | mk _ hk => cases hk
-  | cons _ tl ih =>
-      classical
-      cases i using Fin.cases with
-      | zero =>
-          simp
-      | succ i =>
-          simp
-
 /--
 Weaken a typed index when the context is extended by appending more shapes.
 
@@ -110,14 +85,7 @@ def weaken {Γ : List Shape} {s : Shape} (idx : Idx Γ s) (rest : List Shape) :
     simpa [List.length_append] using
       Nat.lt_of_lt_of_le idx.i.2 (Nat.le_add_right Γ.length rest.length)⟩
   have hget : (Γ ++ rest).get i' = s := by
-    have hleft := get_append_left (l₁ := Γ) (l₂ := rest) (i := idx.i)
-    have hi' :
-        (⟨idx.i.1, by
-          simpa [List.length_append] using
-            Nat.lt_of_lt_of_le idx.i.2 (Nat.le_add_right Γ.length rest.length)⟩ :
-          Fin (Γ ++ rest).length) = i' := by
-      ext; rfl
-    simpa [hi'] using (hleft.trans idx.h)
+    simpa only [List.get_eq_getElem, i', List.getElem_append_left idx.i.isLt] using idx.h
   ⟨i', hget⟩
 
 /--

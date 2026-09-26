@@ -46,7 +46,7 @@ def checkExecutionMode (execution : Torch.ExecutionMode) : IO Unit := do
 
 def checkCudaCacheClear : IO Unit := do
   let value ← IO.mkRef (Tensor.scalar 1.0)
-  let buffer ← Runtime.Autograd.Cuda.Buffer.fullIO 1 1.0
+  let buffer ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 1.0
   let cudaValue ← IO.mkRef (some { s := Shape.scalar, buf := buffer })
   let hostCurrent ← IO.mkRef true
   let param : Torch.Param Float Shape.scalar :=
@@ -60,7 +60,7 @@ def checkCudaCacheClear : IO Unit := do
 def run : IO Unit := do
   checkExecutionMode .eager
   checkExecutionMode .typedGraph
-  if Runtime.Autograd.Cuda.Buffer.runtimeStatus == .nativeAvailable then
+  if Runtime.Autograd.LibTorch.Buffer.runtimeStatus == .nativeAvailable then
     checkCudaCacheClear
   for device in [NN.Backend.Device.cuda, .metal, .custom] do
     expectFailure "typed graph unsupported device" <|

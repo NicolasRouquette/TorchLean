@@ -218,7 +218,7 @@ def forward {σ τ : Shape} (model : Seq σ τ) (mode : Mode := .eval)
       -- preserving shared parameter snapshots and reusable device blocks for the next call.
       sess.resetTape
       if options.usesCuda then
-        Runtime.Autograd.Cuda.Buffer.collectGarbage
+        Runtime.Autograd.LibTorch.Buffer.collectGarbage
 
   /--
   Run eval-mode eager inference for one concrete input.

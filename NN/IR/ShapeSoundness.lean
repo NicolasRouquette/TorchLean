@@ -45,36 +45,6 @@ theorem map_ok_iff {ε β γ : Type} {f : β → γ} {x : Except ε β} {v : γ}
     Except.map f x = .ok v ↔ ∃ a, x = .ok a ∧ f a = v := by
   cases x <;> simp [Except.map]
 
-/-- Structural Boolean shape equality agrees with propositional equality. -/
-theorem shape_areEqual_eq_true_iff : ∀ {a b : Shape}, Shape.areEqual a b = true ↔ a = b
-  | .scalar, .scalar => by simp [Shape.areEqual]
-  | .scalar, .dim _ _ => by simp [Shape.areEqual]
-  | .dim _ _, .scalar => by simp [Shape.areEqual]
-  | .dim n₁ s₁, .dim n₂ s₂ => by
-      simp [Shape.areEqual, shape_areEqual_eq_true_iff (a := s₁) (b := s₂)]
-
-/-- `==` on shapes is propositional equality. -/
-theorem shape_beq_eq_true_iff {a b : Shape} : (a == b) = true ↔ a = b :=
-  beq_iff_eq
-
-/-- `!=` on shapes is propositional disequality. -/
-theorem shape_bne_eq_true_iff {a b : Shape} : (a != b) = true ↔ a ≠ b := by
-  constructor
-  · intro h hab
-    subst hab
-    simp [bne] at h
-  · intro hne
-    have hfalse : (a == b) = false := by
-      cases hbeq : (a == b)
-      · rfl
-      · exact absurd (shape_beq_eq_true_iff.1 hbeq) hne
-    simp [bne, hfalse]
-
-/-- A bind in the `Option` monad succeeds exactly when both stages succeed. -/
-theorem option_bind_some_iff {β γ : Type} {x : Option β} {f : β → Option γ} {v : γ} :
-    (x >>= f) = some v ↔ ∃ a, x = some a ∧ f a = some v := by
-  cases x <;> simp
-
 /-- Binding a success value applies the continuation. -/
 theorem ok_bind {ε β γ : Type} (a : β) (f : β → Except ε γ) : (Except.ok a >>= f) = f a := rfl
 
@@ -149,11 +119,12 @@ local macro "ok_shape" : tactic =>
 every branch that would have produced an error. Residual `match` expressions on opaque scrutinees
 are left for `split`. -/
 local macro "peel_ok " h:ident : tactic =>
-  `(tactic| simp only [bind_ok_iff, option_bind_some_iff, pure_eq_ok, throw_eq_error, ok_bind,
+  `(tactic| simp only [bind_ok_iff, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      pure_eq_ok, throw_eq_error, ok_bind,
       error_bind, dite_eq_iff, ite_eq_iff, exists_false, false_or, or_false, and_false, false_and,
       Except.ok.injEq,
-      reduceCtorEq, not_false_eq_true, true_and, and_true, shape_bne_eq_true_iff,
-      shape_beq_eq_true_iff, bne_iff_ne, ne_eq, not_not, Bool.not_eq_true, decide_eq_true_eq,
+      reduceCtorEq, not_false_eq_true, true_and, and_true,
+      beq_iff_eq, bne_iff_ne, ne_eq, not_not, Bool.not_eq_true, decide_eq_true_eq,
       Option.some.injEq, map_ok_iff, Option.pure_def] at $h:ident)
 
 /-! ## Decoder characterizations -/

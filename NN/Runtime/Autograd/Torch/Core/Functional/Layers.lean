@@ -95,30 +95,19 @@ def batchNorm {channels : Nat} {sSpatial : Shape}
   Ops.batchNorm (m := m) (α := α) (channels := channels) (sSpatial := sSpatial)
     hWellFormed x gamma beta (epsilon := epsilon)
 
-@[inherit_doc Ops.multiHeadAttention]
-def multiHeadAttention {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
-    (wq : Ref (m := m) (α := α) [dModel, numHeads * headDim])
-    (wk : Ref (m := m) (α := α) [dModel, numHeads * headDim])
-    (wv : Ref (m := m) (α := α) [dModel, numHeads * headDim])
+@[inherit_doc Ops.attention]
+def attention {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
+    (wq wk wv : Ref (m := m) (α := α) [dModel, numHeads * headDim])
     (wo : Ref (m := m) (α := α) [numHeads * headDim, dModel])
-    (x : Ref (m := m) (α := α) [n, dModel])
-    (mask : Option (Tensor Bool [n, n]) := none) :
-    m (Ref (m := m) (α := α) [n, dModel]) :=
-  Ops.multiHeadAttention (m := m) (α := α) (n := n) (numHeads := numHeads) (dModel := dModel)
-    (headDim := headDim) h1 wq wk wv wo x mask
-
-@[inherit_doc Ops.batchedMultiHeadAttention]
-def batchedMultiHeadAttention {batch n numHeads dModel headDim : Nat}
-    (hBatch : batch ≠ 0) (h1 : n ≠ 0)
-    (wq : Ref (m := m) (α := α) [dModel, numHeads * headDim])
-    (wk : Ref (m := m) (α := α) [dModel, numHeads * headDim])
-    (wv : Ref (m := m) (α := α) [dModel, numHeads * headDim])
-    (wo : Ref (m := m) (α := α) [numHeads * headDim, dModel])
-    (x : Ref (m := m) (α := α) [batch, n, dModel])
-    (mask : Option (Tensor Bool [n, n]) := none) :
-    m (Ref (m := m) (α := α) [batch, n, dModel]) :=
-  Ops.batchedMultiHeadAttention (m := m) (α := α)
-    (batch := batch) (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim)
+    (batch : Option Nat := none)
+    (x : Ref (m := m) (α := α)
+      (match (generalizing := false) batch with | none => [n, dModel] | some b => [b, n, dModel]))
+    (mask : Option (Tensor Bool [n, n]) := none)
+    (hBatch : batch.getD 1 ≠ 0 := by decide) :
+    m (Ref (m := m) (α := α)
+      (match (generalizing := false) batch with
+        | none => [n, dModel] | some b => [b, n, dModel])) :=
+  Ops.attention (m := m) (α := α) (batch := batch)
     hBatch h1 wq wk wv wo x mask
 
 @[inherit_doc Ops.conv]

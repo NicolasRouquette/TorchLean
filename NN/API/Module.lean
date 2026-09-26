@@ -214,9 +214,7 @@ def instantiate {σ τ : Shape}
     [tensorTransfer : Runtime.TensorTransfer α]
     (initialState? : Option (nn.State α (nn.stateShapes model)) := none) :
     IO (Module α model) := do
-  match nn.validate model with
-  | .error message => throw <| IO.userError message
-  | .ok () => pure ()
+  IO.ofExcept (nn.validate model)
   let state ← TorchLean.Module.RuntimeState.Internal.instantiate
     (nn.State.Internal.toTensorPack (nn.initialState model))
     (nn.runtimeInit? model) (nn.requiresGrad model)
@@ -324,9 +322,7 @@ def instantiate {σ τ : Shape} {β : Type} [TorchLean.Storage β]
     [tensorTransfer : Runtime.TensorTransfer α]
     (initialState? : Option (nn.State α model.stateShapes) := none) :
     IO (IndexedModule α β model) := do
-  match model.validate with
-  | .error message => throw <| IO.userError message
-  | .ok () => pure ()
+  IO.ofExcept model.validate
   let state ← TorchLean.Module.RuntimeState.Internal.instantiate
     (nn.State.Internal.toTensorPack model.initialState)
     (nn.IndexedModel.Internal.initializationPlan model)
@@ -388,22 +384,20 @@ def forward {σ τ : Shape} {α β : Type}
   let selectedMode ← match mode with
     | some value => pure value
     | none => module.mode
-  match nn.IndexedModel.Internal.validateInput model input with
-  | .error message => throw <| IO.userError message
-  | .ok () =>
-      let state := Internal.runtimeState module
-      let program : Runtime.Autograd.Model.ProgramWithDataInputs α β
-          (model.stateShapes ++ []) [σ] τ :=
-        fun {m} _ _ => by
-          simpa using
-            (nn.IndexedModel.Internal.program model selectedMode (α := α) (m := m))
-      let evaluator ← Runtime.Autograd.Model.Module.Evaluator.withState
-        (program := program)
-        (TorchLean.Module.RuntimeState.Internal.runtime state)
-        (TorchLean.Module.RuntimeState.Internal.stateRef state)
-        (rngCounter := some (TorchLean.Module.RuntimeState.Internal.rngCounter state))
-      Runtime.Autograd.Model.Module.Evaluator.run
-        evaluator TensorPack.empty (TensorPack.singleton input)
+  IO.ofExcept (nn.IndexedModel.Internal.validateInput model input)
+  let state := Internal.runtimeState module
+  let program : Runtime.Autograd.Model.ProgramWithDataInputs α β
+      (model.stateShapes ++ []) [σ] τ :=
+    fun {m} _ _ => by
+      simpa using
+        (nn.IndexedModel.Internal.program model selectedMode (α := α) (m := m))
+  let evaluator ← Runtime.Autograd.Model.Module.Evaluator.withState
+    (program := program)
+    (TorchLean.Module.RuntimeState.Internal.runtime state)
+    (TorchLean.Module.RuntimeState.Internal.stateRef state)
+    (rngCounter := some (TorchLean.Module.RuntimeState.Internal.rngCounter state))
+  Runtime.Autograd.Model.Module.Evaluator.run
+    evaluator TensorPack.empty (TensorPack.singleton input)
 
 
 end IndexedModule

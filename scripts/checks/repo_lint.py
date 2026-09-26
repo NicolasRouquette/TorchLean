@@ -2806,9 +2806,9 @@ def lint_repo(*, fail_on_warn: bool) -> list[Finding]:
                     )
 
         ownership_sensitive_cuda_modules = {
-            "NN/Runtime/Autograd/Engine/Cuda/Buffer.lean",
-            "NN/Runtime/Autograd/Engine/Cuda/Kernels.lean",
-            "NN/Runtime/Autograd/Engine/Cuda/ConvPool.lean",
+            "NN/Runtime/Autograd/Engine/LibTorch/Buffer.lean",
+            "NN/Runtime/Autograd/Engine/LibTorch/Kernels.lean",
+            "NN/Runtime/Autograd/Engine/LibTorch/ConvPool.lean",
         }
         if rel in ownership_sensitive_cuda_modules:
             unsafe_extern = re.compile(r"@\[(?![^\]]*\bnever_extract\b)[^\]]*\bextern\b[^\]]*\]")

@@ -7,13 +7,13 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.Core.Functional.Ops
-public import NN.Runtime.Autograd.LeadingAxis
+public import NN.Runtime.Autograd.Batch
 
 /-!
 # Tensor Operations over Backend References
 
 Arithmetic, shape changes, indexing, reductions, and seeded data for programs polymorphic over
-`Ops`. `mapOuterAxis` supplies the shared traversal when a backend has no fused batch operation.
+`Ops`. `mapBatch` supplies the shared traversal when a backend has no fused batch operation.
 -/
 
 @[expose] public section
@@ -143,33 +143,33 @@ def matmul {batchA batchB batch : Shape} {mDim nDim pDim : Nat}
   Ops.matmul (m := m) (α := α) (batchA := batchA) (batchB := batchB)
     (batch := batch) (mDim := mDim) (nDim := nDim) (pDim := pDim) a b
 
-@[inherit_doc Ops.concatLeadingAxis]
-def concatLeadingAxis {nDim mDim : Nat} {s : Shape}
+@[inherit_doc Ops.concat]
+def concat {nDim mDim : Nat} {s : Shape}
     (a : Ref (m := m) (α := α) (s.prependDim nDim))
     (b : Ref (m := m) (α := α) (s.prependDim mDim)) :
     m (Ref (m := m) (α := α) (s.prependDim (nDim + mDim))) :=
-  Ops.concatLeadingAxis (m := m) (α := α) (nDim := nDim) (mDim := mDim) (s := s) a b
+  Ops.concat (m := m) (α := α) (nDim := nDim) (mDim := mDim) (s := s) a b
 
-@[inherit_doc Ops.sliceLeadingAxisRange]
-def sliceLeadingAxisRange {nDim : Nat} {s : Shape} (start len : Nat) (h : start + len ≤ nDim)
+@[inherit_doc Ops.slice]
+def slice {nDim : Nat} {s : Shape} (start len : Nat) (h : start + len ≤ nDim)
     (x : Ref (m := m) (α := α) (s.prependDim nDim)) :
     m (Ref (m := m) (α := α) (s.prependDim len)) :=
-  Ops.sliceLeadingAxisRange (m := m) (α := α) (nDim := nDim) (s := s) start len h x
+  Ops.slice (m := m) (α := α) (nDim := nDim) (s := s) start len h x
 
 /--
 Apply `f` to each leading-axis slice and concatenate the results in order.
 
 An empty leading axis returns an empty reference without calling `f`.
 -/
-def mapOuterAxis {σ τ : Shape}
+def mapBatch {σ τ : Shape}
     (f : Ref (m := m) (α := α) σ → m (Ref (m := m) (α := α) τ)) {n : Nat}
     (x : Ref (m := m) (α := α) (σ.prependDim n)) :
     m (Ref (m := m) (α := α) (τ.prependDim n)) :=
-  Runtime.Autograd.mapOuterAxisWith
+  Runtime.Autograd.mapBatch
     (const (m := m) (α := α) (s := τ.prependDim 0) (Tensor.full (τ.prependDim 0) (0 : α)))
-    (fun x start len h => sliceLeadingAxisRange (m := m) (α := α) start len h x)
+    (fun x start len h => slice (m := m) (α := α) start len h x)
     (reshape (m := m) (α := α))
-    (concatLeadingAxis (m := m) (α := α))
+    (concat (m := m) (α := α))
     f x
 
 @[inherit_doc Ops.detach]

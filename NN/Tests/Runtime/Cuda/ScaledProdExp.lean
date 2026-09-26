@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Buffer
+public import NN.Runtime.Autograd.Engine.LibTorch.Buffer
 public import Std
 
 /-!
@@ -26,7 +26,7 @@ namespace Tests
 namespace Cuda
 namespace ScaledProdExp
 
-open Runtime.Autograd.Cuda
+open Runtime.Autograd.LibTorch
 
 def run : IO Unit := do
   IO.println "=== scaledProdExp composition parity ==="

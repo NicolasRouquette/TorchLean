@@ -74,10 +74,6 @@ def op? : NN.IR.OpKind → Option BackendOp
   | .permute .. => some .permute
   | .batchNormEval .. => some .batchNorm
 
-/-- Backend operation requested by a graph node, if the node needs runtime work. -/
-def nodeOp? (n : NN.IR.Node) : Option BackendOp :=
-  op? n.kind
-
 /-- Backend choice for one concrete IR node. -/
 structure PlannedNodeKernel where
   nodeId : Nat
@@ -109,7 +105,7 @@ end GraphKernelPlan
 planner filters once rather than once per node. -/
 def planNode? (policy : KernelPolicy) (available : Array KernelCapsule) (n : NN.IR.Node) :
     Except String (Option PlannedNodeKernel) := do
-  match nodeOp? n with
+  match op? n.kind with
   | none => pure none
   | some op =>
       let k ← planOp policy available op

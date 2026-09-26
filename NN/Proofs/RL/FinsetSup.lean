@@ -8,7 +8,6 @@ module
 
 public import Mathlib.Basic.Real.Basic
 public import Mathlib.Data.Finset.Lattice.Fold
-import Mathlib.Tactic.Linarith
 
 /-!
 # Finset Suprema Helpers
@@ -54,9 +53,9 @@ theorem abs_sup'_sub_sup'_le
     |s.sup' hs f - s.sup' hs g| ≤ c := by
   refine abs_sub_le_iff.mpr ⟨sub_le_iff_le_add'.mpr ?_, sub_le_iff_le_add'.mpr ?_⟩
   · refine sup'_le_add_const s hs f g c fun i hi => ?_
-    linarith [(abs_sub_le_iff.mp (hfg i hi)).1]
+    exact sub_le_iff_le_add'.mp (abs_sub_le_iff.mp (hfg i hi)).1
   · refine sup'_le_add_const s hs g f c fun i hi => ?_
-    linarith [(abs_sub_le_iff.mp (hfg i hi)).2]
+    exact sub_le_iff_le_add'.mp (abs_sub_le_iff.mp (hfg i hi)).2
 
 end RL
 end Proofs

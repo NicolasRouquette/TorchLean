@@ -175,9 +175,8 @@ def printSummary {σ τ : Shape}
     (trainer : TorchLean.Trainer σ τ)
     (label : String := "model") : IO Unit := do
   IO.println s!"{label}:"
-  match trainer.summary with
-  | .ok details => IO.println details
-  | .error message => throw <| IO.userError message
+  let details ← IO.ofExcept trainer.summary
+  IO.println details
 
 end Trainer
 

@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph.Engine.Base
+public import NN.Runtime.Autograd.Batch
 public import NN.Runtime.Autograd.Model.Program -- shake: keep
 
 /-!
@@ -166,7 +167,7 @@ def getConst {α : Type} [TorchLean.Storage α] [Context α] {s : Shape} (r : Re
     "TorchLean IR lowering: expected a compile-time constant tensor (got a graph node)"
 
 /-- Lower one sample of multi-head attention into the verifier IR. -/
-def emitMultiHeadAttention {α : Type} [TorchLean.Storage α] [Context α]
+def Internal.emitAttention {α : Type} [TorchLean.Storage α] [Context α]
     {n numHeads dModel headDim : Nat}
     (wq : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
     (wk : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
@@ -243,7 +244,7 @@ def emitMultiHeadAttention {α : Type} [TorchLean.Storage α] [Context α]
   emitMatmul (α := α) (a := concat) (b := wo) (sOut := sX) (outShape := sX)
 
 /-- Exact leading-axis slice expressed through the verifier's affine matrix fragment. -/
-def emitLeadingSlice {α : Type} [TorchLean.Storage α] [Context α]
+def emitSlice {α : Type} [TorchLean.Storage α] [Context α]
     {n len : Nat} {s : Shape} (start : Nat) (_h : start + len ≤ n)
     (x : Ref α (.dim n s)) : BuildM α (Ref α (.dim len s)) := do
   let block : Nat := Spec.Shape.size s
@@ -265,7 +266,7 @@ def emitLeadingSlice {α : Type} [TorchLean.Storage α] [Context α]
     (x := yMat) (t := .dim len s) (outShape := .dim len s)
 
 /-- Emit a verifier-IR concatenation along the leading axis. -/
-def emitLeadingConcat {α : Type} [TorchLean.Storage α] [Context α]
+def emitConcat {α : Type} [TorchLean.Storage α] [Context α]
     {n m : Nat} {s : Shape} (a : Ref α (.dim n s)) (b : Ref α (.dim m s)) :
     BuildM α (Ref α (.dim (n + m) s)) := do
   let pa ← ensureNode (α := α) a
@@ -277,46 +278,31 @@ def emitLeadingConcat {α : Type} [TorchLean.Storage α] [Context α]
   pure (.node id)
 
 /--
-Lower batched attention as the leading-axis map of the single-sample verifier graph.
+Lower attention to the verifier's existing matrix and softmax operations.
 
-This is intentionally a semantic lowering rather than a claim that the verifier understands a new
-opaque fused kernel.
+Batched inputs use the shared balanced traversal. A singleton needs only reshapes around its
+attention graph; larger batches split into two parts without constructing a trailing empty graph.
 -/
-def emitBatchedMultiHeadAttention {α : Type} [TorchLean.Storage α] [Context α]
-    {batch n numHeads dModel headDim : Nat}
-    (wq : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wk : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wv : Ref α (.dim dModel (.dim (numHeads * headDim) .scalar)))
-    (wo : Ref α (.dim (numHeads * headDim) (.dim dModel .scalar)))
-    (x : Ref α (.dim batch (.dim n (.dim dModel .scalar))))
+def emitAttention {α : Type} [TorchLean.Storage α] [Context α]
+    {n numHeads dModel headDim : Nat}
+    (wq wk wv : Ref α [dModel, numHeads * headDim])
+    (wo : Ref α [numHeads * headDim, dModel])
+    (batch : Option Nat := none)
+    (x : Ref α (match batch with | none => [n, dModel] | some b => [b, n, dModel]))
     (mask : Option (Tensor Bool [n, n])) :
-    BuildM α (Ref α (.dim batch (.dim n (.dim dModel .scalar)))) :=
-  match batch with
-  | 0 =>
-      pure <| .const <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i)
-  | batch + 1 => do
-      let head1 ← emitLeadingSlice (α := α) (n := batch + 1) (len := 1) 0 (by simp) x
-      let head : Ref α (.dim n (.dim dModel .scalar)) ←
-        emitUnary (α := α)
-          (kind := .reshape
-            (.dim 1 (.dim n (.dim dModel .scalar)))
-            (.dim n (.dim dModel .scalar)))
-          (x := head1) (t := .dim n (.dim dModel .scalar))
-          (outShape := .dim n (.dim dModel .scalar))
-      let yHead ← emitMultiHeadAttention (α := α) wq wk wv wo head mask
-      let yHead1 : Ref α (.dim 1 (.dim n (.dim dModel .scalar))) ←
-        emitUnary (α := α)
-          (kind := .reshape
-            (.dim n (.dim dModel .scalar))
-            (.dim 1 (.dim n (.dim dModel .scalar))))
-          (x := yHead) (t := .dim 1 (.dim n (.dim dModel .scalar)))
-          (outShape := .dim 1 (.dim n (.dim dModel .scalar)))
-      let tail ← emitLeadingSlice (α := α) (n := batch + 1) (len := batch) 1
-        (by simp [Nat.add_comm]) x
-      let yTail ← emitBatchedMultiHeadAttention (α := α) wq wk wv wo tail mask
-      let y ← emitLeadingConcat (α := α)
-        (n := 1) (m := batch) (s := .dim n (.dim dModel .scalar)) yHead1 yTail
-      return (by simpa [Nat.one_add] using y)
+    BuildM α (Ref α (match (generalizing := false) batch with
+      | none => [n, dModel] | some b => [b, n, dModel])) :=
+  match batch, x with
+  | none, sample => Internal.emitAttention wq wk wv wo sample mask
+  | some _, samples =>
+      Runtime.Autograd.mapBatch
+        (pure (.const (Tensor.dim (fun i : Fin 0 => Fin.elim0 i))))
+        (fun x start _ h => emitSlice start h x)
+        (fun {s₁ s₂} x _h =>
+          emitUnary (kind := .reshape s₁ s₂) (x := x) (t := s₂) (outShape := s₂))
+        (fun x y => emitConcat x y)
+        (fun sample => Internal.emitAttention wq wk wv wo sample mask)
+        samples
 
 instance {α : Type} [TorchLean.Storage α] [Context α] :
     Runtime.Autograd.Torch.Ops (m := BuildM α) (α := α) where
@@ -381,7 +367,7 @@ instance {α : Type} [TorchLean.Storage α] [Context α] :
 
   -- A `select` with a statically known index is a constant one-hot projection, not a data-dependent
   -- gather, so it does belong to the verifier fragment: we reuse the same selector-matmul encoding
-  -- that `sliceLeadingAxisRange` uses and then drop the length-one axis with a reshape. Only the
+  -- that `slice` uses and then drop the length-one axis with a reshape. Only the
   -- leading axis is handled. An inner axis would need the projection applied under the outer
   -- dimensions, which the fragment cannot express without a stack/unstack pair, so that case still
   -- reports a fragment error rather than silently lowering to something else.
@@ -393,7 +379,7 @@ instance {α : Type} [TorchLean.Storage α] [Context α] :
     | .dim n rest, 0 =>
         if h : idx + 1 ≤ n then do
           let sliced : Ref α (.dim 1 rest) ←
-            emitLeadingSlice (α := α) (n := n) (len := 1) (s := rest) idx h x
+            emitSlice (α := α) (n := n) (len := 1) (s := rest) idx h x
           emitUnary (α := α) (kind := .reshape (.dim 1 rest) rest)
             (x := sliced) (t := rest) (outShape := rest)
         else
@@ -413,11 +399,11 @@ instance {α : Type} [TorchLean.Storage α] [Context α] :
     let out : Shape := batch.concat [mDim, pDim]
     emitMatmul (α := α) (a := a) (b := b) (sOut := out) (outShape := out)
 
-  concatLeadingAxis := fun {_nDim _mDim} {_s} a b =>
-    emitLeadingConcat (α := α) a b
+  concat := fun {_nDim _mDim} {_s} a b =>
+    emitConcat (α := α) a b
 
-  sliceLeadingAxisRange := fun {_nDim} {_s} start _len h x =>
-    emitLeadingSlice (α := α) start h x
+  slice := fun {_nDim} {_s} start _len h x =>
+    emitSlice (α := α) start h x
 
   maxPool := fun {d C} {inSpatial kernel stride padding} x => do
     let config : WindowConfig :=
@@ -546,12 +532,8 @@ instance {α : Type} [TorchLean.Storage α] [Context α] :
         "x) is outside the verifier IR fragment. For inference-time BN, " ++
         "use the eval-mode batch-normalization operation with explicit running statistics.")
 
-  multiHeadAttention := fun {_n _numHeads _dModel _headDim} _h1 wq wk wv wo x mask =>
-    emitMultiHeadAttention (α := α) wq wk wv wo x mask
-
-  batchedMultiHeadAttention :=
-    fun {_batch _n _numHeads _dModel _headDim} _hBatch _h1 wq wk wv wo x mask =>
-      emitBatchedMultiHeadAttention (α := α) wq wk wv wo x mask
+  attention := fun {_n _numHeads _dModel _headDim batch} _hBatch _h1 wq wk wv wo x mask =>
+    emitAttention (α := α) (batch := batch) wq wk wv wo x mask
 
   conv := fun {d inC outC} {kernel stride padding} {inSpatial} w b x => do
     if hKernel : ∀ i : Fin d, kernel.getScalar i ≠ 0 then

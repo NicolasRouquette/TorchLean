@@ -6,7 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Backend.Attention
 public import NN.Backend.LibTorch
 public import NN.Backend.Reference
 
@@ -68,8 +67,7 @@ def validateModules (modules : Array CapsuleModule) : Except String Unit := do
 /-- Maintained operation/provider modules. A new architecture does not modify this list; only a new
 primitive implementation or provider does. -/
 def maintainedModules : Array CapsuleModule :=
-  #[ { name := "attention", capsules := Attention.capsules }
-  , { name := "libtorch", capsules := LibTorch.capsules }
+  #[ { name := "libtorch", capsules := LibTorch.capsules }
   , { name := "reference", capsules := Reference.capsules }
   ]
 

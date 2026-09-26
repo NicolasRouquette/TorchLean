@@ -6,7 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Spec.Core.TensorOps
 public import NN.Spec.Layers.Conv
 
 @[expose] public section

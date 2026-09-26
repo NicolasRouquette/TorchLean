@@ -117,10 +117,10 @@ def checkShapeAndIndexing : IO Unit := do
     t.reduceSum (s := [2, 2]) 1 ids[0]!
   checkOperation "reduceMean" #[matrix] fun t ids =>
     t.reduceMean (s := [2, 2]) 1 ids[0]!
-  checkOperation "concatLeadingAxis" #[vector, vector] fun t ids =>
-    t.concatLeadingAxis (n := 2) (m := 2) (s := .scalar) ids[0]! ids[1]!
-  checkOperation "sliceLeadingAxisRange" #[vector] fun t ids =>
-    t.sliceLeadingAxisRange (n := 2) (s := .scalar) ids[0]! 1 1 (by decide)
+  checkOperation "concat" #[vector, vector] fun t ids =>
+    t.concat (n := 2) (m := 2) (s := .scalar) ids[0]! ids[1]!
+  checkOperation "slice" #[vector] fun t ids =>
+    t.slice (n := 2) (s := .scalar) ids[0]! 1 1 (by decide)
   checkOperation "select" #[matrix] fun t ids =>
     t.select (s := [2, 2]) ids[0]! 1 ⟨1, by decide⟩
   checkOperation "indexSelect" #[matrix] fun t ids =>
@@ -130,7 +130,7 @@ def checkShapeAndIndexing : IO Unit := do
   let empty := Spec.SomeTensor.ofTensor (Tensor.full [0] (0 : Float))
   checkOperation "empty sum" #[empty] fun t ids => t.sum (s := [0]) ids[0]!
   checkOperation "empty concat" #[empty, vector] fun t ids =>
-    t.concatLeadingAxis (n := 0) (m := 2) (s := .scalar) ids[0]! ids[1]!
+    t.concat (n := 0) (m := 2) (s := .scalar) ids[0]! ids[1]!
 
 def checkLayers : IO Unit := do
   let vector := Spec.SomeTensor.ofTensor ([1.0, 2.0] : Tensor Float [2])
@@ -149,8 +149,8 @@ def checkLayers : IO Unit := do
   checkOperation "batchNorm" #[matrix, vector, vector] fun t ids =>
     t.batchNorm (channels := 2) (sSpatial := [2]) (by simp [Shape.wellFormed])
       ids[0]! ids[1]! ids[2]!
-  checkOperation "multiHeadAttention" #[matrix, matrix, matrix, matrix, matrix] fun t ids =>
-    t.multiHeadAttention (n := 2) (numHeads := 1) (dModel := 2) (headDim := 2) (by decide)
+  checkOperation "attention" #[matrix, matrix, matrix, matrix, matrix] fun t ids =>
+    t.attention (n := 2) (numHeads := 1) (dModel := 2) (headDim := 2) (by decide)
       ids[0]! ids[1]! ids[2]! ids[3]! ids[4]!
 
 def checkConvolutionAndPooling : IO Unit := do

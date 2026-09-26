@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.Engine.Cuda.Ops
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops
 public import NN.Tensor
 public import NN.Tests.Runtime.Cuda.Utils
 
@@ -52,16 +52,17 @@ def runGatherVec : IO Unit := do
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
 
   -- CUDA
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
+  let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (t1c, xIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
   let (t2c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.indexSelect (s := sX) (t := t1c) xIdc 0 k idx)
+    (Runtime.Autograd.LibTorch.Tape.indexSelect (s := sX) (t := t1c) xIdc 0 k idx)
   let yCuda ← Utils.cudaValue (s := sY) t2c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := sY, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size sY)) 1.0 }
+  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
+    { s := sY, buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size
+      sY)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t2c) yIdc seedCuda)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t2c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
 
   Utils.assertTensorApprox (s := sY) "gather_vec forward" yCuda yCpu (tol := 1e-6)
@@ -90,18 +91,19 @@ def runScatterVec : IO Unit := do
   let dvCpu ← Utils.cpuGrad (s := [1]) gradsCpu vId
 
   -- CUDA
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
+  let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (t1c, xIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
-  let (t2c, vIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer v)
+  let (t2c, vIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer v)
     (name := some "v")
   let (t3c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.scatterAdd (s := sX) (t := t2c) xIdc vIdc 0 1 idx)
+    (Runtime.Autograd.LibTorch.Tape.scatterAdd (s := sX) (t := t2c) xIdc vIdc 0 1 idx)
   let yCuda ← Utils.cudaValue (s := sX) t3c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := sX, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size sX)) 1.0 }
+  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
+    { s := sX, buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size
+      sX)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t3c) yIdc seedCuda)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t3c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
   let dvCuda ← Utils.cudaGrad (s := [1]) gradsCuda vIdc
 
@@ -137,16 +139,17 @@ def runGatherRows : IO Unit := do
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
 
   -- CUDA
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
+  let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (t1c, xIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
   let (t2c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.indexSelect (s := sX) (t := t1c) xIdc 0 k idx)
+    (Runtime.Autograd.LibTorch.Tape.indexSelect (s := sX) (t := t1c) xIdc 0 k idx)
   let yCuda ← Utils.cudaValue (s := sY) t2c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := sY, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size sY)) 1.0 }
+  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
+    { s := sY, buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size
+      sY)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t2c) yIdc seedCuda)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t2c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
 
   Utils.assertTensorApprox (s := sY) "gather_rows forward" yCuda yCpu (tol := 1e-6)
@@ -182,18 +185,19 @@ def runScatterRow : IO Unit := do
   let dvCpu ← Utils.cpuGrad (s := [1, cols]) gradsCpu vId
 
   -- CUDA
-  let t0c : Runtime.Autograd.Cuda.Tape := Runtime.Autograd.Cuda.Tape.empty
-  let (t1c, xIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
+  let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
+  let (t1c, xIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t0c) (Utils.tensorToAnyBuffer x)
     (name := some "x")
-  let (t2c, vIdc) := Runtime.Autograd.Cuda.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer v)
+  let (t2c, vIdc) := Runtime.Autograd.LibTorch.Tape.leaf (t := t1c) (Utils.tensorToAnyBuffer v)
     (name := some "v")
   let (t3c, yIdc) ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.scatterAdd (s := sX) (t := t2c) xIdc vIdc 0 1 idx)
+    (Runtime.Autograd.LibTorch.Tape.scatterAdd (s := sX) (t := t2c) xIdc vIdc 0 1 idx)
   let yCuda ← Utils.cudaValue (s := sX) t3c yIdc
-  let seedCuda : Runtime.Autograd.Cuda.AnyBuffer :=
-    { s := sX, buf := Runtime.Autograd.Cuda.Buffer.full (UInt32.ofNat (Spec.Shape.size sX)) 1.0 }
+  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
+    { s := sX, buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size
+      sX)) 1.0 }
   let gradsCuda ← Utils.okOrThrow
-    (Runtime.Autograd.Cuda.Tape.backwardDenseAll (t := t3c) yIdc seedCuda)
+    (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t3c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
   let dvCuda ← Utils.cudaGrad (s := [1, cols]) gradsCuda vIdc
 

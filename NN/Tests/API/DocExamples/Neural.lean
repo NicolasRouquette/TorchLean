@@ -155,19 +155,19 @@ def model : nn.IndexedModel [16] [16, 32] (Fin 256) :=
 
 end Embedding
 
--- doc-example: NN/API/Seeded.lean :: def multiHeadAttention
+-- doc-example: NN/API/Seeded.lean :: def attention
 namespace MultiHeadAttention
 
 -- Two heads of width 4 give an internal attention width of 8, which here happens to match the
 -- model width; the two are independent, so `headCount * headWidth` may differ from it.
 def model : nn.Builder (nn.Sequential [4, 8] [4, 8]) :=
-  nn.multiHeadAttention { headCount := 2, headWidth := 4 }
+  nn.attention { headCount := 2, headWidth := 4 }
     (sequenceLength := 4) (modelWidth := 8)
 
 -- Causal masking is a separate argument rather than a config field, because the mask is a value
 -- with the sequence length in its type.
 def causal : nn.Builder (nn.Sequential [4, 8] [4, 8]) :=
-  nn.multiHeadAttention { headCount := 2, headWidth := 4 }
+  nn.attention { headCount := 2, headWidth := 4 }
     (mask := some (Spec.causalMask 4)) (sequenceLength := 4) (modelWidth := 8)
 
 end MultiHeadAttention

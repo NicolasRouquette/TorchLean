@@ -6,8 +6,8 @@ Authors: TorchLean Team
 Native TorchLean 1D FNO on the Burgers operator:
 
   python3 NN/Examples/Data/prepare_fno1d_burgers.py --download --grid 32 --ntrain 128 --ntest 32
-  lake -R -K cuda=true build
-  lake -R -K cuda=true exe torchlean fno1d_burgers --device cuda --steps 700 --lr 0.003 \
+  scripts/lake.sh -Kcuda=true build
+  scripts/lake.sh -Kcuda=true exe torchlean fno1d_burgers --device cuda --steps 700 --lr 0.003 \
     --plot-csv data/real/fno/predictions.csv --log data/real/fno/trainlog.json
   python3 NN/Examples/Data/plot_fno1d_burgers.py --csv data/real/fno/predictions.csv
 -/
@@ -15,7 +15,6 @@ Native TorchLean 1D FNO on the Burgers operator:
 module
 
 public import NN.Examples.Models.Common.Train
-public import NN.Runtime.Autograd.Engine.Cuda.Fno1dRfft
 
 /-!
 # Native TorchLean FNO1D Burgers
@@ -25,11 +24,9 @@ scripts do the two jobs Lean should not own here: download and reshape the publi
 `burgers_data_R10.mat` file, then plot the prediction CSV. The model, loss, optimizer, and training
 loop stay in TorchLean.
 
-This executable uses real-split Fourier arithmetic because the Burgers data are real-valued. The
-portable path transforms each spatial axis with separate real and imaginary tensors.
-On CUDA, the command deliberately selects a specialized one-sided real-FFT model whose transforms
-run through cuFFT. The two paths share the typed field-to-field boundary and training task, but
-they do not share an identical spectral parameter layout.
+This executable uses real-split Fourier arithmetic because the Burgers data are real-valued.
+CPU and GPU execution use the same full-spectrum model and spectral parameter layout, with
+separate real and imaginary tensors. The runtime selects how the operations are executed.
 
 The training task follows the standard FNO Burgers setup: learn the operator
 $u_0(x)\mapsto u(x,T)$ on a fixed periodic grid. The default grid and row counts are modest enough
@@ -45,7 +42,6 @@ References for the dataset/training convention:
 @[expose] public section
 
 open TorchLean TorchLean.Tensor
-open TorchLean
 
 namespace NN.Examples.Models.Operators.Fno1dBurgers
 
@@ -61,8 +57,7 @@ def width : Nat := 8
 /--
 Spectral mode budget.
 
-The portable full-DFT path uses this as the width of each end band. The real-FFT path uses it
-as the number of stored nonnegative-frequency bins.
+The full-spectrum model uses this as the width of each end band on both CPU and GPU.
 -/
 def modes : Nat := 8
 
@@ -128,9 +123,9 @@ structure Options where
   /-- Seed used for initialization and training-row selection. -/
   seed : Nat
   /-- Prepared train/test tensors and evaluation row counts. -/
-  data : Support.PairedNpyEvalFlags
+  data : Support.Npy.SplitOptions
   /-- Output path for the prediction diagnostic. -/
-  artifacts : Support.CsvArtifactFlags
+  plotCsv : System.FilePath
 deriving Repr
 
 /-- All required dataset files for this run. -/
@@ -146,16 +141,16 @@ def parse (args : List String) :
   let (training, args) ←
     CLI.Training.OptimizerOptions.parse exeName args defaultLogPath
       (defaultSteps := 50) (defaultLearningRate := 5e-3)
-  let (data, args) ← Support.PairedNpyEvalFlags.parse exeName args
+  let (data, args) ← Support.Npy.SplitOptions.parse exeName args
     trainXPath trainYPath testXPath testYPath defaultTrainRows defaultTestRows
-  let (artifacts, args) ← Support.CsvArtifactFlags.parse args defaultPlotCsv
-  pure ({ training, seed, data, artifacts }, args)
+  let (plotCsv, args) ← CLI.takePathFlag args "plot-csv" (default := defaultPlotCsv)
+  pure ({ training, seed, data, plotCsv }, args)
 
 /-- Effective CUDA-memory-watch cadence for this run. -/
 def memoryCadence (config : Options) (runtime : Runtime.Config) : Nat :=
   Trainer.Memory.cadence runtime config.training.steps config.training.cudaMemorySampleEvery
 
-/-- TrainLog note fields for the CUDA real-FFT execution path. -/
+/-- TrainLog metadata for the model, dataset, and selected runtime. -/
 def logNotes (config : Options) (spectralPath : String) (device : String) : Array String :=
   #[
     s!"model=fno",
@@ -167,7 +162,7 @@ def logNotes (config : Options) (spectralPath : String) (device : String) : Arra
     s!"blocks={blocks}",
     s!"steps={config.training.steps}",
     s!"lr={config.training.learningRate}"
-  ] ++ Support.PairedNpyEvalFlags.trainLogNotes config.data
+  ] ++ Support.Npy.SplitOptions.logNotes config.data
 
 end Options
 
@@ -193,9 +188,7 @@ def writePrediction (plotCsv : System.FilePath)
     let denom := Float.ofNat (Nat.max 1 gridSize)
     let xpos := Float.ofNat i.val / denom
     [toString i.val, toString xpos,
-      toString (Tensor.item (Tensor.get x i)),
-      toString (Tensor.item (Tensor.get target i)),
-      toString (Tensor.item (Tensor.get prediction i))])
+      toString (x.getScalar i), toString (target.getScalar i), toString (prediction.getScalar i)])
   if let some parent := plotCsv.parent then
     IO.FS.createDirAll parent
   let header := ["i", "x", "input", "target", "prediction"]
@@ -239,18 +232,12 @@ structure Evaluation where
   test : Data.SampleStream (Tensor Float input × Tensor Float output)
   /-- Training sample used to initialize the runtime's compiled evaluation path. -/
   sample : Sample.Supervised Float input output
-  /-- Held-out sample used for the prediction CSV emitted by both execution paths. -/
+  /-- Held-out sample used for the prediction CSV. -/
   probe : Tensor Float input × Tensor Float output
   next : Nat → Sample.Supervised Float input output
 
 /--
-Convert loaded Burgers datasets into the common runtime/evaluation view used by both execution
-paths.
-
-Both execution paths:
-- evaluate on fixed deterministic prefixes,
-- train by cycling through the finite dataset with `seed + step`, and
-- emit the same train/test MSE metric history.
+Prepare deterministic evaluation prefixes and a cycling stream of training samples.
 -/
 def prepare (config : Options) (data : Splits) : IO Evaluation := do
   let train := (data.train.splitAt config.data.evalRows).selected.map fun sample =>
@@ -275,97 +262,14 @@ def record
   IO.println s!"  {tag}: train_mse={trainLoss} test_mse={testLoss}"
   pure <| history.push step #[trainLoss, testLoss]
 
-namespace CudaRfft
-
-/-- CUDA parameter packet for the real-FFT FNO model. -/
-abbrev Param := Runtime.Autograd.Cuda.Fno1dRfft.Param
-
-/-- Mean MSE over a finite evaluation prefix using the CUDA real-FFT FNO implementation. -/
-def meanLoss
-    (parameters : Array Param)
-    (samples : Data.SampleStream (Tensor Float input × Tensor Float output)) :
-    IO Float := do
-  let result ←
-    Runtime.Autograd.Cuda.Fno1dRfft.meanLoss
-      (grid := gridSize) (width := width)
-      (modes := modes) (blocks := blocks) parameters samples
-  Runtime.Autograd.okOrThrow result
-
-/-- Train/test MSE pair for the current CUDA parameters. -/
-def losses
-    (trainEval testEval :
-      Data.SampleStream (Tensor Float input × Tensor Float output))
-    (parameters : Array Param) : IO (Float × Float) := do
-  let trainLoss ← meanLoss parameters trainEval
-  let testLoss ← meanLoss parameters testEval
-  pure (trainLoss, testLoss)
-
-/-- Append one CUDA evaluation point to the metric history. -/
-def record
-    (trainEval testEval :
-      Data.SampleStream (Tensor Float input × Tensor Float output))
-    (history : Training.MetricHistory) (step : Nat) (parameters : Array Param) (tag : String) :
-    IO Training.MetricHistory := do
-  let (trainLoss, testLoss) ← losses trainEval testEval parameters
-  Fno1dBurgers.record history step tag trainLoss testLoss
-
-/-- Run the ATen real-FFT training path and emit its training and prediction artifacts. -/
-def run (config : Options) : IO Unit := do
-  let data ← load config
-  let eval := ← prepare config data
-  let mut parameters :=
-    Runtime.Autograd.Cuda.Fno1dRfft.initParams
-      (width := width)
-      (modes := modes) (blocks := blocks) config.seed
-  let mut adamState : Runtime.Autograd.Cuda.Fno1dRfft.AdamState := {}
-  let mut history ←
-    record eval.train eval.test metrics 0 parameters "before"
-  let cudaOpts : Runtime.Autograd.Torch.Config :=
-    { device := .cuda }
-  let cudaMemorySampleEvery := config.memoryCadence cudaOpts
-  let mut memWatch? ←
-    Trainer.Memory.sample cudaOpts cudaMemorySampleEvery config.training.steps 0 none
-  let progressEvery : Nat := Nat.max 1 (config.training.steps / 10)
-  for step in [0:config.training.steps] do
-    let current := eval.next (config.seed + step)
-    let (updatedParameters, updatedAdamState) ←
-      Runtime.Autograd.okOrThrow (← Runtime.Autograd.Cuda.Fno1dRfft.trainStep
-        gridSize width modes blocks parameters current.input current.target
-        config.training.learningRate adamState)
-    parameters := updatedParameters
-    adamState := updatedAdamState
-    memWatch? ←
-      Trainer.Memory.sample
-        cudaOpts cudaMemorySampleEvery config.training.steps (step + 1) memWatch?
-    if step + 1 < config.training.steps && Training.shouldReport progressEvery (step + 1) then
-      history ←
-        record eval.train eval.test history
-          (step + 1) parameters s!"step {step + 1}"
-  history ←
-    record eval.train eval.test history
-      config.training.steps parameters "after"
-  let (input, target) := eval.probe
-  let prediction ← Runtime.Autograd.okOrThrow (←
-    Runtime.Autograd.Cuda.Fno1dRfft.predict gridSize width modes blocks parameters input)
-  writePrediction config.artifacts.plotCsv input target prediction
-  writeLog
-    config.training.logDestination history config "ATen RFFT tape op" "cuda"
-
-end CudaRfft
-
-/--
-Train and evaluate using the portable full-spectrum model.
-
-The transforms have a dense per-axis fallback on CPU. The ATen real-FFT path above uses a different
-one-sided parameter layout; both models can be trained on the same data with the same seed.
--/
-def runPortable
+/-- Train the same full-spectrum model through the shared trainer on CPU or GPU. -/
+def run
     (runtime : Runtime.Config)
     (config : Options) :
     IO Unit := do
   -- Load the train/test arrays once, then keep the runtime loop purely over typed samples.
   let data ← load config
-  let eval := ← prepare config data
+  let evaluation ← prepare config data
   let trainer :=
     Trainer.new model <|
       Trainer.RunConfig.forObjective
@@ -374,8 +278,8 @@ def runPortable
         .mse
         (seed := config.seed)
   trainer.printSummary
-  let histRef ← IO.mkRef metrics
-  let meanPredMse (predict : Tensor Float input → IO (Tensor Float output))
+  let historyRef ← IO.mkRef metrics
+  let meanLoss (predict : Tensor Float input → IO (Tensor Float output))
       (samples : Data.SampleStream (Tensor Float input × Tensor Float output)) :
       IO Float := do
     let losses ← Tensor.generateFlatM [samples.size] fun index => do
@@ -386,25 +290,25 @@ def runPortable
   let evaluate
       (step : Nat) (tag : String)
       (predict : Tensor Float input → IO (Tensor Float output)) : IO Unit := do
-    let trainLoss ← meanPredMse predict eval.train
-    let testLoss ← meanPredMse predict eval.test
-    let history ← histRef.get
-    histRef.set (← record history step tag trainLoss testLoss)
+    let trainLoss ← meanLoss predict evaluation.train
+    let testLoss ← meanLoss predict evaluation.test
+    let history ← historyRef.get
+    historyRef.set (← record history step tag trainLoss testLoss)
   let progressEvery : Nat := Nat.max 1 (config.training.steps / 10)
   let trained ← trainer.trainStream runtime
-    (fun step => eval.next (config.seed + step))
-    eval.sample
+    (fun step => evaluation.next (config.seed + step))
+    evaluation.sample
     { steps := config.training.steps
       cudaMemorySampleEvery := config.training.cudaMemorySampleEvery
       logDestination := .disabled }
     (curveEvery := progressEvery)
     (onEval := evaluate)
-  let (x, y) := eval.probe
+  let (x, y) := evaluation.probe
   let yhat ← trained.predict x
-  writePrediction config.artifacts.plotCsv x y yhat
-  let history ← histRef.get
+  writePrediction config.plotCsv x y yhat
+  let history ← historyRef.get
   writeLog
-    config.training.logDestination history config "portable per-axis Fourier ops"
+    config.training.logDestination history config "shared full-spectrum Fourier model"
       (runtime.deviceName)
 
 /--
@@ -416,10 +320,7 @@ rather than a data problem.
 -/
 def printHeader (runtime : Runtime.Config) (config : Options) : IO Unit := do
   IO.println s!"{exeName}: native real-split FNO1D Burgers"
-  let executionName :=
-    match runtime.execution with
-    | .eager => "eager"
-    | .typedGraph => "typed-graph"
+  let executionName := Runtime.ExecutionMode.cliName runtime.execution
   IO.println s!"  {Support.deviceNote runtime} execution={executionName}"
   IO.println
     s!"  grid={gridSize} width={width} modes={modes} blocks={blocks}"
@@ -430,14 +331,11 @@ def printHeader (runtime : Runtime.Config) (config : Options) : IO Unit := do
   IO.println s!"  test ={config.data.testX} / {config.data.testY}"
   IO.println s!"  log  ={config.training.logDestination}"
 
-/--
-Entry point; dispatches to the CUDA real-FFT path when the device supports it and to `runPortable`
-otherwise.
--/
+/-- Train and evaluate with the selected runtime and the shared FNO parameterization. -/
 def main (args : List String) : IO UInt32 := do
   Module.Command.run
     (config := {
-      banner? := some <| Support.bannerWithDevice exeName "native FNO1D Burgers"
+      banner? := some <| Support.banner exeName "native FNO1D Burgers"
       usage? := some <| TrainCommand.optimizerUsage exeName #[
         "  --x PATH           training input NPY file",
         "  --y PATH           training target NPY file",
@@ -455,14 +353,6 @@ def main (args : List String) : IO UInt32 := do
       let config := { config with seed := runtime.seed }
       CLI.requireNoArgs exeName rest
       printHeader runtime config
-      if runtime.usesCuda then
-        if runtime.execution != .eager then
-          throw <| IO.userError
-            "fno1d_burgers: CUDA real-FFT execution requires --execution eager"
-        IO.println "  spectral path=ATen RFFT tape op"
-        CudaRfft.run config
-      else
-        IO.println "  spectral path=portable per-axis Fourier transforms"
-        runPortable runtime config)
+      run runtime config)
 
 end NN.Examples.Models.Operators.Fno1dBurgers

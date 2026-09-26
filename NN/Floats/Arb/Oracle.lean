@@ -181,7 +181,7 @@ This is the shared IO boundary used by both unary queries and general JSON reque
 -/
 def runPythonJson (pythonCmd : String) (args : Array String) : IO Json := do
   let pythonCmd ← resolvePythonCmd pythonCmd
-  TorchLean.External.Process.runJsonStdoutChecked (ctx := "Arb oracle")
+  TorchLean.External.Process.runJson (ctx := "Arb oracle")
     (cmd := pythonCmd) (args := args) (cwd := some ".")
 
 /-- Internal JSON helper: interpret a JSON string as a `String`, or return an error. -/

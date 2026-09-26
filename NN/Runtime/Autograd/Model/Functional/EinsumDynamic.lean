@@ -92,7 +92,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
         OptionT m ((Σ s : Shape, RefTy (m := m) (α := α) s) × List Label) := do
       match fuel with
       | 0 =>
-          if Einsum.hasDupLabels labs then
+          if !decide labs.Nodup then
             failure
           else
             pure (cur, labs)
@@ -131,7 +131,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
                               Shape.inferNonemptyAxis (by grind)
                             exact reduceSum (m := m) (α := α) (s := sPerm) axis xPerm))
                       let nextShape : Shape := TorchLean.Tensor.shapeAfterSum sPerm axis
-                      diagonalizeOperand fuel ⟨nextShape, nextRef⟩ (Einsum.removeAt labs q)
+                      diagonalizeOperand fuel ⟨nextShape, nextRef⟩ (labs.eraseIdx q)
                     else
                       failure
                   else
@@ -197,7 +197,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
       let [labelsA, labelsB] := inLabels | failure
       let [contract] := contracted | failure
       -- Diagonal extraction/embedding retains the generic lowering's semantics.
-      if inLabelsRaw.any Einsum.hasDupLabels || Einsum.hasDupLabels outLabelsRaw then
+      if inLabelsRaw.any (fun labels => !decide labels.Nodup) || !decide outLabelsRaw.Nodup then
         failure
       if !(labelsA.contains contract) || !(labelsB.contains contract) then
         failure

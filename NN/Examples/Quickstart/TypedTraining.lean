@@ -57,7 +57,7 @@ def run : IO Unit := do
   let graph ← nn.lowerToTypedGraph model (α := Binary128)
   let before := nn.TypedGraphModel.forward graph initial input
   let after := nn.TypedGraphModel.forward graph trained input
-  IO.println s!"initial prediction: {ExecFloat.Binary.toRat? (before.getScalar ⟨0, by decide⟩)}"
-  IO.println s!"trained prediction: {ExecFloat.Binary.toRat? (after.getScalar ⟨0, by decide⟩)}"
+  IO.println s!"initial prediction: {ExecFloat.Binary.toRat? before[0]}"
+  IO.println s!"trained prediction: {ExecFloat.Binary.toRat? after[0]}"
 
 end NN.Examples.Quickstart.TypedTraining

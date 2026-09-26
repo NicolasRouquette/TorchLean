@@ -214,11 +214,11 @@ def checkClosedFormMeanGradient : IO Unit := do
 def checkWarmupCosineSchedule : IO Unit := do
   let schedule := TorchLean.Trainer.Scheduler.warmupCosine 1.0 0.1 2 6
   let observed :=
-    [ TorchLean.Trainer.Scheduler.learningRateAt schedule 0
-    , TorchLean.Trainer.Scheduler.learningRateAt schedule 1
-    , TorchLean.Trainer.Scheduler.learningRateAt schedule 2
-    , TorchLean.Trainer.Scheduler.learningRateAt schedule 4
-    , TorchLean.Trainer.Scheduler.learningRateAt schedule 6
+    [ schedule.rate 0
+    , schedule.rate 1
+    , schedule.rate 2
+    , schedule.rate 4
+    , schedule.rate 6
     ]
   let expected := [0.5, 1.0, 1.0, 0.55, 0.1]
   unless List.all (List.zipWith close observed expected) id do
@@ -226,21 +226,21 @@ def checkWarmupCosineSchedule : IO Unit := do
       s!"warmup/cosine schedule mismatch: got {observed}, expected {expected}"
   let clamped := TorchLean.Trainer.Scheduler.warmupCosine 1.0 0.1 10 4
   let clampedObserved :=
-    [ TorchLean.Trainer.Scheduler.learningRateAt clamped 0
-    , TorchLean.Trainer.Scheduler.learningRateAt clamped 3
-    , TorchLean.Trainer.Scheduler.learningRateAt clamped 4
+    [ clamped.rate 0
+    , clamped.rate 3
+    , clamped.rate 4
     ]
   let clampedExpected := [0.25, 1.0, 0.1]
   unless List.all (List.zipWith close clampedObserved clampedExpected) id do
     throw <| IO.userError <|
       s!"clamped warm-up mismatch: got {clampedObserved}, expected {clampedExpected}"
   let empty := TorchLean.Trainer.Scheduler.warmupCosine 1.0 0.1 0 0
-  unless close (TorchLean.Trainer.Scheduler.learningRateAt empty 0) 0.1 do
+  unless close (empty.rate 0) 0.1 do
     throw <| IO.userError "zero-step warmup/cosine schedule did not remain at its floor"
 
 /-- Schedules reject invalid numerical domains before optimizer state is allocated. -/
 def checkSchedulerValidation : IO Unit := do
-  let validate := TorchLean.Trainer.Scheduler.validate
+  let validate := fun schedule => TorchLean.Trainer.Scheduler.Config.validate schedule
   expectAccepted "constant scheduler" <| validate (.constant 0.1)
   expectAccepted "step scheduler" <| validate (.step 0.1 2 0.5)
   expectAccepted "exponential scheduler" <| validate (.exponential 0.1 0.9)

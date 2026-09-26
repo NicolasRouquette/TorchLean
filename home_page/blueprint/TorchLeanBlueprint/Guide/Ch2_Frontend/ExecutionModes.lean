@@ -200,7 +200,7 @@ The help lists the runnable examples, followed by their shared runtime flags:
 ```
 Runtime flags:
   --choose                         ask for runtime choices before running
-  --device auto|cpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
+  --device auto|cpu|gpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external
   --arithmetic native|ieee|complex
       arithmetic availability depends on the example; check its --help
   --execution eager|typed-graph

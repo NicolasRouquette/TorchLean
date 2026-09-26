@@ -65,7 +65,7 @@ source index is direct row-major arithmetic, while the returned theorem
 identifies the direct component read with the independent pack denotation.
 -/
 private def compileNativePackLeaf
-    (checked inputFamily outputBuffer outputSize outputIndexNat outputFin
+    (checked inputFamily buffer outputSize outputIndexNat outputFin
       hNativeOutputIndex positionNat hPositionDecomposition : Expr)
     (checkedValue : Check.CheckedPack)
     (componentCount trailingSize packedAxisLength : Nat)
@@ -218,10 +218,10 @@ private def compileNativePackLeaf
   let hSourceIndex := sourceArguments[5]!
   let nextOutput ←
     mkAppM ``nativeTensorCopyAt #[
-      sourceTensor, sourceIndex, hSourceIndex, outputBuffer]
+      sourceTensor, sourceIndex, hSourceIndex, buffer]
   let hNextOutput ←
     mkAppM ``nativeTensorCopyAt_eq_push_of_getFlatUSize_eq #[
-      sourceTensor, sourceIndex, hSourceIndex, outputBuffer,
+      sourceTensor, sourceIndex, hSourceIndex, buffer,
       expectedValue, hValue]
   return (nextOutput, hNextOutput)
 
@@ -233,7 +233,7 @@ of the right subtree. Leaves therefore receive enough path facts to certify
 their component interval and native subtraction.
 -/
 private partial def compileNativePackDispatch
-    (checked inputFamily outputBuffer outputSize outputIndexNat outputFin
+    (checked inputFamily buffer outputSize outputIndexNat outputFin
       hNativeOutputIndex nativePosition positionNat hNativePosition
       hPositionDecomposition : Expr)
     (checkedValue : Check.CheckedPack)
@@ -246,7 +246,7 @@ private partial def compileNativePackDispatch
       throwError
         "internal error: native pack dispatch has no reachable component"
   | [segment] =>
-      compileNativePackLeaf checked inputFamily outputBuffer outputSize
+      compileNativePackLeaf checked inputFamily buffer outputSize
         outputIndexNat outputFin hNativeOutputIndex positionNat
         hPositionDecomposition
         checkedValue componentCount trailingSize
@@ -269,7 +269,7 @@ private partial def compileNativePackDispatch
               positionNat, mkNatLit threshold,
               hNativePosition, hNativeThreshold, hLeft]
           let (leftValue, hLeftValue) ←
-            compileNativePackDispatch checked inputFamily outputBuffer outputSize
+            compileNativePackDispatch checked inputFamily buffer outputSize
               outputIndexNat outputFin hNativeOutputIndex
               nativePosition positionNat hNativePosition
               hPositionDecomposition checkedValue
@@ -288,7 +288,7 @@ private partial def compileNativePackDispatch
               positionNat, mkNatLit threshold,
               hNativePosition, hNativeThreshold, hRight]
           let (rightValue, hRightValue) ←
-            compileNativePackDispatch checked inputFamily outputBuffer outputSize
+            compileNativePackDispatch checked inputFamily buffer outputSize
               outputIndexNat outputFin hNativeOutputIndex
               nativePosition positionNat hNativePosition
               hPositionDecomposition checkedValue
@@ -302,7 +302,7 @@ private partial def compileNativePackDispatch
       let value ←
         mkAppM ``dite #[condition, leftFunction, rightFunction]
       let expectedOutput ←
-        mkAppM ``Storage.push #[outputBuffer, expectedValue]
+        mkAppM ``Storage.push #[buffer, expectedValue]
       let hValue ←
         mkAppM ``dite_eq_of_branch_eq #[
           condition, leftFunction, rightFunction, expectedOutput,
@@ -346,9 +346,9 @@ private def compileNativePackCore?
   let firstTensor ←
     withTransparency .all <| whnf (mkApp inputFamily firstComponent)
   let firstBuffer ← mkAppM ``Rep.buffer #[firstTensor]
-  let outputBufferType ← inferType firstBuffer
+  let bufferType ← inferType firstBuffer
   let some (nativeStep, hStep) ←
-    withLocalDeclD `output outputBufferType fun outputBuffer => do
+    withLocalDeclD `output bufferType fun buffer => do
       withLocalDeclD `outputIndex (mkConst ``USize) fun outputIndex => do
         let outputIndexNat ← mkAppM ``USize.toNat #[outputIndex]
         let outputIndexBoundType ← mkLT outputIndexNat outputSize
@@ -380,16 +380,16 @@ private def compileNativePackCore?
           let expectedValue := mkApp values outputFin
           let (nextOutput, hNextOutput) ←
             compileNativePackDispatch specializedChecked inputFamily
-              outputBuffer outputSize outputIndexNat outputFin
+              buffer outputSize outputIndexNat outputFin
               hNativeOutputIndex nativePosition positionNat hNativePosition
               hPositionDecomposition
               checkedValue componentCount trailingSize packedAxisLength
               segments #[hPositionBound] expectedValue
           let nativeStep ←
-            mkLambdaFVars #[outputBuffer, outputIndex, hOutputIndex]
+            mkLambdaFVars #[buffer, outputIndex, hOutputIndex]
               nextOutput
           let hStep ←
-            mkLambdaFVars #[outputBuffer, outputIndex, hOutputIndex]
+            mkLambdaFVars #[buffer, outputIndex, hOutputIndex]
               hNextOutput
           return some (nativeStep, hStep)
     | return none

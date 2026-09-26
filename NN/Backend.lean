@@ -11,7 +11,6 @@ public import NN.Backend.Capsule
 public import NN.Backend.Availability
 public import NN.Backend.Planner
 public import NN.Backend.Audit
-public import NN.Backend.Attention
 public import NN.Backend.Reference
 public import NN.Backend.LibTorch
 public import NN.Backend.Registry

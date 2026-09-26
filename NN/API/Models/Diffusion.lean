@@ -69,10 +69,12 @@ abbrev outputShape {d : Nat} (config : Diffusion.NoisePredictor.Config d)
 
 end Diffusion.NoisePredictor.Config
 
+namespace Diffusion.NoisePredictor
+
 namespace Internal
 
 /-- Implementation helper for the shape-preserving convolutions in the epsilon predictors. -/
-def noisePredictorConvolution {d : Nat}
+def conv {d : Nat}
     (config : Diffusion.NoisePredictor.Config d) (batchShape : Shape)
     (inputChannels outputChannels : Nat) :
     nn.Builder (nn.Sequential
@@ -101,7 +103,7 @@ Build a minimal epsilon-predictor conv net:
 This stays compact enough for the eager CUDA example while giving the CIFAR trainer more denoising
 capacity than a bare two-layer network.
 -/
-def Diffusion.NoisePredictor.basic {d : Nat}
+def basic {d : Nat}
     (config : Diffusion.NoisePredictor.Config d) (batchShape : Shape := []) :
     nn.Builder
       (nn.Sequential (config.inputShape batchShape) (config.outputShape batchShape)) :=
@@ -112,16 +114,16 @@ def Diffusion.NoisePredictor.basic {d : Nat}
         "Diffusion.NoisePredictor" message
   | .ok () =>
       nn.Sequential![
-        Internal.noisePredictorConvolution config batchShape
+        Internal.conv config batchShape
           (config.dataChannels + 1) config.hiddenChannels,
         relu,
-        Internal.noisePredictorConvolution config batchShape
+        Internal.conv config batchShape
           config.hiddenChannels config.hiddenChannels,
         relu,
-        Internal.noisePredictorConvolution config batchShape
+        Internal.conv config batchShape
           config.hiddenChannels config.hiddenChannels,
         relu,
-        Internal.noisePredictorConvolution config batchShape
+        Internal.conv config batchShape
           config.hiddenChannels config.dataChannels
       ]
 
@@ -139,7 +141,7 @@ and multi-scale skip concatenation. It is still a useful compact architecture be
 residual paths make the denoising problem much easier than a plain conv chain while staying within
 the eager CUDA memory envelope used by examples.
 -/
-def Diffusion.NoisePredictor.residual {d : Nat}
+def residual {d : Nat}
     (config : Diffusion.NoisePredictor.Config d)
     (batchShape : Shape := []) :
     nn.Builder
@@ -151,16 +153,16 @@ def Diffusion.NoisePredictor.residual {d : Nat}
         "Diffusion.NoisePredictor" message
   | .ok () =>
       nn.Sequential![
-        Internal.noisePredictorConvolution config batchShape
+        Internal.conv config batchShape
           (config.dataChannels + 1) config.hiddenChannels,
         relu,
         (do
           let block ←
             nn.Sequential![
-              Internal.noisePredictorConvolution config batchShape
+              Internal.conv config batchShape
                 config.hiddenChannels config.hiddenChannels,
               relu,
-              Internal.noisePredictorConvolution config batchShape
+              Internal.conv config batchShape
                 config.hiddenChannels config.hiddenChannels
             ]
           pure (nn.residual block)),
@@ -168,17 +170,19 @@ def Diffusion.NoisePredictor.residual {d : Nat}
         (do
           let block ←
             nn.Sequential![
-              Internal.noisePredictorConvolution config batchShape
+              Internal.conv config batchShape
                 config.hiddenChannels config.hiddenChannels,
               relu,
-              Internal.noisePredictorConvolution config batchShape
+              Internal.conv config batchShape
                 config.hiddenChannels config.hiddenChannels
             ]
           pure (nn.residual block)),
         relu,
-        Internal.noisePredictorConvolution config batchShape
+        Internal.conv config batchShape
           config.hiddenChannels config.dataChannels
       ]
+
+end Diffusion.NoisePredictor
 
 end models
 end nn
@@ -316,23 +320,6 @@ def normalizedTime {steps : Nat} (schedule : Schedule steps) (step : Nat) : Floa
 
 end Schedule
 
-namespace Internal
-
-/-- Recursive worker for `diffusion.appendTimeChannel`. -/
-def appendTimeChannel (batchShape : Shape) {d c : Nat} (spatial : Tensor Nat [d])
-    (x : Tensor Float (sampleShape batchShape c spatial)) (tNorm : Float) :
-    Tensor Float (sampleShape batchShape (c + 1) spatial) :=
-  match batchShape with
-  | .scalar =>
-      TorchLean.Tensor.concatAfter [] x <|
-        TorchLean.Tensor.full
-          ((spatial.to Shape).prependDim 1) tNorm
-  | .dim _ rest =>
-      TorchLean.Tensor.stackLeading fun index =>
-        appendTimeChannel rest spatial (x.unstack index) tNorm
-
-end Internal
-
 /--
 Append a constant time channel to every sample in `batchShape`.
 
@@ -343,7 +330,7 @@ def appendTimeChannel (batchShape : Shape) {d c : Nat} (spatial : Tensor Nat [d]
     (x : Tensor Float (sampleShape batchShape c spatial))
     (tNorm : Float) :
     Tensor Float (sampleShape batchShape (c + 1) spatial) :=
-  Internal.appendTimeChannel batchShape spatial x tNorm
+  Tensor.concatAfter batchShape x (Tensor.full (sampleShape batchShape 1 spatial) tNorm)
 
 /--
 Build an epsilon-prediction training sample from explicit noise.

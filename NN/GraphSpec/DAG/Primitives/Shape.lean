@@ -116,18 +116,6 @@ theorem applyAdjacentSwaps_range_eq_replaceAxis
     (shape : Shape) (axis extent : Nat) (hAxis : axis < shape.rank) :
     (Shape.dim extent (shape.eraseAxis axis)).applyAdjacentSwaps (List.range axis) =
       shape.replaceAxis axis extent := by
-  have range_succ_eq_zero_cons_map_succ (n : Nat) :
-      List.range (n + 1) = 0 :: (List.range n).map Nat.succ := by
-    induction n with
-    | zero => rfl
-    | succ n ih =>
-        calc
-          List.range (n.succ + 1) = List.range (n + 1) ++ [n + 1] := by
-            rw [show n.succ + 1 = (n + 1) + 1 by grind, List.range_succ]
-          _ = (0 :: (List.range n).map Nat.succ) ++ [n + 1] := by rw [ih]
-          _ = 0 :: (List.range (n + 1)).map Nat.succ := by
-            rw [List.range_succ, List.map_append]
-            rfl
   have applyAdjacentSwaps_dim_map_succ
       (outer : Nat) (s : Shape) (depths : List Nat) :
       (Shape.dim outer s).applyAdjacentSwaps (depths.map Nat.succ) =
@@ -146,7 +134,7 @@ theorem applyAdjacentSwaps_range_eq_replaceAxis
           have hInner : axis < rest.rank := by
             simp only [Shape.rank] at hAxis
             grind
-          rw [range_succ_eq_zero_cons_map_succ]
+          rw [List.range_succ_eq_map]
           simp only [Shape.eraseAxis, Shape.applyAdjacentSwaps,
             Shape.swapAdjacentAtDepth, applyAdjacentSwaps_dim_map_succ]
           rw [ih axis hInner]
@@ -242,7 +230,7 @@ def concatAxis (shape : Shape) (axis left right : Nat)
               pure (axisReplacement extent ▸ moved)
           let aFront ← moveToFront left a
           let bFront ← moveToFront right b
-          let outputFront ← Runtime.Autograd.Model.concatLeadingAxis
+          let outputFront ← Runtime.Autograd.Model.concat
             (m := m) (α := α) (nDim := left) (mDim := right)
             (s := shape.eraseAxis axis) aFront bFront
           moveFromFront (left + right) outputFront
@@ -307,7 +295,7 @@ def sliceAxisRange (shape : Shape) (axis start length : Nat)
               (shape.replaceAxis axis total) :=
             (replaceAxis_axisSize shape axis).symm ▸ input
           let inputFront ← moveToFront total input'
-          let outputFront ← Runtime.Autograd.Model.sliceLeadingAxisRange
+          let outputFront ← Runtime.Autograd.Model.slice
             (m := m) (α := α) (nDim := total) (s := shape.eraseAxis axis)
             start length hRange inputFront
           moveFromFront length outputFront

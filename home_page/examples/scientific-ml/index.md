@@ -268,7 +268,7 @@ precise, checkable artifacts instead of relying on a plot or checkpoint alone.
 ## Related Sources
 
 - [`NN.Examples.Models.Operators.Fno1dBurgers`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Examples/Models/Operators/Fno1dBurgers.lean)
-- [`NN.Runtime.Autograd.Engine.Cuda.Fno1dRfft`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Runtime/Autograd/Engine/Cuda/Fno1dRfft.lean)
+- [`NN.API.Models.FNO`](https://github.com/lean-dojo/TorchLean/blob/main/NN/API/Models/FNO.lean)
 - [`NN.Verification.PINN`](https://github.com/lean-dojo/TorchLean/tree/main/NN/Verification/PINN)
 - [`NN.Verification.PINN.DatasetCheck`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/PINN/DatasetCheck.lean)
 - [`NN.Examples.Verification.PINN assets`](https://github.com/lean-dojo/TorchLean/tree/main/NN/Examples/Verification/PINN)

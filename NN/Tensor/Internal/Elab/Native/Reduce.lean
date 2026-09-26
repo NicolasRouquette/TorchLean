@@ -162,8 +162,7 @@ map recovered from a preceding shape-only transform.
 -/
 def compileNativeReduceFold?
     (step initial finish checked hKind inputTensor semanticInputTensor
-      hInputTensor read hRead sourceTensor inputFlatMap : Expr)
-    (checkedValue : Check.CheckedTransform) :
+      hInputTensor read hRead sourceTensor inputFlatMap : Expr) :
     TermElabM (Option Expr) := do
   let value ← mkAppM ``Check.CheckedTransform.value #[checked]
   let outputShape ← mkAppM ``Check.TransformPlan.output #[value]
@@ -216,7 +215,7 @@ def compileNativeReduceFold?
               mkAppOptM ``Fin.mk #[
                 some fiberSize, some fiberIndexNat, some hFiberIndex]
             let (compiledLogicalValue, logicalIndex, hCompiledLogicalValue) ←
-              compileReductionLogicalIndex checked checkedValue
+              compileReductionLogicalIndex checked
                 outputFin fiberFin outputIndexNat fiberIndexNat
             let logicalIndexBound ← mkAppM ``Fin.isLt #[logicalIndex]
             let compiledLogicalBound ←

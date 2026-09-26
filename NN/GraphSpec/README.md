@@ -139,7 +139,7 @@ primitive interface rather than unfold its implementation.
 `DAG.PrimOp.matmul` accepts separate left, right, and result batch-prefix shapes together with
 `Shape.CanBroadcastTo` evidence for both operands. `DAG.PrimOp.broadcastVecMat` provides the same
 batch-prefix generality for vector–matrix products, including shared vectors and pairwise batched
-vectors without separate special-case operations. `DAG.PrimOp.multiHeadAttention` similarly
+vectors without separate special-case operations. `DAG.PrimOp.attention` similarly
 accepts any leading shape and applies the single-sequence specification independently at every
 leading index.
 

@@ -76,7 +76,7 @@ def modelLoss {α : Type} [TorchLean.Storage α] [Context α] :
   fun {m} _ _ =>
     fun wq wk wv wo gamma beta target x =>
       (do
-        let y ← _root_.Runtime.Autograd.Model.multiHeadAttention (m := m) (α := α)
+        let y ← _root_.Runtime.Autograd.Model.attention (m := m) (α := α)
           (leadingShape := [batch]) (n := n) (numHeads := numHeads) (dModel := dModel)
           (headDim := headDim)
           (hN := by decide) wq wk wv wo x (mask := none)

@@ -70,14 +70,7 @@ def adaptLeadingShape (leading : Spec.Shape) {σ τ : Spec.Shape}
                 (s₁ := leading.concat σ) (s₂ := σ.prependDim leading.size)
                 input (by simp [Spec.Shape.size_concat, Spec.Shape.size])
             let flattenedOutput ←
-              Runtime.Autograd.Torch.CurriedRef.uncurry
-                (Ref := fun shape =>
-                  TorchLean.Runtime.ValueRef (m := m) (α := α) shape)
-                (ss := layer.stateShapes ++ [σ.prependDim leading.size])
-                (β := m (TorchLean.Runtime.ValueRef (m := m) (α := α)
-                  (τ.prependDim leading.size)))
-                (layer.forward mode (α := α) (m := m))
-                (Runtime.Autograd.Torch.RefList.append state (.cons flattenedInput .nil))
+              layer.forwardRef (α := α) (m := m) mode state flattenedInput
             Runtime.Autograd.Torch.reshape (m := m) (α := α)
               (s₁ := τ.prependDim leading.size) (s₂ := leading.concat τ)
               flattenedOutput (by simp [Spec.Shape.size_concat, Spec.Shape.size])) }
@@ -135,7 +128,7 @@ def linear (inputWidth outputWidth : Nat) (weightSeed biasSeed : Nat := 0)
             let sIn := batchShape.appendDim inputWidth
             let sOut := batchShape.appendDim outputWidth
             ((do
-              let x2d ←
+              let flatInput ←
                 Runtime.Autograd.Torch.reshape (m := m) (α := α)
                   (s₁ := sIn)
                   (s₂ := [batch, inputWidth])
@@ -148,14 +141,14 @@ def linear (inputWidth outputWidth : Nat) (weightSeed biasSeed : Nat := 0)
                   (s := [outputWidth, inputWidth]) 0 w
               let y ← Runtime.Autograd.Torch.matmul (m := m) (α := α)
                 (batchA := []) (batchB := []) (batch := [])
-                (mDim := batch) (nDim := inputWidth) (pDim := outputWidth) x2d wT
-              let y2d ←
+                (mDim := batch) (nDim := inputWidth) (pDim := outputWidth) flatInput wT
+              let flatOutput ←
                 Runtime.Autograd.Model.F.addB (m := m) (α := α)
                   (t := [batch, outputWidth]) y b
               Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := [batch, outputWidth])
                 (s₂ := sOut)
-                y2d (by
+                flatOutput (by
                   rw [Spec.Shape.size_appendDim]
                   simp [batch, Spec.Shape.size])
             ) : m (TorchLean.Runtime.ValueRef (m := m) (α := α) sOut))
@@ -602,8 +595,8 @@ Multi-head self-attention over a trailing `(sequenceLength × modelWidth)` shape
 
 If `mask` is provided, it is a boolean attention mask of shape `(n × n)` (e.g. causal masking).
 -/
-def multiHeadAttention (batchShape : Spec.Shape := []) {sequenceLength modelWidth : Nat}
-    (config : MultiHeadAttention.Config)
+def attention (batchShape : Spec.Shape := []) {sequenceLength modelWidth : Nat}
+    (config : Attention.Options)
     (queryWeightSeed keyWeightSeed valueWeightSeed outputWeightSeed : Nat := 0)
     (mask : Option (Tensor Bool [sequenceLength, sequenceLength]) := none)
     (dropoutSeed : Nat := 0) :
@@ -616,9 +609,9 @@ def multiHeadAttention (batchShape : Spec.Shape := []) {sequenceLength modelWidt
       (batchShape.concat [sequenceLength, modelWidth])
       "MultiHeadAttention"
       "MultiHeadAttention: sequence length must be positive"
-  else if config.inputBias || config.dropout?.isSome then
+  else
     Sequential.fromLayer <| adaptLeadingShape batchShape <|
-      Runtime.Autograd.Model.Layers.multiHeadAttentionConfigured
+      Runtime.Autograd.Model.Layers.attention
         batchShape.size sequenceLength modelWidth config.headCount config.headWidth
         (sequenceLengthNonzero := hSequence)
         (queryWeightSeed := queryWeightSeed)
@@ -629,30 +622,6 @@ def multiHeadAttention (batchShape : Spec.Shape := []) {sequenceLength modelWidt
         (outputWeightInitialization? := config.outputWeightInitialization?)
         (mask := mask) (inputBias := config.inputBias) (outputBias := config.outputBias)
         (dropout? := config.dropout?) (dropoutSeed := dropoutSeed)
-  else if config.outputBias then
-      Sequential.fromLayer <| adaptLeadingShape batchShape <|
-        Runtime.Autograd.Model.Layers.multiHeadAttentionOutputBias
-        batchShape.size sequenceLength modelWidth
-        config.headCount config.headWidth
-        (sequenceLengthNonzero := hSequence)
-        (queryWeightSeed := queryWeightSeed)
-        (keyWeightSeed := keyWeightSeed)
-        (valueWeightSeed := valueWeightSeed)
-        (outputWeightSeed := outputWeightSeed)
-        (weightInitialization? := config.weightInitialization?)
-        (outputWeightInitialization? := config.outputWeightInitialization?) (mask := mask)
-  else
-    Sequential.fromLayer <| adaptLeadingShape batchShape <|
-      Runtime.Autograd.Model.Layers.multiHeadAttention
-      batchShape.size sequenceLength modelWidth
-      config.headCount config.headWidth
-      (sequenceLengthNonzero := hSequence)
-      (queryWeightSeed := queryWeightSeed)
-      (keyWeightSeed := keyWeightSeed)
-      (valueWeightSeed := valueWeightSeed)
-      (outputWeightSeed := outputWeightSeed)
-      (weightInitialization? := config.weightInitialization?)
-      (outputWeightInitialization? := config.outputWeightInitialization?) (mask := mask)
 
 /-!
 ## Positional encodings
@@ -794,11 +763,11 @@ def rope (batchShape : Spec.Shape := []) {sequenceLength headWidth : Nat}
         fun {m} _ _ =>
           fun cos sin x =>
             ((do
-            -- Rotate last-dim pairs by a fixed 2D permutation/sign pattern.
+            -- Rotate adjacent feature pairs after flattening the batch and sequence axes.
             let rowsFold : Nat := batchShape.size * sequenceLength
             let flatShape : Spec.Shape := [rowsFold, headWidth]
 
-            let x2d ←
+            let flatInput ←
               Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := xShape) (s₂ := flatShape)
                 x (by
@@ -807,7 +776,7 @@ def rope (batchShape : Spec.Shape := []) {sequenceLength headWidth : Nat}
 
             let xT ←
               Runtime.Autograd.Torch.swapAdjacentAtDepth (m := m) (α := α)
-                (s := flatShape) 0 x2d
+                (s := flatShape) 0 flatInput
 
             let xPerm ←
               Runtime.Autograd.Torch.indexSelect (m := m) (α := α)
@@ -829,7 +798,7 @@ def rope (batchShape : Spec.Shape := []) {sequenceLength headWidth : Nat}
             let sign ←
               Runtime.Autograd.Torch.const (m := m) (α := α) (s := [headWidth]) signT
 
-            let xRot2d ←
+            let flatRotated ←
               Runtime.Autograd.Model.F.mulB (m := m) (α := α)
                 (s₁ := flatShape) (s₂ := [headWidth]) (t := flatShape)
                 xBack sign
@@ -837,7 +806,7 @@ def rope (batchShape : Spec.Shape := []) {sequenceLength headWidth : Nat}
             let xRot ←
               Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := flatShape) (s₂ := xShape)
-                xRot2d (by
+                flatRotated (by
                   simp [xShape, flatShape, rowsFold, Spec.Shape.size_concat,
                     Spec.Shape.size, Nat.mul_assoc])
 
@@ -900,7 +869,7 @@ def oneHotEmbedding (vocabularySize embeddingWidth : Nat)
             let sIn := batchShape.appendDim vocabularySize
             let sOut := batchShape.appendDim embeddingWidth
             ((do
-              let x2d ←
+              let flatInput ←
                 Runtime.Autograd.Torch.reshape (m := m) (α := α)
                   (s₁ := sIn)
                   (s₂ := [batch, vocabularySize])
@@ -910,7 +879,7 @@ def oneHotEmbedding (vocabularySize embeddingWidth : Nat)
                 Runtime.Autograd.Torch.matmul (m := m) (α := α)
                   (batchA := []) (batchB := []) (batch := [])
                   (mDim := batch) (nDim := vocabularySize) (pDim := embeddingWidth)
-                  x2d w
+                  flatInput w
               Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := [batch, embeddingWidth])
                 (s₂ := sOut)
@@ -991,7 +960,7 @@ def transformerEncoderBlock (batchShape : Spec.Shape := []) {sequenceLength mode
   let modelShape := tokenBatchShape.appendDim modelWidth
   let attention : Sequential modelShape modelShape := by
     simpa [modelShape, tokenBatchShape, Spec.Shape.appendDim_appendDim_eq_concat] using
-      (multiHeadAttention batchShape
+      (attention batchShape
         (sequenceLength := sequenceLength) (modelWidth := modelWidth)
         { headCount := config.headCount, headWidth := config.headWidth,
           outputBias := config.attentionOutputBias,

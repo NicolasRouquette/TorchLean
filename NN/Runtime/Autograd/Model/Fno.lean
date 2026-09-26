@@ -91,10 +91,6 @@ def pointwiseAffine (grid inChannels outChannels : Nat) (weightSeed : Nat := 0) 
 abbrev fieldShape {d : Nat} (spatial : TorchLean.Tensor Nat [d]) (channels : Nat) : Shape :=
   (spatial.to Shape).appendDim channels
 
-/-- Tensor shape of a scalar field over the spatial grid. -/
-abbrev scalarFieldShape {d : Nat} (spatial : TorchLean.Tensor Nat [d]) : Shape :=
-  spatial.to Shape
-
 /-- Number of spatial grid points. -/
 def gridSize {d : Nat} (spatial : TorchLean.Tensor Nat [d]) : Nat :=
   spatial.prod
@@ -227,34 +223,6 @@ def restoreSpatial {d channels : Nat} (spatial : TorchLean.Tensor Nat [d]) :
     rw [Shape.size_appendDim, Tensor.size_to_shape]
     simp [gridSize, Shape.size]
   { kind := "RestoreSpatial"
-    stateShapes := []
-    initState := .nil
-    requiresGrad := #[]
-    forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
-      Runtime.Autograd.Model.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
-
-/-- Add the singleton channel axis used inside an FNO model. -/
-def addScalarChannel {d : Nat} (spatial : TorchLean.Tensor Nat [d]) :
-    Layer (scalarFieldShape spatial) (fieldShape spatial 1) :=
-  let source : Shape := scalarFieldShape spatial
-  let target : Shape := fieldShape spatial 1
-  have sameSize : Shape.size source = Shape.size target := by
-    simp [source, target, fieldShape, Shape.size_appendDim]
-  { kind := "AddScalarChannel"
-    stateShapes := []
-    initState := .nil
-    requiresGrad := #[]
-    forward := fun _ {α} _ _ => fun {m} _ _ => fun x =>
-      Runtime.Autograd.Model.reshape (m := m) (α := α) (s₁ := source) (s₂ := target) x sameSize }
-
-/-- Remove the singleton channel axis after the output projection. -/
-def removeScalarChannel {d : Nat} (spatial : TorchLean.Tensor Nat [d]) :
-    Layer (fieldShape spatial 1) (scalarFieldShape spatial) :=
-  let source : Shape := fieldShape spatial 1
-  let target : Shape := scalarFieldShape spatial
-  have sameSize : Shape.size source = Shape.size target := by
-    simp [source, target, fieldShape, Shape.size_appendDim]
-  { kind := "RemoveScalarChannel"
     stateShapes := []
     initState := .nil
     requiresGrad := #[]

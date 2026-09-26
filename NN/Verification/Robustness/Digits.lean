@@ -411,7 +411,7 @@ def mainTrainThenCertify (args : List String) : IO Unit := do
   IO.println s!"[digits] training/export script: {options.script}"
   IO.println s!"[digits] exported weights: {options.certify.weights}"
   IO.println s!"[digits] exported dataset: {options.certify.dataset}"
-  let out ← TorchLean.External.Process.runStdoutChecked
+  let out ← TorchLean.External.Process.run
     (ctx := "digits train/export")
     (cmd := python)
     (args := trainerArgs options)

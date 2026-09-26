@@ -140,10 +140,12 @@ target torchlean_tensor_cpu_shared pkg : Dynlib := do
 target torchlean_libtorch_unavailable pkg : FilePath := do
   let lean ← getLeanInstall
   let srcJob ← inputFile (pkg.dir / "csrc/libtorch/unavailable.c") false
+  let operationsJob ← inputFile (pkg.dir / "csrc/libtorch/operations.h") false
+  let source := (srcJob.mix operationsJob).map fun _ => pkg.dir / "csrc/libtorch/unavailable.c"
   let oFile := pkg.buildDir / "torchlean_libtorch_unavailable.o"
   let compilerJob ← nativeCompilerJob "cc"
   let oJob ← compilerJob.bindM fun compiler =>
-    buildO oFile srcJob #["-I", lean.includeDir.toString] #["-O2", "-fPIC"] compiler getLeanTrace
+    buildO oFile source #["-I", lean.includeDir.toString] #["-O2", "-fPIC"] compiler getLeanTrace
   buildStaticLib (pkg.buildDir / nameToStaticLib "torchlean_libtorch_unavailable") #[oJob]
 
 /-- Repair large frees and delayed arena purging in the pinned Linux allocator. -/

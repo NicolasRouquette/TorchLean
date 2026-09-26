@@ -21,8 +21,7 @@ import tempfile
 
 
 SOURCES = (
-    "runtime.cpp", "elementwise.cpp", "kernels.cpp", "conv_pool.cpp",
-    "attention.cpp", "blas.cpp", "torchlean_libtorch.h", "CMakeLists.txt",
+    "torchlean.cpp", "torchlean_libtorch.h", "operations.h", "CMakeLists.txt",
 )
 BUILD_ENV = (
     "PATH", "CXX", "CC", "CXXFLAGS", "CFLAGS", "CPPFLAGS", "LDFLAGS",

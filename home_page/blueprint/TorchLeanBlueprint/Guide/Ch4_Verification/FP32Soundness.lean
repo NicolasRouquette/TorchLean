@@ -5,7 +5,7 @@ import NN.Proofs.RuntimeApprox.FP32
 import NN.Proofs.RuntimeApprox.FP32.Layers
 import NN.Proofs.RuntimeApprox.FP32.MLP
 import NN.Proofs.RuntimeApprox.FP32.CROWN
-import NN.Runtime.Autograd.Engine.Cuda.Float32Contract
+import NN.Runtime.Autograd.Engine.LibTorch.Float32Contract
 -- The parity example is the test behind the native-agreement assumption, and the last
 -- section evaluates its API directly rather than paraphrasing what the CLI printed.
 import NN.Tests.Floats.NativePrimitiveParity
@@ -28,7 +28,7 @@ open TorchLean.Floats.IEEE754
 
 -- The CUDA float32 contract is where the "which provider actually ran this?" question is stated
 -- as a hypothesis rather than assumed away, so the last section quotes it directly.
-open Runtime.Autograd.Cuda.Float32Contract
+open Runtime.Autograd.LibTorch.Float32Contract
 
 -- `caseRows`, `summary`, `sweep` and `nanOracleReport` come from the parity example. They are
 -- evaluated below, so the numbers on this page are produced by the same code the CLI runs.

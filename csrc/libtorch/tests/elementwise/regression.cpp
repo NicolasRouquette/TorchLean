@@ -144,7 +144,7 @@ struct Object {
   const at::Tensor& tensor() const { return torchlean::tensor(value); }
 };
 
-// Setting IDs are the current LibTorch control ABI, shared with Cuda.LibTorch.
+// Setting IDs are the current LibTorch control ABI, shared with LibTorch.
 constexpr uint32_t kDeterministic = 2;
 constexpr uint32_t kCuDNNBenchmark = 3;
 

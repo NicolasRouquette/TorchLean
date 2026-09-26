@@ -49,7 +49,7 @@ foreach(include_dir IN LISTS TORCH_INCLUDE_DIRS)
   endif()
 endforeach()
 
-# Warn below the oldest tested release (a 2.12 nightly). attention.cpp uses private ATen entry
+# Warn below the oldest tested release (a 2.12 nightly). The adapter uses private ATen entry
 # points that older SDKs may lack. The build still proceeds.
 string(REGEX MATCH "^[0-9]+[.][0-9]+" torch_sdk_major_minor "${torch_sdk_version}")
 if(NOT torch_sdk_major_minor OR torch_sdk_major_minor VERSION_LESS "2.12")
@@ -78,12 +78,7 @@ target_compile_options(torchlean_sdk_link_check PRIVATE ${torch_sdk_cxx_flags})
 target_link_options(torchlean_sdk_link_check PRIVATE "LINKER:--disable-new-dtags")
 
 add_library(torchlean_libtorch SHARED
-  runtime.cpp
-  elementwise.cpp
-  kernels.cpp
-  conv_pool.cpp
-  attention.cpp
-  blas.cpp
+  torchlean.cpp
 )
 add_dependencies(torchlean_libtorch torchlean_sdk_link_check)
 target_compile_definitions(torchlean_libtorch PRIVATE TORCHLEAN_LIBTORCH)

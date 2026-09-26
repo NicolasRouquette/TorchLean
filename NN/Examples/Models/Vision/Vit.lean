@@ -5,7 +5,7 @@ Authors: TorchLean Team
 
 Real-data CUDA example:
   python3 scripts/datasets/download_example_data.py --cifar10
-  lake -R -K cuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
+  scripts/lake.sh -Kcuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
 
 This is a real-data ViT-style CIFAR-10 minibatch run:
 - patch embedding via the generic convolution operation over two spatial axes,
@@ -30,7 +30,7 @@ adds CIFAR loader construction and the step-limited training loop.
 
 ```bash
 python3 scripts/datasets/download_example_data.py --cifar10
-lake -R -K cuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
+scripts/lake.sh -Kcuda=true exe torchlean vit --device cuda --n-total 1 --steps 1
 ```
 
 This command is a small runtime check. Larger image-token runs belong in runtime profiling work,
@@ -134,7 +134,7 @@ def model : nn.Builder (nn.Sequential input output) :=
   nn.models.vit modelConfig batch
 
 /-- Train the CIFAR ViT with the public `Trainer` surface. -/
-def train (runtime : Runtime.Config) (flags : RealData.CifarModelTrainFlags) :
+def train (runtime : Runtime.Config) (flags : Support.Training.Options Support.Npy.Options) :
     IO Trainer.Report := do
   let batches ←
     RealData.loadCifarBatches exeName batchSize flags.data.nRows flags.data.seed
@@ -153,14 +153,15 @@ def train (runtime : Runtime.Config) (flags : RealData.CifarModelTrainFlags) :
     (Data.fromSamples batches)
     (flags.training.trainOptions
       (logTitle := "ViT CIFAR training")
-      (logNotes := RealData.cifarClassifierNotes batchSize flags))
+      (logNotes := RealData.trainingNotes "cifar10" batchSize flags))
   pure trained.report
 
 /-- CLI entrypoint for CIFAR ViT training on the selected runtime device. -/
 def main (args : List String) : IO UInt32 :=
-  TrainCommand.classificationNpy exeName args
-    (fun rest => RealData.CifarModelTrainFlags.parse exeName rest defaultLogPath 1 1e-3)
-    (Support.bannerWithDevice exeName "ViT CIFAR training")
-    train
+  TrainCommand.npy exeName args
+    (fun rest => Support.Training.Options.parse exeName rest defaultLogPath 1 1e-3
+      (parseData := RealData.NpyDatasets.parseCifar))
+    (Support.banner exeName "ViT CIFAR training")
+    train (fun result => result.printSummary) (target := "class-label")
 
 end NN.Examples.Models.Vision.Vit

@@ -135,7 +135,7 @@ class TinyMethodOperators(nn.Module):
 /-- Capture one model to the checked IR artifact format. -/
 def runCapture (ctor : String) (outPath : System.FilePath) (shape : String)
     (scriptPath : System.FilePath := bridgePath) (requireTorchExport : Bool := false) : IO String :=
-  TorchLean.External.Process.runStdoutChecked
+  TorchLean.External.Process.run
     (ctx := s!"PyTorch graph capture ({ctor})") (cmd := "python3")
     (args := #[scriptPath.toString, modelPath.toString, ctor, outPath.toString,
       "--example-shape", shape] ++ if requireTorchExport then #["--require-torch-export"] else #[])
@@ -147,7 +147,7 @@ def checkNumericalParity
   let json ← TorchLean.Json.readFile artifactPath
   let captured ← IO.ofExcept (Import.PyTorch.TorchExport.parseGraph json)
   let payload ← IO.ofExcept (Import.PyTorch.TorchExport.parsePayload json)
-  let python ← TorchLean.External.Process.runStdoutChecked
+  let python ← TorchLean.External.Process.run
     (ctx := s!"PyTorch numerical parity ({ctor})")
     (cmd := "python3")
     (args := #[
@@ -288,7 +288,7 @@ print("generated bridge classification: both capture paths passed")
 
 /-- Run schema rejection and callable preservation through both generated Python adapters. -/
 def runClassificationChecks : IO Unit := do
-  let output ← TorchLean.External.Process.runStdoutChecked
+  let output ← TorchLean.External.Process.run
     (ctx := "generated PyTorch bridge classification") (cmd := "python3")
     (args := #["-c", classificationRegressionSource, workDir.toString])
   IO.println output.trimAscii.toString
@@ -345,7 +345,7 @@ def runFloatCodegenChecks : IO Unit := do
      ])
   let path := workDir / "float_source_roundtrip.py"
   IO.FS.writeFile path source
-  discard <| TorchLean.External.Process.runStdoutChecked
+  discard <| TorchLean.External.Process.run
     (ctx := "exported Python float expressions") (cmd := "python3") (args := #[path.toString])
   IO.println "generated Python float bit patterns and tiny epsilon: ok"
 
@@ -373,7 +373,7 @@ def runReferenceCodegenChecks : IO Unit := do
     , "model = m['load_transformer_weights'](m['ReferenceTransformer']())"
     , "print(json.dumps({'params': {k: v.tolist() for k, v in model.state_dict().items()}}))"
     ]
-  let output ← TorchLean.External.Process.runStdoutChecked
+  let output ← TorchLean.External.Process.run
     (ctx := "generated PyTorch reference models") (cmd := "python3")
     (args := #["-c", source, workDir.toString])
   let json ← IO.ofExcept (Json.parse output.trimAscii.toString)

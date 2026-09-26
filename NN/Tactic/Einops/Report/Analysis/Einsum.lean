@@ -175,8 +175,8 @@ def concreteEinsumReport
       s!"Traverse contraction shape {formatShape contractedShape} on axes \
         {formatAxes contractedAxes}; concrete portable bounds use native \
         USize counters, while symbolic or oversized bounds retain Fin.foldl."
-  let outputEntries := shapeSize outputShape
-  let contractionEntries := shapeSize contractedShape
+  let outputEntries := outputShape.prod
+  let contractionEntries := contractedShape.prod
   let contractionTerms := outputEntries * contractionEntries
   let operandReads := contractionTerms * inputShapes.length
   let multiplications :=
@@ -252,7 +252,7 @@ def concreteEinsumReport
     | _, _ => []
   let outputTaskCount :=
     Elab.Impl.einsumOutputTaskCount
-      factored outputShape contractionEntries
+      outputShape contractionEntries
   let parallelOutput := 1 < outputTaskCount
   let resultBuffers :=
     if parallelOutput then
@@ -297,7 +297,7 @@ def concreteEinsumReport
     [s!"Output entries: {outputEntries}.",
      s!"Contraction terms per output: {contractionEntries}.",
      s!"Total contraction terms: {contractionTerms}.",
-     s!"Operand scalar reads: {operandReads}.",
+     s!"Operand scalar reads before factorization: {operandReads}.",
      multiplicationEstimate,
      s!"Additive accumulator steps: {additions}.",
      s!"Output writes: {outputEntries}.",

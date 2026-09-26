@@ -488,7 +488,7 @@ private theorem append_takeLeft_takeRight {m n : Nat} (v : Vec (m + n)) :
     simp [appendVec, takeLeftVec, takeRightVec, vecOfFun, Fin.append, Fin.addCases]
 
 /-- Concatenate two tensors along dimension 0 (dim-0 concat), using flattened vectors internally. -/
-def concatLeadingAxis {Γ : List Shape} {n m : Nat} {s : Shape}
+def concat {Γ : List Shape} {n m : Nat} {s : Shape}
     (a : Idx Γ (.dim n s)) (b : Idx Γ (.dim m s)) :
     Node Γ (.dim (n + m) s) :=
   let hsz :
@@ -584,10 +584,10 @@ def concatLeadingAxis {Γ : List Shape} {n m : Nat} {s : Shape}
               simp [inner_add_right]
     )
 
-/-- `NodeFDerivCorrect` for `concatLeadingAxis` (concat is linear). -/
-def concatLeadingAxisFderiv {Γ : List Shape} {n m : Nat} {s : Shape}
+/-- `NodeFDerivCorrect` for `concat` (concat is linear). -/
+def concatFderiv {Γ : List Shape} {n m : Nat} {s : Shape}
     (a : Idx Γ (.dim n s)) (b : Idx Γ (.dim m s)) :
-    NodeFDerivCorrect (concatLeadingAxis (Γ := Γ) (n := n) (m := m) (s := s) a b) := by
+    NodeFDerivCorrect (concat (Γ := Γ) (n := n) (m := m) (s := s) a b) := by
   classical
   let szA : Nat := Spec.Shape.size (.dim n s)
   let szB : Nat := Spec.Shape.size (.dim m s)
@@ -622,18 +622,18 @@ def concatLeadingAxisFderiv {Γ : List Shape} {n m : Nat} {s : Shape}
     have hD : HasFDerivAt (fun x : CtxVec Γ => D x) D xV := D.hasFDerivAt (x := xV)
     have hEq :
         (Node.forwardVec (Γ := Γ) (τ := .dim (n + m) s)
-          (concatLeadingAxis (Γ := Γ) (n := n) (m := m) (s := s) a b))
+          (concat (Γ := Γ) (n := n) (m := m) (s := s) a b))
           =
         fun x : CtxVec Γ => D x := by
       funext x
       -- Unfold and normalize casts/append.
-      simp [concatLeadingAxis, Node.forwardVec_ofFn, D, Dcast, Dapp, Dpair,
+      simp [concat, Node.forwardVec_ofFn, D, Dcast, Dapp, Dpair,
         Graph.castCLM, ContinuousLinearMap.comp_apply, ContinuousLinearMap.prod_apply,
         CtxVec.getCLM_apply, hsz, szA, szB, ShapeOps.castVec_proof_irrel]
     exact hD.congr_of_eventuallyEq hEq.eventuallyEq
   · intro xV dxV
     -- `concat_leading_axis` is linear, so its JVP matches the (constant) derivative.
-    simp [concatLeadingAxis, Node.jvpVec_ofFn, D, Dcast, Dapp, Dpair,
+    simp [concat, Node.jvpVec_ofFn, D, Dcast, Dapp, Dpair,
       Graph.castCLM, ContinuousLinearMap.comp_apply, ContinuousLinearMap.prod_apply,
       CtxVec.getCLM_apply, hsz, szA, szB, ShapeOps.castVec_proof_irrel]
 

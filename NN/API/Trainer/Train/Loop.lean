@@ -14,8 +14,9 @@ public import NN.API.Trainer.Session
 
 Prediction, dataset training, checkpoint restoration, and stream training on `TorchLean.Trainer`.
 
-Every method here opens a `Session`, drives it, and finishes it. Programs that need a different
-loop use `trainer.open` directly.
+Training and checkpoint restoration open a `Session` and return a snapshot of its final state.
+Prediction opens a session without updating it. Programs that need a different training loop use
+`trainer.open` directly.
 -/
 
 @[expose] public section
@@ -73,12 +74,6 @@ def saveCheckpoint {σ τ : Shape} {trainer : TorchLean.Trainer σ τ}
       session.save path
       IO.println s!"  wrote checkpoint: {path}"
 
-/-- Reject training options that cannot describe a run. -/
-def validateOptions (options : TrainOptions) : IO Unit :=
-  match options.validate with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
-
 /--
 Run the requested number of optimizer updates over a finite sample stream.
 
@@ -128,7 +123,7 @@ def baseline (trainer : TorchLean.Trainer [2] [1]) : IO (Tensor Float [1]) :=
 def predict {σ τ inputShape : Shape}
     (trainer : TorchLean.Trainer σ τ) (input : Tensor Float inputShape)
     (batch : Bool := false) (batchSize : Nat := 1)
-    [Trainer.Internal.BatchInput
+    [TorchLean.Internal.BatchInput
       (Tensor Float σ) (Tensor Float (σ.prependDim batchSize)) batch (Tensor Float inputShape)] :
     IO (Tensor Float (match batch with | false => τ | true => τ.prependDim batchSize)) := do
   let session ← trainer.open
@@ -139,8 +134,7 @@ Train the model with the loss and runtime settings stored in `trainer`.
 
 The signature uses `Tensor Float`, but the run itself executes in binary32: `.native` arithmetic
 instantiates the model over `Float32` and `.ieee` over `ExecFloat.Binary 8 23`. Dataset samples are
-converted
-into that scalar as they are used, and results are read back to `Float`.
+converted into that scalar as they are used, and results are read back to `Float`.
 
 The result stores the trained parameters together with prediction, reporting, state access, and
 verification methods. `trained.verify center (radius := r) (norm := .inf)` checks the model that
@@ -168,7 +162,7 @@ def train {σ τ : Shape}
     (trainer : TorchLean.Trainer σ τ)
     (data : Dataset σ τ) (trainOptions : TrainOptions)
     (probes : Array (Probe σ) := #[]) : IO (Result σ τ) := do
-  Internal.validateOptions trainOptions
+  IO.ofExcept trainOptions.validate
   let samples ← data.materialize (α := Float)
   if trainOptions.steps > 0 && samples.isEmpty then
     throw <| IO.userError
@@ -256,7 +250,7 @@ def trainStream {σ τ : Shape}
       (Tensor Float σ → IO (Tensor Float τ)) → IO Unit :=
       fun _ _ _ => pure ()) :
     IO (StreamResult σ τ) := do
-  Internal.validateOptions trainOptions
+  IO.ofExcept trainOptions.validate
   let configured : TorchLean.Trainer σ τ :=
     { trainer with runtime := trainer.runtime.withRuntime options }
   let session ← configured.open trainOptions.scheduler

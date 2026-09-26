@@ -17,8 +17,8 @@ Checked lowering for permutations, reshaping, flattening, concatenation, and tra
 Concatenation along axis `0` reads each parent through a typed index and folds
 `Tensor.concatAxisSpec` over the parents; concatenation along another axis first moves that axis to
 the front of every parent, folds, and moves it back. Both branches use
-`concatLeadingAxisFromInputs`, and the output-shape cast is justified by
-`concatLeadingAxisFromInputs_size_eq_sum` rather than by a proof embedded in the runtime code.
+`concatInputs`, and the output-shape cast is justified by
+`concatInputs_size_eq_sum` rather than by a proof embedded in the runtime code.
 The nonzero-axis branch validates each parent exactly as `NN.IR.Graph.permuteSomeTensor` does and
 records that evidence in `ConcatFrontInput`, so the correctness proof can replay the evaluator's
 permutation on every parent.
@@ -243,16 +243,16 @@ def concatAxisFrontInputs {α : Type} [TorchLean.Storage α] [Context α]
 Fold concat inputs along the leading axis into a tensor of the declared leading extent `nOut`.
 
 `hSum` records that the input extents add up to `nOut`, so the cast is justified by
-`concatLeadingAxisFromInputs_size_eq_sum`.
+`concatInputs_size_eq_sum`.
 -/
 def concatInputsForward {α : Type} [TorchLean.Storage α] [Context α]
     {Γ : List Shape} {rest : Shape} (inputs : Array (ConcatInput α Γ rest)) (nOut : Nat)
     (hSum : inputs.foldl (fun acc input => acc + input.1) 0 = nOut)
     (context : TensorReader α Γ) : Tensor α (.dim nOut rest) :=
-  let out := concatLeadingAxisFromInputs (α := α) (Γ := Γ) (rest := rest) context inputs
+  let out := concatInputs (α := α) (Γ := Γ) (rest := rest) context inputs
   Tensor.castShape out.2
     (congrArg (fun k => Shape.dim k rest)
-      ((concatLeadingAxisFromInputs_size_eq_sum (α := α) context inputs).trans hSum))
+      ((concatInputs_size_eq_sum (α := α) context inputs).trans hSum))
 
 /-- Checked lowering for `.concat axis` along an arbitrary axis. -/
 def lowerConcat {α : Type} [TorchLean.Storage α] [Context α]

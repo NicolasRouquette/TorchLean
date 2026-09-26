@@ -153,7 +153,7 @@ def float32OptimizerCheckpoint
 #check nn.State.split
 #check nn.lowerToTypedGraph
 #check nn.conv
-#check nn.multiHeadAttention
+#check nn.attention
 #check nn.transformerEncoderBlock
 #check nn.heads.classifier
 #check nn.models.cnn

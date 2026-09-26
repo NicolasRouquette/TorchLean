@@ -300,14 +300,14 @@ The implementation keeps all element generation on the runtime side: first creat
 buffer in `[0,1)`, then perform `lo + (hi-lo) * u` with CUDA buffer ops.
 -/
 def cudaUniformBuffer (n : Nat) (lo hi : Float) (seed : Nat) :
-    IO Runtime.Autograd.Cuda.Buffer := do
+    IO Runtime.Autograd.LibTorch.Buffer := do
   let n32 ← natToU32Checked "torch.runtimeInit" n
   let key := Spec.Random.keyOf seed 0
-  let u := Runtime.Autograd.Cuda.Buffer.randUniform n32 key
-  let shift := Runtime.Autograd.Cuda.Buffer.full n32 lo
-  let out := Runtime.Autograd.Cuda.Buffer.axpy shift u (hi - lo)
-  pure <| Runtime.Autograd.Cuda.Buffer.releaseThen u <|
-    Runtime.Autograd.Cuda.Buffer.releaseThen shift out
+  let u := Runtime.Autograd.LibTorch.Buffer.randUniform n32 key
+  let shift := Runtime.Autograd.LibTorch.Buffer.full n32 lo
+  let out := Runtime.Autograd.LibTorch.Buffer.axpy shift u (hi - lo)
+  pure <| Runtime.Autograd.LibTorch.Buffer.releaseThen u <|
+    Runtime.Autograd.LibTorch.Buffer.releaseThen shift out
 
 /--
 Allocate a CUDA buffer for a `FloatInit`.
@@ -316,16 +316,16 @@ For analytic schemes (`zeros`, `ones`, `uniform`, `xavierUniform`, `kaimingUnifo
 building a large nested Lean tensor. For `.flat`, the caller already supplied the exact payload, so
 we upload that payload directly.
 -/
-def cudaBufferOf (n : Nat) (init : FloatInit) : IO Runtime.Autograd.Cuda.Buffer := do
+def cudaBufferOf (n : Nat) (init : FloatInit) : IO Runtime.Autograd.LibTorch.Buffer := do
   let n32 ← natToU32Checked "torch.runtimeInit" n
   match init with
-  | .zeros => pure <| Runtime.Autograd.Cuda.Buffer.zeros n32
-  | .ones => pure <| Runtime.Autograd.Cuda.Buffer.full n32 1.0
+  | .zeros => pure <| Runtime.Autograd.LibTorch.Buffer.zeros n32
+  | .ones => pure <| Runtime.Autograd.LibTorch.Buffer.full n32 1.0
   | .uniform lo hi seed =>
       cudaUniformBuffer n lo hi seed
   | .normal mean std seed =>
       let key := Spec.Random.keyOf seed 0
-      pure <| Runtime.Autograd.Cuda.Buffer.randNormal n32 mean std key
+      pure <| Runtime.Autograd.LibTorch.Buffer.randNormal n32 mean std key
   | .xavierUniform fanIn fanOut seed =>
       let limit := Torch.Init.xavierUniformLimit fanIn fanOut
       cudaUniformBuffer n (-limit) limit seed
@@ -334,7 +334,7 @@ def cudaBufferOf (n : Nat) (init : FloatInit) : IO Runtime.Autograd.Cuda.Buffer 
       cudaUniformBuffer n (-limit) limit seed
   | .flat values =>
       if values.size = n then
-        Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO values
+        Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO values
       else
         throw <| IO.userError
           s!"torch.runtimeInit: flat initializer length mismatch (expected {n}, got {values.size})"
@@ -345,7 +345,7 @@ def hostTensorOf {α : Type} [TorchLean.Storage α]
     IO (Tensor α s) := do
   let values ← floatArrayOf (Spec.Shape.size s) init
   -- `floatArrayOf` returns exactly `Shape.size s` values or throws.
-  let tensor := Runtime.Autograd.Cuda.Convert.Internal.unflattenFloat (s := s) values 0
+  let tensor := Runtime.Autograd.LibTorch.Convert.Internal.unflattenFloat (s := s) values 0
   pure <| TorchLean.Tensor.map cast tensor
 
 /--

@@ -128,7 +128,8 @@ structure TrainOptions where
   scheduler : Option TorchLean.Trainer.Scheduler.Config := none
   /-- Print step losses every `logEvery` updates; `0` disables stdout step logging. -/
   logEvery : Nat := 0
-  /-- Sample CUDA allocator state every this many completed updates; `0` disables sampling. -/
+  /-- CUDA allocator sampling cadence. `0` uses automatic sampling for runs of at least 1000
+  updates and disables it for shorter runs. Non-CUDA runs do not sample the allocator. -/
   cudaMemorySampleEvery : Nat := 0
   /-- Optional TrainLog artifact destination. Use `.disabled` for stdout-only runs. -/
   logDestination : Training.LogDestination := .disabled

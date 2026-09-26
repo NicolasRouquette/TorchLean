@@ -74,15 +74,15 @@ def checkScratchLifetime (logarithmic : Bool) : IO Unit := do
   let label := if logarithmic then "log_softmax" else "softmax"
   let x : Tensor Float [2, 3] := [[0.1, -0.2, 0.3], [0.05, 0.25, -0.15]]
   let upstream : Tensor Float [2, 3] := [[1.0, -2.0, 0.5], [0.25, 3.0, -1.0]]
-  let baseline ← Runtime.Autograd.Cuda.Buffer.allocatorStats
-  let input ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO
-    (Runtime.Autograd.Cuda.Convert.flattenFloat x)
-  let (tape, xId) := Runtime.Autograd.Cuda.Tape.empty.leaf { s := [2, 3], buf := input }
+  let baseline ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
+  let input ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO
+    (Runtime.Autograd.LibTorch.Convert.flattenFloat x)
+  let (tape, xId) := Runtime.Autograd.LibTorch.Tape.empty.leaf { s := [2, 3], buf := input }
   let result ← IO.lazyPure fun _ =>
-    if logarithmic then Runtime.Autograd.Cuda.Tape.logSoftmaxLast (s := [2, 3]) tape xId
-    else Runtime.Autograd.Cuda.Tape.softmaxLast (s := [2, 3]) tape xId
+    if logarithmic then Runtime.Autograd.LibTorch.Tape.logSoftmaxLast (s := [2, 3]) tape xId
+    else Runtime.Autograd.LibTorch.Tape.softmaxLast (s := [2, 3]) tape xId
   let (tape, yId) ← Utils.okOrThrow result
-  let forward ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+  let forward ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
   -- Only the six input and six output elements may remain live.
   unless forward.liveBytes == baseline.liveBytes + 48 do
     throw <| IO.userError
@@ -92,23 +92,23 @@ def checkScratchLifetime (logarithmic : Bool) : IO Unit := do
       (Activation.logSoftmaxSpec (α := Float) 1 x) upstream
     else Activation.softmaxBackwardSpec (α := Float) 1 x upstream
   for pass in [0:3] do
-    let seed ← Runtime.Autograd.Cuda.Buffer.ofFloatArrayIO
-      (Runtime.Autograd.Cuda.Convert.flattenFloat upstream)
-    let gradients ← Runtime.Autograd.Cuda.Tape.backwardSparse tape yId
+    let seed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO
+      (Runtime.Autograd.LibTorch.Convert.flattenFloat upstream)
+    let gradients ← Runtime.Autograd.LibTorch.Tape.backwardSparse tape yId
       { s := [2, 3], buf := seed } (fun id => id == xId)
     let some gradient := gradients.get? xId
       | throw <| IO.userError s!"{label}: missing input gradient on pass {pass}"
     Utils.assertTensorApprox s!"{label} repeated backward {pass}"
       (← Utils.anyBufferToTensor (s := [2, 3]) gradient) expected (tol := 2e-3)
-    Runtime.Autograd.Cuda.Tape.releaseSparseGrads gradients
-    let after ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+    Runtime.Autograd.LibTorch.Tape.releaseSparseGrads gradients
+    let after ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
     unless after.liveBytes == forward.liveBytes do
       throw <| IO.userError s!"{label}: backward retained temporary payloads"
   for node in tape.nodes do
-    discard <| Runtime.Autograd.Cuda.Buffer.releaseIO node.value.buf
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO node.value.buf
     for buffer in node.cleanup do
-      discard <| Runtime.Autograd.Cuda.Buffer.releaseIO buffer
-  let retired ← Runtime.Autograd.Cuda.Buffer.allocatorStats
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  let retired ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
   unless retired.liveBytes == baseline.liveBytes do
     throw <| IO.userError s!"{label}: tape retirement retained payloads"
 
@@ -138,7 +138,7 @@ def run : IO Unit := do
   checkScratchLifetime false
   checkScratchLifetime true
 
-  if Runtime.Autograd.Cuda.Buffer.runtimeStatus = .nativeAvailable then
+  if Runtime.Autograd.LibTorch.Buffer.runtimeStatus = .nativeAvailable then
     checkInteriorAxisSession
 
 end Softmax

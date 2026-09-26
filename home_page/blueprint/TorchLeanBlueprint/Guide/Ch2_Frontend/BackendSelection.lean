@@ -6,7 +6,7 @@ import NN.API.Runtime
 import NN.API.Trainer.Constructor
 import NN.API.Verification.Lowering
 import NN.Backend.LibTorch
-import NN.Runtime.Autograd.Engine.Cuda.LibTorch
+import NN.Runtime.Autograd.Engine.LibTorch.Controls
 import NN.IR
 import NN.Spec.Layers.FlashAttention
 import NN.Proofs.Models.Attention.CausalMask
@@ -175,7 +175,7 @@ def bsMisfiled : KernelCapsule :=
     name := "demo.misfiled"
     shapeContract :=
       ContractDescriptor.tested
-        (.valueRefinement .scaledDotProductAttention)
+        (.valueRefinement .attention)
         "value test filed as shape evidence" "demo suite" }
 
 #eval (Reference.attention.contractsAligned,
@@ -192,12 +192,12 @@ A misaligned capsule is not merely reported; `KernelCapsule.admissible` requires
 -- The malformed descriptor must prevent selection, not
 -- merely appear in a warning.
 #eval planOp BackendProfile.checkedCpu.policy
-    #[bsMisfiled] .scaledDotProductAttention
+    #[bsMisfiled] .attention
   |>.map fun k => k.capsule.name
 ```
 ```leanOutput bsMisfiledPlan (whitespace := lax)
 Except.error "no admissible kernel capsule for op
-  scaled_dot_product_attention on device cpu"
+  attention on device cpu"
 ```
 
 A value test placed in the shape field is therefore rejected rather than counted as shape evidence,
@@ -314,14 +314,14 @@ changes in preference or registry order inspectable.
 
 Selecting `libtorch.direct_attention` identifies the route through TorchLean's adapter. ATen then
 chooses an eligible implementation for the actual tensors. The public controls in
-{src "NN/Runtime/Autograd/Engine/Cuda/LibTorch.lean"}[`Cuda.LibTorch`] let a run permit or disable
+{src "NN/Runtime/Autograd/Engine/LibTorch/Controls.lean"}[`LibTorch`] let a run permit or disable
 the flash, efficient, math, and cuDNN attention implementations.
 
 For example, this definition disables the flash option when the application calls it:
 
 ```lean (name := bsSDPControl)
 def bsDisableFlash : IO Unit :=
-  Runtime.Autograd.Cuda.LibTorch.setSDPEnabled .flash false
+  Runtime.Autograd.LibTorch.setSDPEnabled .flash false
 ```
 
 The other enabled implementations still have to support the shape, dtype, device, mask, and
@@ -409,47 +409,9 @@ then adds those input cotangents to the surrounding graph's contributions. The r
 state belongs to this pair; there is no LibTorch autograd graph to traverse. Reverse-mode
 accumulation remains the classical construction {Informal.citep baydin2018}[].
 
-`checkedCuda` prefers `Attention.libTorchDirectAttention`. To compare against the composed route,
-change the provider preference explicitly:
-
-```lean (name := bsPrefer)
--- Change the local implementation while retaining the
--- checked contracts and TorchLean tape.
-def bsComposedAttention : BackendProfile :=
-  { BackendProfile.checkedCuda with
-    name := "composed_attention"
-    policy :=
-      { BackendProfile.checkedCuda.policy with
-        provider := .prefer .torchLean } }
-
-def bsOnlyLibTorch : BackendProfile :=
-  { BackendProfile.checkedCuda with
-    name := "only_libtorch"
-    policy :=
-      { BackendProfile.checkedCuda.policy with
-        provider := .only .libTorch } }
-
-#eval do
-  let attention := #[BackendOp.scaledDotProductAttention]
-  let profiles : List BackendProfile :=
-    [BackendProfile.checkedCuda,
-      bsComposedAttention, bsOnlyLibTorch]
-  profiles.forM fun (p : BackendProfile) => do
-    match p.planOps attention with
-    | .error e => IO.println s!"{p.name}: {e}"
-    | .ok plan =>
-      IO.println s!"{p.name}: {plan.capsuleNames}"
-```
-```leanOutput bsPrefer
-checked_cuda: #[libtorch.direct_attention]
-composed_attention: #[torchlean.composed_attention]
-only_libtorch: #[libtorch.direct_attention]
-```
-
-The first two profiles prefer different admissible capsules. Their shape, value, and VJP
-obligations remain subject to the same checked assurance policy. The third profile requires
-LibTorch: if an operation has no admissible LibTorch capsule, planning fails. A preference may
-fall back to another admissible capsule in catalog order; `only` excludes that fallback.
+GPU attention uses LibTorch automatically. There is no separate composed-attention provider to
+select. The registered `LibTorch.attention` contract records the shape checks, hard-mask
+convention, local VJP, and implementation-defined reduction order.
 
 No-grad sessions request `none` automatically. During training, a differentiable operation cannot
 select a forward-only capsule. Seeded random sources are the deliberate exception: they create
@@ -457,7 +419,7 @@ non-differentiable values, so they do not need a local VJP of their own.
 
 Keep the selected capsule names with an experiment. A preference alone does not identify what
 ran, and `libtorch.direct_attention` still leaves ATen's internal implementation choice to the
-SDK. The explicit composition is useful for comparisons and runs its CUDA primitives through ATen.
+SDK.
 
 # Boolean Attention Masks
 

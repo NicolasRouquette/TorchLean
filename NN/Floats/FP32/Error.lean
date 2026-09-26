@@ -6,8 +6,6 @@ Authors: TorchLean Team
 
 module
 
-
-import Mathlib.Algebra.Order.Algebra
 public import NN.Floats.FP32.Notation
 public import FloatLib.Floats.Formats.BinaryInterchange.Analysis.StandardModel
 

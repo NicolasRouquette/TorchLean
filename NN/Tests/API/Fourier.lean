@@ -88,7 +88,7 @@ def transform (spatial : List Nat) (positive : 0 < spatial.prod) (channels : Nat
           (by simp [Shape.size])
         let imagPlane ← Model.reshape (s₂ := [1, spatial.prod, channels]) imagPart
           (by simp [Shape.size])
-        Model.concatLeadingAxis realPlane imagPlane) }
+        Model.concat realPlane imagPlane) }
 
 /-- Direct complex phase sum; no FFT, reflection, or axis-permutation implementation is reused. -/
 def reference (spatial : List Nat) (channels : Nat)

@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.LeadingAxis
+public import NN.Runtime.Autograd.Batch
 public import NN.Runtime.Autograd.TypedGraph.GraphM.Elementwise
 public import NN.Runtime.Autograd.TypedGraph.GraphM.ShapeIndex
 public import NN.Spec.Layers.Attention
@@ -153,7 +153,7 @@ PyTorch comparison: `torch.nn.MultiheadAttention` / scaled dot-product attention
 Forward-mode status: implemented by `Spec.multiHeadAttentionJvp`, including tangents for the
 input and all four projection matrices.
 -/
-def multiHeadAttention {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
+def Internal.attentionNode {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
   [DecidableRel ((· > ·) : α → α → Prop)]
   {Γ : List Shape} {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
   (wq : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
@@ -233,31 +233,32 @@ def multiHeadAttention {α : Type} {Δ : Type} [TorchLean.Storage α] [Context �
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := (.dim n (.dim dModel .scalar))) g node
 
 /--
-Leading-axis map of the proved multi-head-attention node.
+Record self-attention for one sequence or a batch of independent sequences.
 
-The typed graph intentionally records the per-sample nodes. This keeps its forward, JVP, and
-VJP definitions inherited directly from `multiHeadAttention`, while an eager device backend may
-execute the same map as one batched contraction.
+The graph records the same per-sequence node in both cases, so forward, JVP, and VJP use the
+same definitions. An eager backend may execute that map as one batched contraction.
 -/
-def batchedMultiHeadAttention {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)]
-  {Γ : List Shape} {batch n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
-  (wq : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wk : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wv : Var (.dim dModel (.dim (numHeads * headDim) .scalar)))
-  (wo : Var (.dim (numHeads * headDim) (.dim dModel .scalar)))
-  (x : Var (.dim batch (.dim n (.dim dModel .scalar))))
-  (mask : Option (Tensor Bool [n, n]) := none) :
-  MWith α Δ Γ (Var (.dim batch (.dim n (.dim dModel .scalar)))) :=
-  Runtime.Autograd.mapOuterAxisWith
-    (const (α := α) (Δ := Δ) (Γ := Γ) <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i))
-    (fun x start len h =>
-      sliceLeadingAxisRange (α := α) (Δ := Δ) (Γ := Γ) x start len h)
-    (fun x h => reshape (α := α) (Δ := Δ) (Γ := Γ) x h)
-    (fun x y => concatLeadingAxis (α := α) (Δ := Δ) (Γ := Γ) x y)
-    (fun sample => multiHeadAttention (α := α) (Δ := Δ) (Γ := Γ)
-      h1 wq wk wv wo sample mask)
-    x
+def attention {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
+    [DecidableRel ((· > ·) : α → α → Prop)]
+    {Γ : List Shape} {n numHeads dModel headDim : Nat} (h1 : n ≠ 0)
+    (wq wk wv : Var [dModel, numHeads * headDim])
+    (wo : Var [numHeads * headDim, dModel])
+    (batch : Option Nat := none)
+    (x : Var (match batch with | none => [n, dModel] | some b => [b, n, dModel]))
+    (mask : Option (Tensor Bool [n, n]) := none) :
+    MWith α Δ Γ (Var (match (generalizing := false) batch with
+      | none => [n, dModel] | some b => [b, n, dModel])) :=
+  match batch, x with
+  | none, sample => Internal.attentionNode h1 wq wk wv wo sample mask
+  | some _, samples =>
+      Runtime.Autograd.mapBatch
+        (const (α := α) (Δ := Δ) (Γ := Γ) <| Tensor.dim (fun i : Fin 0 => Fin.elim0 i))
+        (fun x start len h =>
+          slice (α := α) (Δ := Δ) (Γ := Γ) x start len h)
+        (fun x h => reshape (α := α) (Δ := Δ) (Γ := Γ) x h)
+        (fun x y => concat (α := α) (Δ := Δ) (Γ := Γ) x y)
+        (fun sample => Internal.attentionNode h1 wq wk wv wo sample mask)
+        samples
 
 end GraphM
 end TypedGraph

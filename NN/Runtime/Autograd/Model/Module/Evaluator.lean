@@ -110,7 +110,7 @@ def withState
             finally
               sess.resetTape
               if options.usesCuda then
-                Runtime.Autograd.Cuda.Buffer.collectGarbage))
+                Runtime.Autograd.LibTorch.Buffer.collectGarbage))
   pure { evaluate := evaluate }
 
 end Evaluator

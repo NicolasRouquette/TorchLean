@@ -820,7 +820,7 @@ def matmul {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
 
   PyTorch comparison: `torch.cat([a, b], dim=0)`.
   -/
-  def concatLeadingAxis {α : Type} {Δ : Type} [TorchLean.Storage α] [Add α] [Zero α]
+  def concat {α : Type} {Δ : Type} [TorchLean.Storage α] [Add α] [Zero α]
     {Γ : List Shape} {n m : Nat} {s : Shape}
     (a : Var (.dim n s)) (b : Var (.dim m s)) :
     MWith α Δ Γ (Var (.dim (n + m) s)) := do
@@ -855,7 +855,7 @@ def matmul {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
 
   PyTorch comparison: `x[start : start+len]` for tensors where the leading dimension is indexed.
   -/
-  def sliceLeadingAxisRange {α : Type} {Δ : Type} [TorchLean.Storage α] [Zero α]
+  def slice {α : Type} {Δ : Type} [TorchLean.Storage α] [Zero α]
     {Γ : List Shape} {n : Nat} {s : Shape}
     (x : Var (.dim n s)) (start len : Nat) (h : start + len ≤ n) :
     MWith α Δ Γ (Var (.dim len s)) := do

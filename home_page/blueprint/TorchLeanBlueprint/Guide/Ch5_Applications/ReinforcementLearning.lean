@@ -1642,10 +1642,14 @@ linear regime, $`|e|-\tfrac12=0.66`. Transition B took action $`0` from $`s'=[1,
 $`1.2`, and it is terminal, so the target is just $`r=0.5`; the error is $`0.7`, squared $`0.49`,
 Huber $`\tfrac12(0.7)^2=0.245`. Lean agrees with all four:
 
+`rl.dqn.loss` uses squared error by default. Supply `error` to choose another scalar loss,
+`batch := true` to average a replay batch, or `double := true` to select next actions with the
+online network and evaluate them with the target network.
+
 ```lean (name := rlDqnLossA)
 -- The nonterminal target includes the maximum next-state
 -- target value.
-#eval rl.dqn.transitionMSELoss rlOnlineQ rlTargetQ 0.9 rlTrA
+#eval rl.dqn.loss rlOnlineQ rlTargetQ 0.9 rlTrA
 ```
 
 ```leanOutput rlDqnLossA (whitespace := lax)
@@ -1654,7 +1658,7 @@ Huber $`\tfrac12(0.7)^2=0.245`. Lean agrees with all four:
 
 ```lean (name := rlDqnLossB)
 -- The terminal target contains only its immediate reward.
-#eval rl.dqn.transitionMSELoss rlOnlineQ rlTargetQ 0.9 rlTrB
+#eval rl.dqn.loss rlOnlineQ rlTargetQ 0.9 rlTrB
 ```
 
 ```leanOutput rlDqnLossB (whitespace := lax)
@@ -1664,8 +1668,9 @@ Huber $`\tfrac12(0.7)^2=0.245`. Lean agrees with all four:
 ```lean (name := rlDqnHuberA)
 -- Error magnitude above one enters the linear branch of the
 -- Huber loss.
-#eval rl.dqn.transitionHuberLoss rlOnlineQ rlTargetQ 0.9 1.0
-  rlTrA
+#eval rl.dqn.loss rlOnlineQ rlTargetQ 0.9 rlTrA
+  (error := fun prediction target =>
+    rl.core.huberLoss prediction target 1.0)
 ```
 
 ```leanOutput rlDqnHuberA (whitespace := lax)
@@ -1675,8 +1680,9 @@ Huber $`\tfrac12(0.7)^2=0.245`. Lean agrees with all four:
 ```lean (name := rlDqnHuberB)
 -- Error magnitude below one remains in the quadratic
 -- branch.
-#eval rl.dqn.transitionHuberLoss rlOnlineQ rlTargetQ 0.9 1.0
-  rlTrB
+#eval rl.dqn.loss rlOnlineQ rlTargetQ 0.9 rlTrB
+  (error := fun prediction target =>
+    rl.core.huberLoss prediction target 1.0)
 ```
 
 ```leanOutput rlDqnHuberB (whitespace := lax)
@@ -1690,8 +1696,8 @@ numbers the example printed:
 ```lean (name := rlDqnBatch)
 -- Repeating both transitions equally preserves their mean
 -- squared loss.
-#eval rl.dqn.minibatchMSELoss rlOnlineQ rlTargetQ 0.9
-  #[rlTrA, rlTrB, rlTrA, rlTrB]
+#eval rl.dqn.loss rlOnlineQ rlTargetQ 0.9
+  #[rlTrA, rlTrB, rlTrA, rlTrB] (batch := true)
 ```
 
 ```leanOutput rlDqnBatch (whitespace := lax)
@@ -1700,8 +1706,10 @@ numbers the example printed:
 
 ```lean (name := rlDqnBatchHuber)
 -- Apply the same repeated batch to the Huber objective.
-#eval rl.dqn.minibatchHuberLoss rlOnlineQ rlTargetQ 0.9 1.0
-  #[rlTrA, rlTrB, rlTrA, rlTrB]
+#eval rl.dqn.loss rlOnlineQ rlTargetQ 0.9
+  #[rlTrA, rlTrB, rlTrA, rlTrB] (batch := true)
+  (error := fun prediction target =>
+    rl.core.huberLoss prediction target 1.0)
 ```
 
 ```leanOutput rlDqnBatchHuber (whitespace := lax)

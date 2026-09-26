@@ -101,20 +101,6 @@ def forwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule 
     s!"LibTorch CUDA `{op.name}` is a forward-only capsule with no registered VJP."
     .none
 
-/-- Build a LibTorch CUDA capsule for channel-first convolution or pooling. -/
-def convPoolCapsule (op : BackendOp) : KernelCapsule :=
-  capsule
-    s!"libtorch.{op.name}"
-    op
-    s!"LibTorch CUDA `{op.name}` follows the channel-first runtime contract."
-    s!"LibTorch CUDA `{op.name}` VJP is checked by CUDA runtime coverage."
-
-/-- Preserve window selection's tie convention.
-Gradient accumulation order remains implementation-defined. -/
-def selectionCapsule (op : BackendOp) : KernelCapsule :=
-  { convPoolCapsule op with
-    numericalPolicy.reduction := .implementationDefined }
-
 /-- LibTorch CUDA batched/matrix multiplication. -/
 def matmul : KernelCapsule :=
   accumulationCapsule
@@ -272,7 +258,11 @@ def convTranspose : KernelCapsule :=
 
 /-- LibTorch CUDA max pooling, skipping padded cells and retaining the first row-major winner. -/
 def maxPool : KernelCapsule :=
-  selectionCapsule .maxPool
+  let op := BackendOp.maxPool
+  accumulationCapsule
+    s!"libtorch.{op.name}" op
+    s!"LibTorch CUDA `{op.name}` follows the channel-first runtime contract."
+    s!"LibTorch CUDA `{op.name}` VJP is checked by CUDA runtime coverage."
 
 /-- LibTorch CUDA smooth max pooling. -/
 def smoothMaxPool : KernelCapsule :=
@@ -324,9 +314,46 @@ def selectiveScan : KernelCapsule :=
     ("Reverse recurrence differentiates coefficients, inputs, and the initial state; shared " ++
       "coefficient cotangents are accumulated across time.")
 
-/-- LibTorch CUDA primitive capsules. Attention capsules live in `NN.Backend.Attention.capsules`. -/
+/--
+Direct LibTorch attention bridge.
+
+The native bridge evaluates forward and the selected local VJP using ATen operations. TorchLean
+still owns the global tape. Neither call records a LibTorch autograd graph, and the capsule makes
+no promise about an IO-tiled algorithm or a particular reduction schedule.
+-/
+def attention : KernelCapsule :=
+  { name := "libtorch.direct_attention"
+    op := .attention
+    provider := .libTorch
+    device := .cuda
+    trustLevel := .checked
+    supportsForward := true
+    vjpMode := .backendVJP
+    shapeContract :=
+      ContractDescriptor.guarded (.shapeSafety .attention)
+        ("Q/K/V use a folded (batch, head, n, headDim) layout; the optional mask broadcasts " ++
+          "over the folded batch-head axis.")
+        "torchlean_libtorch_attention_fwd/bwd size and saved-context checks"
+    layoutContract :=
+      ContractDescriptor.guarded
+        (.layoutCompatibility .attention .libTorchCudaView)
+        "Row-major LibTorch tensors; the folded batch-head axis is the kernel batch axis."
+        "LibTorch bridge dtype, device, contiguity, and element-count checks"
+    valueContract :=
+      ContractDescriptor.tested (.valueRefinement .attention)
+        "LibTorch attention with hard-mask zero numerators and zero fully blocked rows."
+        "NN.Tests.Runtime.Cuda.Attention"
+    vjpContract :=
+      ContractDescriptor.tested
+        (.vjpRefinement .attention .backendVJP)
+        "ATen operations evaluate the selected local VJP and return dQ, dK, and dV."
+        "NN.Tests.Runtime.Cuda.Attention"
+    numericalPolicy := { reduction := .implementationDefined } }
+
+/-- LibTorch CUDA primitive contracts. -/
 def capsules : Array KernelCapsule :=
-  #[ matmul
+  #[ attention
+  , matmul
   , linear
   , mseLoss
   , relu

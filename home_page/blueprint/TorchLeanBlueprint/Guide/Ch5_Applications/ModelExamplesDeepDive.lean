@@ -874,8 +874,7 @@ of the portable path's 4,193 stored numbers have zero data-loss gradient on fini
 An optimizer with weight decay or existing momentum can still change them; zero loss gradient is
 not the same as immutable state.
 
-The CUDA `Fno1dRfft` path allocates weights for the retained real-FFT bins and has a smaller
-parameter vector. Its checkpoint layout therefore differs from the full-spectrum model.
+CPU and GPU now use the same full-spectrum model and checkpoint layout.
 The full-spectrum construction supports any number of spatial axes with a uniform representation,
 at the cost of unused weight slices. For $`N=\prod_a n_a` spatial points, its full-grid dense
 reference takes
@@ -890,45 +889,22 @@ ninety-seven scalars belong to the lifting, pointwise branch, and projection. Th
 explains why a smaller retained-bin representation can change checkpoint size substantially
 without changing the external `[32] → [32]` contract.
 
-## CPU And CUDA Parameterizations
+## One Model Across Devices
 
-The Burgers application chooses between two representations behind the same typed input and
-output:
+The Burgers application uses the same
+{src "NN/API/Models/FNO.lean"}[`FNO constructor`] and shared trainer on CPU and GPU.
+Grid dimensions, retained frequency bands, activation, initialization, and parameter layout
+are independent of the selected device. There is no separate FNO-specific CUDA training loop.
 
-:::table +header
-*
-  * Property
-  * `--device cpu`
-  * `--device cuda`
-*
-  * spectral representation
-  * full spectrum, with an end-band mask
-  * retained real-FFT bins
-*
-  * execution
-  * generic trainer and portable per-axis transforms
-  * `Cuda.Fno1dRfft` tape runner and LibTorch operations
-:::
+The automatic spectral path composes per-axis Fourier transforms. CPU execution uses the
+portable transform implementation; supported GPU execution calls LibTorch. TorchLean still
+owns the tape, optimizer, and explicit gradient rules.
 
-The CUDA runner is
-{src "NN/Runtime/Autograd/Engine/Cuda/Fno1dRfft.lean"}[`Fno1dRfft`]. TorchLean builds the tape,
-retains the operands needed for backward, and applies its explicit gradient rules. The spectral
-buffer operation calls LibTorch's real FFT, complex matrix multiplication, and inverse real FFT;
-its backward operation also uses ATen computations. These calls do not construct a LibTorch
-autograd graph. The application reports this choice as `spectral path=ATen RFFT tape op`.
-
-The spectral parameterization and numerical provider both affect a comparison. Equal input and
-output types do not identify the learned weights or retained frequency set. The reusable
-{src "NN/API/Models/FNO.lean"}[`FNO constructor`] states grid and mode constraints independently
-of the backend, and the
-{src "NN/Examples/Models/Operators/Fno1dBurgers.lean"}[`Burgers application`] selects its runner.
-The native numerical behavior remains part of the LibTorch execution boundary.
-
-A controlled numerical comparison needs a correspondence between spectral parameter sets,
-aligned retained frequencies, the same initial field, and matching optimizer state. A speed
-comparison additionally needs matched workloads and measurements on the target device. The
-commands above provide entry points for those experiments; choosing CUDA alone establishes
-neither numerical agreement nor a speedup.
+Older runs of this example used a retained-bin real-FFT model on CUDA. That representation had
+different parameters; its weights are not interchangeable with this full-spectrum model.
+New CPU/GPU runs can share the model layout, but floating-point reduction order and rounding
+can still differ. Numerical comparisons need tolerances and aligned optimizer state; speed
+comparisons need matched workloads and measurements on the target device.
 
 # Application Coverage
 

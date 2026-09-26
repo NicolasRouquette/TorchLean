@@ -366,7 +366,7 @@ ones, while the output projection must contain zeros.
 -/
 def checkAttentionOutputProjectionInitializer : IO Unit := do
   let layer :=
-    Runtime.Autograd.Model.Layers.multiHeadAttention
+    Runtime.Autograd.Model.Layers.attention
       1 1 2 1 2 (sequenceLengthNonzero := by decide)
       (weightInitialization? := some .ones)
       (outputWeightInitialization? := some .zeros)
@@ -450,7 +450,7 @@ def evalConcatFixture (execution : Runtime.Autograd.Torch.ExecutionMode) :
   let b : Tensor Float [3] := Tensor.ofFn fun i => 10.0 + Float.ofNat i.val
   let aR ← Runtime.Autograd.Model.Session.const sess (sh := [2]) a
   let bR ← Runtime.Autograd.Model.Session.const sess (sh := [3]) b
-  let cR ← Runtime.Autograd.Model.Session.concatLeadingAxis sess
+  let cR ← Runtime.Autograd.Model.Session.concat sess
     (n := 2) (m := 3) (sh := .scalar) aR bR
   Runtime.Autograd.Model.Session.getValue sess (sh := [5]) cR
 
@@ -674,7 +674,7 @@ def checkBatchNormAgainstPyTorch
     return ()
   IO.FS.createDirAll workDir
   IO.FS.writeFile batchNormParityScriptPath batchNormParityScript
-  let out ← TorchLean.External.Process.runStdoutChecked
+  let out ← TorchLean.External.Process.run
     (ctx := "torchlean_ops_check: batchnorm pytorch parity")
     (cmd := "python3")
     (args := #[batchNormParityScriptPath.toString])

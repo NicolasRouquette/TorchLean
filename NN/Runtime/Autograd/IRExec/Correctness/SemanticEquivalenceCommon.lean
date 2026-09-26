@@ -184,39 +184,6 @@ theorem normalizeNodeOutput_mk_of_eq {α : Type} [TorchLean.Storage α] [Context
   subst h
   simp [NN.IR.Graph.normalizeNodeOutput, Pure.pure, Except.pure]
 
-/-!
-## Boolean Shape Equality Helpers
-
-The IR evaluator uses *boolean* equality/inequality checks on `Shape` (via `BEq Shape`) in a few
-places. For example, `evalAt`'s `.conv` case checks a computed output shape against the node's
-declared `outShape` using `!=` (rather than a propositional `≠`) because it is part of the
-runtime error-reporting path.
-
-In the proof layer we frequently have a propositional equality `s = t` and need to discharge such
-boolean guards. Since `BEq Shape` is defined as an explicit structural test (`Shape.areEqual`) and
-we do not globally assume `LawfulBEq Shape`, we prove the small bridge lemmas locally here.
--/
-
-/-- Reflexivity of the explicit structural boolean equality test `Shape.areEqual`. -/
-theorem shape_areEqual_refl (s : Shape) : Shape.areEqual s s = true := by
-  induction s with
-  | scalar => rfl
-  | dim n s ih =>
-      simp [Shape.areEqual, ih]
-
-/-- Reflexivity of `BEq Shape` (`==`). -/
-theorem shape_beq_refl (s : Shape) : (s == s) = true :=
-  beq_self_eq_true s
-
-/-- Reflexivity of boolean inequality (`!=`) on shapes. -/
-theorem shape_bne_refl (s : Shape) : (s != s) = false := by
-  simp [bne]
-
-/-- Propositional shape equality implies the boolean inequality guard `s != t` is false. -/
-theorem shape_bne_eq_false_of_eq {s t : Shape} (h : s = t) : (s != t) = false := by
-  cases h
-  exact shape_bne_refl s
-
 end IRExec
 end Autograd
 end Runtime

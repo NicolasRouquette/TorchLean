@@ -161,21 +161,12 @@ def step {α β : Type} [TorchLean.Storage α] [TorchLean.Storage β]
     (dataInputs : Arguments β dataInputShapes) (loss : Bool := false) :
     IO (match loss with
       | false => optimizer.State
-      | true => optimizer.State × Tensor α []) := by
-  cases loss with
-  | false =>
-      exact
-        Runtime.Autograd.Model.Module.Objective.step
-          (Internal.runtime module) optimizer optimizerState
-          (Arguments.Internal.toTensorPack inputs)
-          (Arguments.Internal.toTensorPack dataInputs)
-  | true =>
-      exact
-        Runtime.Autograd.Model.Module.Objective.step
-          (Internal.runtime module) optimizer optimizerState
-          (Arguments.Internal.toTensorPack inputs)
-          (Arguments.Internal.toTensorPack dataInputs)
-          (loss := true)
+      | true => optimizer.State × Tensor α []) :=
+  Runtime.Autograd.Model.Module.Objective.step
+    (Internal.runtime module) optimizer optimizerState
+    (Arguments.Internal.toTensorPack inputs)
+    (Arguments.Internal.toTensorPack dataInputs)
+    (loss := loss)
 
 /-- Try one backend-native mean-gradient update over a nonempty batch. -/
 def Internal.tryNativeBatchStep {α β : Type} [TorchLean.Storage α] [TorchLean.Storage β]

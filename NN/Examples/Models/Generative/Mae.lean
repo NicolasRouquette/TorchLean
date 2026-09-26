@@ -5,7 +5,7 @@ Authors: TorchLean Team
 
 Run:
   python3 scripts/datasets/download_example_data.py --cifar10
-  lake -R -K cuda=true exe torchlean mae --device cuda --steps 1 --n-total 1
+  scripts/lake.sh -Kcuda=true exe torchlean mae --device cuda --steps 1 --n-total 1
 -/
 
 module
@@ -144,7 +144,7 @@ Turn a typed CIFAR image batch into the compact MAE training sample.
 The input stays an image tensor with some patches zeroed out. The target is the original image
 flattened to a vector because the current decoder head predicts a batched matrix.
 -/
-def maskedAutoencoderSample
+def sample
     (b : Sample.Supervised Float
       [batchSize, modelConfig.encoder.inputChannels, cropHeight, cropWidth]
       [batchSize, RealData.cifarClasses]) :
@@ -170,22 +170,14 @@ def lossWeights {α : Type} [Storage α] [Context α] : Tensor α output :=
       (dataShape := [inputChannels, cropHeight, cropWidth]) maskBlocks maskPeriod maskOffset
 
 /-- Mean squared reconstruction error over hidden coordinates only. -/
-def hiddenReconstructionLoss {α : Type}
-    [Storage α] [Context α]
-    {m : Type → Type} [Monad m] [Runtime.Ops (m := m) (α := α)]
-    (prediction target : Runtime.ValueRef (m := m) (α := α) output) :
-    m (Runtime.ValueRef (m := m) (α := α) ([] : Shape)) := do
-  let weights ← TorchLean.Runtime.const
-    (m := m) (α := α) (s := output) (lossWeights (α := α))
-  Loss.mseWeighted (m := m) (α := α) (s := output) prediction target weights
-
-/-- Runtime-polymorphic form of `hiddenReconstructionLoss` for `Trainer`. -/
-def hiddenReconstructionLossProgram {α : Type}
+def loss {α : Type}
     [Storage α] [Context α] :
     Runtime.Program α [output, output] ([] : Shape) :=
-  fun {m} _ _ =>
-    fun prediction target =>
-      hiddenReconstructionLoss (m := m) (α := α) prediction target
+  fun {m} _ _ prediction target =>
+    show m (Runtime.ValueRef (m := m) (α := α) ([] : Shape)) from do
+      let weights ← TorchLean.Runtime.const
+        (m := m) (α := α) (s := output) (lossWeights (α := α))
+      Loss.mseWeighted (m := m) (α := α) (s := output) prediction target weights
 
 /--
 Public singleton dataset for masked-image reconstruction on one real CIFAR batch.
@@ -194,7 +186,7 @@ Like the compact vector generative examples, the sample itself is loaded as `Flo
 data boundary, then cast into the runtime-selected arithmetic representation by the public dataset
 constructor.
 -/
-def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset input output :=
+def data (flags : Support.Training.Options Support.Npy.Options) : Trainer.Dataset input output :=
   Data.defer do
     let sampleBatch ←
       RealData.loadCifarBatch exeName batchSize flags.data.nRows flags.data.seed
@@ -202,10 +194,10 @@ def data (flags : RealData.CifarModelTrainFlags) : Trainer.Dataset input output 
     let cropped ← CLI.orThrow exeName <|
       RealData.cropCifarBatch
         batchSize cropHeight cropWidth sampleBatch
-    CLI.orThrow exeName (maskedAutoencoderSample cropped)
+    CLI.orThrow exeName (sample cropped)
 
 /-- Train the compact MAE model with the public `Trainer` surface. -/
-def train (runtime : Runtime.Config) (flags : RealData.CifarModelTrainFlags) :
+def train (runtime : Runtime.Config) (flags : Support.Training.Options Support.Npy.Options) :
     IO (Trainer.Result input output) := do
   let mask := ssl.BlockMAE.hiddenMask
     (dataShape := [inputChannels, cropHeight, cropWidth]) maskBlocks maskPeriod maskOffset
@@ -220,13 +212,13 @@ def train (runtime : Runtime.Config) (flags : RealData.CifarModelTrainFlags) :
       Trainer.RunConfig.forObjective
         (Trainer.RunConfig.fromRuntime runtime
           { optimizer := optim.adam { learningRate := flags.training.learningRate } })
-        (.custom hiddenReconstructionLossProgram)
+        (.custom loss)
         (seed := flags.data.seed)
   trainer.train
     (data flags)
     (flags.training.trainOptions
       (logTitle := "MAE CIFAR masked reconstruction")
-      (logNotes := RealData.cifarClassifierNotes batchSize flags
+      (logNotes := RealData.trainingNotes "cifar10" batchSize flags
         #[s!"maskPeriod={maskPeriod}", s!"maskOffset={maskOffset}"]))
 
 /--
@@ -239,9 +231,10 @@ Useful flags:
 - `--log <path>` writes the standard TorchLean training log JSON.
 -/
 def main (args : List String) : IO UInt32 :=
-  TrainCommand.regressionNpy exeName args
-    (fun rest => RealData.CifarModelTrainFlags.parse exeName rest defaultLogPath 10 1e-3)
-    (Support.bannerWithDevice exeName "CIFAR masked reconstruction")
-    train
+  TrainCommand.npy exeName args
+    (fun rest => Support.Training.Options.parse exeName rest defaultLogPath 10 1e-3
+      (parseData := RealData.NpyDatasets.parseCifar))
+    (Support.banner exeName "CIFAR masked reconstruction")
+    train (fun result => result.printSummary)
 
 end NN.Examples.Models.Generative.Mae

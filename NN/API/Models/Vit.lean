@@ -74,6 +74,19 @@ def ViT.Config.encoder {d : Nat} (config : ViT.Config d) : ViT.EncoderConfig d :
 
 namespace ViT.EncoderConfig
 
+/-- Transformer block settings shared by encoder validation and construction. -/
+def block {d : Nat} (config : ViT.EncoderConfig d) : TransformerEncoder.Block.Config :=
+  { headCount := config.headCount
+    headWidth := config.headWidth
+    feedForwardWidth := config.feedForwardWidth
+    activation := .gelu
+    dropout? := config.dropout?
+    attentionDropout? := config.attentionDropout?
+    feedForwardDropout? := config.feedForwardDropout?
+    attentionInputBias := config.attentionInputBias
+    normalizeFirst := true
+    attentionOutputBias := true }
+
 /-- Validate patch extraction and the complete Transformer template before allocating parameters. -/
 def validate {d : Nat} (config : ViT.EncoderConfig d)
     (kind : String := "ViT") : Except String Unit := do
@@ -84,18 +97,7 @@ def validate {d : Nat} (config : ViT.EncoderConfig d)
   config.patchEmbedding.validate config.inputChannels config.spatial (kind := kind)
   if (config.patchEmbedding.outputSpatial config.spatial).prod = 0 then
     throw s!"{kind}: patch embedding must produce at least one patch"
-  let block : TransformerEncoder.Block.Config :=
-    { headCount := config.headCount
-      headWidth := config.headWidth
-      feedForwardWidth := config.feedForwardWidth
-      activation := .gelu
-      dropout? := config.dropout?
-      attentionDropout? := config.attentionDropout?
-      feedForwardDropout? := config.feedForwardDropout?
-      attentionInputBias := config.attentionInputBias
-      normalizeFirst := true
-      attentionOutputBias := true }
-  block.validate (kind := kind)
+  config.block.validate (kind := kind)
 
 end ViT.EncoderConfig
 
@@ -161,7 +163,7 @@ abbrev ViT.Config.outputShape {d : Nat} (config : ViT.Config d)
     (batchShape : Shape := []) : Shape :=
   batchShape.appendDim config.classCount
 
-namespace Internal
+namespace ViT.Internal
 
 /-- Implementation layer that turns a patch grid into a token sequence. -/
 def patchesToTokens {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := []) :
@@ -213,7 +215,7 @@ def prependClassToken {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Sha
               (show m (TorchLean.Runtime.ValueRef
                   (m := m) (α := α)
                   [1 + config.patchCount, config.patchEmbedding.outChannels]) from do
-              let result ← Runtime.Autograd.Torch.concatLeadingAxis
+              let result ← Runtime.Autograd.Torch.concat
                 (m := m) (α := α) classToken x
               return result) }
   by
@@ -243,7 +245,7 @@ def tokensToChannels {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shap
                     batchShape.rank x)) }
 
 /-- Implementation layer for mean-pool classification. -/
-def meanVitTokens {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := []) :
+def meanTokens {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := []) :
     Builder (Sequential (config.outputShape batchShape)
       (batchShape.appendDim config.patchEmbedding.outChannels)) := do
   let spatial : Tensor Nat [1] :=
@@ -259,7 +261,7 @@ def meanVitTokens {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape :
   pure (nn.compose![tokensToChannels config batchShape, pool])
 
 /-- Implementation layer for class-token classification. -/
-def firstVitToken {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := []) :
+def firstToken {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := []) :
     Sequential (config.outputShape batchShape)
       (batchShape.appendDim config.patchEmbedding.outChannels) :=
   if hSequence : config.sequenceLength = 0 then
@@ -284,7 +286,7 @@ def firstVitToken {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape :
                   (m := m) (α := α) [config.patchEmbedding.outChannels]) from do
                 have hOne : 0 + 1 ≤ config.sequenceLength := by
                   simpa using Nat.one_le_iff_ne_zero.mpr hSequence
-                let row ← Runtime.Autograd.Torch.sliceLeadingAxisRange
+                let row ← Runtime.Autograd.Torch.slice
                   (m := m) (α := α) 0 1 hOne x
                 Runtime.Autograd.Torch.reshape
                   (m := m) (α := α)
@@ -295,7 +297,7 @@ def firstVitToken {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape :
       simpa only [ViT.EncoderConfig.outputShape, Shape.appendDim_eq_concat] using
         nn.mapLeading batchShape core
 
-end Internal
+end ViT.Internal
 
 /--
 Build the patch and Transformer portion of a vision transformer.
@@ -324,7 +326,7 @@ def vitEncoder {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := [
         | .cls => by
             simpa [ViT.EncoderConfig.outputShape, ViT.EncoderConfig.sequenceLength,
               ViT.EncoderConfig.prefixLength, hPooling] using
-              Internal.prependClassToken config batchShape
+              ViT.Internal.prependClassToken config batchShape
       let positions ← learnedPositionalEmbedding batchShape
         (sequenceLength := config.sequenceLength)
         (embeddingWidth := config.patchEmbedding.outChannels)
@@ -332,17 +334,7 @@ def vitEncoder {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := [
         (sequenceLength := config.sequenceLength)
         (modelWidth := config.patchEmbedding.outChannels)
         { layerCount := config.layerCount
-          block :=
-            { headCount := config.headCount
-              headWidth := config.headWidth
-              feedForwardWidth := config.feedForwardWidth
-              activation := .gelu
-              dropout? := config.dropout?
-              attentionDropout? := config.attentionDropout?
-              feedForwardDropout? := config.feedForwardDropout?
-              attentionInputBias := config.attentionInputBias
-              normalizeFirst := true
-              attentionOutputBias := true } }
+          block := config.block }
         (batchShape := batchShape)
       let encoder : Sequential
           (config.outputShape batchShape) (config.outputShape batchShape) := by
@@ -355,7 +347,7 @@ def vitEncoder {d : Nat} (config : ViT.EncoderConfig d) (batchShape : Shape := [
         simpa [ViT.EncoderConfig.outputShape, Shape.appendDim_appendDim_eq_concat] using
           builtNormalization
       pure <| patchEmbedding >>>
-        nn.Sequential.fromLayer (Internal.patchesToTokens config batchShape) >>>
+        nn.Sequential.fromLayer (ViT.Internal.patchesToTokens config batchShape) >>>
         tokenPrefix >>> positions >>> encoder >>> normalization
 
 /-- Build a vision Transformer encoder followed by a linear classifier. -/
@@ -372,8 +364,8 @@ def vit {d : Nat} (config : ViT.Config d) (batchShape : Shape := []) :
           (encoderConfig.outputShape batchShape)
           (batchShape.appendDim encoderConfig.patchEmbedding.outChannels) ←
         match encoderConfig.pooling with
-        | .mean => Internal.meanVitTokens encoderConfig batchShape
-        | .cls => pure (Internal.firstVitToken encoderConfig batchShape)
+        | .mean => ViT.Internal.meanTokens encoderConfig batchShape
+        | .cls => pure (ViT.Internal.firstToken encoderConfig batchShape)
       let classifier ←
         linear encoderConfig.patchEmbedding.outChannels config.classCount
           (batchShape := batchShape)

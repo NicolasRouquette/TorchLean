@@ -373,30 +373,6 @@ attribute [grind =] size_appendDim
 def toArray (s : Shape) : Array Nat :=
   toList s |>.toArray
 
-/-- Boolean structural equality test for shapes.
-
-`BEq Shape` is the lawful instance on `List Nat`. This explicit recursive test is kept for code that
-wants to inspect the comparison directly. -/
-def areEqual : Shape → Shape → Bool
-  | .scalar, .scalar => true
-  | .dim n1 s1, .dim n2 s2 => n1 == n2 && areEqual s1 s2
-  | _, _ => false
-
-/-- The structural test agrees with propositional equality. -/
-@[simp] theorem areEqual_eq_true_iff : ∀ {s t : Shape}, areEqual s t = true ↔ s = t
-  | .scalar, .scalar => by simp [areEqual]
-  | .scalar, .dim _ _ => by simp [areEqual]
-  | .dim _ _, .scalar => by simp [areEqual]
-  | .dim n1 s1, .dim n2 s2 => by
-      simp [areEqual, areEqual_eq_true_iff (s := s1) (t := s2)]
-
-/-- The structural test is the derived boolean equality. -/
-theorem areEqual_eq_beq (s t : Shape) : areEqual s t = (s == t) := by
-  by_cases h : s = t
-  · subst h
-    exact (areEqual_eq_true_iff.mpr rfl).trans (beq_self_eq_true s).symm
-  · rw [Bool.eq_iff_iff, areEqual_eq_true_iff, beq_iff_eq]
-
 /-- Get dimension at index `i` (0‑based), or `none` if out of bounds. -/
 def getDim : Shape → Nat → Option Nat
   | .scalar, _ => none

@@ -36,8 +36,8 @@ This is enough to checkpoint any TorchLean runtime model implemented as a
 `TorchLean.Module.Objective` over native `Float32` or binary64 `Float`, independent of
 architecture.
 
-Results of `Trainer.train` use `Checkpoint.State`: `trained.save path` writes the trained state as
-`Float` tensors and `trainer.load path data` restores it.
+Results of `Trainer.train` use `Checkpoint.State`: `trained.save path` preserves the trained
+state's scalar encoding. `Session.load` restores a checkpoint into a compatible training session.
 
 Explicit immutable `nn.State α` checkpoints use `Checkpoint.Encoding α`. Instances preserve exact
 bits for `Float`, `Float32`, and configured binary formats, including arbitrary supported widths.

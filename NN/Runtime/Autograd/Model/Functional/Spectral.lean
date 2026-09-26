@@ -34,27 +34,27 @@ namespace Fourier
 def padFrequencies {modes frequencies width : Nat} (h : modes ≤ frequencies)
     (x : RefTy m α [modes, width]) : m (RefTy m α [frequencies, width]) := do
   let zeros ← const (Tensor.zeros (α := α) [frequencies - modes, width])
-  let padded ← concatLeadingAxis x zeros
+  let padded ← concat x zeros
   pure (by simpa [Nat.add_sub_of_le h] using padded)
 
 /--
-Dense reference for the cuFFT spectral primitive, with exactly the same weight layout.
+Dense reference for one-sided spectral convolution, with the native operation's weight layout.
 
 The four real matrix products implement ordinary complex multiplication, without conjugating the
 weight. Padding occurs after that multiplication, so discarded frequencies have no parameters.
 -/
-def spectralConv1dRfftReference {grid width modes : Nat} (hmodes : modes ≤ grid / 2 + 1)
+def spectralConv {grid width modes : Nat} (hmodes : modes ≤ grid / 2 + 1)
     (x : RefTy m α [grid, width])
     (realWeight imagWeight : RefTy m α [modes, width, width]) :
     m (RefTy m α [grid, width]) := do
   let channels ← swapAdjacentAtDepth 0 x
-  let transformed ← rfft1dReference channels
+  let transformed ← rfft channels
   let realChannels ← select 2 transformed ⟨0, by change 0 < 2; decide⟩
   let imagChannels ← select 2 transformed ⟨1, by change 1 < 2; decide⟩
   let realFrequencies ← swapAdjacentAtDepth 0 realChannels
   let imagFrequencies ← swapAdjacentAtDepth 0 imagChannels
-  let realModes ← sliceLeadingAxisRange 0 modes (by omega) realFrequencies
-  let imagModes ← sliceLeadingAxisRange 0 modes (by omega) imagFrequencies
+  let realModes ← slice 0 modes (by omega) realFrequencies
+  let imagModes ← slice 0 modes (by omega) imagFrequencies
   let realRows ← reshape (s₂ := [modes, 1, width]) realModes
     (by simp [Shape.eraseAxis, Shape.size])
   let imagRows ← reshape (s₂ := [modes, 1, width]) imagModes
@@ -77,11 +77,11 @@ def spectralConv1dRfftReference {grid width modes : Nat} (hmodes : modes ≤ gri
     (by simp [Shape.size])
   let imagPlane ← reshape (s₂ := [1, grid / 2 + 1, width]) imagPadded
     (by simp [Shape.size])
-  let planes ← concatLeadingAxis realPlane imagPlane
+  let planes ← concat realPlane imagPlane
   let frequencyPlanes ← swapAdjacentAtDepth 0 planes
   let frequencyChannels ← swapAdjacentAtDepth 1 frequencyPlanes
   let packed ← swapAdjacentAtDepth 0 frequencyChannels
-  let result ← irfft1dReference (n := grid) packed
+  let result ← irfft (n := grid) packed
   swapAdjacentAtDepth 0 result
 
 end Fourier
@@ -93,7 +93,7 @@ Inputs and outputs have shape `[grid, width]`; real and imaginary weights both h
 `[modes, width, width]`. `denseReference` and `automatic` can share a checkpoint directly.
 The arbitrary-rank full-DFT FNO uses a different parameterization and cannot share these weights.
 -/
-def spectralConv1dRfft {grid width modes : Nat}
+def spectralConv {grid width modes : Nat}
     (_hgrid : 0 < grid) (_hwidth : 0 < width) (hmodes : modes ≤ grid / 2 + 1)
     (x : RefTy m α [grid, width])
     (realWeight imagWeight : RefTy m α [modes, width, width])
@@ -102,6 +102,6 @@ def spectralConv1dRfft {grid width modes : Nat}
     if let some native :=
         _root_.Runtime.Autograd.Torch.Ops.spectralConv1dRfftNative? (m := m) (α := α) then
       if let some result ← native x realWeight imagWeight then return result
-  Fourier.spectralConv1dRfftReference hmodes x realWeight imagWeight
+  Fourier.spectralConv hmodes x realWeight imagWeight
 
 end Runtime.Autograd.Model.F

@@ -137,12 +137,12 @@ private partial def rearrangePullProgram? (expression : Expr) :
         (combinedMap, sourceTensor, combinedNormalized, hNormalized)
     return some (coordinateMap, inputTensor, normalized, hNormalized)
   else if expression.isAppOfArity
-      ``Lowering.transformTensorFused 8 then
+      ``Lowering.transformTensorFused 9 then
     let arguments := expression.getAppArgs
-    let checked := arguments[2]!
-    let hAxes := arguments[3]!
-    let inputMap := arguments[4]!
-    let inputTensor := arguments[7]!
+    let checked := arguments[3]!
+    let hAxes := arguments[4]!
+    let inputMap := arguments[5]!
+    let inputTensor := arguments[8]!
     let checkedMap ←
       mkAppM ``Check.CheckedTransform.inputCoordinateOfOutput #[
         checked, hAxes]
@@ -152,7 +152,7 @@ private partial def rearrangePullProgram? (expression : Expr) :
       mkAppM ``Rep.pull #[coordinateMap, inputTensor]
     let hNormalized ←
       mkAppM ``Lowering.transformTensorFused_correct #[
-        checked, hAxes, inputMap, arguments[5]!, arguments[6]!, inputTensor]
+        checked, hAxes, inputMap, arguments[6]!, arguments[7]!, inputTensor]
     return some (coordinateMap, inputTensor, normalized, hNormalized)
   else
     return none
@@ -162,7 +162,7 @@ open Elab.Impl (checkedTransformShapes)
 
 /-- Recover the scalar type of a native tensor expression. -/
 private def tensorScalarType (inputTensor : Expr) : MetaM Expr := do
-  let inputType ← inferType inputTensor
+  let inputType ← withTransparency .reducible <| whnf (← inferType inputTensor)
   unless inputType.isAppOfArity ``Rep 3 do
     throwError "expected a tensor input"
   let arguments := inputType.getAppArgs
@@ -173,14 +173,14 @@ private def tensorScalarType (inputTensor : Expr) : MetaM Expr := do
 
 /-- Recover the static shape of a native tensor expression. -/
 private def tensorShape (inputTensor : Expr) : MetaM Expr := do
-  let inputType ← inferType inputTensor
+  let inputType ← withTransparency .reducible <| whnf (← inferType inputTensor)
   unless inputType.isAppOfArity ``Rep 3 do
     throwError "expected a tensor input"
   return inputType.getAppArgs[1]!
 
 /-- Recover the physical storage selected for a native tensor expression. -/
 private def tensorStorage (inputTensor : Expr) : MetaM Expr := do
-  let inputType ← inferType inputTensor
+  let inputType ← withTransparency .reducible <| whnf (← inferType inputTensor)
   unless inputType.isAppOfArity ``Rep 3 do
     throwError "expected a tensor input"
   return inputType.getAppArgs[2]!
@@ -963,6 +963,7 @@ syntax (name := einopsTactic) "einops" : tactic
 
 elab_rules : tactic
   | `(tactic| einops) => do
+      evalTactic (← `(tactic| dsimp only [id, Rep.castShape]))
       unless ← closeFusedPullbacks do
         unless ← closeEquivalentRearrangements do
           let normalizeUnpack ← withMainContext do

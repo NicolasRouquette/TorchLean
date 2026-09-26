@@ -126,8 +126,6 @@ UNAVAILABLE(lean_obj_res, torchlean_cuda_smooth_maxpool_fwd,
 UNAVAILABLE(lean_obj_res, torchlean_cuda_smooth_maxpool_bwd,
     b_lean_obj_arg inputObj, b_lean_obj_arg gradObj, double beta, b_lean_obj_arg inSpatialObj,
     b_lean_obj_arg kernelObj, b_lean_obj_arg strideObj, b_lean_obj_arg paddingObj, uint32_t inC)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_sigmoid, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_tanh, b_lean_obj_arg BObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_reduce_sum_by_row,
     b_lean_obj_arg BObj, uint32_t rows, uint32_t cols)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_reduce_max_by_column,
@@ -209,43 +207,39 @@ UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_bernoulli_mask,
     uint32_t n, double keepProb, uint64_t key)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_of_float_array, b_lean_obj_arg AObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_to_float_array, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_abs, b_lean_obj_arg BObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_abs_bwd, b_lean_obj_arg XObj, b_lean_obj_arg GObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_sqrt, b_lean_obj_arg BObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_sqrt_bwd, b_lean_obj_arg XObj, b_lean_obj_arg GObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_exp, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_sin, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_cos, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_log, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_inv, b_lean_obj_arg BObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_clamp, b_lean_obj_arg BObj, double lo, double hi)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_clamp_bwd,
     b_lean_obj_arg XObj, b_lean_obj_arg GObj, double lo, double hi)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_max, b_lean_obj_arg AObj, b_lean_obj_arg BObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_max_bwd,
     b_lean_obj_arg AObj, b_lean_obj_arg BObj, b_lean_obj_arg GObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_min, b_lean_obj_arg AObj, b_lean_obj_arg BObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_min_bwd,
     b_lean_obj_arg AObj, b_lean_obj_arg BObj, b_lean_obj_arg GObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_div, b_lean_obj_arg AObj, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_relu, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_relu_bwd, b_lean_obj_arg XObj, b_lean_obj_arg GObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_gelu, b_lean_obj_arg XObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_gelu_bwd, b_lean_obj_arg XObj, b_lean_obj_arg GObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_add, b_lean_obj_arg AObj, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_sub, b_lean_obj_arg AObj, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_mul, b_lean_obj_arg AObj, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_scale, b_lean_obj_arg BObj, double c)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_copy_and_release, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_axpy,
-    b_lean_obj_arg AObj, b_lean_obj_arg BObj, double c)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_adam_step,
     b_lean_obj_arg ParametersObj, b_lean_obj_arg GradientObj, b_lean_obj_arg FirstMomentObj,
     b_lean_obj_arg SecondMomentObj, double beta1, double oneMinusBeta1, double beta2,
     double oneMinusBeta2, double firstMomentCorrection, double secondMomentCorrection,
     double epsilon, double decay, double updateScale)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_scaled_prod_exp,
-    b_lean_obj_arg AObj, b_lean_obj_arg BObj, double c)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_reduce_sum, b_lean_obj_arg BObj)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_reduce_mean, b_lean_obj_arg BObj)
+// The same list generates the signatures for both backend configurations.
+#define TORCHLEAN_UNARY_EXPORT(NAME, EXPRESSION) \
+  UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_##NAME, b_lean_obj_arg x)
+#define TORCHLEAN_BINARY_EXPORT(NAME, EXPRESSION) \
+  UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_##NAME, b_lean_obj_arg a, b_lean_obj_arg b)
+#define TORCHLEAN_UNARY_SCALAR_EXPORT(NAME, EXPRESSION) \
+  UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_##NAME, b_lean_obj_arg x, double scalar)
+#define TORCHLEAN_BINARY_SCALAR_EXPORT(NAME, EXPRESSION) \
+  UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_##NAME, \
+      b_lean_obj_arg a, b_lean_obj_arg b, double scalar)
+#define TORCHLEAN_VJP_EXPORT(NAME, EXPRESSION) \
+  TORCHLEAN_BINARY_EXPORT(NAME##_bwd, EXPRESSION)
+
+#include "operations.h"
+
+#undef TORCHLEAN_VJP_EXPORT
+#undef TORCHLEAN_BINARY_SCALAR_EXPORT
+#undef TORCHLEAN_UNARY_SCALAR_EXPORT
+#undef TORCHLEAN_BINARY_EXPORT
+#undef TORCHLEAN_UNARY_EXPORT
 #undef UNAVAILABLE

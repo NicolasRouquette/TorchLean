@@ -766,10 +766,10 @@ def elabReduce : TermElab := fun stx expectedType? => withRef stx do
       hLogicalSemantic) := nativeReaderData
     let nativeResult? ←
       match concreteChecked? with
-      | some checkedValue =>
+      | some _ =>
           Impl.compileNativeReduceFold? step initial finish checked
             hKind logicalTensor tensor hLogicalSemantic read hRead
-            sourceTensor inputFlatMap checkedValue
+            sourceTensor inputFlatMap
       | none => pure none
     match nativeResult? with
     | some nativeResult => pure nativeResult
