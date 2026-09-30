@@ -145,12 +145,6 @@ private theorem normalization_broadcastChannel_apply {channels : Nat} {spatial :
   rw [Spec.get2_eq_apply, hcoord, hchannel] at h
   exact h
 
-private theorem normalization_sqrt_max_zero (x : ℝ) : Real.sqrt (max x 0) = Real.sqrt x := by
-  by_cases hx : 0 ≤ x
-  · rw [max_eq_left hx]
-  · rw [max_eq_right (le_of_not_ge hx), Real.sqrt_zero,
-      Real.sqrt_eq_zero_of_nonpos (le_of_not_ge hx)]
-
 /-- The coordinate formula for the actual inference specification, including variance clamping. -/
 theorem batchNormInference_normalization_apply {channels : Nat} {spatial : Shape}
     (x : Tensor ℝ (.dim channels spatial)) (mean variance gamma beta : Tensor ℝ [channels])
@@ -174,7 +168,7 @@ theorem batchNormInference_normalization_apply {channels : Nat} {spatial : Shape
     normalization_broadcastChannel_apply beta i c,
     normalization_broadcastChannel_apply (Tensor.maxSpec variance (Tensor.full [channels] 0)) i c,
     getScalar_maxSpec, Tensor.getScalar_full]
-  rw [normalization_sqrt_max_zero]
+  rw [← Real.sq_sqrt', Real.sqrt_sq (Real.sqrt_nonneg _)]
 
 variable {α : Type} [Storage α] [Context α] [BoundOps α] [LawfulBoundOps α]
 
@@ -197,7 +191,7 @@ def batchNormRealValue (leading spatial : Shape) (config : NN.IR.BatchNormEvalPa
       (Tensor.ofFn fun i => value (config.gamma.getScalar i))
       (Tensor.ofFn fun i => value (config.beta.getScalar i))
       (value config.eps))
-    (tensorOfFlatValues (leading.concat (.dim config.c spatial)) f)
+    (realTensor (leading.concat (.dim config.c spatial)) f)
 
 /-- The mathematical BatchNorm node equation does not mention interval boxes. -/
 def BatchNormRealEquation (s : Shape) (axis : Nat) (config : NN.IR.BatchNormEvalParams α)
@@ -251,7 +245,7 @@ theorem BatchNormRealEquation.apply {s : Shape} {axis : Nat}
     simpa only [c, Shape.Coord.linearize_unlinearize] using
       axisCoordinateOfFlat_normalizationChannel leading spatial config.c c
   have h := heq leading spatial rfl rfl c
-  simpa only [batchNormRealValue, batchNorm_mapLeading_apply, tensorOfFlatValues_apply,
+  simpa only [batchNormRealValue, batchNorm_mapLeading_apply, realTensor_apply,
     c, Shape.Coord.linearize_unlinearize, hchannel] using h
 
 variable [NonlinearBoundOps α] [LawfulNonlinearBoundOps α]
@@ -292,7 +286,7 @@ theorem ibpBatchNormEval?_encloses {s : Shape} {axis : Nat}
             Real.sqrt (max (value (config.var.getScalar ci)) 0 + value config.eps) ∧
           Real.sqrt (max (value (config.var.getScalar ci)) 0 + value config.eps) ≤
             value (parameters ci).2.2.2.2 := by
-      have hc := traverseFin_eq_some_iff.mp hparameters ci
+      have hc := Tensor.Internal.sequenceFinM_get_of_eq_some hparameters ci
       obtain ⟨_, _, hc⟩ := Option.bind_eq_some_iff.mp hc
       obtain ⟨_, _, hc⟩ := Option.bind_eq_some_iff.mp hc
       obtain ⟨_, _, hc⟩ := Option.bind_eq_some_iff.mp hc
@@ -324,7 +318,7 @@ theorem ibpBatchNormEval?_encloses {s : Shape} {axis : Nat}
     have hci : axisCoordinateOfFlat s axis i.val % config.c < config.c :=
       Nat.mod_lt _ hcpos
     let ci : Fin config.c := ⟨axisCoordinateOfFlat s axis i.val % config.c, hci⟩
-    have hpoint := traverseFin_eq_some_iff.mp hbounds i
+    have hpoint := Tensor.Internal.sequenceFinM_get_of_eq_some hbounds i
     simp only [dite_eq_left hci] at hpoint
     have hparam := hp ci
     rcases hpc : parameters ci with ⟨mean, scale, bias, denominatorLo, denominatorHi⟩

@@ -23,9 +23,7 @@ The nonzero-axis branch validates each parent exactly as `NN.IR.Graph.permuteSom
 records that evidence in `ConcatFrontInput`, so the correctness proof can replay the evaluator's
 permutation on every parent.
 
-Each operation has its own small `lower*` definition. `lowerShape` only dispatches on the operation
-kind, and the `lowerShape_*` equation lemmas let correctness proofs reduce a dispatch to the branch
-they care about without unfolding the whole dispatcher.
+Each operation has a named lowerer, called directly by the exhaustive `lowerNode` dispatch.
 -/
 
 @[expose] public section
@@ -384,40 +382,6 @@ def lowerTranspose {α : Type} [TorchLean.Storage α] [Context α]
       else
         throw s!"IRExec: node {i}: transpose lowering mismatch ({n.summary})"
   | _ => throw s!"IRExec: node {i}: transpose expects 1 parent ({n.summary})"
-
-/-- Checked lowering for permutations, reshaping, flattening, concatenation, and transpose. -/
-def lowerShape {α : Type} [TorchLean.Storage α] [Context α]
-    {Γ : List Shape} (ctx : NodeLoweringContext α Γ) (kind : OpKind) :
-    NodeLoweringResult ctx :=
-  match kind with
-  | .permute perm => lowerPermute ctx perm
-  | .reshape inS outS => lowerReshape ctx inS outS
-  | .flatten s => lowerFlatten ctx s
-  | .concat axis => lowerConcat ctx axis
-  | .transpose axis₁ axis₂ => lowerTranspose ctx axis₁ axis₂
-  | _ => throw s!"IRExec: internal error: operation routed to lowerShape"
-
-variable {α : Type} [TorchLean.Storage α] [Context α] {Γ : List Shape}
-
-/-- Dispatch equation for `.permute perm`. -/
-@[simp] theorem lowerShape_permute (ctx : NodeLoweringContext α Γ) (perm : Array Nat) :
-    lowerShape ctx (.permute perm) = lowerPermute ctx perm := rfl
-
-/-- Dispatch equation for `.reshape inS outS`. -/
-@[simp] theorem lowerShape_reshape (ctx : NodeLoweringContext α Γ) (inS outS : Shape) :
-    lowerShape ctx (.reshape inS outS) = lowerReshape ctx inS outS := rfl
-
-/-- Dispatch equation for `.flatten s`. -/
-@[simp] theorem lowerShape_flatten (ctx : NodeLoweringContext α Γ) (s : Shape) :
-    lowerShape ctx (.flatten s) = lowerFlatten ctx s := rfl
-
-/-- Dispatch equation for `.concat axis`. -/
-@[simp] theorem lowerShape_concat (ctx : NodeLoweringContext α Γ) (axis : Nat) :
-    lowerShape ctx (.concat axis) = lowerConcat ctx axis := rfl
-
-/-- Dispatch equation for `.transpose axis₁ axis₂`. -/
-@[simp] theorem lowerShape_transpose (ctx : NodeLoweringContext α Γ) (axis₁ axis₂ : Nat) :
-    lowerShape ctx (.transpose axis₁ axis₂) = lowerTranspose ctx axis₁ axis₂ := rfl
 
 end Internal
 end IRExec

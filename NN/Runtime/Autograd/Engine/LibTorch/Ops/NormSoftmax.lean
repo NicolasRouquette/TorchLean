@@ -167,19 +167,27 @@ This covers:
 - 3D batched softmax (`(batch, rows, cols)`) by folding `batch*rows` into `rows`.
 -/
 
-/-- Record a last-axis softmax on the tape, returning the extended tape and the new node id. -/
-@[inline] def softmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
+/--
+Record a row operation whose VJP uses the saved output.
+
+The scalar forward function runs only after input validation. Empty tensors are copied; for
+non-scalar, nonempty tensors, row-dimension validation precedes input lookup.
+-/
+@[inline] def Internal.rowOpLast {s : Shape} (t : Tape) (opName : String) (xId : Nat)
+    (scalarForward : Unit → Buffer)
+    (forward : Buffer → UInt32 → UInt32 → Buffer.WithWorkspace)
+    (backward : Buffer → Buffer → UInt32 → UInt32 → Buffer) : Result (Tape × Nat) := do
   -- With no coordinates, both the result and its cotangent have the same empty shape.
   if Shape.size s == 0 then
-    return ← unary t "softmax" xId s s Buffer.copy (fun _ gradient => Buffer.copy gradient)
+    return ← unary t opName xId s s Buffer.copy (fun _ gradient => Buffer.copy gradient)
   match s with
   | .scalar =>
       let _x ← requireValue (t := t) xId Shape.scalar
       let one32 : UInt32 := 1
-      let one := Buffer.full one32 1.0
+      let y := scalarForward ()
       let node : Node :=
-        { name := some "softmax"
-          value := { s := Shape.scalar, buf := one }
+        { name := some opName
+          value := { s := Shape.scalar, buf := y }
           requiresGrad := (t.getNode? xId).any (·.requiresGrad)
           parents := #[xId]
           backward := fun dLdyAny => do
@@ -190,53 +198,29 @@ This covers:
   | _ =>
       let (rows32, cols32) ← foldRowsColsLastAxis s
       let x ← requireValue (t := t) xId s
-      let yOwned := rowSoftmaxForward x rows32 cols32
+      let yOwned := forward x rows32 cols32
       let y := yOwned.releaseWorkspaceThen yOwned.value
       let node : Node :=
-        { name := some "softmax"
+        { name := some opName
           value := { s := s, buf := y }
           requiresGrad := (t.getNode? xId).any (·.requiresGrad)
           parents := #[xId]
           backward := fun dLdyAny => do
             let dLdy ← requireGrad dLdyAny s
-            let dx := rowSoftmaxBwd y dLdy.buf rows32 cols32
+            let dx := backward y dLdy.buf rows32 cols32
             pure #[(xId, { s := s, buf := dx })] }
       pure (t.addNode node)
 
+/-- Record a last-axis softmax on the tape, returning the extended tape and the new node id. -/
+@[inline] def softmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
+  Internal.rowOpLast (s := s) t "softmax" xId (fun () => Buffer.full 1 1.0)
+    rowSoftmaxForward rowSoftmaxBwd
+
 /-- Stable log-softmax along the last axis, implemented directly on CUDA buffers. -/
-@[inline] def logSoftmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  if Shape.size s == 0 then
-    return ← unary t "log_softmax" xId s s Buffer.copy (fun _ gradient => Buffer.copy gradient)
-  match s with
-  | .scalar =>
-      let _x ← requireValue (t := t) xId Shape.scalar
-      let one32 : UInt32 := 1
-      let zero := Buffer.zeros one32
-      let node : Node :=
-        { name := some "log_softmax"
-          value := { s := Shape.scalar, buf := zero }
-          requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-          parents := #[xId]
-          backward := fun dLdyAny => do
-            let _ ← requireGrad dLdyAny Shape.scalar
-            let dx := Buffer.zeros one32
-            pure #[(xId, { s := Shape.scalar, buf := dx })] }
-      pure (t.addNode node)
-  | _ =>
-      let (rows32, cols32) ← foldRowsColsLastAxis s
-      let x ← requireValue (t := t) xId s
-      let yOwned := rowLogSoftmaxForward x rows32 cols32
-      let y := yOwned.releaseWorkspaceThen yOwned.value
-      let node : Node :=
-        { name := some "log_softmax"
-          value := { s := s, buf := y }
-          requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-          parents := #[xId]
-          backward := fun dLdyAny => do
-            let dLdy ← requireGrad dLdyAny s
-            let dx := rowLogSoftmaxBwd y dLdy.buf rows32 cols32
-            pure #[(xId, { s := s, buf := dx })] }
-      pure (t.addNode node)
+@[inline] def logSoftmaxLast {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
+  Internal.rowOpLast (s := s) t "log_softmax" xId (fun () => Buffer.zeros 1)
+    rowLogSoftmaxForward rowLogSoftmaxBwd
+
 end Tape
 
 end LibTorch

@@ -53,8 +53,8 @@ The checked RL helpers below are intentionally written in terms of a few small �
 combinators (`checkedAdd`, `checkedMul`, …). Larger routines (GAE, PPO objectives, …) remain
 readable while still producing *precise* error locations when non-finite values occur.
 
-Exponential and logarithm use FloatLib's configured deterministic approximations. Their checks
-reject nonfinite results; they do not certify correct rounding or a real-error bound.
+Exponential uses FloatLib's configured deterministic approximation. Its check rejects nonfinite
+results; it does not certify correct rounding or a real-error bound.
 -/
 
 /-- Checked configured binary32 addition. -/
@@ -78,30 +78,9 @@ def checkedMul (label : String) (x y : Binary 8 23) : Except String (Binary 8 23
   | .ok _ => .ok z
   | .error e => .error e
 
-/-- Checked configured binary32 division. -/
-def checkedDiv (label : String) (x y : Binary 8 23) : Except String (Binary 8 23) :=
-  let z := ExecFloat.div x y
-  match requireFinite label z with
-  | .ok _ => .ok z
-  | .error e => .error e
-
 /-- Approximate `eˣ` in binary32 and reject a nonfinite result. -/
 def checkedExp (label : String) (x : Binary 8 23) : Except String (Binary 8 23) :=
   let z := FloatLib.Floats.ExecFloat.Binary.exp x
-  match requireFinite label z with
-  | .ok _ => .ok z
-  | .error e => .error e
-
-/-- Approximate the natural logarithm in binary32 and reject a nonfinite result. -/
-def checkedLog (label : String) (x : Binary 8 23) : Except String (Binary 8 23) :=
-  let z := FloatLib.Floats.ExecFloat.Binary.log x
-  match requireFinite label z with
-  | .ok _ => .ok z
-  | .error e => .error e
-
-/-- Checked configured binary32 square root. -/
-def checkedSqrt (label : String) (x : Binary 8 23) : Except String (Binary 8 23) :=
-  let z := (Binary.sqrtWithRounding (rounding := .nearestEven)) x
   match requireFinite label z with
   | .ok _ => .ok z
   | .error e => .error e
@@ -194,43 +173,29 @@ theorem discountedBackup_eq_ok
     | false =>
         -- If the first intermediate is not finite, the checked routine must return `.error _`,
         -- contradicting `h`.
-        have : False := by
-          have h' := h
-          simp [discountedBackupChecked, checkedMul, requireFinite, mask, t1, hft1] at h'
-        exact this.elim
+        simp [discountedBackupChecked, checkedMul, requireFinite, mask, t1, hft1] at h
 
   have ht2 : Binary.isFinite t2 = true := by
     cases hft2 : Binary.isFinite t2 with
     | true =>
         rfl
     | false =>
-        have : False := by
-          have h' := h
-          simp [discountedBackupChecked, checkedMul, requireFinite, mask, t1, t2, ht1, hft2] at h'
-        exact this.elim
+        simp [discountedBackupChecked, checkedMul, requireFinite, mask, t1, t2, ht1, hft2] at h
 
   have hout0 : Binary.isFinite out0 = true := by
     cases hfout : Binary.isFinite out0 with
     | true =>
         rfl
     | false =>
-        have : False := by
-          have h' := h
-          simp [discountedBackupChecked, checkedMul, checkedAdd, requireFinite,
-            mask, t1, t2, out0, ht1, ht2, hfout] at h'
-        exact this.elim
+        simp [discountedBackupChecked, checkedMul, checkedAdd, requireFinite,
+          mask, t1, t2, out0, ht1, ht2, hfout] at h
 
   -- If all checks passed, the routine returns the plain `discountedBackup` expression.
   have hout : out = out0 := by
     have : discountedBackupChecked reward gamma bootstrap done = .ok out0 := by
       simp [discountedBackupChecked, checkedMul, checkedAdd, requireFinite, mask, t1, t2, out0,
         ht1, ht2, hout0]
-    -- Both `h` and `this` identify the return value; compare them by constructor injection.
-    have hok : (Except.ok out : Except String (Binary 8 23)) = Except.ok out0 := by
-      exact h.symm.trans this
-    have : out = out0 := by
-      injection hok
-    exact this
+    exact Except.ok.inj (h.symm.trans this)
 
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- First intermediate is exactly `mul gamma mask`.
@@ -239,12 +204,7 @@ theorem discountedBackup_eq_ok
     simpa [t2, t1, mask] using ht2
   · -- Output intermediate.
     simpa [out0, t2, t1, mask] using hout0
-  · -- Result equality.
-    -- `out0` is definitionally the spec-layer discounted backup.
-    have : out0 = discountedBackup (α := Binary 8 23) reward gamma bootstrap done := by
-      -- After unfolding the local abbreviations, this is definitional.
-      rfl
-    simp [hout, this]
+  · exact hout
 
 /--
 Checked fixed-horizon discounted returns (no `done` flags), specialized to `Binary 8 23`.

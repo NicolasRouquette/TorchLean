@@ -13,12 +13,14 @@ public import NN.Spec.Layers.Attention
 
 FlashAttention is an IO-aware implementation strategy for scaled dot-product attention: it tiles
 the attention computation and maintains online softmax summaries so the full `n × n` attention
-matrix does not need to be materialized. TorchLean models that idea in three layers:
+matrix does not need to be materialized. TorchLean separates the semantic contract from execution:
 
 - this file gives the proof layer semantic contract for a fused FlashAttention operator;
-- the runtime path is the LibTorch CUDA attention bridge (`NN/Backend/LibTorch.lean`,
-  `libtorch.direct_attention`);
-- that FFI boundary is documented separately because Lean does not verify LibTorch or CUDA code.
+- the current CUDA runtime composes attention in Lean over LibTorch numerical primitives
+  (`NN/Runtime/Autograd/Engine/LibTorch/Ops/Attention.lean`), retaining the capsule identity
+  `libtorch.direct_attention`; it materializes full score matrices and saves probabilities;
+- the numerical FFI boundary is documented separately because Lean does not verify LibTorch or
+  CUDA code. This runtime does not select a fused FlashAttention implementation.
 
 The fused operation has the same denotation as standard masked scaled dot-product
 attention over the spec scalar. Different tile sizes are runtime scheduling choices, not semantic
@@ -36,8 +38,9 @@ The theorems in this file are compact but important:
   semantically equal to the existing standard attention backward spec.
 
 These are definitional-equality theorems because the proof layer contract spells out the same
-mathematical stages as standard attention. The LibTorch attention bridge is tested against this
-contract operationally and remains a runtime trust boundary.
+mathematical stages as standard attention. The Lean composition over LibTorch primitives is
+tested against the attention contract operationally; its numerical calls remain a runtime trust
+boundary.
 
 ## Why this is not a CUDA proof
 

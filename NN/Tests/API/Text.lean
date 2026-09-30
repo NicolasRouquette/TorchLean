@@ -131,9 +131,11 @@ def checkSampling : IO Unit := do
   let options : text.GenerationOptions :=
     { prompt := "", newTokenCount := 1, temperature := 1, topK := 1,
       repeatPenalty := 2, repeatWindow := 4, seed := 0, asciiOnly := false }
+  -- Token 0 needs both penalties to fall below the unpenalized candidates.
+  let repeatedScores : Tensor Float [4] := Tensor.from #[5.0, 2.0, 2.0, 2.0]
   expectEqual "repetition penalty counts occurrences and ignores out-of-vocabulary ids"
     (Except.ok 2 : Except String Nat)
-    ((text.chooseNextToken values options 0 (Tensor.from #[0, 0, 1, 99])).map Fin.val)
+    ((text.chooseNextToken repeatedScores options 0 (Tensor.from #[0, 0, 1, 99])).map Fin.val)
   for invalid in [-1.0, nan, inf] do
     expectEqual "reject invalid repetition penalty" false
       (text.chooseNextToken values { options with repeatPenalty := invalid } 0

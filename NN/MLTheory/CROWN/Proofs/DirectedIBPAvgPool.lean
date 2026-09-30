@@ -40,7 +40,7 @@ private theorem avgPoolValue_eq_flat_mean {d : Nat} {spatial : Tensor Nat [d]}
         (Shape.ofList kernel).size := by
   unfold avgPoolValue
   rw [foldlIndices_eq_flat_sum (Shape.ofList kernel)]
-  simp only [kernelProd, ← List.prod_eq_foldl, Shape.size_eq_prod, Shape.toArray,
+  simp only [kernelProd, Shape.size_eq_prod, Shape.toArray,
     Shape.toList, Shape.ofList]
 
 private theorem avgPoolSpatial_getScalar {d : Nat}
@@ -98,7 +98,7 @@ private theorem directedAvgPoolTensor?_encloses
           (Tensor.flattenSpec (Spec.avgPoolSpatialSpec layer x)) := by
         rw [tensorEncloses_vector_iff]
         intro i
-        have hi := Internal.traverseFin_eq_some_iff.mp hentries i
+        have hi := Tensor.Internal.sequenceFinM_get_of_eq_some hentries i
         have hmean := directedRowMean?_encloses (directedRowMean?_positive hi) _
           (fun j => getPaddedAverageInputVal x
             (flatCoordinates
@@ -116,7 +116,7 @@ private theorem directedAvgPoolTensor?_encloses
       obtain rfl := Option.some.inj hb
       apply TensorEncloses.dim
       intro i
-      exact ih (h.unstack i) (Internal.traverseFin_eq_some_iff.mp hentries i)
+      exact ih (h.unstack i) (Tensor.Internal.sequenceFinM_get_of_eq_some hentries i)
 
 /--
 Successful directed average pooling encloses the actual real evaluator, for every accepted

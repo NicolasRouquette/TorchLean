@@ -37,10 +37,10 @@ gradient addition. The first leaf remains the optimizer key, preserving ordered 
 Entries inserted directly into the internal parameter map without a storage descriptor stay
 separate, because there is no sound alias test for an arbitrary `AnyParam` closure.
 -/
-def parameterGroups {α : Type} [Storage α] (session : EagerSession α) :
+def groupParameterRegistrations {α : Type} [Storage α]
+    (parameters : Std.HashMap Nat (AnyParam α))
+    (storages : Std.HashMap Nat (ParameterStorage α)) :
     IO (Array (ParameterGroup α)) := do
-  let parameters ← session.paramsByLeaf.get
-  let storages ← session.parameterStorageByLeaf.get
   let ordered := ((parameters.toList.filter fun entry => entry.2.requiresGrad).mergeSort
     (fun left right => left.1 ≤ right.1)).toArray
   let descriptors ← ordered.mapM fun (id, parameter) => do
@@ -74,6 +74,11 @@ def parameterGroups {α : Type} [Storage α] (session : EagerSession α) :
         groupBySlot := groupBySlot.push groups.size
         groups := groups.push { id, parameter, leaves := #[id], storage? := none }
   pure groups
+
+/-- Group the current eager recording using the shared storage-identity contract. -/
+def parameterGroups {α : Type} [Storage α] (session : EagerSession α) :
+    IO (Array (ParameterGroup α)) := do
+  groupParameterRegistrations (← session.paramsByLeaf.get) (← session.parameterStorageByLeaf.get)
 
 /-- Recover the typed storage view used by the parameter synchronization helpers. -/
 def parameterOfStorage {α : Type} [Storage α] (storage : ParameterStorage α) :

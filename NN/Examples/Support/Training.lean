@@ -12,7 +12,7 @@ public import NN.Examples.Support.Command
 /-!
 # Runnable Example Training Support
 
-Logging, runtime, and fixed-sample training helpers used by the runnable model examples.
+Training-log paths, runtime metadata, banners, and checks used by the runnable model examples.
 -/
 
 @[expose] public section

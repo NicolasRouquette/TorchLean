@@ -135,8 +135,8 @@ def layerNorm {seqLen embedDim : Nat}
     simp [h₁]
 
   let varianceRaw := reduceVar (Spec.Shape.rank s - 1) centered inst.proof
-  -- Clamp variance to be nonnegative so `std` is always defined/bounded away from 0 even for
-  -- approximate numeric contexts (Float/NF) where small negative variance can occur.
+  -- Clamp small negative variance estimates before adding epsilon. A positive denominator still
+  -- depends on the scalar backend and the supplied epsilon; this does not exclude NaN or zero.
   let variance := maxSpec varianceRaw (Tensor.full (.dim seqLen .scalar) 0)
 
   let std := sqrtSpec (addSpec variance (Tensor.full (.dim seqLen .scalar) epsilon))

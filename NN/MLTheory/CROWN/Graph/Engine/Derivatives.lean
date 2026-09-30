@@ -43,7 +43,7 @@ open BoundOps
 Convolution is affine in its input. With weights held fixed, every input derivative passes through
 the same convolution with zero bias. This keeps the original groups, dilation, padding, strides,
 and leading batch shape without materializing a dense matrix. -/
-@[expose] def convDerivativeBox? (nodes : Array Node) (ps : ParamStore α)
+private def convDerivativeBox? (nodes : Array Node) (ps : ParamStore α)
     (derivatives : Array (Option (FlatBox α))) (id : Nat) (node : Node)
     (configuration : NN.IR.ConvConfig) : Option (FlatBox α) := do
   let parentId ← unaryParent? node.parents
@@ -145,11 +145,11 @@ private def softmaxMapRows? (s : Shape) (axis : Nat)
     Option (FlatBox α) := do
   let ⟨hAxis⟩ ← Shape.axisInBounds? axis s
   let n := s.axisSize axis (h := hAxis)
-  let endpoints ← Internal.traverseFin fun i : Fin s.size => do
+  let endpoints ← Tensor.Internal.sequenceFinM fun i : Fin s.size => do
     let coordinates := Shape.Coord.toList s (Shape.Coord.unlinearize i)
     let column ← coordinates[axis]?
     if hColumn : column < n then
-      let row ← Internal.traverseFin fun j : Fin n =>
+      let row ← Tensor.Internal.sequenceFinM fun j : Fin n =>
         (Shape.Coord.ofList? s (coordinates.set axis j.val)).map Shape.Coord.linearize
       pure (rowRule n row ⟨column, hColumn⟩)
     else
@@ -242,14 +242,9 @@ private def runFirstDerivativeWithSeed
       | #[p1] =>
         match (drs[p1]?).join, ps.linearWB[id]? with
         | some dXin, some p =>
-          if h : dXin.dim = p.n then
-            let xB : Box α (.dim p.n .scalar) := castBoxDim (α:=α) (h:=h) { lo := dXin.lo, hi :=
-              dXin.hi }
-            let zeroB : Box α (.dim p.m .scalar) :=
-              let z := Tensor.full (α:=α) (.dim p.m .scalar) 0
-              Box.point (α:=α) z
-            let yB := NN.MLTheory.CROWN.IBP.linear (α:=α) (m:=p.m) (n:=p.n) p.w xB zeroB
-            drs.set! id (some { dim := p.m, lo := yB.lo, hi := yB.hi })
+          -- The input differential of an affine map is the same map with zero bias.
+          if dXin.dim = p.n then
+            drs.set! id (ibpLinearParams { p with b := Tensor.full [p.m] 0 } dXin)
           else drs
         | _, _ => drs
       | _ => drs
@@ -270,15 +265,7 @@ private def runFirstDerivativeWithSeed
       | #[p1] =>
         match (drs[p1]?).join, ps.matmulW[id]? with
         | some dXin, some p =>
-          if h : dXin.dim = p.n then
-            let xB : Box α (.dim p.n .scalar) := castBoxDim (α:=α) (h:=h) { lo := dXin.lo, hi :=
-              dXin.hi }
-            let zeroB : Box α (.dim p.m .scalar) :=
-              let z := Tensor.full (α:=α) (.dim p.m .scalar) 0
-              Box.point (α:=α) z
-            let yB := NN.MLTheory.CROWN.IBP.linear (α:=α) (m:=p.m) (n:=p.n) p.w xB zeroB
-            drs.set! id (some { dim := p.m, lo := yB.lo, hi := yB.hi })
-          else drs
+          if dXin.dim = p.n then drs.set! id (ibpMatmul id ps dXin) else drs
         | _, _ => drs
       | _ => drs
     | .relu =>
@@ -355,7 +342,7 @@ private def runFirstDerivativeWithSeed
         | some dZ, some zB =>
           match derivBoxExp? (α := α) zB with
           | some dF =>
-            match chainMul (α:=α) dZ dF with
+            match boxMulElem (α:=α) dZ dF with
             | some prod => drs.set! id (some prod)
             | none => drs
           | none => drs
@@ -368,7 +355,7 @@ private def runFirstDerivativeWithSeed
         | some dZ, some zB =>
           match derivBoxLog? (α := α) zB with
           | some dF =>
-            match chainMul (α:=α) dZ dF with
+            match boxMulElem (α:=α) dZ dF with
             | some prod => drs.set! id (some prod)
             | none => drs
           | none => drs
@@ -378,14 +365,14 @@ private def runFirstDerivativeWithSeed
       match node.parents with
       | #[p1, p2] =>
         match (drs[p1]?).join, (drs[p2]?).join with
-        | some d1, some d2 => some (boxAdd (α:=α) d1 d2) |> fun r => drs.set! id r
+        | some d1, some d2 => drs.set! id (some (boxAdd (α:=α) d1 d2))
         | _, _ => drs
       | _ => drs
     | .sub =>
       match node.parents with
       | #[p1, p2] =>
         match (drs[p1]?).join, (drs[p2]?).join with
-        | some d1, some d2 => some (boxSub (α:=α) d1 d2) |> fun r => drs.set! id r
+        | some d1, some d2 => drs.set! id (some (boxSub (α:=α) d1 d2))
         | _, _ => drs
       | _ => drs
     | .mulElem =>
@@ -505,14 +492,8 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | #[p1] =>
         match (d2s[p1]?).join, ps.linearWB[id]? with
         | some d2Xin, some p =>
-          if h : d2Xin.dim = p.n then
-            let xB : Box α (.dim p.n .scalar) := castBoxDim (α:=α) (h:=h) { lo := d2Xin.lo, hi :=
-              d2Xin.hi }
-            let zeroB : Box α (.dim p.m .scalar) :=
-              let z := Tensor.full (α:=α) (.dim p.m .scalar) 0
-              Box.point (α:=α) z
-            let yB := NN.MLTheory.CROWN.IBP.linear (α:=α) (m:=p.m) (n:=p.n) p.w xB zeroB
-            d2s.set! id (some { dim := p.m, lo := yB.lo, hi := yB.hi })
+          if d2Xin.dim = p.n then
+            d2s.set! id (ibpLinearParams { p with b := Tensor.full [p.m] 0 } d2Xin)
           else d2s
         | _, _ => d2s
       | _ => d2s
@@ -539,15 +520,7 @@ def runMixedSecondDerivative (g : Graph) (ps : ParamStore α)
       | #[p1] =>
         match (d2s[p1]?).join, ps.matmulW[id]? with
         | some d2Xin, some p =>
-          if h : d2Xin.dim = p.n then
-            let xB : Box α (.dim p.n .scalar) := castBoxDim (α:=α) (h:=h) { lo := d2Xin.lo, hi :=
-              d2Xin.hi }
-            let zeroB : Box α (.dim p.m .scalar) :=
-              let z := Tensor.full (α:=α) (.dim p.m .scalar) 0
-              Box.point (α:=α) z
-            let yB := NN.MLTheory.CROWN.IBP.linear (α:=α) (m:=p.m) (n:=p.n) p.w xB zeroB
-            d2s.set! id (some { dim := p.m, lo := yB.lo, hi := yB.hi })
-          else d2s
+          if d2Xin.dim = p.n then d2s.set! id (ibpMatmul id ps d2Xin) else d2s
         | _, _ => d2s
       | _ => d2s
     | .add =>
@@ -761,9 +734,5 @@ def runHessianVectorProduct {inputDim : Nat} (g : Graph) (ps : ParamStore α)
     Fin inputDim → Array (Option (FlatBox α)) :=
   fun i => runMixedSecondDerivative g ps ibp (coordinateDerivatives i) directionalDerivative
 
-/-- One-dimensional second derivatives are the all-ones directional special case. -/
-def runScalarSecondDerivative (g : Graph) (ps : ParamStore α)
-    (ibp d1 : Array (Option (FlatBox α))) : Array (Option (FlatBox α)) :=
-  runSecondDirectionalDerivative g ps ibp d1
 
 end NN.MLTheory.CROWN.Graph

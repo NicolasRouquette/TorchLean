@@ -48,7 +48,8 @@ open NN.Verification.Json
 open Import.PyTorch
 open _root_.Spec _root_.TorchLean
 open _root_.TorchLean.Tensor
-open Lean Data Json
+open Lean Json
+
 /-- Whether every entry of a fixed-size vector is finite. -/
 def finiteVec (n : Nat) (v : Fin n → Float) : Bool :=
   (List.finRange n).all fun i => (v i).isFinite
@@ -257,14 +258,14 @@ The entries have already been validated as finite by the caller.
 -/
 def binary32Vec (ctx : String) (mode : Model.IEEERoundingMode) (dim : Nat) (j : Json) :
     IO (Tensor (ExecFloat.Binary 8 23) [dim]) := do
-  let some t := DecimalRounding.binary32Vec? mode dim j
+  let some t := DecimalRounding.vector? FloatFormat.binary32 mode dim j
     | throw <| IO.userError s!"Invalid {ctx}: expected numeric array length {dim}"
   pure t
 
 /-- Read a `rows × cols` JSON matrix into binary32, rounding each exact decimal once. -/
 def binary32Matrix (ctx : String) (rows cols : Nat) (j : Json) :
     IO (Tensor (ExecFloat.Binary 8 23) [rows, cols]) := do
-  let some t := DecimalRounding.binary32Matrix? .nearestEven rows cols j
+  let some t := DecimalRounding.matrix? FloatFormat.binary32 .nearestEven rows cols j
     | throw <| IO.userError s!"Invalid {ctx}: expected numeric matrix {rows}x{cols}"
   pure t
 
@@ -356,6 +357,16 @@ def parseAffineBounds? (inDim outDim : Nat) (j : Json) :
       pure (some { inDim := inDim, outDim := outDim, loAff := loAff, hiAff := hiAff })
 
 /--
+Parse one JSON entry per graph node. The array must have exactly `g.nodes.size` entries; each
+entry is parsed together with its node so entry parsers can use the node's output dimension.
+-/
+def parsePerNode {β : Type} (g : Graph) (label : String) (arr : Array Json)
+    (parse : Node → Json → IO β) : IO (Array β) := do
+  unless arr.size = g.nodes.size do
+    throw <| IO.userError s!"{label} length {arr.size} ≠ g.nodes.size {g.nodes.size}"
+  (g.nodes.zip arr).mapM fun (node, entry) => parse node entry
+
+/--
 Shared in-memory representation for node-wise CROWN-style certificates.
 
 Plain α-CROWN uses these fields directly. α/β-CROWN extends the same core artifact with a β phase
@@ -392,64 +403,25 @@ def parseCROWNNodeCoreCertificate (g : Graph) (topObj : Json) :
     | none => pure (Array.replicate g.nodes.size Json.null)
     | some alphaJ => expectArray alphaJ "top-level.alpha"
 
-  if hIbpSize : ibpArr.size = g.nodes.size then
-    if hCrownSize : crownArr.size = g.nodes.size then
-      if hAlphaSize : alphaArr.size = g.nodes.size then
-        let mut ibp : Array (Option (FlatBox (ExecFloat.Binary 8 23))) := Array.mkEmpty g.nodes.size
-        let mut crown : Array (Option (FlatAffineBounds (ExecFloat.Binary 8 23))) := Array.mkEmpty
-          g.nodes.size
-        let mut alpha : Array (Option (FlatTensor (ExecFloat.Binary 8 23))) := Array.mkEmpty
-          g.nodes.size
-
-        for i in List.finRange g.nodes.size do
-          let node := g.nodes[i.val]'i.isLt
-          let outDim := node.outShape.size
-          let hIbp : i.val < ibpArr.size := by
-            rw [hIbpSize]
-            exact i.isLt
-          let hCrown : i.val < crownArr.size := by
-            rw [hCrownSize]
-            exact i.isLt
-          let hAlpha : i.val < alphaArr.size := by
-            rw [hAlphaSize]
-            exact i.isLt
-          let ibpJson := ibpArr[i.val]'hIbp
-          let ibpEntry ← parseFlatBox? outDim ibpJson
-          ibp := ibp.push ibpEntry
-          let crownJson := crownArr[i.val]'hCrown
-          let crownEntry ← parseAffineBounds? ctx.inputDim outDim crownJson
-          crown := crown.push crownEntry
-          let alphaJson := alphaArr[i.val]'hAlpha
-          let alphaEntry ← parseAlphaVec? outDim alphaJson
-          alpha := alpha.push alphaEntry
-
-        pure { ctx := ctx, ibp := ibp, crown := crown, alpha := alpha }
-      else
-        throw <| IO.userError s!"alpha length {alphaArr.size} ≠ g.nodes.size {g.nodes.size}"
-    else
-      throw <| IO.userError s!"crown length {crownArr.size} ≠ g.nodes.size {g.nodes.size}"
-  else
-    throw <| IO.userError s!"ibp length {ibpArr.size} ≠ g.nodes.size {g.nodes.size}"
+  let ibp ← parsePerNode g "ibp" ibpArr fun node entry =>
+    parseFlatBox? node.outShape.size entry
+  let crown ← parsePerNode g "crown" crownArr fun node entry =>
+    parseAffineBounds? ctx.inputDim node.outShape.size entry
+  let alpha ← parsePerNode g "alpha" alphaArr fun node entry =>
+    parseAlphaVec? node.outShape.size entry
+  pure { ctx := ctx, ibp := ibp, crown := crown, alpha := alpha }
 
 /-- Check that an optional per-node certificate array contains all parents of node `id`. -/
 def parentsOk {β : Type} (g : Graph) (cert : Array (Option β)) (id : Nat) : Bool :=
   match g.nodes[id]? with
   | none => false
   | some node =>
-      node.parents.all (fun p =>
-        if p < id then
-          match cert[p]? with
-          | some (some _) => true
-          | _ => false
-        else
-          false)
+      node.parents.all fun p => decide (p < id) && (cert[p]?).join.isSome
 
 /-- Safe lookup for optional flat boxes used by certificate-side shape checks. -/
 def getFlatBox? (cert : Array (Option (FlatBox (ExecFloat.Binary 8 23)))) (id : Nat) :
     Option (FlatBox (ExecFloat.Binary 8 23)) :=
-  match cert[id]? with
-  | some box? => box?
-  | none => none
+  (cert[id]?).join
 
 /--
 Check that binary elementwise parent boxes have the same flattened size as each other and as the
@@ -470,26 +442,16 @@ def binaryElementwiseBoxesMatchOutput
       | _ => false
 
 /-- Check whether a flat box is entirely inside the positive domain needed by true `log`. -/
-def flatBoxStrictlyAbove (B : FlatBox (ExecFloat.Binary 8 23)) (eps : ExecFloat.Binary 8 23) : Bool
-  :=
-  match B with
-  | ⟨n, lo, hi⟩ =>
-      let flo := getDimScalarFn (α := (ExecFloat.Binary 8 23)) lo
-      let fhi := getDimScalarFn (α := (ExecFloat.Binary 8 23)) hi
-      (List.finRange n).all (fun i =>
-        match flo i, fhi i with
-        | .scalar l, .scalar u => l > eps && u > eps)
+def flatBoxStrictlyAbove (B : FlatBox (ExecFloat.Binary 8 23)) (eps : ExecFloat.Binary 8 23) :
+    Bool :=
+  (List.finRange B.dim).all fun i =>
+    decide (eps < B.lo.getScalar i) && decide (eps < B.hi.getScalar i)
 
 /-- Check that every coordinate interval lies strictly on one side of zero. -/
 def flatBoxExcludesZero (B : FlatBox (ExecFloat.Binary 8 23)) : Bool :=
-  match B with
-  | ⟨n, lo, hi⟩ =>
-      let flo := getDimScalarFn (α := (ExecFloat.Binary 8 23)) lo
-      let fhi := getDimScalarFn (α := (ExecFloat.Binary 8 23)) hi
-      (List.finRange n).all (fun i =>
-        match flo i, fhi i with
-        | .scalar l, .scalar u => l > (ExecFloat.Binary.zero false : ExecFloat.Binary 8 23) || u <
-          (ExecFloat.Binary.zero false : ExecFloat.Binary 8 23))
+  let zero : ExecFloat.Binary 8 23 := ExecFloat.Binary.zero false
+  (List.finRange B.dim).all fun i =>
+    decide (zero < B.lo.getScalar i) || decide (B.hi.getScalar i < zero)
 
 /--
 Domain and shape preconditions that must hold before a node-wise certificate checker replays a
@@ -525,7 +487,9 @@ def prettyFlatBox (B : FlatBox (ExecFloat.Binary 8 23)) : String :=
 
 /-- Pretty-printer for affine bounds, used in certificate mismatch messages. -/
 def prettyAffineBounds (B : FlatAffineBounds (ExecFloat.Binary 8 23)) : String :=
-  s!"inDim={B.inDim}, outDim={B.outDim}, loA={Spec.pretty B.loAff.A}, loC={Spec.pretty B.loAff.c}"
+  s!"inDim={B.inDim}, outDim={B.outDim}, " ++
+    s!"loA={Spec.pretty B.loAff.A}, loC={Spec.pretty B.loAff.c}, " ++
+    s!"hiA={Spec.pretty B.hiAff.A}, hiC={Spec.pretty B.hiAff.c}"
 
 /--
 Common node-level checker for CROWN-style affine certificates.
@@ -558,11 +522,7 @@ def checkCROWNLikeNode
         s!"for {repr node.kind}")
     return false
 
-  let certCrown? :=
-    match certCrown[id]? with
-    | some entry => entry
-    | none => none
-  match certCrown?, computed? with
+  match (certCrown[id]?).join, computed? with
   | none, _ =>
       IO.eprintln s!"[{label}] node {id}: certificate missing (null)"
       pure false

@@ -8,6 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Proofs.GraphConcatTensor
 public import NN.IR.Semantics
+public import NN.MLTheory.CROWN.Proofs.GraphConcatInversePermutation
 
 /-!
 # Adjacent swaps for arbitrary-axis concatenation
@@ -120,14 +121,6 @@ private theorem forIn_unchanged {α β : Type} (items : List α) (state : β)
   | cons item items ih =>
       rw [List.forIn_cons, hstep item (by simp)]
       simpa using ih (fun value hvalue => hstep value (by simp [hvalue]))
-
-private theorem range_split_axis (axis trailing : Nat) :
-    List.range (axis + 1 + trailing) =
-      List.range axis ++ axis :: List.range' (axis + 1) trailing := by
-  rw [List.range_eq_range']
-  have h := List.range'_append_1 (s := 0) (m := axis) (n := trailing + 1)
-  simpa [List.range'_succ, ← List.range_eq_range', Nat.add_assoc,
-    Nat.add_comm, Nat.add_left_comm] using h.symm
 
 private theorem filter_range_ne_axis (axis trailing : Nat) :
     (List.range (axis + 1 + trailing)).filter (· != axis) =

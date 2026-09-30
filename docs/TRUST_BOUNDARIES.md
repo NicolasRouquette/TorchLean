@@ -58,10 +58,10 @@ runs another. The binding proves only that identity agreement; it does not prove
 arithmetic, FFI code, compiler output, driver, or hardware. Those obligations retain the evidence
 and trust level stated by the capsule. CUDA primitives are registered under `Provider.libTorch`,
 with names such as `libtorch.matmul`. The single GPU attention implementation is
-`libtorch.direct_attention`: the native bridge evaluates forward and the selected local VJP,
-while TorchLean owns the global tape.
+`libtorch.direct_attention`: this retained capsule identity now describes forward and local VJP
+composition in Lean over LibTorch numerical primitives. The tape owns its saved buffers.
 
-The maintained `checkedCuda` profile prefers LibTorch, including direct attention, and retains
+The maintained `checkedCuda` profile prefers LibTorch, including this attention capsule, and retains
 TorchLean's global tape. The profile requires runtime guards and named regression evidence. Its
 `checked` classification does not mean that LibTorch is inside Lean's proof kernel. Likewise,
 `KernelPlanAudit.hasTrustedExternal = false` means no capsule has the `trustedExternal`
@@ -103,7 +103,7 @@ Important examples include:
   `NN/MLTheory/CROWN/Proofs/GraphAlphaCrownTransferSoundness/EndToEnd.lean` discharges that
   hypothesis from the IBP soundness theorem `cert_encloses_semantics`
   (`ibp_encloses_vals_of_cert_local_ok`) and states the composed corollaries
-  `alphaCrown_cert_encloses_semantics`, `alphaBetaCrown_cert_encloses_semantics'`, and
+  `alphaCrown_cert_encloses_semantics`, `alphaBetaCrown_cert_encloses_semantics`, and
   `alphaCrown_cert_encloses_evalGraphRec`, which have no `IBPEnclosesVals` hypothesis.
   `NN/MLTheory/CROWN/Proofs/GraphRunibpEndToEnd.lean` connects the proof-side IBP pass to the
   engine's executable `runIBP` (`runIBP_eq_runIBP?`, `runIBP_encloses_evalGraphRec`). All of these
@@ -202,7 +202,10 @@ All CUDA primitive numerical work crosses the LibTorch ATen bridge. TorchLean re
 recording, tape traversal, gradient accumulation policy, and the selection of local VJPs. Native
 forward and backward calls execute with gradient recording disabled; they do not create a second
 local or global LibTorch autograd graph. `VJPMode.backendVJP` means a bridge routine evaluates the
-selected local reverse rule, not that LibTorch owns differentiation.
+selected local reverse rule, not that LibTorch owns differentiation. Attention advertises
+`VJPMode.torchLeanTape` because Lean composes its local reverse rule as well as traversing the tape.
+Spectral model composition likewise stays in Lean: FFT, frequency mixing, and inverse FFT call
+the existing numerical primitives.
 
 - `csrc/libtorch/` contains the native tensor operations. The Lean boundary remains under
   `NN/Runtime/Autograd/Engine/LibTorch/`; its CUDA names identify the execution device and FFI ABI.
@@ -236,7 +239,7 @@ selected local reverse rule, not that LibTorch owns differentiation.
 - Seeded random operations must preserve the documented seeded-runtime contract or reject an
   unsupported request. Using a library RNG is not itself evidence of agreement with TorchLean's
   seed-to-value mapping.
-- ATen chooses the implementations of matrix products, convolutions, reductions, FFT/FNO, scans,
+- ATen chooses the implementations of matrix products, convolutions, reductions, FFTs, scans,
   and pooling. Their capsules advertise `implementationDefined` numerical ordering. Deterministic
   execution settings are runtime requests; they do not establish the reference left fold, a
   particular multiply-add contraction schedule, or FloatLib bit agreement. Unsupported requests
@@ -251,11 +254,15 @@ selected local reverse rule, not that LibTorch owns differentiation.
   other caught standard exceptions become IO errors. Successful readback records runtime state,
   not proof of numerical agreement. Builds without LibTorch return zero for known settings and
   memory fraction, reject unknown setting IDs, and reject configuration requests.
-- Attention retains its proof-facing denotation in `NN/Spec/Layers/FlashAttention.lean`. The
-  LibTorch bridge returns forward values and local `dQ`, `dK`, and `dV`. It does not promise
-  a particular FlashAttention algorithm. Boolean masks retain zero contributions at blocked
-  coordinates and zero fully blocked rows. Finite additive attention biases remain a separate
-  semantic operation.
+- Attention retains its proof-facing denotation in `NN/Spec/Layers/FlashAttention.lean`.
+  `Buffer.attentionForward` composes matrix products and softmax in Lean and returns output plus
+  probabilities. `Buffer.attentionBackward` uses Q/K/V, saved probabilities, and the output
+  cotangent to compose the softmax VJP and matrix products for `dQ`, `dK`, and `dV`. The tape owns
+  the saved buffers; there is no native attention context or fused-provider selection. Full score
+  and probability matrices use quadratic memory in sequence length. Boolean masks retain zero
+  contributions at blocked coordinates and zero fully blocked rows. Finite additive attention
+  biases remain a separate semantic operation. Lean composition still depends on the numerical
+  primitive boundary; the specification theorem does not prove those native calls correct.
 - Batched attention still folds batch and head axes for execution and sums shared parameter
   cotangents over the batch. Its specification and typed-graph proofs describe the mathematical
   operation. Applying those results to the LibTorch execution requires the backend agreement
@@ -268,14 +275,20 @@ selected local reverse rule, not that LibTorch owns differentiation.
 
 - FloatLib supplies the executable floating-point formats, software arithmetic, rounding theory,
   and interval semantics. `lakefile.lean` tracks its `main` branch; `lake-manifest.json` locks the
-  checked-out revision, currently `5ef396e35a856a19e24befde631d0bb1ec0a237b`, with Lean and mathlib 4.34.0.
+  checked-out revision. Consult that manifest for the exact pin; Lean and mathlib use 4.34.0.
   TorchLean's runtime and certificate interfaces use `ExecFloat.Binary 8 23` directly.
   The typed tensor/model API supports FloatLib's configured binary family, including custom
   precision with valid widths, bias, and storage plans. This does not supply tensor `Context`
   instances for FloatLib's posit, fixed-point, or decimal families.
-  Higher-precision training uses typed state, graphs, and `nn.sgdStep` on CPU. The supervised
-  trainer's input/report/checkpoint boundary remains `Float`; `.arithmetic := .ieee` selects
-  binary32. Native GPU dtype support does not provide execution of arbitrary FloatLib formats.
+  Higher-precision training uses typed state, graphs, and `nn.sgdStep` on CPU, or a supervised
+  session opened with `trainer.openTyped (α := Scalar)`. Typed sessions retain `Scalar` through
+  inputs, state, predictions, losses, reports, and model-state checkpoints; `finish` takes an
+  independent snapshot. They reject non-CPU devices and custom backend profiles, and their
+  results do not provide a verifier. Seeded initialization and optimizer/scheduler coefficients
+  still start from `Float`; supply typed initial state when those extra digits matter.
+  The ordinary `trainer.open` interface retains `Float` input/result boundaries and uses
+  `.arithmetic := .ieee` to select binary32 internally. Native GPU dtype support does not provide
+  execution of arbitrary FloatLib formats.
 - Lean defines ordinary `Float32` addition, subtraction, multiplication, division, negation,
   absolute value, square root, bit conversion, comparison, and classification through the
   canonical `Float32.Model` visible to the kernel. FloatLib's public
@@ -310,8 +323,9 @@ directly in the selected format. Constructing a value through a native `Float` f
 earlier rounding, regardless of the destination precision.
 
 This context makes the shared tensor and model specifications executable with software arithmetic.
-It does not supply a CUDA storage representation, a trainer/checkpoint encoding, or an ordered
-field law for floating-point operations. Its elementary functions come from FloatLib's explicit
+It does not itself supply a CUDA storage representation, a trainer/checkpoint encoding, or an
+ordered field law for floating-point operations. Typed sessions obtain their checkpoint encoding
+separately from `Checkpoint.Encoding`. Its elementary functions come from FloatLib's explicit
 binary transcendental module, whose deterministic approximations have no general error or
 correct-rounding guarantee. A proof about those functions must supply the bounds it uses.
 

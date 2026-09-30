@@ -34,8 +34,10 @@ def assertFinite (msg : String) (x : Float) : IO Unit := do
   if x.isNaN || x.isInf then
     throw <| IO.userError s!"{msg}: expected finite, got {x}"
 
-/-- Compare finite values with an absolute tolerance; non-finite inputs always fail. -/
+/-- Compare finite values with a finite, nonnegative absolute tolerance. -/
 def assertApprox (msg : String) (x y : Float) (tol : Float := 1e-5) : IO Unit := do
+  if tol.isNaN || tol.isInf || tol < 0 then
+    throw <| IO.userError s!"{msg}: expected finite nonnegative tolerance, got {tol}"
   if x.isNaN || x.isInf || y.isNaN || y.isInf then
     throw <| IO.userError s!"{msg}: expected finite values, got {x} and {y}"
   if Float.abs (x - y) > tol then

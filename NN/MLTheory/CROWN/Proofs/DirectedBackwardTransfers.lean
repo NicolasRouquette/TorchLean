@@ -46,7 +46,8 @@ theorem dotBox_row_encloses
   subst adim
   subst xdim
   exact dotBox_encloses alo ahi xlo xhi (fun i => a i.val) (fun i => x i.val)
-    (by simpa only [read_fin] using ha) (by simpa only [read_fin] using hx) hresult
+    (by simpa only [getAtOrZero_eq_getScalar] using ha)
+    (by simpa only [getAtOrZero_eq_getScalar] using hx) hresult
 
 /-- Discharging an enclosed node value either fails or adds its exact objective to the constant. -/
 theorem represents_consume
@@ -88,11 +89,10 @@ theorem linear_row_encloses
   dsimp only at hdim
   subst adim
   have h := linear_encloses alo ahi W b (fun i => a i.val)
-    (by simpa only [read_fin] using ha) hresult
+    (by simpa only [getAtOrZero_eq_getScalar] using ha) hresult
   refine ⟨⟨h.1, ?_⟩, h.2.2⟩
   intro j
-  simpa [transposedCoeff, get_at_or_zero_dim_cons, j.isLt, Spec.get2,
-    Tensor.getScalar, Spec.get] using h.2.1 j
+  simpa only [transposedCoeff, getAtOrZero_eq_get2] using h.2.1 j
 
 /-- Reassociating a linear node is an exact real identity before interval approximation. -/
 theorem dot_linear {m n : Nat} (W : Tensor α [m, n]) (b : Tensor α [m])
@@ -100,11 +100,8 @@ theorem dot_linear {m n : Nat} (W : Tensor α [m, n]) (b : Tensor α [m])
     (hy : ∀ i : Fin m, y i.val =
       (∑ j : Fin n, value (Spec.get2 W i j) * x j.val) + value (b.getScalar i)) :
     dot m a y = dot n (transposedCoeff W a) x + biasDot b a := by
-  have hread (i : Fin m) (j : Fin n) :
-      getAtOrZero W [i.val, j.val] = Spec.get2 W i j := by
-    simp [get_at_or_zero_dim_cons, i.isLt, j.isLt, Spec.get2, Tensor.getScalar, Spec.get]
   simp only [dot, hy, mul_add, Finset.sum_add_distrib, Finset.mul_sum,
-    transposedCoeff, Finset.sum_mul, hread, biasDot]
+    transposedCoeff, Finset.sum_mul, getAtOrZero_eq_get2, biasDot]
   congr 1
   rw [Finset.sum_comm]
   apply Finset.sum_congr rfl

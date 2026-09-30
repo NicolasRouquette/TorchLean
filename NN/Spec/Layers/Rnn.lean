@@ -60,11 +60,12 @@ We use a single weight matrix applied to a concatenated vector `[x_t; h_{t-1}]`:
 
 `h_t = tanh(W [x_t; h_{t-1}] + b)`.
 
-This is equivalent to the common split-parameter form:
+Over exact arithmetic this is equivalent to the common split-parameter form:
 
 `h_t = tanh(W_ih x_t + W_hh h_{t-1} + b)`,
 
-just packaged to reuse the same tensor primitives elsewhere in TorchLean.
+The fused implementation uses one dot-product accumulation across input and hidden coordinates.
+Two separately rounded products and their sum need not give identical IEEE results.
 -/
 structure RNNSpec (α : Type) [TorchLean.Storage α]
     (inputSize hiddenSize : Nat) where
@@ -209,6 +210,9 @@ This is the spec-level version of what PyTorch autograd computes for `nn.RNN` wh
 - we walk time in reverse,
 - accumulate parameter gradients,
 - and compute gradients for each input step plus the initial hidden state.
+
+`initialHidden` may be nonzero; it supplies the previous state at the first timestep. For an empty
+sequence, both parameter gradients and the gradient of that initial state are zero.
 
 ### Diagram: forward unroll + BPTT (vanilla RNN)
 

@@ -84,21 +84,6 @@ def parseNatValue (s : String) : Option Nat :=
 ## Header string helpers
 -/
 
-/-- Drop characters until predicate `p` becomes true. -/
-def dropUntil (p : Char -> Bool) : List Char -> List Char
-  | [] => []
-  | c :: rest => if p c then c :: rest else dropUntil p rest
-
-/-- Take characters until `stop` is encountered (not including `stop`). -/
-def takeUntilChar (stop : Char) : List Char -> List Char × List Char
-  | [] => ([], [])
-  | c :: rest =>
-      if c = stop then
-        ([], rest)
-      else
-        let (xs, rem) := takeUntilChar stop rest
-        (c :: xs, rem)
-
 /-- End of one field value in a NumPy header dictionary or standalone parser input. -/
 def isHeaderValueEnd (rest : List Char) : Bool :=
   match rest.dropWhile Char.isWhitespace with

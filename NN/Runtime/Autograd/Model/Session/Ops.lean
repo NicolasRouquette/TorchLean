@@ -96,7 +96,7 @@ tape size / node index). So even with the same `RngState`, changing the surround
 can change the exact samples. This is still fully deterministic for a fixed graph.
 
 In evaluation mode (`train=false`) and at `p = 0`, this is the identity. At `p = 1`, training
-returns zero. Other values must satisfy $0 < p < 1$.
+scales by zero, so non-finite inputs can still produce NaN. Other values must satisfy $0 < p < 1$.
 -/
 def dropout {α : Type} [TorchLean.Storage α] [Context α]
     [Runtime.Autograd.Torch.TensorTransfer α]
@@ -132,18 +132,10 @@ def dropout {α : Type} [TorchLean.Storage α] [Context α]
             Runtime.Autograd.Torch.Internal.EagerSession.bernoulliMask (α := α) sess
               (sh := sh) keepProbRef opSeed
         | .typedGraph sess =>
-            Runtime.Autograd.Torch.Internal.TypedGraphSession.commitGraphM (α := α) sess
-              (β := Runtime.Autograd.Torch.TensorRef α sh)
-              (refs := #[keepProbRef.identity?]) (fun {Γ} {ss} xv nat g => do
-                let (v, st') ← Runtime.Autograd.Torch.Internal.TypedGraphSession.runGraphM (α := α)
-                  (Γ := Γ)
-                  (Runtime.Autograd.TypedGraph.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := sh)
-                    { id := keepProbRef.id } (seed := opSeed))
-                  ss g
-                let ⟨ss', g'⟩ := st'
-                let st1 : Runtime.Autograd.Torch.Internal.TypedGraphSessionState α :=
-                  { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
-                pure ({ id := v.id }, st1))
+            Runtime.Autograd.Torch.Internal.TypedGraphSession.recordGraphM (α := α) sess
+              (refs := #[keepProbRef.identity?]) (fun {Γ} =>
+                Runtime.Autograd.TypedGraph.GraphM.bernoulliMask (α := α) (Γ := Γ) (s := sh)
+                  { id := keepProbRef.id } (seed := opSeed))
 
       let y ← mul (α := α) s (sh := sh) x maskRef
       let invKeep : α := (1 : α) / keepProb

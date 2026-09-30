@@ -58,10 +58,8 @@ def toSeqFrom
     Except String (Runtime.Autograd.Model.Layers.Seq σ τ × Nat) :=
   match g with
   | .id s => do
-      -- Identity becomes the identity sequential model.
       return (Runtime.Autograd.Model.Layers.Seq.id s, i)
   | .seq g₁ g₂ => do
-      -- Sequential composition becomes sequential composition.
       let (s₁, i') ← toSeqFrom (ps := _) (σ := _) (τ := _) g₁ i
       let (s₂, i'') ← toSeqFrom (ps := _) (σ := _) (τ := _) g₂ i'
       return (Runtime.Autograd.Model.Layers.Seq.comp s₁ s₂, i'')
@@ -92,9 +90,7 @@ def toSeq
     {ps : List Shape} {σ τ : Shape}
     (g : Chain ps σ τ) :
     Except String (Runtime.Autograd.Model.Layers.Seq σ τ) :=
-  match Internal.toSeqFrom (ps := ps) (σ := σ) (τ := τ) g 0 with
-  | .ok (s, _i) => .ok s
-  | .error e => .error e
+  Prod.fst <$> Internal.toSeqFrom (ps := ps) (σ := σ) (τ := τ) g 0
 
 end ToSequential
 end GraphSpec

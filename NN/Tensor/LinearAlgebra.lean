@@ -79,10 +79,11 @@ Compute a reduced QR factorization with classical Gram-Schmidt.
 
 The result uses the NumPy/PyTorch reduced shapes
 `q : Tensor α [m, min m n]` and `r : Tensor α [min m n, n]`.
-For tall and square inputs, this is the theorem-backed specification computation with its dimensions
-presented in reduced form. For wide inputs, linearly dependent source columns do not consume a
-basis column, so a later independent column can still enter the reduced basis. Any unused trailing
-basis columns are zero.
+For tall and square inputs, this is the specification computation with its dimensions
+presented in reduced form; its reconstruction and orthonormality theorems concern real scalars
+and require positive diagonal pivots. For wide inputs, linearly dependent source columns do not
+consume a basis column, so a later independent column can still enter the reduced basis. Any unused
+trailing basis columns are zero.
 -/
 def qr {α : Type} [TorchLean.Storage α] [Context α] {m n : Nat}
     (matrix : Tensor α [m, n]) : QRFactors α m n :=
@@ -99,9 +100,12 @@ def qr {α : Type} [TorchLean.Storage α] [Context α] {m n : Nat}
 /--
 Compute the lower-triangular Cholesky factor candidate of a square matrix.
 
-For symmetric inputs with positive executable pivots, the specification layer proves
-`A = L @ L.transpose`. Inputs outside that domain follow the scalar backend's arithmetic behavior;
-for example, `Float` produces `NaN` after a negative square root.
+For real symmetric inputs with positive pivots, the specification layer proves
+`A = L @ L.transpose` for its logical computation. Compilation substitutes an array implementation
+through `implemented_by`; equivalence to the logical computation is not proved. No exact
+reconstruction theorem is asserted for floating-point scalars. Inputs outside the intended domain
+follow the scalar backend's arithmetic behavior; for example, `Float` produces `NaN` after a
+negative square root.
 -/
 def cholesky {α : Type} [TorchLean.Storage α] [Context α] {n : Nat}
     (matrix : Tensor α [n, n]) : Tensor α [n, n] :=
@@ -112,6 +116,8 @@ Solve `(kernel + regularization * I) x = target` through the Cholesky path.
 
 The operation is intended for symmetric positive-semidefinite kernels and positive regularization.
 Its executable implementation is available across scalar backends supporting `Context`.
+The specification uses `implemented_by` substitutions for the compiled solve and Cholesky paths;
+their equivalence to the logical definitions is not proved.
 -/
 def solveRidge {α : Type} [TorchLean.Storage α] [Context α] {n : Nat}
     (kernel : Tensor α [n, n]) (regularization : α)

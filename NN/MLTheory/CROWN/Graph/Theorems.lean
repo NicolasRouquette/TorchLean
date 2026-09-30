@@ -17,7 +17,6 @@ separate from the executable propagation passes makes the implementation files e
 
 public section
 
-
 namespace NN.MLTheory.CROWN.Graph
 
 open Spec TorchLean
@@ -157,7 +156,9 @@ namespace Semantics
     Tensor.getScalar B.lo i ≤ Tensor.getScalar x i ∧
       Tensor.getScalar x i ≤ Tensor.getScalar B.hi i
 
-/- Enclosure for `boxAdd`: if x ∈ B1 and y ∈ B2, then x + y ∈ boxAdd B1 B2. -/
+/- Enclosure for exact vector addition: if `x ∈ [lo1, hi1]` and `y ∈ [lo2, hi2]` then
+`x + y ∈ [lo1 + lo2, hi1 + hi2]`. The directed endpoints used by `boxAdd` are described by
+`box_add_on_eq`, not by this lemma. -/
 
 omit [BoundOps α] in
 /-- If `x` is enclosed in `[lo1,hi1]` and `y` is enclosed in `[lo2,hi2]`, then `x+y` is enclosed in
@@ -230,6 +231,5 @@ theorem box_relu_sound (n : Nat)
 end Semantics
 
 end Theorems
-
 
 end NN.MLTheory.CROWN.Graph

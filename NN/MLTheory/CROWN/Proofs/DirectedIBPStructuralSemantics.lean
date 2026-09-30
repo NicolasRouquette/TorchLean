@@ -49,6 +49,8 @@ theorem concatBackwardLayout?_forward
 
 variable [BoundOps α] [LawfulBoundOps α]
 
+/-- A successful exact permutation of the real parent tensor yields the backward flat-index
+permutation equation. -/
 theorem permutationEquation_of_eval
     {dims : Nat → Nat} {v : Nat → Nat → ℝ} {id p : Nat}
     {s t : Shape} {forward : Array Nat}

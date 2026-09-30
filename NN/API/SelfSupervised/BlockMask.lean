@@ -268,7 +268,8 @@ def hiddenMask {dataShape : Shape}
       (Shape.Coord.toList dataShape (Shape.Coord.unlinearize i))
 
 /-- Uniform reconstruction weights on hidden entries, or all zeros when no entry is hidden. -/
-def reconstructionWeights {α : Type} [TorchLean.Storage α] [Context α] {dataShape : Shape}
+def reconstructionWeights {α : Type} [Storage α] [Zero α] [One α] [NatCast α] [Div α]
+    {dataShape : Shape}
     (blocks : Tensor (Option Nat) [dataShape.rank]) (period offset : Nat) :
     Tensor α [dataShape.size] :=
   let mask := hiddenMask blocks period offset
@@ -321,14 +322,15 @@ def hiddenReconstructionIndices {dataShape : Shape} (reconstructionWidth : Nat)
 namespace Proof
 
 /-- One batch row of block-MAE training as a finite predictive-view contract. -/
-def rowPredictiveContract {dataShape : Shape} (batch reconstructionWidth : Nat)
+def rowPredictiveContract {α : Type} [Storage α] [Zero α] [Inhabited α]
+    {dataShape : Shape} (batch reconstructionWidth : Nat)
     (blocks : Tensor (Option Nat) [dataShape.rank]) (period offset : Nat)
     (hReconstruction : reconstructionWidth ≤ dataShape.size)
-    (x : Tensor Float (dataShape.prependDim batch))
-    (prediction : Tensor Float [batch, reconstructionWidth])
-    (row : Fin batch) (loss : Float → Float → Nat) :
+    (x : Tensor α (dataShape.prependDim batch))
+    (prediction : Tensor α [batch, reconstructionWidth])
+    (row : Fin batch) (loss : α → α → Nat) :
     NN.MLTheory.SelfSupervised.PredictiveViewContract
-      reconstructionWidth Unit Float Float Float :=
+      reconstructionWidth Unit α α α :=
     NN.MLTheory.SelfSupervised.maeAsPredictiveViewContract
     (Internal.hiddenReconstructionIndices reconstructionWidth blocks period offset hReconstruction)
     (fun j => TorchLean.Tensor.item <|
@@ -339,13 +341,14 @@ def rowPredictiveContract {dataShape : Shape} (batch reconstructionWidth : Nat)
     loss
 
 /-- The runnable block-MAE row objective is exactly the finite MAE objective. -/
-theorem row_predictive_objective_eq_mae_loss {dataShape : Shape}
+theorem row_predictive_objective_eq_mae_loss {α : Type} [Storage α] [Zero α] [Inhabited α]
+    {dataShape : Shape}
     (batch reconstructionWidth : Nat)
     (blocks : Tensor (Option Nat) [dataShape.rank]) (period offset : Nat)
     (hReconstruction : reconstructionWidth ≤ dataShape.size)
-    (x : Tensor Float (dataShape.prependDim batch))
-    (prediction : Tensor Float [batch, reconstructionWidth])
-    (row : Fin batch) (loss : Float → Float → Nat) :
+    (x : Tensor α (dataShape.prependDim batch))
+    (prediction : Tensor α [batch, reconstructionWidth])
+    (row : Fin batch) (loss : α → α → Nat) :
     NN.MLTheory.SelfSupervised.predictiveViewObjective
         (rowPredictiveContract batch reconstructionWidth blocks period offset hReconstruction
           x prediction row loss) =

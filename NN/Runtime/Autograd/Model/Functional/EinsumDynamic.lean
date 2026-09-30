@@ -63,7 +63,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
     -- Ellipsis axes precede the alphabetically ordered labels that occur exactly once.
     let implicitOutputLabels (inputs : List (List Label)) (ellipsisRank : Nat) : List Label :=
       let counts := Einsum.labelCounts inputs
-      let chars : List Char := (inputs.foldl (fun acc labels => acc ++ labels) []).filterMap fun
+      let chars : List Char := inputs.flatten.filterMap fun
         | .chr c => if Einsum.labelCount counts (.chr c) == 1 then some c else none
         | .ell _ => none
       (List.range ellipsisRank).map Label.ell ++
@@ -83,9 +83,9 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
 
     -- Expand per-input labels (including ellipsis mapped to `ell k` labels), and apply diagonal
     -- extraction for repeated labels inside an operand (PyTorch semantics).
-    let mut processed : List (Σ s : Shape, RefTy (m := m) (α := α) s) := []
-    let mut inLabels : List (List Label) := []
-    let mut inLabelsRaw : List (List Label) := []
+    let mut processedRev : List (Σ s : Shape, RefTy (m := m) (α := α) s) := []
+    let mut inLabelsRev : List (List Label) := []
+    let mut inLabelsRawRev : List (List Label) := []
 
     let rec diagonalizeOperand (fuel : Nat)
         (cur : Σ s : Shape, RefTy (m := m) (α := α) s) (labs : List Label) :
@@ -148,17 +148,22 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
         match Einsum.expandInputLabels sub s maxEll with
         | .ok v => pure v
         | .error _ => failure
-      inLabelsRaw := inLabelsRaw ++ [labs0]
+      inLabelsRawRev := labs0 :: inLabelsRawRev
       let (cur', labs') ← diagonalizeOperand labs0.length ⟨s, x⟩ labs0
-      processed := processed ++ [cur']
-      inLabels := inLabels ++ [labs']
+      processedRev := cur' :: processedRev
+      inLabelsRev := labs' :: inLabelsRev
+
+    -- Restore operand order before label inference and graph alignment.
+    let processed := processedRev.reverse
+    let inLabels := inLabelsRev.reverse
+    let inLabelsRaw := inLabelsRawRev.reverse
 
     -- Use diagonalized shapes for the remaining checks/alignments.
     let shapes : List Shape := processed.map Sigma.fst
 
     -- Determine output labels.
     let allInOrder : List Label :=
-      Einsum.orderedUnique (inLabels.foldl (fun acc xs => acc ++ xs) [])
+      inLabels.flatten.eraseDups
     let outLabelsRaw : List Label ←
       match parsed.output? with
       | some outSub =>
@@ -176,7 +181,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
     let outLabels : List Label :=
       -- If explicit output repeats labels (e.g. `i->ii`), we contract w.r.t. unique labels
       -- and then "diag-embed" to the repeated output at the end.
-      Einsum.orderedUnique outLabelsRaw
+      outLabelsRaw.eraseDups
 
     -- Contracted labels are everything not in the output (in first-appearance order).
     let contracted : List Label :=
@@ -223,7 +228,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
           if labels.contains label then operandDim labels shape label else some 1
       let some dimsA := batchDims labelsA a.fst | failure
       let some dimsB := batchDims labelsB b.fst | failure
-      let some dims := batchLabels.mapM (Einsum.dimFind? dimMap) | failure
+      let some dims := batchLabels.mapM (fun label => List.lookup label dimMap) | failure
       let batchA := Shape.ofList dimsA
       let batchB := Shape.ofList dimsB
       let batch := Shape.ofList dims
@@ -268,22 +273,22 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
       return result
 
     let fullDims : List Nat ← fullLabels.mapM fun label =>
-      match Einsum.dimFind? dimMap label with
+      match dimMap.lookup label with
       | some dimension => pure dimension
       | none => failure
     let sCommon : Shape := Shape.ofList fullDims
 
     -- Align each operand to `fullLabels` (permute -> reshape insert ones -> broadcast).
-    let mut aligned : List (RefTy (m := m) (α := α) sCommon) := []
+    let mut alignedRev : List (RefTy (m := m) (α := α) sCommon) := []
     for ((⟨sIn, xIn⟩), labsIn) in List.zip processed inLabels do
       let targetOrder := fullLabels.filter (fun l => labsIn.contains l)
-      let mut perm : List Nat := []
+      let mut permRev : List Nat := []
       for l in targetOrder do
         match labsIn.findIdx? (· == l) with
         | none => failure
-        | some i => perm := perm ++ [i]
+        | some i => permRev := i :: permRev
       let swaps : List Nat ←
-        match Einsum.swapDepthsForPerm? perm (Spec.Shape.rank sIn) with
+        match Einsum.swapDepthsForPerm? permRev.reverse (Spec.Shape.rank sIn) with
         | some ss => pure ss
         | none => failure
       let ⟨sPerm, xPerm⟩ ← OptionT.lift <|
@@ -291,15 +296,15 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
       let dimsPerm := Shape.toList sPerm
       -- Reshape to insert singleton dims for missing labels.
       let mut di : Nat := 0
-      let mut insertedDims : List Nat := []
+      let mut insertedDimsRev : List Nat := []
       for l in fullLabels do
         if labsIn.contains l then
           let some d := dimsPerm[di]? | failure
-          insertedDims := insertedDims ++ [d]
+          insertedDimsRev := d :: insertedDimsRev
           di := di + 1
         else
-          insertedDims := insertedDims ++ [1]
-      let sInserted : Shape := Shape.ofList insertedDims
+          insertedDimsRev := 1 :: insertedDimsRev
+      let sInserted : Shape := Shape.ofList insertedDimsRev.reverse
       let xInserted : RefTy (m := m) (α := α) sInserted ←
         if h : Spec.Shape.size sPerm = Spec.Shape.size sInserted then
           OptionT.lift <| reshape (m := m) (α := α) (s₁ := sPerm) (s₂ := sInserted) xPerm h
@@ -311,9 +316,10 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
             OptionT.lift <|
               broadcastTo (m := m) (α := α) (s₁ := sInserted) (s₂ := sCommon) cb xInserted
         | none => failure
-      aligned := aligned ++ [xb]
+      alignedRev := xb :: alignedRev
 
     -- Multiply all aligned operands elementwise.
+    let aligned := alignedRev.reverse
     let some prod0 := aligned.head? | failure
     let mut prod : RefTy (m := m) (α := α) sCommon := prod0
     for x in aligned.drop 1 do
@@ -364,7 +370,7 @@ def einsum? {α : Type} [TorchLean.Storage α] [Context α]
       let mut cur : Σ s : Shape, RefTy (m := m) (α := α) s := out0
       for l in extras do
         let some baseIdx := outLabels.findIdx? (· == l) | failure
-        let some d := Einsum.dimFind? dimMap l | failure
+        let some d := dimMap.lookup l | failure
         let sReshape : Shape := Shape.appendDim cur.fst 1
         have hSz : Spec.Shape.size cur.fst = Spec.Shape.size sReshape := by
           simpa [sReshape] using (Spec.Shape.size_appendDim cur.fst 1).symm

@@ -36,13 +36,8 @@ theorem sup'_le_add_const
     (s : Finset ι) (hs : s.Nonempty)
     (f g : ι → ℝ) (c : ℝ)
     (hfg : ∀ i ∈ s, f i ≤ g i + c) :
-    s.sup' hs f ≤ s.sup' hs g + c := by
-  refine Finset.sup'_le hs f ?_
-  intro i hi
-  have hsup : g i + c ≤ s.sup' hs g + c := by
-    have hgi : g i ≤ s.sup' hs g := Finset.le_sup' g hi
-    exact add_le_add_left hgi c
-  exact (hfg i hi).trans hsup
+    s.sup' hs f ≤ s.sup' hs g + c :=
+  Finset.sup'_le hs f fun i hi => (hfg i hi).trans (add_le_add_left (Finset.le_sup' g hi) c)
 
 /-- If `f` and `g` differ by at most `c` everywhere on `s`, so do their suprema. -/
 theorem abs_sup'_sub_sup'_le

@@ -61,7 +61,7 @@ theorem concatFlatBoxes?_encloses {layout : ConcatLayout}
     obtain rfl := Option.some.inj hbox
     rw [rowEncloses_iff]
     intro i
-    simp only [realConcat, read_fin, ConcatLayout.concat, getScalar_ofFn]
+    simp only [realConcat, Spec.getAtOrZero_eq_getScalar, ConcatLayout.concat, getScalar_ofFn]
     exact rowEncloses_cast_coordinate
       (hparents (layout.flatEquiv.symm i).1 _
         (Tensor.Internal.sequenceFinM_get_of_eq_some hinputs (layout.flatEquiv.symm i).1))
@@ -119,7 +119,7 @@ theorem concatNodeBoxes?_encloses {nodes : Array Node}
   obtain ⟨B, hB⟩ := hexists
   obtain ⟨parent, hp, _⟩ := hentry hB
   have hc := (hcoords source.1 parent hp).2 source.2
-  simpa only [realConcat, read_fin, ConcatLayout.concat, getScalar_ofFn,
+  simpa only [realConcat, Spec.getAtOrZero_eq_getScalar, ConcatLayout.concat, getScalar_ofFn,
     source, Sigma.eta, Equiv.apply_symm_apply, getElem!_def, hp] using hc
 
 end

@@ -308,10 +308,10 @@ def randomTokenBatch {β : Type} [TorchLean.Storage β] {tokenCount : Nat}
     Tensor.window tokens (sequenceLength + 1) offsetAt[batchIndex] paddingTokenId
 
 /--
-Choose training-window offsets, biased toward a prompt occurrence when the corpus contains it.
+Choose training-window offsets around a supplied prompt occurrence.
 
-If the prompt is present in the corpus, a portion of the sampled windows covers nearby text. That
-keeps generation reports tied to text the model actually saw during training.
+A supplied offset selects consecutive starts beginning up to `windowCount / 4` tokens before the
+prompt, wrapping over the usable starts. Without an offset, starts are approximately evenly spaced.
 -/
 def promptAwareOffsets
     (tokenCount sequenceLength windowCount : Nat)

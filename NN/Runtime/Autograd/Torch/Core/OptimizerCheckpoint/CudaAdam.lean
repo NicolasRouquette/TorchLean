@@ -145,9 +145,7 @@ than silently reinterpreting existing moments.
 -/
 def ensureCudaAdamConfig
     (configRef : IO.Ref (Option CudaAdamConfig)) (expected : CudaAdamConfig) : IO Unit := do
-  match expected.validate with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
+  okOrThrow expected.validate
   match ← configRef.get with
   | none => configRef.set (some expected)
   | some actual =>
@@ -182,9 +180,8 @@ def readConfig (handle : IO.FS.Handle) : IO CudaAdamConfig := do
   let weightDecay :=
     Float.ofBits (UInt64.ofNat (← CheckpointIO.readNat64 checkpointName handle))
   let config : CudaAdamConfig := { kind, beta1, beta2, epsilon, weightDecay }
-  match config.validate with
-  | .ok () => pure config
-  | .error message => throw <| IO.userError message
+  okOrThrow config.validate
+  pure config
 
 /--
 Stream CUDA Adam or AdamW moments to disk.
@@ -205,9 +202,7 @@ def writeCudaAdamStateFloat32
     | some config => pure config
     | none => throw <| IO.userError <|
         s!"{checkpointName}: no Adam or AdamW update has initialized optimizer state"
-  match config.validate with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
+  okOrThrow config.validate
   let state ← stateRef.get
   if state.size != schema.optimizerStateCount then
     throw <| IO.userError <|

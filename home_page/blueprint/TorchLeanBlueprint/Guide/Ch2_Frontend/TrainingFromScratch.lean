@@ -33,7 +33,7 @@ run reproducible under the same arithmetic and execution settings:
 ```terminal
 # Fix the seed and update count for the MLP trace
 # interpreted below.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --steps 200 --seed 2026
 ```
 
@@ -157,7 +157,7 @@ Sequential: [2] -> [1], layers=3, params=33, state=33
 
 Thirty three numbers: $`8\times2` weights and $`8` biases in the first affine layer, then
 $`1\times8` weights and $`1` bias in the second. `params` counts trainable scalars and `state`
-counts everything the checkpoint stores, so a model with normalization buffers would show the two
+counts all model-state scalars, so a model with normalization buffers would show the two
 numbers disagreeing.
 
 For regression, the default objective is mean-squared error. For a prediction and target with
@@ -607,7 +607,7 @@ The live session owns model and optimizer state; the loop manages sample order, 
 generators remain the caller's responsibility. A result is not a snapshot of every row in this
 table. The manual API exposes them
 when an experiment needs a custom loop or a checkpoint must record more than parameter tensors.
-Saving only weights is enough for inference, but it is not enough to resume Adam at the same
+Saving model state is enough for inference, but it is not enough to resume Adam at the same
 update.
 
 The buffers row is not hypothetical. Dropout consumes randomness and denotes a different function
@@ -799,7 +799,7 @@ The maintained CSV example is already batched this way:
 # This CSV experiment uses tensor batches of five and its
 # own regression data.
 python3 NN/Examples/Data/generate_small_data.py
-lake exe torchlean data_csv \
+scripts/lake.sh exe torchlean data_csv \
   --device cpu --batch 5 --steps 5 --seed 2026
 ```
 
@@ -837,10 +837,10 @@ Compare:
 ```terminal
 # Keep the run configuration fixed except for eager versus
 # typed graph execution.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --execution eager --steps 20 --seed 2026
 
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --execution typed-graph --steps 20 --seed 2026
 ```
 
@@ -898,7 +898,7 @@ CUDA execution additionally requires a binary linked with the native runtime:
 # The CUDA request needs a native-runtime build; the report
 # records selected operation
 # providers.
-lake -R -K cuda=true exe torchlean quickstart_mlp \
+scripts/lake.sh -Kcuda=true exe torchlean quickstart_mlp \
   --device cuda --steps 20 --seed 2026 --show-backend
 ```
 
@@ -946,11 +946,12 @@ right shape and scalar count before the checkpoint is accepted:
 -- Use this model definition as the expected tensor manifest
 -- for the loaded state.
 def loadForThisModel (path : System.FilePath) :=
-  Checkpoint.State.load (nn.build 2026 model) path
+  Checkpoint.State.load (α := Float) (nn.build 2026 tfModel) path
 ```
 
 The result is an `IO` action returning tensors whose dependent shape list is exactly
-`nn.stateShapes (nn.build 2026 model)`. The runtime checkpoint loader turns such a checked pack into
+`nn.stateShapes (nn.build 2026 tfModel)`. The runtime checkpoint loader turns such a checked pack
+into
 runtime state handles, while `Checkpoint.load` and `Checkpoint.save` work with
 an already instantiated runtime module.
 
@@ -1005,7 +1006,7 @@ The supervised training paths wire the `loadCheckpoint?` and `saveCheckpoint?` f
 def saveClassifier : Trainer.TrainOptions :=
   { steps := 200
     logEvery := 25
-    saveCheckpoint? := some "artifacts/classifier.state.json" }
+    saveCheckpoint? := some "artifacts/classifier.state" }
 ```
 
 The same file can be written after the fact with `trained.save` and read back with `Trainer.load`.
@@ -1017,14 +1018,17 @@ This is a *model-state* checkpoint, not a complete training snapshot. The eager 
 save Adam or AdamW moments and step counters separately with
 `Checkpoint.Optimizer.save`, then restore them with
 `Checkpoint.Optimizer.load`. That binary file records the optimizer kind, the
-moment-defining hyperparameters, every parameter shape, and the `requiresGrad` mask. Loading rejects
+moment-defining hyperparameters, every parameter shape, the `requiresGrad` mask, and the eager
+session's random counter. Loading rejects
 a different optimizer configuration or parameter schema instead of silently attaching moments to
 the wrong model. Integer metadata and float32 payloads use explicit little-endian encodings, and a
 save is written to a fresh sibling file before it replaces the destination.
 
 That optimizer file is still not a complete training snapshot. Replaying the next batch also needs
-the loader or stream position; stochastic layers need generator state; and interpreting the result
-needs the model, preprocessing, arithmetic semantics, backend profile, and device. A parameter-only
+the loader or stream position and any external generator state. The eager dropout counter is
+preserved by current optimizer files; legacy files without it load with a warning and cannot
+reproduce stochastic continuation. Interpreting the result also needs the model, preprocessing,
+arithmetic semantics, backend profile, and device. A model-state
 checkpoint remains appropriate for inference or a fresh optimizer run. Pairing it with native
 optimizer state resumes more of an Adam trajectory, but only the state explicitly present in those
 two files.
@@ -1084,8 +1088,9 @@ Session.finish
 
 Use it when the program needs a custom accumulation policy, multiple losses, generated batches,
 reinforcement-learning interaction, or detailed instrumentation. Generated batches simply become
-the nonempty sample arrays passed to `step` with `(batch := true)`; PINN collocation points and
-simulator batches fit this directly. Add `(loss := true)` when the loop needs the mean pre-update
+the nonempty sample arrays passed to `step` with `(batch := true)`. Simulator outputs can supply
+samples when their shapes and the configured objective fit this interface; a PINN residual may
+require coordinate derivatives in a custom objective. Add `(loss := true)` for the mean pre-update
 loss as a host `Float`. Evaluation over a `Data.SampleStream` uses
 `session.loss stream (batch := true)` and returns zero for an empty stream.
 
@@ -1241,8 +1246,8 @@ three times the rate configured in `optim.adam`, and by index 100 it has decayed
 This experiment changes the entire learning-rate sequence. The schedule is useful for exposing
 the indexing convention, but these settings do not improve this run.
 
-Transformer runs commonly warm up from a small rate and then decay toward a nonzero floor
-{Informal.citep goyal2017}[]. The decay half is cosine annealing
+Large-batch training can benefit from a gradual warm-up {Informal.citep goyal2017}[].
+Here we combine warm-up with cosine annealing
 {Informal.citep sgdr2017}[]. On a deliberately tiny configuration, with a peak of `0.001`, a floor
 of `0.0001`, four warm-up updates and twelve total, the whole curve fits on one line:
 
@@ -1268,9 +1273,8 @@ The repeated peak at indices three and four follows from the two pieces of the f
 warm-up update reaches the peak; the cosine segment starts at that same peak before descending.
 Requesting thirteen indices displays both the twelve-update interval and its endpoint at index
 twelve. The small example makes these boundary conventions visible before the longer configuration
-compresses them into a handful of printed samples. A
-realistic pretraining configuration is the same function with bigger numbers, in the shape a
-transformer run uses {Informal.citep transformer2017}[]:
+compresses them into a handful of printed samples. A longer illustrative pretraining schedule
+uses the same function with larger counts:
 
 ```lean (name := tfPretraining)
 -- Sample both warm-up and decay indices; six-decimal
@@ -1314,7 +1318,7 @@ training: samplesPerStep must be positive
 The quickstart command also requires a positive step count:
 
 ```terminal +output
-$ lake exe torchlean quickstart_mlp --device cpu --steps 0 --seed 2026
+$ scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 0 --seed 2026
 error: quickstart_mlp: --steps must be > 0
 ```
 
@@ -1415,7 +1419,8 @@ mean_loss(before training) = 0.495227
 mean_loss(after training) = 0.037862
 ```
 
-The initial losses agree exactly, which is the control we wanted: the two runs start from the same
+The initial losses agree at the displayed precision, which is the control we wanted: the two runs
+start from the same
 parameters and see the same samples in the same order. After 100 updates Adam is roughly eight times
 lower. PyTorch, running the same recipe from its own initialization, reports the same ordering with
 different magnitudes: `0.510072 -> 0.013152` for Adam against `0.510072 -> 0.049435` for SGD. Two

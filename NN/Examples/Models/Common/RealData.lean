@@ -165,7 +165,7 @@ namespace NpyDatasets
 
 /-- Parse the shared NPY data flags with CIFAR-10's default paths and row count filled in. -/
 def parseCifar (args : List String) :
-    Except String (Support.Npy.Options × List String) := do
+    Except String (Support.Npy.Options × List String) :=
   Support.Npy.Options.parse args
     NN.Examples.Data.RealPaths.cifar10TrainX
     NN.Examples.Data.RealPaths.cifar10TrainY
@@ -179,7 +179,7 @@ converter handles JPEG/PNG decoding, RGB conversion, resizing, class-directory l
 NCHW layout. Lean then reads only the simple `.npy` tensors.
 -/
 def parseImageNet64 (args : List String) :
-    Except String (Support.Npy.Options × List String) := do
+    Except String (Support.Npy.Options × List String) :=
   Support.Npy.Options.parse args
     NN.Examples.Data.RealPaths.imagenet64TrainX
     NN.Examples.Data.RealPaths.imagenet64TrainY
@@ -217,6 +217,29 @@ def parse
 
 end Forecast.Options
 
+namespace Internal
+
+/-- Load prepared labeled images with dataset-specific preparation and recovery hints. -/
+def loadImageLoader (imageShape : Shape) (classes : Nat)
+    (datasetName missingHint recoveryHint exeName : String)
+    (batchSize rowCount seed : Nat) (xPath yPath : System.FilePath) :
+    IO (Data.Loader Float batchSize imageShape [classes]) := do
+  Data.requirePairedFiles exeName
+    s!"{datasetName} images" xPath s!"{datasetName} labels" yPath missingHint
+  let source := Data.LabeledSource.fromFiles xPath yPath rowCount imageShape classes
+  let samples ←
+    try
+      source.load (α := Float)
+    catch error =>
+      throw <| IO.userError <|
+        s!"{exeName}: failed to load {datasetName} arrays for --n-total {rowCount}.\n" ++
+        s!"{error}\n" ++
+        "If your local .npy files contain fewer rows, pass --n-total with that row count; " ++
+        recoveryHint
+  pure (Data.Loader.fromStream samples batchSize (shuffle := true) (seed := seed))
+
+end Internal
+
 /--
 Build a batched CIFAR-10 loader from the image and label `.npy` files.
 
@@ -225,28 +248,11 @@ fails with something actionable rather than a decode error halfway through the f
 -/
 def loadCifarLoader
     (exeName : String) (batchSize rowCount seed : Nat) (xPath yPath : System.FilePath) :
-    IO (Data.Loader Float batchSize CifarImage CifarTarget) := do
-  Data.requirePairedFiles
-    exeName
-    "CIFAR-10 images" xPath
-    "CIFAR-10 labels" yPath
-    missingCifarHint
-  let source := Data.LabeledSource.fromFiles xPath yPath rowCount
-    [cifarChannels, cifarHeight, cifarWidth] cifarClasses
-  let samples ←
-    try
-      source.load (α := Float)
-    catch error =>
-      let hint :=
-        s!"{exeName}: failed to load CIFAR-10 arrays for --n-total {rowCount}.\n" ++
-        s!"{error}\n" ++
-        "If your local .npy files contain fewer rows, pass --n-total with that row count; " ++
-        "to regenerate the prepared slice, run:\n" ++
-        "  python3 scripts/datasets/download_example_data.py --cifar10"
-      throw <| IO.userError hint
-  -- Return the typed minibatch loader. Callers can take one batch for a fixed-sample check or pass
-  -- the loader to the shared training code for shuffled multi-step training.
-  pure (Data.Loader.fromStream samples batchSize (shuffle := true) (seed := seed))
+    IO (Data.Loader Float batchSize CifarImage CifarTarget) :=
+  Internal.loadImageLoader CifarImage cifarClasses "CIFAR-10" missingCifarHint
+    ("to regenerate the prepared slice, run:\n" ++
+      "  python3 scripts/datasets/download_example_data.py --cifar10")
+    exeName batchSize rowCount seed xPath yPath
 
 /-- Dataset and optimizer metadata for training on prepared NPY tensors. -/
 def trainingNotes (dataset : String) (batchSize : Nat)
@@ -265,6 +271,32 @@ def loadCifarBatches
     Data.Loader.nextNonemptyEpoch exeName loader
   pure epoch.batches
 
+/-- Train a cropped CIFAR classifier with the examples' shared Adam and cross-entropy policy. -/
+def trainCifarClassifier (batchSize cropHeight cropWidth : Nat)
+    (exeName logTitle : String)
+    (model : nn.Builder (nn.Sequential
+      [batchSize, cifarChannels, cropHeight, cropWidth] [batchSize, cifarClasses]))
+    (runtime : Runtime.Config) (flags : Support.Training.Options Support.Npy.Options)
+    (extraNotes : Array String := #[]) : IO Trainer.Report := do
+  let batches ←
+    loadCifarBatches exeName batchSize flags.data.nRows flags.data.seed
+      flags.data.xPath flags.data.yPath
+  let batches ← batches.mapM fun sample =>
+    CLI.orThrow exeName <| cropCifarBatch batchSize cropHeight cropWidth sample
+  let trainer :=
+    Trainer.new model <|
+      Trainer.RunConfig.forObjective
+        (Trainer.RunConfig.fromRuntime runtime
+          { optimizer := optim.adam { learningRate := flags.training.learningRate } })
+        (.oneHotCrossEntropy 1)
+        (seed := flags.data.seed)
+  let trained ← trainer.train
+    (Data.fromSamples batches)
+    (flags.training.trainOptions
+      (logTitle := logTitle)
+      (logNotes := trainingNotes "cifar10" batchSize flags extraNotes))
+  pure trained.report
+
 /-- Load the first full CIFAR-10 minibatch from the shared CIFAR loader. -/
 def loadCifarBatch
     (exeName : String) (batchSize rowCount seed : Nat) (xPath yPath : System.FilePath) :
@@ -281,26 +313,10 @@ shape and class range before handing the batch to examples.
 -/
 def loadImageNet64Loader
     (exeName : String) (batchSize rowCount seed : Nat) (xPath yPath : System.FilePath) :
-    IO (Data.Loader Float batchSize ImageNet64Image ImageNet64Target) := do
-  Data.requirePairedFiles
-    exeName
-    "ImageNet64 images" xPath
-    "ImageNet64 labels" yPath
-    missingImageNet64Hint
-  let source := Data.LabeledSource.fromFiles xPath yPath rowCount
-    [imagenet64Channels, imagenet64Height, imagenet64Width] imagenet64Classes
-  let samples ←
-    try
-      source.load (α := Float)
-    catch error =>
-      let hint :=
-        s!"{exeName}: failed to load ImageNet64 arrays for --n-total {rowCount}.\n" ++
-        s!"{error}\n" ++
-        "If your local .npy files contain fewer rows, pass --n-total with that row count; " ++
-        "to create ImageNet64 arrays, run the image-folder converter described in the error hint."
-      throw <| IO.userError hint
-  -- Same convention as CIFAR: this is the reusable loader for full-dataset loops.
-  pure (Data.Loader.fromStream samples batchSize (shuffle := true) (seed := seed))
+    IO (Data.Loader Float batchSize ImageNet64Image ImageNet64Target) :=
+  Internal.loadImageLoader ImageNet64Image imagenet64Classes "ImageNet64" missingImageNet64Hint
+    "to create ImageNet64 arrays, run the image-folder converter described in the error hint."
+    exeName batchSize rowCount seed xPath yPath
 
 /-- Load one shuffled epoch of full ImageNet64-style minibatches from prepared `.npy` arrays. -/
 def loadImageNet64Batches

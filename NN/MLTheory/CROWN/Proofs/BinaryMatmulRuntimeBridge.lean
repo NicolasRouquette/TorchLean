@@ -203,11 +203,6 @@ private theorem flatten_read_cast {α : Type} [Storage α] [Zero α]
   cases h
   rfl
 
-private theorem flat_read_fin {α : Type} [Storage α] [Zero α]
-    {n : Nat} (value : Tensor α [n]) (index : Fin n) :
-    getAtOrZero value [index.val] = Tensor.getScalar value index := by
-  simp [get_at_or_zero_dim_cons, index.isLt, Tensor.getScalar, Spec.get]
-
 private theorem matrix_coordinate_index (leading : Shape) {rows cols : Nat}
     (batch : leading.Coord) (row : Fin rows) (col : Fin cols) :
     (Coord.linearize ((Coord.appendEquiv leading [rows, cols]).symm
@@ -339,7 +334,7 @@ theorem flattenSpec_matmulWithDims {α : Type} [Storage α] [Context α]
       matmulFlat dims (Tensor.flattenSpec left) (Tensor.flattenSpec right) := by
   apply Tensor.ext_vector
   intro output
-  rw [← flat_read_fin (Tensor.flattenSpec (matmulWithDims dims left right)) output]
+  rw [← getAtOrZero_eq_getScalar (Tensor.flattenSpec (matmulWithDims dims left right)) output]
   unfold matmulWithDims
   split
   · rename_i h
@@ -348,7 +343,7 @@ theorem flattenSpec_matmulWithDims {α : Type} [Storage α] [Context α]
       (by simpa only [← h.2.2] using output.isLt)]
     simp only [matmulFlat, Tensor.getScalar_ofFn, OpContracts.MatmulDims.leftIndex,
       OpContracts.MatmulDims.rightIndex, hleft, hright, flatten_read_cast]
-  · rw [Tensor.flattenSpec_unflattenSpec, flat_read_fin]
+  · rw [Tensor.flattenSpec_unflattenSpec, getAtOrZero_eq_getScalar]
 
 end NN.IR.Graph
 

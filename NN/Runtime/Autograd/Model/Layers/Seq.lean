@@ -62,14 +62,17 @@ def stateShapes : {σ τ : Shape} → Seq σ τ → List Shape
   | _, _, .id _ => []
   | _, _, .cons l rest => l.stateShapes ++ stateShapes rest
 
-/--
-Collect the gradient flags for all parameters and buffers in a sequential model.
+def Internal.requiresGradAux : {σ τ : Shape} → Seq σ τ → Array Bool → Array Bool
+  | _, _, .id _, flags => flags
+  | _, _, .cons layer rest, flags => Internal.requiresGradAux rest (flags ++ layer.requiresGrad)
 
-This concatenates each layer's `requiresGrad` in order. Persistent buffers carry `false`.
+/--
+Collect the gradient flags for all parameters and buffers in layer order.
+
+Persistent buffers carry `false`. The accumulator appends each layer's flags once.
 -/
-def requiresGrad : {σ τ : Shape} → Seq σ τ → Array Bool
-  | _, _, .id _ => #[]
-  | _, _, .cons l rest => l.requiresGrad ++ requiresGrad rest
+def requiresGrad {σ τ : Shape} (model : Seq σ τ) : Array Bool :=
+  Internal.requiresGradAux model #[]
 
 /-- Validate every layer's static value-level configuration. -/
 def validate : {σ τ : Shape} → Seq σ τ → Except String Unit
@@ -190,9 +193,7 @@ def forward {σ τ : Shape} (model : Seq σ τ) (mode : Mode := .eval)
       (params : Runtime.Autograd.Torch.ParamList α (stateShapes model))
       (x : TorchLean.Tensor α σ) (mode : Mode := .eval)
       (rngCounter : Option (IO.Ref Nat) := none) : IO (TorchLean.Tensor α τ) := do
-    match validate model with
-    | .error message => throw <| IO.userError message
-    | .ok () => pure ()
+    Runtime.Autograd.okOrThrow (validate model)
     -- Inference still uses the eager session machinery so it can select native kernels, but its
     -- leaves are deliberately non-differentiable and the transient tape is released before return.
     let options := { options with gradEnabled := false }

@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Proofs.Utils.List
 public import NN.MLTheory.CROWN.Graph.Engine.BackwardObjective
 public import NN.MLTheory.CROWN.Proofs.LayerNormDirected
 
@@ -96,12 +97,6 @@ theorem coeffAffine_encloses
     simpa [directedCoeffAffine, hneg, (LawfulBoundOps.toReal_zero (α := α))] using
       And.intro (mul_le_mul_of_nonneg_right hal hx) (mul_le_mul_of_nonneg_right hau hx)
 
-omit [BoundOps α] [LawfulBoundOps α] in
-/-- A valid flat coordinate read agrees with the typed vector accessor. -/
-theorem read_fin {n : Nat} (v : Tensor α [n]) (i : Fin n) :
-    getAtOrZero v [i.val] = Tensor.getScalar v i := by
-  simp [get_at_or_zero_dim_cons, i.isLt, Tensor.getScalar, Spec.get]
-
 /-- Directed summation over all coordinates encloses the finite real sum. -/
 theorem sum_encloses
     {n : Nat} (lo hi : Fin n → α) (f : Fin n → ℝ)
@@ -134,7 +129,7 @@ theorem dotBox_encloses
     intervalMul_encloses (ha i).1 (ha i).2 (hb i).1 (hb i).2
   have h := sum_encloses (fun i => (term i).1) (fun i => (term i).2)
     (fun i => a i * b i) hterms
-  simp only [directedDotBox, ↓reduceDIte, castDimScalar_self, read_fin,
+  simp only [directedDotBox, ↓reduceDIte, castDimScalar_self, getAtOrZero_eq_getScalar,
     List.foldl_map, Option.some.injEq, Prod.mk.injEq] at hresult
   obtain ⟨rfl, rfl⟩ := hresult
   exact h
@@ -162,9 +157,6 @@ theorem linear_encloses
           (∑ i, a i * value (Spec.get2 W i j)) ≤ value (getAtOrZero aX.hi [j.val])) ∧
       value cLo ≤ ∑ i, a i * value (b.getScalar i) ∧
         (∑ i, a i * value (b.getScalar i)) ≤ value cHi := by
-  have hread (i : Fin m) (j : Fin n) :
-      getAtOrZero W [i.val, j.val] = Spec.get2 W i j := by
-    simp [get_at_or_zero_dim_cons, i.isLt, j.isLt, Spec.get2, Tensor.getScalar, Spec.get]
   simp only [directedBackwardLinear, ↓reduceDIte, castDimScalar_self] at hresult
   obtain ⟨c, hc, hpair⟩ := Option.map_eq_some_iff.mp hresult
   cases hpair
@@ -186,7 +178,8 @@ theorem linear_encloses
       (fun acc i => BoundOps.addUp acc
         (intervalMul (aLo.getScalar i) (aHi.getScalar i)
           (Spec.get2 W i j) (Spec.get2 W i j)).2) 0 0
-    simpa only [read_fin, Tensor.getScalar_dim, hread, hfold] using hsum
+    simpa only [getAtOrZero_eq_getScalar, Tensor.getScalar_dim, getAtOrZero_eq_get2, hfold] using
+      hsum
   · exact dotBox_encloses aLo aHi b b a (fun i => value (b.getScalar i))
       ha (fun _ => ⟨le_rfl, le_rfl⟩) hc
 
@@ -226,7 +219,7 @@ theorem inputAffines_encloses
   have hlower := Finset.sum_le_sum (fun i (_ : i ∈ Finset.univ) => (hselected i).1)
   have hupper := Finset.sum_le_sum (fun i (_ : i ∈ Finset.univ) => (hselected i).2)
   simp only [Finset.sum_add_distrib] at hlower hupper
-  simp only [directedInputAffines, ↓reduceDIte, castDimScalar_self, read_fin,
+  simp only [directedInputAffines, ↓reduceDIte, castDimScalar_self, getAtOrZero_eq_getScalar,
     Option.some.injEq, Prod.mk.injEq] at hresult
   obtain ⟨rfl, rfl⟩ := hresult
   simp only [affineValue, Spec.get2_dim, Tensor.getScalar_dim]

@@ -90,6 +90,9 @@ def run : IO Unit := do
     (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t5c) outIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
 
+  let yCpu ← Utils.cpuValue (s := sX) t4 yId
+  let yCuda ← Utils.cudaValue (s := sX) t4c yIdc
+  Utils.assertTensorApprox (s := sX) "sinusoidal full-vector forward" yCuda yCpu (tol := 2e-3)
   Utils.assertTensorApprox (s := Shape.scalar) "sinusoidal forward" outCuda outCpu (tol := 2e-3)
   Utils.assertTensorApprox (s := sX) "sinusoidal backward dx" dxCuda dxCpu (tol := 2e-3)
 
@@ -197,6 +200,7 @@ def run : IO Unit := do
     (Tape.add (α := Float) (t := t17r) (s := sR) xCosIdr rotSinIdr)
   let (t19r, outRIdr) ← Utils.okOrThrow (Tape.sum (α := Float) (t := t18r) (s := sR) yRIdr)
 
+  let yRCpu ← Utils.cpuValue (s := sR) t18r yRIdr
   let outRCpu ← Utils.cpuValue (s := Shape.scalar) t19r outRIdr
   let seedRCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (Tensor.scalar 1.0)
   let gradsRCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t19r) outRIdr seedRCpu)
@@ -260,6 +264,7 @@ def run : IO Unit := do
   let (t19rc, outRIdrc) ← Utils.okOrThrow
     (Runtime.Autograd.LibTorch.Tape.sum (t := t18rc) (s := sR) yRIdrc)
 
+  let yRCuda ← Utils.cudaValue (s := sR) t18rc yRIdrc
   let outRCuda ← Utils.cudaValue (s := Shape.scalar) t19rc outRIdrc
   let seedRCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
     { s := Shape.scalar, buf := Runtime.Autograd.LibTorch.Buffer.full 1 1.0 }
@@ -267,6 +272,7 @@ def run : IO Unit := do
     (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t19rc) outRIdrc seedRCuda)
   let dxRCuda ← Utils.cudaGrad (s := sR) gradsRCuda xIdrc
 
+  Utils.assertTensorApprox (s := sR) "rope full output" yRCuda yRCpu (tol := 3e-3)
   Utils.assertTensorApprox (s := Shape.scalar) "rope forward" outRCuda outRCpu (tol := 3e-3)
   Utils.assertTensorApprox (s := sR) "rope backward dx" dxRCuda dxRCpu (tol := 3e-3)
 

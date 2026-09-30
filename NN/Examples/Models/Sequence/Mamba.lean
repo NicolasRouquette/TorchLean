@@ -44,7 +44,7 @@ def usage : String :=
   Module.Command.usage s!"scripts/lake.sh exe torchlean {exeName}" ++ "\n" ++
     String.intercalate "\n"
     [ "Text data:"
-    , "  --data-file PATH | --tiny-shakespeare | --tinystories-valid"
+    , "  --data-file PATH | --tiny-shakespeare"
     , ""
     , "Training:"
     , "  --steps N          optimizer updates (default: 1)"
@@ -164,10 +164,10 @@ def generate
       (allowToken := fun i => allowToken i.val)
   pure (tokenizer.decode (ids.to (Array Nat)))
 
-/-- Train the Mamba language model and print before/after prediction and generation reports. -/
+/-- Train and retain the generated text alongside the before/after losses for logging. -/
 def train (runtime : Runtime.Config) (corpus : String)
     (options : Options) :
-    IO (Float × Float) := do
+    IO (Float × Float × String) := do
   let samples := samples corpus options.windows
   let reportSample := sample <|
     text.tokenWindow tokenizer (contextLength + 1) options.generation.prompt
@@ -197,7 +197,7 @@ def train (runtime : Runtime.Config) (corpus : String)
   IO.println s!"  corpus_bytes={corpus.toByteArray.size} windows={samples.size}"
   IO.println s!"  sampling=top_k({options.generation.topK}), temperature={
     options.generation.temperature}, seed={options.generation.seed}"
-  pure (lossBefore, lossAfter)
+  pure (lossBefore, lossAfter, generated)
 
 /-- CLI entrypoint for the Mamba text command. -/
 def main (args : List String) : IO UInt32 := do
@@ -213,7 +213,7 @@ def main (args : List String) : IO UInt32 := do
         Options.parse rest
       CLI.requireNoArgs exeName rest
       let corpusText ← RealData.Corpus.read exeName corpus
-      let (lossBefore, lossAfter) ← train runtime corpusText options
+      let (lossBefore, lossAfter, generated) ← train runtime corpusText options
       let extraNotes :=
         #[s!"data={corpus}", Support.deviceNote runtime,
           s!"windows={options.windows}", s!"lr={options.training.learningRate}",
@@ -222,7 +222,7 @@ def main (args : List String) : IO UInt32 := do
       text.Log.writeGeneration
         options.training.logDestination
           "Mamba text training" options.training.steps lossBefore lossAfter
-        options.generation none extraNotes
+        options.generation (some (text.escape generated)) extraNotes
     )
 
 end NN.Examples.Models.Sequence.Mamba

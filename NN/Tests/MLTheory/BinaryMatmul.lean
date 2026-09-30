@@ -8,7 +8,7 @@ module
 
 public import NN.Tests.MLTheory.Utils
 public import NN.Runtime.Autograd.IRExec
-public import NN.Spec.Core.Context.Rational
+public import NN.MLTheory.CROWN.BoundOps.Rational
 
 /-!
 # Broadcast and Vector Matmul Regressions
@@ -28,15 +28,6 @@ open NN.IR
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Graph
 open scoped Spec.RationalAlgebraic
-
-private instance : BoundOps Rat where
-  addDown := (· + ·)
-  addUp := (· + ·)
-  subDown := (· - ·)
-  subUp := (· - ·)
-  mulDown := (· * ·)
-  mulUp := (· * ·)
-  supportsExactAffineReassociation := true
 
 private def require (condition : Bool) (message : String) : IO Unit :=
   unless condition do throw <| IO.userError s!"binary matmul: {message}"
@@ -177,6 +168,14 @@ private def checkRejections : IO Unit := do
       constVals := Std.HashMap.emptyWithCapacity.insert 1 ⟨2, [1, 2]⟩ }
   require (!crownGraphSemanticsSupported g ps) "unsqueezed dot output accepted"
 
+/-- Exact rational value of a finite binary64 number. -/
+private def ratOfFloat? (x : Float) : Option Rat :=
+  FloatLib.Floats.ExecFloat.Binary.toRat? (FloatLib.Floats.ExecFloat.Binary.ofFloat x)
+
+/-- Exact rational value of a finite binary32 number. -/
+private def ratOfFloat32? (x : Float32) : Option Rat :=
+  FloatLib.Floats.ExecFloat.Binary.toRat? (FloatLib.Floats.ExecFloat.Binary.ofFloat32 x)
+
 private def checkRationalBounds (label : String) (lower upper : Option Rat)
     (expected : Rat) : IO Unit := do
   let some lo := lower | throw <| IO.userError s!"{label}: nonfinite lower bound"
@@ -194,20 +193,14 @@ private def checkDirectedProducts : IO Unit := do
   let exact : Rat := (1 + 1 / 134217728) * (1 - 1 / 134217728)
   let product := intervalMul x x y y
   checkRationalBounds "Float endpoint product enclosure"
-    (FloatLib.Floats.ExecFloat.Binary.toRat? (FloatLib.Floats.ExecFloat.Binary.ofFloat product.1))
-    (FloatLib.Floats.ExecFloat.Binary.toRat? (FloatLib.Floats.ExecFloat.Binary.ofFloat product.2))
-    exact
+    (ratOfFloat? product.1) (ratOfFloat? product.2) exact
   let lo := getAtOrZero bound.lo [0]
   let hi := getAtOrZero bound.hi [0]
   checkRationalBounds "rounded product excluded exact result"
-    (FloatLib.Floats.ExecFloat.Binary.toRat? (FloatLib.Floats.ExecFloat.Binary.ofFloat lo))
-    (FloatLib.Floats.ExecFloat.Binary.toRat? (FloatLib.Floats.ExecFloat.Binary.ofFloat hi)) exact
+    (ratOfFloat? lo) (ratOfFloat? hi) exact
   let squared := boxSquare a
   checkRationalBounds "rounded square excluded exact result"
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat (getAtOrZero squared.lo [0])))
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat (getAtOrZero squared.hi [0])))
+    (ratOfFloat? (getAtOrZero squared.lo [0])) (ratOfFloat? (getAtOrZero squared.hi [0]))
     ((1 + 1 / 134217728) ^ 2)
   let x32 : Float32 := 1 + 1 / 8192
   let y32 : Float32 := 1 - 1 / 8192
@@ -218,21 +211,13 @@ private def checkDirectedProducts : IO Unit := do
   let exact32 : Rat := (1 + 1 / 8192) * (1 - 1 / 8192)
   let product32 := intervalMul x32 x32 y32 y32
   checkRationalBounds "Float32 endpoint product enclosure"
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat32 product32.1))
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat32 product32.2)) exact32
+    (ratOfFloat32? product32.1) (ratOfFloat32? product32.2) exact32
   checkRationalBounds "Float32 product enclosure"
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat32 (getAtOrZero bound32.lo [0])))
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat32 (getAtOrZero bound32.hi [0]))) exact32
+    (ratOfFloat32? (getAtOrZero bound32.lo [0])) (ratOfFloat32? (getAtOrZero bound32.hi [0]))
+    exact32
   let squared32 := boxSquare a32
   checkRationalBounds "Float32 square enclosure"
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat32 (getAtOrZero squared32.lo [0])))
-    (FloatLib.Floats.ExecFloat.Binary.toRat?
-      (FloatLib.Floats.ExecFloat.Binary.ofFloat32 (getAtOrZero squared32.hi [0])))
+    (ratOfFloat32? (getAtOrZero squared32.lo [0])) (ratOfFloat32? (getAtOrZero squared32.hi [0]))
     ((1 + 1 / 8192) ^ 2)
   let small : Float := 1 / 18014398509481984
   let values : Tensor Float [129] :=

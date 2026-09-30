@@ -10,10 +10,10 @@ import all NN.MLTheory.CROWN.Proofs.DirectedIBPAxisCoordinates
 import all NN.MLTheory.CROWN.Proofs.DirectedIBPCoordinates
 import all NN.MLTheory.CROWN.Proofs.GraphConcatPermutation
 import all NN.MLTheory.CROWN.Graph.Engine.Base
-public import NN.MLTheory.CROWN.Proofs.DirectedIBPAxisInverse
+public import NN.MLTheory.CROWN.Graph.Engine.Base
 public import NN.MLTheory.CROWN.Proofs.DirectedIBPAxisCoordinates
 public import NN.MLTheory.CROWN.Proofs.DirectedIBPCoordinates
-public import NN.MLTheory.CROWN.Graph.Engine.Base
+public import NN.MLTheory.CROWN.Proofs.DirectedIBPAxisInverse
 
 /-!
 # The real evaluator and the backward flat permutation
@@ -60,12 +60,6 @@ theorem flatCoordEquiv_symm_val (s : Shape) (c : s.Coord) :
   simpa only [Equiv.apply_symm_apply] using
     (linearize_flatCoordEquiv s ((flatCoordEquiv s).symm c)).symm
 
-private theorem array_getD_zero (xs : Array Nat) (i : Nat) :
-    xs.getD i 0 = xs[i]! := by
-  by_cases hi : i < xs.size
-  · simp [Array.getD, hi]
-  · simp [Array.getD, hi]
-
 /-- The checked backward flat permutation is the inverse-read form of the forward swaps. -/
 theorem flatAxisPermutation?_adjacent (s : Shape) (swaps : List Nat)
     (e : Equiv.Perm (Fin s.length))
@@ -91,7 +85,7 @@ theorem flatAxisPermutation?_adjacent (s : Shape) (swaps : List Nat)
   split at hflat
   · contradiction
   next hn =>
-    let : NeZero (s.applyAdjacentSwaps swaps).size := ⟨hn⟩
+    have : NeZero (s.applyAdjacentSwaps swaps).size := ⟨hn⟩
     rw [inversePerm_axisArray, Equiv.symm_symm] at hflat
     simp only [Except.toOption, Bind.bind, Option.bind, Pure.pure, Option.some.injEq] at hflat
     subst flat
@@ -106,7 +100,8 @@ theorem flatAxisPermutation?_adjacent (s : Shape) (swaps : List Nat)
       apply Array.toList_inj.mp
       rw [Array.toList_map, List.toList_toArray,
         adjacentCoordinateEquiv_axisMap s swaps e haxes c]
-      simp only [axisMap, ← hc, Array.getElem!_toList, array_getD_zero]
+      simp only [axisMap, ← hc, Array.getElem!_toList, Array.getElem!_eq_getD]
+      rfl
     apply Fin.ext
     change
       (Fin.ofNat (s.applyAdjacentSwaps swaps).size

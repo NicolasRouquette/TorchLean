@@ -63,7 +63,7 @@ structure Attention.Options where
 
 namespace Attention.Options
 
-/-- Validate attention dimensions and projection initializers. -/
+/-- Validate attention dimensions, dropout probability, and projection initializers. -/
 def validate (config : Attention.Options)
     (sequenceLength modelWidth : Nat) : Except String Unit := do
   if sequenceLength = 0 then

@@ -87,7 +87,7 @@ PyTorch analogue: `nn.LSTM` producing an output sequence, followed by `nn.linear
 time step.
 -/
 def sequence
-  {α : Type} [TorchLean.Storage α] [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+  {α : Type} [TorchLean.Storage α] [Context α]
   {seqLen inputSize hiddenSize outputSize : Nat}
   (lstmSpec : LSTMSpec α inputSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
@@ -104,7 +104,7 @@ This runs an LSTM over the sequence and applies a linear classifier head to the 
 PyTorch analogue: `nn.LSTM` + `nn.linear`, taking the last output/hidden.
 -/
 def classifier
-  {α : Type} [TorchLean.Storage α] [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+  {α : Type} [TorchLean.Storage α] [Context α]
   {seqLen inputSize hiddenSize numClasses : Nat}
   (lstmSpec : LSTMSpec α inputSize hiddenSize)
   (classifierHead : LinearSpec α hiddenSize numClasses)
@@ -120,7 +120,6 @@ def classifier
 
 /-- A recurrent stack of arbitrary depth and widths, followed by a per-timestep linear head. -/
 def stacked
-  [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize outputSize : Nat}
   (layers : RecurrentStack (LSTMSpec α) inputSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
@@ -136,7 +135,7 @@ In this spec layer we represent the embedding/projection as `LinearSpec`s (often
 token vectors). PyTorch analogue: `nn.Embedding` (conceptually) + `nn.LSTM` + `nn.linear`.
 -/
 def languageModel
-  {α : Type} [TorchLean.Storage α] [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+  {α : Type} [TorchLean.Storage α] [Context α]
   {seqLen vocabularySize hiddenSize : Nat}
   (embeddingSpec : LinearSpec α vocabularySize hiddenSize)
   (lstmSpec : LSTMSpec α hiddenSize hiddenSize)
@@ -149,9 +148,13 @@ def languageModel
     |>.append lstmModule
     |>.append outputModule
 
-/-- Bidirectional LSTM followed by a classifier on the final concatenated state. -/
+/-- Bidirectional LSTM followed by a classifier on the last timestep's concatenated output.
+
+At that timestep the backward stream has processed only the last input. Its final hidden
+state appears at the first timestep of the aligned output stream.
+-/
 def bidirectionalClassifier
-  {α : Type} [TorchLean.Storage α] [Context α] [DecidableRel ((· > ·) : α → α → Prop)]
+  {α : Type} [TorchLean.Storage α] [Context α]
   {seqLen inputSize hiddenSize numClasses : Nat}
   (forwardSpec backwardSpec : LSTMSpec α inputSize hiddenSize)
   (classifierHead : LinearSpec α (hiddenSize + hiddenSize) numClasses)

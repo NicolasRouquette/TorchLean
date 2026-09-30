@@ -94,6 +94,19 @@ def conv {d : Nat}
       (nn.conv config.spatial (geometry.convolution outputChannels)
         (batchShape := batchShape) (inputChannels := inputChannels))
 
+/-- Build one independently seeded two-convolution residual branch. -/
+def residualBlock {d : Nat}
+    (config : Diffusion.NoisePredictor.Config d) (batchShape : Shape) :
+    nn.Builder (nn.Sequential
+      (batchShape.concat ((config.spatial.to Shape).prependDim config.hiddenChannels))
+      (batchShape.concat ((config.spatial.to Shape).prependDim config.hiddenChannels))) := do
+  let block ← nn.Sequential![
+    conv config batchShape config.hiddenChannels config.hiddenChannels,
+    relu,
+    conv config batchShape config.hiddenChannels config.hiddenChannels
+  ]
+  pure (nn.residual block)
+
 end Internal
 
 /--
@@ -156,27 +169,9 @@ def residual {d : Nat}
         Internal.conv config batchShape
           (config.dataChannels + 1) config.hiddenChannels,
         relu,
-        (do
-          let block ←
-            nn.Sequential![
-              Internal.conv config batchShape
-                config.hiddenChannels config.hiddenChannels,
-              relu,
-              Internal.conv config batchShape
-                config.hiddenChannels config.hiddenChannels
-            ]
-          pure (nn.residual block)),
+        Internal.residualBlock config batchShape,
         relu,
-        (do
-          let block ←
-            nn.Sequential![
-              Internal.conv config batchShape
-                config.hiddenChannels config.hiddenChannels,
-              relu,
-              Internal.conv config batchShape
-                config.hiddenChannels config.hiddenChannels
-            ]
-          pure (nn.residual block)),
+        Internal.residualBlock config batchShape,
         relu,
         Internal.conv config batchShape
           config.hiddenChannels config.dataChannels
@@ -326,10 +321,11 @@ Append a constant time channel to every sample in `batchShape`.
 The input layout is `batchShape × channels × spatial`. The result preserves the batch and spatial
 axes and changes only the channel count from `c` to `c + 1`.
 -/
-def appendTimeChannel (batchShape : Shape) {d c : Nat} (spatial : Tensor Nat [d])
-    (x : Tensor Float (sampleShape batchShape c spatial))
-    (tNorm : Float) :
-    Tensor Float (sampleShape batchShape (c + 1) spatial) :=
+def appendTimeChannel {α : Type} [Storage α]
+    (batchShape : Shape) {d c : Nat} (spatial : Tensor Nat [d])
+    (x : Tensor α (sampleShape batchShape c spatial))
+    (tNorm : α) :
+    Tensor α (sampleShape batchShape (c + 1) spatial) :=
   Tensor.concatAfter batchShape x (Tensor.full (sampleShape batchShape 1 spatial) tNorm)
 
 /--

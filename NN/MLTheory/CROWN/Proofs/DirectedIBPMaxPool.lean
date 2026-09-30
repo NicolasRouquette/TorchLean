@@ -22,6 +22,7 @@ namespace NN.MLTheory.CROWN.Graph.DirectedBackward
 
 open Spec TorchLean TorchLean.Tensor
 open NN.MLTheory.CROWN
+open NN.MLTheory.CROWN.IntervalLemmas (value_max2)
 open Spec.Pooling.Internal
 
 noncomputable section
@@ -43,19 +44,15 @@ theorem OptionEncloses.getD_zero {lo hi : Option α} {x : Option ℝ}
   | none => simp [LawfulBoundOps.toReal_zero (α := α)]
   | some h => exact h
 
-/-- A selected maximum denotes the maximum of the two scalar values. -/
+/-- A selected maximum denotes the maximum of the two scalar values; this is `value_max2` read
+with its arguments swapped. -/
 theorem value_selectedMax (a b : α) :
     value (if b > a then b else a) = max (value a) (value b) := by
-  by_cases h : b > a
-  · rw [ite_eq_left h, max_eq_right (le_of_lt ((LawfulBoundOps.lt_iff a b).mp h))]
-  · rw [ite_eq_right h, max_eq_left]
-    exact le_of_not_gt (fun hlt => h ((LawfulBoundOps.lt_iff a b).mpr hlt))
+  simpa only [BoundOps.max2, Bool.decide_iff, max_comm] using value_max2 b a
 
 theorem selectedMax_real (a b : ℝ) :
-    (if b > a then b else a) = max a b := by
-  by_cases h : b > a
-  · rw [ite_eq_left h, max_eq_right (le_of_lt h)]
-  · rw [ite_eq_right h, max_eq_left (le_of_not_gt h)]
+    (if b > a then b else a) = max a b :=
+  (max_def_lt a b).symm
 
 /-- The max-pool fold step, with absent padded candidates skipped. -/
 def poolMaxStep {β : Type} [Context β] (best candidate : Option β) : Option β :=

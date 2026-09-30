@@ -27,9 +27,9 @@ open FloatLib.Floats (ExecFloat)
 open FloatLib.Floats.Formats.BinaryInterchange (Model)
 open NN.MLTheory.CROWN NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN.Graph.CrownCertSoundness
-open NN.Verification.CROWNQuery
+open NN.Verification.Cert.CROWNQuery
 open NN.Verification.Cert.RationalReflection
-open scoped Spec.RationalAlgebraic BigOperators
+open scoped Spec.RationalAlgebraic
 
 /-- Successful scalar decoding retains the exact real denotation of the binary32 word. -/
 theorem decodeScalar_sound (value : ExecFloat.Binary 8 23) (q : ℚ)
@@ -98,22 +98,24 @@ theorem dominates_sound {n m : Nat} (supplied exact : Bounds n m)
   · exact (sub_nonpos.mp hl').trans (hy i).1
   · exact (hy i).2.trans (sub_nonpos.mp hu')
 
-/-- Exact-real evaluation of the decoded chain; artifact bounds and slopes do not alter values. -/
-@[expose] noncomputable def Chain.eval {n m : Nat} (chain : Chain n m)
+/-- Exact-real semantics of the program decoded independently from the graph and parameters. -/
+@[expose] noncomputable def Program.eval {n m : Nat} (program : Program n m)
     (x : Tensor ℝ [n]) : Tensor ℝ [m] :=
-  match chain with
-  | .input _ => x
-  | .linear parent layer _ =>
+  match program with
+  | .input => x
+  | .linear parent layer =>
       Tensor.addSpec (matVecMulSpec (realTensor layer.weights) (parent.eval x))
         (realTensor layer.bias)
-  | .relu parent _ _ => Activation.reluSpec (parent.eval x)
+  | .relu parent => Activation.reluSpec (parent.eval x)
 
-/-- Local same-artifact checks enclose the exact-real computation at the covered output. -/
+/-- Local same-artifact checks enclose the exact-real computation at the covered output. The
+artifact's bounds and relaxation slopes do not alter the value, which is that of the erased
+program. -/
 theorem Chain.check_sound {n m : Nat} (chain : Chain n m) (input : Box ℚ [n])
     (h : chain.check input = true) (x : Tensor ℝ [n])
     (hx : Theorems.Semantics.encloses
       ⟨n, realTensor input.lo, realTensor input.hi⟩ x) :
-    chain.bounds.Encloses x (chain.eval x) := by
+    chain.bounds.Encloses x (chain.program.eval x) := by
   induction chain with
   | input bounds =>
       simp only [Chain.check, Bool.and_eq_true] at h
@@ -129,24 +131,6 @@ theorem Chain.check_sound {n m : Nat} (chain : Chain n m) (input : Box ℚ [n])
       obtain ⟨⟨hp, ha⟩, hd⟩ := h
       exact dominates_sound bounds _ input hd x _ hx
         (parent.bounds.relu_encloses input alpha ha x _ hx (ih hp))
-
-/-- Exact-real semantics of the program decoded independently from the graph and parameters. -/
-@[expose] noncomputable def Program.eval {n m : Nat} (program : Program n m)
-    (x : Tensor ℝ [n]) : Tensor ℝ [m] :=
-  match program with
-  | .input => x
-  | .linear parent layer =>
-      Tensor.addSpec (matVecMulSpec (realTensor layer.weights) (parent.eval x))
-        (realTensor layer.bias)
-  | .relu parent => Activation.reluSpec (parent.eval x)
-
-/-- Removing certificate entries leaves the computed real value unchanged. -/
-theorem Chain.eval_program {n m : Nat} (chain : Chain n m) (x : Tensor ℝ [n]) :
-    chain.eval x = chain.program.eval x := by
-  induction chain with
-  | input _ => rfl
-  | linear _ _ _ ih => simp only [Chain.eval, Chain.program, Program.eval, ih]
-  | relu _ _ _ ih => simp only [Chain.eval, Chain.program, Program.eval, ih]
 
 /-- Every requested inequality holds at the exact-real output of the decoded program. -/
 @[expose] def Decoded.Safe (decoded : Decoded) : Prop :=
@@ -168,7 +152,7 @@ theorem Decoded.check_sound (decoded : Decoded) (h : decoded.check = true) :
   obtain ⟨⟨⟨_, _⟩, hc⟩, hm⟩ := h
   intro x hx i
   have he := decoded.artifact.chain.check_sound decoded.graph.input hc x hx
-  rw [Chain.eval_program, decoded.artifact.sameProgram] at he
+  rw [decoded.artifact.sameProgram] at he
   have hq := decoded.artifact.chain.bounds.linear_encloses
     decoded.inequalities.weights decoded.inequalities.bias x
     (decoded.graph.program.eval x) he

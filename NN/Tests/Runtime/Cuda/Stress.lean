@@ -20,7 +20,7 @@ Low-level stress coverage that goes beyond the small eager-tape tests:
 - reference/deterministic RNG behavior for `randUniform`, `randNormal`, and `bernoulliMask`,
 - explicit `Buffer.releaseIO` lifecycle semantics,
 - finalization of short-lived external buffer wrappers,
-- LibTorch allocation accounting, saved attention context lifetime, and recoverable OOM,
+- LibTorch allocation accounting, saved attention buffer lifetime, and recoverable OOM,
 - large-buffer elementwise/reduction checks on direct `LibTorch.Buffer` ops,
 - extra ATen matmul reference parity checks on rectangular inputs.
 
@@ -610,81 +610,90 @@ def runMemoryAccountingProbe : IO Unit := do
   IO.println s!"  released/cache emptied: {emptied.format}"
 
 /--
-The forward context must retain Q/K/V after their Lean payload handles are explicitly released.
-Readback and backward use that retained storage; both explicit release and finalization of the
-output must eventually release the context. Native probabilities/auxiliaries have no Lean handle.
+Lean owns Q/K/V and the saved probabilities explicitly. Releasing that state must reclaim its
+storage while leaving the output usable; leaving scope must also finalize every saved buffer.
 -/
-@[noinline] def runAttentionContextIteration (releaseOutput : Bool) : IO Unit := do
+@[noinline] def runAttentionSavedIteration (releaseSaved : Bool) : IO Unit := do
   let before ← synchronizedStats
   let n : UInt32 := 64
   let d : UInt32 := 32
   let elements : UInt32 := n * d
   let bytes := UInt64.ofNat (elements.toNat * 4)
+  let probabilityBytes := UInt64.ofNat (n.toNat * n.toNat * 4)
   let query ← Buffer.zerosIO elements
   let key ← Buffer.zerosIO elements
   let value ← Buffer.fullIO elements 2.0
-  let mask ← Buffer.zerosIO 0
   let outResult ← IO.lazyPure fun _ =>
-    Buffer.libTorchAttentionFwd query key value mask 0 1 n d 1.0
-  let out ← Utils.okOrThrow outResult
+    Buffer.attentionForward query key value none 1 n d 1.0
+  let (out, probabilities) ← Utils.okOrThrow outResult
   assertMemoryReadback "attention forward" out elements.toNat 2.0
-  for buffer in #[query, key, value, mask] do
-    discard <| Buffer.releaseIO buffer
+  assertMemoryReadback "attention saved probabilities" probabilities (n.toNat * n.toNat)
+    (1.0 / Float.ofNat n.toNat)
   let retained ← synchronizedStats
-  assertNativeAccounting "attention retained context" retained
-  if retained.liveBytes != before.liveBytes + bytes then
-    throw <| IO.userError "attention input payload handles were not retired"
-  if retained.allocatedBytes < before.allocatedBytes + 4 * bytes then
-    throw <| IO.userError "attention context did not retain native Q/K/V/output storage"
+  assertNativeAccounting "attention saved buffers" retained
+  let savedBytes := 3 * bytes + probabilityBytes
+  if retained.liveBytes != before.liveBytes + savedBytes + bytes then
+    throw <| IO.userError "attention Q/K/V/probabilities/output payload accounting mismatch"
+  if retained.allocatedBytes < before.allocatedBytes + savedBytes + bytes then
+    throw <| IO.userError "attention native accounting omitted live saved buffers"
   Runtime.Autograd.LibTorch.emptyCache
   let afterEmpty ← synchronizedStats
-  if afterEmpty.allocatedBytes != retained.allocatedBytes then
-    throw <| IO.userError "emptyCache released live attention context storage"
-  assertMemoryReadback "attention after input release/cache empty" out elements.toNat 2.0
+  if afterEmpty.liveBytes != retained.liveBytes ||
+      afterEmpty.allocatedBytes != retained.allocatedBytes then
+    throw <| IO.userError "emptyCache released live attention buffers"
+  assertMemoryReadback "attention after cache empty" out elements.toNat 2.0
 
   let upstream ← Buffer.fullIO elements 1.0
-  let gradResult ← IO.lazyPure fun _ => Buffer.libTorchAttentionBwd out upstream
+  let gradResult ← IO.lazyPure fun _ =>
+    Buffer.attentionBackward query key value probabilities upstream 1 n d 1.0
   let (dq, dk, dv) ← Utils.okOrThrow gradResult
   -- Uniform attention, constant V, and unit output cotangent give dQ=dK=0, dV=1.
-  assertMemoryReadback "attention retained dQ" dq elements.toNat 0.0
-  assertMemoryReadback "attention retained dK" dk elements.toNat 0.0
-  assertMemoryReadback "attention retained dV" dv elements.toNat 1.0
+  assertMemoryReadback "attention saved dQ" dq elements.toNat 0.0
+  assertMemoryReadback "attention saved dK" dk elements.toNat 0.0
+  assertMemoryReadback "attention saved dV" dv elements.toNat 1.0
   for buffer in #[upstream, dq, dk, dv] do
     discard <| Buffer.releaseIO buffer
-  if releaseOutput then
+  if releaseSaved then
+    let beforeRelease ← synchronizedStats
+    for buffer in #[query, key, value, probabilities] do
+      if (← Buffer.releaseIO buffer) != 1 then
+        throw <| IO.userError "attention saved buffer release did not retire its payload"
+    let outputOnly ← synchronizedStats
+    assertNativeAccounting "attention output only" outputOnly
+    if outputOnly.liveBytes != before.liveBytes + bytes ||
+        outputOnly.allocatedBytes + savedBytes != beforeRelease.allocatedBytes then
+      throw <| IO.userError "attention output retained hidden saved storage"
+    assertMemoryReadback "attention output after saved buffer release" out elements.toNat 2.0
     if (← Buffer.releaseIO out) != 1 then
-      throw <| IO.userError "attention output release did not retire its payload/context"
+      throw <| IO.userError "attention output release did not retire its payload"
   else
-    -- Final use keeps out alive until here. The noinline IO scope then finalizes its wrapper.
-    if (← Buffer.sizeIO out) != elements then
-      throw <| IO.userError "attention output disappeared before finalization"
+    -- These final uses retain all buffers until this noinline IO scope finalizes their wrappers.
+    for (buffer, size) in #[(query, elements), (key, elements), (value, elements),
+        (probabilities, n * n), (out, elements)] do
+      if (← Buffer.sizeIO buffer) != size then
+        throw <| IO.userError "attention saved buffer disappeared before finalization"
 
-/-- Saved native attention state is accounted and reclaimed independently of logical handles. -/
+/-- Both explicit release and Lean finalization reclaim the saved attention buffers. -/
 def runAttentionMemoryProbe : IO Unit := do
   Buffer.requireNativeRuntime
-  IO.println "== LibTorch saved attention context lifetime =="
-  -- Select an always-supported float32 provider; do not depend on GPU-specific flash eligibility.
-  Runtime.Autograd.LibTorch.setSDPEnabled .math true
-  Runtime.Autograd.LibTorch.setSDPEnabled .flash false
-  Runtime.Autograd.LibTorch.setSDPEnabled .efficient false
-  Runtime.Autograd.LibTorch.setSDPEnabled .cuDNN false
-  runAttentionContextIteration true
+  IO.println "== LibTorch saved attention buffer lifetime =="
+  runAttentionSavedIteration true
   Runtime.Autograd.LibTorch.synchronize
   Runtime.Autograd.LibTorch.emptyCache
   let before ← synchronizedStats
-  for releaseOutput in [true, false] do
-    runAttentionContextIteration releaseOutput
+  for releaseSaved in [true, false] do
+    runAttentionSavedIteration releaseSaved
     let after ← synchronizedStats
-    assertNativeAccounting "attention context retired" after
+    assertNativeAccounting "attention saved buffers retired" after
     if after.liveBytes != before.liveBytes || after.allocatedBytes != before.allocatedBytes then
       throw <| IO.userError
-        s!"attention context leaked after releaseOutput={releaseOutput}: {after.format}"
+        s!"attention saved buffers leaked after releaseSaved={releaseSaved}: {after.format}"
     Runtime.Autograd.LibTorch.emptyCache
     let emptied ← synchronizedStats
     if emptied.allocatedBytes != before.allocatedBytes ||
         emptied.reservedBytes > after.reservedBytes then
       throw <| IO.userError "attention retirement/cache-empty accounting mismatch"
-  IO.println "  explicit release and finalization both reclaimed saved context"
+  IO.println "  explicit release and finalization both reclaimed saved buffers"
 
 /-- A failed native allocation must report the recoverable IO error class, not abort the process. -/
 def expectAllocationOOM (label : String) (allocate : IO Buffer) : IO Unit := do
@@ -774,7 +783,7 @@ def runMemoryTests : IO Unit := do
   if !(← self.pathExists) then
     IO.println "  skipped: isolated memory tests require Linux /proc/self/exe"
     return
-  for probe in ["accounting", "attention-context", "oom-recovery"] do
+  for probe in ["accounting", "attention-buffers", "oom-recovery"] do
     let result ← IO.Process.output {
       cmd := self.toString
       args := #[]

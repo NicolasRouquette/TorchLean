@@ -84,9 +84,6 @@ instance {α : Type} [TorchLean.Storage α] [Context α] [TensorTransfer α] :
   selectiveScanDiagVarNative? := some fun {seqLen state} a b x initial sess =>
     Internal.EagerSession.selectiveScanDiagVarNative? sess (seqLen := seqLen) (state := state)
       a b x initial
-  spectralConv1dRfftNative? := some fun {grid width modes} x realWeight imagWeight sess =>
-    Internal.EagerSession.spectralConv1dRfftNative? sess (grid := grid) (width := width)
-      (modes := modes) x realWeight imagWeight
   const := fun {s} t => fun sess => Internal.EagerSession.const (α := α) sess (sh := s) t
   add := fun {s} a b => fun sess => Internal.EagerSession.add (α := α) sess (sh := s) a b
   sub := fun {s} a b => fun sess => Internal.EagerSession.sub (α := α) sess (sh := s) a b

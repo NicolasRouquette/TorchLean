@@ -27,8 +27,8 @@ open Runtime.Autograd.IRExec
 open NN.MLTheory.CROWN.Graph.CertSoundness
 open NN.MLTheory.CROWN.Graph.CrownCertSoundness
 open NN.MLTheory.CROWN.Graph.AlphaCrownTransferSoundness
-open NN.Verification.CROWNNodeCert
-open NN.Verification.CROWNNodeCertAlphaBeta
+open NN.Verification.Cert.CROWNNodeCert
+open NN.Verification.Cert.CROWNNodeCertAlphaBeta
 
 -- The soundness statements printed below are wider than the 100 columns this file allows, so their
 -- expected output is rewrapped by hand and the blocks ask for `whitespace := lax`, which compares
@@ -113,16 +113,16 @@ Run it with either maintained CPU arithmetic mode:
 ```terminal
 # Run the classifier workflow with its default CPU scalar
 # backend.
-lake exe verify -- torchlean-mlp-workflow
+scripts/lake.sh exe verify -- torchlean-mlp-workflow
 # Repeat using the executable IEEE binary32 scalar model.
-lake exe verify -- torchlean-mlp-workflow --arithmetic ieee
+scripts/lake.sh exe verify -- torchlean-mlp-workflow --arithmetic ieee
 ```
 
-A seeded run on both backends prints the same result:
+The following illustrative values show how to read an abridged report. Rerun the commands above
+to obtain the current workflow's output; this table does not establish agreement between backends:
 
 ```terminal +output
-mean_loss(before) = 0.978569
-mean_loss(after) = 0.010960
+avg_loss(on samples)=0.010960
 prediction at center=[1.885023, -3.156008]
 Alpha-CROWN (IBP phases) lower=[1.639539, -3.572599] upper=[2.130507, -2.739417] label=0
   margin=4.378956 certified=true
@@ -133,8 +133,8 @@ The report lower-bounds class zero by `1.639539` and upper-bounds its only compe
 reports `certified=true` for the requested input box. The semantic and arithmetic bridges below
 are required before interpreting that report as a theorem.
 
-Read the loss lines as a description of fitting the training examples. Their decrease says
-nothing by itself about the entire perturbation region. The `prediction at center` line is a
+The loss describes fitting the training examples. A small training loss says nothing by itself
+about the entire perturbation region. The `prediction at center` line is a
 single forward evaluation: `1.885023` beats `-3.156008`, so the center receives class zero.
 The `lower` and `upper` arrays answer a different question. Their entries describe bounds on
 each score as the input varies. To protect class zero, the unfavorable comparison uses its
@@ -186,7 +186,8 @@ therefore part of a source-model claim.
 TorchLean has two relevant forward correspondences. The typed first-order
 {src "NN/Verification/Builtin/Proved.lean"}[proved forward fragment]
 lowers `NN.Verification.Builtin.Proved.ForwardProgram` values. Its constructors cover constants,
-parameters, arithmetic, ReLU, `exp`, `log`, inverse, matrix products, reshapes and permutations,
+parameters, arithmetic, ReLU, `exp`, `log`, inverse, matrix products, reshapes and
+two-axis transposes,
 softmax along any valid axis, axis-parametrized LayerNorm, linear and convolution layers, and MSE
 loss.
 `Correctness.lowerForwardProgramToIR_wellFormed` proves structural well-formedness, while
@@ -763,7 +764,7 @@ split. Sound output bounds still depend on the underlying transfers; subdivision
 universal soundness for rounded LayerNorm or other operations.
 
 Artifact replay can opt in with
-`NN.Verification.IBPCert.check g ps outId path (refinement := some (inputId, splitBudget))`.
+`NN.Verification.Cert.IBPCert.check g ps outId path (refinement := some (inputId, splitBudget))`.
 The default is unchanged. This is a graph-level option, separate from the high-level trainer API.
 
 ## Trainer Verification API
@@ -856,14 +857,15 @@ step rejects phase choices inconsistent with the current IBP interval.
 
 The transfer theorems take the IBP boxes as an assumption, `IBPEnclosesVals`. The composed
 corollaries discharge it from the IBP soundness theorem. `alphaCrown_cert_encloses_semantics` and
-`alphaBetaCrown_cert_encloses_semantics'` conclude enclosure from topological order, supported
+`alphaBetaCrown_cert_encloses_semantics` conclude enclosure from topological order, supported
 operations, locally consistent boxes and values, enclosed inputs, valid slopes, and a certificate
 that replays the affine step; `alphaCrown_cert_encloses_evalGraphRec` fixes the boxes to `runIBP?`
 and the values to `evalGraphRec`, so only the graph, input, slope, and certificate hypotheses
 remain. These are the forms a caller should cite.
 
-The executable `runAlphaBetaCROWN` pass first runs IBP, infers every ReLU phase already forced by
-the interval, and rechecks that phase while replaying affine bounds. Unstable phases remain
+The executable `outputBoxAlphaBetaCROWN?` path first runs IBP. `runAlphaBetaCROWN` takes those
+intervals, infers every ReLU phase they already force, and rechecks it while replaying affine
+bounds. Unstable phases remain
 unsplit and use the default alpha relaxation. This is a useful native fixed-relaxation pass; it is
 not the external Alpha-Beta-CROWN optimizer's branch-and-bound search.
 
@@ -885,7 +887,7 @@ not the external Alpha-Beta-CROWN optimizer's branch-and-bound search.
 #check @alphaCrown_cert_encloses_evalGraphRec
 -- Obtain the corresponding composed result for alpha-beta
 -- certificate data.
-#check @alphaBetaCrown_cert_encloses_semantics'
+#check @alphaBetaCrown_cert_encloses_semantics
 ```
 ```leanOutput crownThms (whitespace := lax)
 crown_checker_encloses_semantics : ∀ (g : NN.MLTheory.CROWN.Graph) (ps :
@@ -978,7 +980,7 @@ alphaCrown_cert_encloses_evalGraphRec : ∀ (g : NN.MLTheory.CROWN.Graph) (ps :
                     v → EnclosesAtInput ctx x b v
 ```
 ```leanOutput crownThms (whitespace := lax)
-alphaBetaCrown_cert_encloses_semantics' : ∀ (g : NN.MLTheory.CROWN.Graph) (ps :
+alphaBetaCrown_cert_encloses_semantics : ∀ (g : NN.MLTheory.CROWN.Graph) (ps :
   NN.MLTheory.CROWN.Graph.ParamStore ℝ)
   (ibp : Array (Option (NN.MLTheory.CROWN.FlatBox ℝ))) (alpha : Array (Option
     (NN.MLTheory.CROWN.Graph.FlatTensor ℝ)))
@@ -1064,7 +1066,7 @@ certificateAccepts_eq_true : ∀ (cert : NN.Verification.Cert.NodeReplay.CROWNNo
               checkCROWNNode._proof_4))))
   (diagnosticsOk : Bool),
   certificateAccepts cert g ps authoritativeIbp diagnosticsOk = true →
-    CrownCertLocalOK g (NN.Verification.CROWNNodeCert.replayStep g ps authoritativeIbp cert)
+    CrownCertLocalOK g (NN.Verification.Cert.CROWNNodeCert.replayStep g ps authoritativeIbp cert)
       cert.crown
 ```
 ```leanOutput acceptThms (whitespace := lax)
@@ -1084,7 +1086,7 @@ AlphaBetaCROWNNodeCertificate.accepts_eq_true : ∀ (cert : AlphaBetaCROWNNodeCe
             AlphaBetaCROWNNodeCertificate._proof_3 AlphaBetaCROWNNodeCertificate._proof_4))))
   (diagnosticsOk : Bool),
   cert.accepts g ps authoritativeIbp diagnosticsOk = true →
-    CrownCertLocalOK g (NN.Verification.CROWNNodeCertAlphaBeta.replayStep g ps authoritativeIbp
+    CrownCertLocalOK g (NN.Verification.Cert.CROWNNodeCertAlphaBeta.replayStep g ps authoritativeIbp
       cert) cert.crown
 ```
 
@@ -1348,9 +1350,10 @@ boundary.
 
 The external alpha-beta-CROWN leaf checker `checkAbCrownLeafArtifact` validates the JSON schema,
 finite ordered root and leaf boxes, dimensions, containment of each represented leaf in the root,
-and the exported lower-bound witness relative to its threshold. It does not prove that the lower
-bound came from the network semantics, and it does not prove that the represented leaves cover the
-root box. Those are producer obligations.
+and the exported lower-bound witness relative to its threshold. It also checks root coverage using
+the closed grid cut by leaf and root endpoints, returning an error above one million cells. This
+executable check has no accompanying soundness theorem. The lower bounds' relationship to the
+network semantics remains a producer obligation.
 
 This yields three distinct uses of "certificate":
 
@@ -1385,13 +1388,15 @@ objects:
 - the three `twostage-*` commands implement the Lyapunov workflows described in the two-stage
   chapter, with distinct external-producer, hybrid, and all-in-Lean boundaries.
 
-`lake exe verify -- list` is the authoritative command inventory. A successful run establishes the
+`scripts/lake.sh exe verify -- list` is the authoritative command inventory. A successful run
+establishes the
 acceptance predicate or reported computation documented for that command; it does not merge these
 heterogeneous formats into one global verification theorem.
 
 # Floating-Point Models And Refinement
 
-The proof float `FP32` is `NF binaryRadix fexp32 rnd32`: a rounded-real model with gradual
+The proof float `FP32` is `NF binaryRadix (Model.fexpOf FloatFormat.binary32) nearestEven`: a
+rounded-real model with gradual
 underflow. Its exponent description has no upper bound, so it does not model overflow, NaN,
 infinity, or signed-zero payload behavior. FloatLib binary32 is the executable bit-level model.
 
@@ -1426,7 +1431,7 @@ A verification report should make the following boundary visible:
 *
   * `runIBP_encloses_evalGraphRec`
   * the executable real engine encloses the semantics on `EngineCore` graphs with full coverage
-  * transcendental node kinds, rounded scalars, or the JSON checkers
+  * node kinds outside `EngineCore`, rounded scalars, or the JSON checkers
 *
   * `runIBP_encloses_all`
   * every returned box encloses its `RealNodeEquation` value under the scalar laws, node order,
@@ -1458,7 +1463,7 @@ A verification report should make the following boundary visible:
 *
   * alpha-beta leaf checker succeeds
   * represented boxes and witness fields pass structural/numeric checks
-  * network-bound provenance or root coverage
+  * network-bound provenance; coverage is an executable check without a soundness theorem
 *
   * numerical range check plus IEEE replay
   * stored trace and one reference execution pass executable checks
@@ -1475,4 +1480,5 @@ claim.
 
 # References
 
-IEEE 1788-2015 specifies the interval-arithmetic conventions followed by the `BoundOps` classes.
+The `BoundOps` classes specify directed endpoint operations and separate scalar soundness laws.
+They do not supply an implementation of the full IEEE interval-arithmetic standard.

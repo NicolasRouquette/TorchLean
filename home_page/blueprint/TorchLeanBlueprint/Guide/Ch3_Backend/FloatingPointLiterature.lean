@@ -56,7 +56,7 @@ Run the native/reference comparison with:
 ```terminal
 # Compare the executable binary32 model with the Float32
 # path on the same MLP.
-lake exe torchlean float32_semantics
+scripts/lake.sh exe torchlean float32_semantics
 ```
 
 It evaluates
@@ -368,7 +368,7 @@ IEEE32Exec.sumTreeResult_enclosure : ∀
       IEEE32Exec.evalIEEE._proof_4),
   IEEE32Exec.sumTreeResult xs r →
     ∀ (u : ℝ),
-      RelativeLocalAddBound (fun a b => IEEE32Exec.fp32Round (a + b)) u →
+      RelativeLocalAddBound (fun a b => Model.roundAt FloatFormat.binary32 (a + b)) u →
         0 ≤ u →
           ∃ t,
             t.leaves.toList.Perm xs.toList ∧
@@ -741,7 +741,7 @@ The executable companion to these approximation theorems works over the canonica
 ```terminal
 # Generate and replay the interval artifact, then try a
 # deliberately changed range.
-lake exe torchlean numerical_certificate
+scripts/lake.sh exe torchlean numerical_certificate
 ```
 
 The example constructs a two-layer MLP from ordinary IR operations:

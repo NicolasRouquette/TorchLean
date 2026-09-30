@@ -18,6 +18,10 @@ execute without recording a LibTorch autograd graph. The wrappers remain a forei
 boundary: shape/layout guards and named regression suites are engineering evidence, not Lean proofs
 of ATen, its dependencies, or compiled execution. Numerical reductions retain implementation-defined
 ordering. The CPU/reference capsules and their mathematical contracts are separate.
+
+Local VJP ownership follows `Engine.LibTorch.Ops`: `.torchLeanTape` means Lean composes the
+derivative from numerical primitives; `.backendVJP` means it calls a native backward primitive.
+Both retain the LibTorch provider and TorchLean's global tape.
 -/
 
 @[expose] public section
@@ -26,10 +30,12 @@ namespace NN
 namespace Backend
 namespace LibTorch
 
+namespace Internal
+
 /-- Describe a maintained LibTorch primitive and the evidence required by its runtime contract. -/
 def capsule
     (name : String) (op : BackendOp) (valueSummary vjpSummary : String)
-    (vjpMode : VJPMode := .backendVJP) : KernelCapsule :=
+    (vjpMode : VJPMode) : KernelCapsule :=
   { name
     op
     provider := .libTorch
@@ -58,20 +64,22 @@ def capsule
     numericalPolicy := { reduction := .notApplicable } }
 
 /-- Build the standard LibTorch CUDA capsule for a pointwise operation. -/
-def pointwiseCapsule (op : BackendOp) : KernelCapsule :=
+def pointwiseCapsule (op : BackendOp) (vjpMode : VJPMode) : KernelCapsule :=
   capsule
     s!"libtorch.{op.name}"
     op
     s!"LibTorch CUDA `{op.name}` follows the pointwise tensor contract."
     s!"LibTorch CUDA `{op.name}` VJP is checked through runtime autograd tests."
+    vjpMode
 
 /-- Build a LibTorch CUDA reduction capsule with implementation-defined reduction order. -/
-def reductionCapsule (op : BackendOp) : KernelCapsule :=
+def reductionCapsule (op : BackendOp) (vjpMode : VJPMode) : KernelCapsule :=
   { capsule
     s!"libtorch.{op.name}"
     op
     s!"LibTorch CUDA `{op.name}` follows the explicit reduction shape contract."
-    s!"LibTorch CUDA `{op.name}` adjoint is checked through runtime gradient tests." with
+    s!"LibTorch CUDA `{op.name}` adjoint is checked through runtime gradient tests."
+    vjpMode with
     numericalPolicy.reduction := .implementationDefined }
 
 /-- LibTorch CUDA kernel with an accumulation whose tree/order is selected by the implementation.
@@ -80,17 +88,18 @@ This covers matrix products, affine layers, convolutions, losses, and average po
 selects the accumulation implementation; the capsule does not promise the reference left fold.
 Deterministic execution settings do not strengthen this to a particular numerical schedule. -/
 def accumulationCapsule (name : String) (op : BackendOp) (valueSummary vjpSummary :
-    String) (vjpMode : VJPMode := .backendVJP) : KernelCapsule :=
+    String) (vjpMode : VJPMode) : KernelCapsule :=
   { capsule name op valueSummary vjpSummary vjpMode with
     numericalPolicy.reduction := .implementationDefined }
 
 /-- Build the standard LibTorch CUDA capsule for a shape or layout transformation. -/
-def viewCapsule (op : BackendOp) : KernelCapsule :=
+def viewCapsule (op : BackendOp) (vjpMode : VJPMode) : KernelCapsule :=
   capsule
     s!"libtorch.{op.name}"
     op
     s!"LibTorch CUDA `{op.name}` follows the explicit shape/layout contract."
     s!"LibTorch CUDA `{op.name}` adjoint is checked through runtime gradient tests."
+    vjpMode
 
 /-- Build a LibTorch CUDA forward-only capsule with no registered reverse derivative. -/
 def forwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule :=
@@ -101,6 +110,10 @@ def forwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule 
     s!"LibTorch CUDA `{op.name}` is a forward-only capsule with no registered VJP."
     .none
 
+end Internal
+
+open Internal
+
 /-- LibTorch CUDA batched/matrix multiplication. -/
 def matmul : KernelCapsule :=
   accumulationCapsule
@@ -108,6 +121,7 @@ def matmul : KernelCapsule :=
     .matmul
     "Matrix products agree with the row-major runtime contract."
     "Backward products are checked through autograd/runtime parity."
+    .torchLeanTape
 
 /-- LibTorch CUDA ReLU activation. -/
 def relu : KernelCapsule :=
@@ -116,6 +130,7 @@ def relu : KernelCapsule :=
     .relu
     "ReLU forward follows the pointwise activation contract."
     "ReLU VJP is checked through runtime autograd tests."
+    .backendVJP
 
 /-- LibTorch CUDA GELU activation. -/
 def gelu : KernelCapsule :=
@@ -124,43 +139,44 @@ def gelu : KernelCapsule :=
     .gelu
     "GELU forward follows the documented runtime approximation contract."
     "GELU VJP is checked through runtime autograd tests."
+    .backendVJP
 
 /-- LibTorch CUDA pointwise addition. -/
-def add : KernelCapsule := pointwiseCapsule .add
+def add : KernelCapsule := pointwiseCapsule .add .torchLeanTape
 /-- LibTorch CUDA pointwise subtraction. -/
-def sub : KernelCapsule := pointwiseCapsule .sub
+def sub : KernelCapsule := pointwiseCapsule .sub .torchLeanTape
 /-- LibTorch CUDA pointwise multiplication. -/
-def mul : KernelCapsule := pointwiseCapsule .mul
+def mul : KernelCapsule := pointwiseCapsule .mul .torchLeanTape
 /-- LibTorch CUDA scalar multiplication. -/
-def scale : KernelCapsule := pointwiseCapsule .scale
+def scale : KernelCapsule := pointwiseCapsule .scale .torchLeanTape
 /-- LibTorch CUDA pointwise absolute value. -/
-def abs : KernelCapsule := pointwiseCapsule .abs
+def abs : KernelCapsule := pointwiseCapsule .abs .backendVJP
 /-- LibTorch CUDA pointwise square root. -/
-def sqrt : KernelCapsule := pointwiseCapsule .sqrt
+def sqrt : KernelCapsule := pointwiseCapsule .sqrt .backendVJP
 /-- LibTorch CUDA pointwise interval clamp. -/
-def clamp : KernelCapsule := pointwiseCapsule .clamp
+def clamp : KernelCapsule := pointwiseCapsule .clamp .backendVJP
 /-- LibTorch CUDA pointwise maximum. -/
-def max : KernelCapsule := pointwiseCapsule .max
+def max : KernelCapsule := pointwiseCapsule .max .backendVJP
 /-- LibTorch CUDA pointwise minimum. -/
-def min : KernelCapsule := pointwiseCapsule .min
+def min : KernelCapsule := pointwiseCapsule .min .backendVJP
 /-- LibTorch CUDA pointwise sigmoid. -/
-def sigmoid : KernelCapsule := pointwiseCapsule .sigmoid
+def sigmoid : KernelCapsule := pointwiseCapsule .sigmoid .torchLeanTape
 /-- LibTorch CUDA pointwise hyperbolic tangent. -/
-def tanh : KernelCapsule := pointwiseCapsule .tanh
+def tanh : KernelCapsule := pointwiseCapsule .tanh .torchLeanTape
 /-- LibTorch CUDA pointwise softplus. -/
-def softplus : KernelCapsule := pointwiseCapsule .softplus
+def softplus : KernelCapsule := pointwiseCapsule .softplus .torchLeanTape
 /-- LibTorch CUDA pointwise exponential. -/
-def exp : KernelCapsule := pointwiseCapsule .exp
+def exp : KernelCapsule := pointwiseCapsule .exp .torchLeanTape
 /-- LibTorch CUDA sine, with angles measured in radians. -/
-def sin : KernelCapsule := pointwiseCapsule .sin
+def sin : KernelCapsule := pointwiseCapsule .sin .torchLeanTape
 /-- LibTorch CUDA cosine, with angles measured in radians. -/
-def cos : KernelCapsule := pointwiseCapsule .cos
+def cos : KernelCapsule := pointwiseCapsule .cos .torchLeanTape
 /-- LibTorch CUDA pointwise natural logarithm. -/
-def log : KernelCapsule := pointwiseCapsule .log
+def log : KernelCapsule := pointwiseCapsule .log .torchLeanTape
 /-- LibTorch CUDA pointwise reciprocal. -/
-def inv : KernelCapsule := pointwiseCapsule .inv
+def inv : KernelCapsule := pointwiseCapsule .inv .torchLeanTape
 /-- LibTorch CUDA smooth logarithm surrogate `log (softplus x + epsilon)`. -/
-def safeLog : KernelCapsule := pointwiseCapsule .safeLog
+def safeLog : KernelCapsule := pointwiseCapsule .safeLog .torchLeanTape
 /-- LibTorch CUDA log-softmax reduction and normalization. -/
 def logSoftmax : KernelCapsule :=
   accumulationCapsule
@@ -168,6 +184,7 @@ def logSoftmax : KernelCapsule :=
     .logSoftmax
     "Log-softmax kernels follow the stable row/axis normalization contract."
     "Log-softmax VJPs are checked through runtime autograd tests."
+    .torchLeanTape
 
 /-- LibTorch CUDA row/axis softmax kernels. -/
 def softmax : KernelCapsule :=
@@ -176,6 +193,7 @@ def softmax : KernelCapsule :=
     .softmax
     "Softmax kernels follow the row/axis normalization contract."
     "Softmax VJPs are checked through runtime autograd tests."
+    .torchLeanTape
 
 /-- LibTorch CUDA hard-masked row softmax. -/
 def hardMaskedSoftmax : KernelCapsule :=
@@ -186,24 +204,25 @@ def hardMaskedSoftmax : KernelCapsule :=
       "A fully blocked row returns zeros.")
     ("The local VJP uses the softmax Jacobian evaluated at the masked output; blocked " ++
       "coordinates therefore receive zero gradient.")
+    .torchLeanTape
 
 /-- LibTorch CUDA sum reduction. -/
-def reduceSum : KernelCapsule := reductionCapsule .reduceSum
+def reduceSum : KernelCapsule := reductionCapsule .reduceSum .torchLeanTape
 /-- LibTorch CUDA arithmetic-mean reduction. -/
-def reduceMean : KernelCapsule := reductionCapsule .reduceMean
+def reduceMean : KernelCapsule := reductionCapsule .reduceMean .torchLeanTape
 
 /-- LibTorch CUDA shape-preserving reshape view. -/
-def reshape : KernelCapsule := viewCapsule .reshape
+def reshape : KernelCapsule := viewCapsule .reshape .torchLeanTape
 /-- LibTorch CUDA axis permutation. -/
-def permute : KernelCapsule := viewCapsule .permute
+def permute : KernelCapsule := viewCapsule .permute .torchLeanTape
 /-- LibTorch CUDA tensor broadcasting. -/
-def broadcast : KernelCapsule := viewCapsule .broadcast
+def broadcast : KernelCapsule := viewCapsule .broadcast .backendVJP
 /-- LibTorch CUDA tensor concatenation. -/
-def concat : KernelCapsule := viewCapsule .concat
+def concat : KernelCapsule := viewCapsule .concat .torchLeanTape
 /-- LibTorch CUDA contiguous tensor slice. -/
-def slice : KernelCapsule := viewCapsule .slice
+def slice : KernelCapsule := viewCapsule .slice .torchLeanTape
 /-- LibTorch CUDA indexed gather. -/
-def gather : KernelCapsule := viewCapsule .gather
+def gather : KernelCapsule := viewCapsule .gather .torchLeanTape
 /-- LibTorch CUDA indexed scatter-add. -/
 def scatterAdd : KernelCapsule :=
   accumulationCapsule
@@ -211,6 +230,7 @@ def scatterAdd : KernelCapsule :=
     .scatterAdd
     "Indexed source values accumulate into the base tensor, including repeated indices."
     "The VJP gathers output gradients at the source indices and preserves the base gradient."
+    .torchLeanTape
 
 /-- LibTorch CUDA seeded uniform-random tensor generation. -/
 def randUniform : KernelCapsule :=
@@ -231,6 +251,7 @@ def layerNorm : KernelCapsule :=
     .layerNorm
     "LayerNorm follows the per-row normalization contract."
     "LayerNorm VJP is checked by CUDA runtime coverage."
+    .backendVJP
 
 /-- LibTorch CUDA batch normalization. -/
 def batchNorm : KernelCapsule :=
@@ -239,6 +260,7 @@ def batchNorm : KernelCapsule :=
     .batchNorm
     "BatchNorm follows the channel-first normalization contract."
     "BatchNorm VJP is checked by CUDA runtime coverage."
+    .torchLeanTape
 
 /-- LibTorch CUDA generic channel-first convolution. -/
 def conv : KernelCapsule :=
@@ -247,6 +269,7 @@ def conv : KernelCapsule :=
     .conv
     "Convolution follows the generic channel-first runtime contract."
     "Convolution VJP is checked by CUDA runtime coverage."
+    .backendVJP
 
 /-- LibTorch CUDA generic channel-first transpose convolution. -/
 def convTranspose : KernelCapsule :=
@@ -255,6 +278,7 @@ def convTranspose : KernelCapsule :=
     .convTranspose
     "Transpose convolution follows the generic channel-first runtime contract."
     "Transpose-convolution VJP is checked by CUDA runtime coverage."
+    .backendVJP
 
 /-- LibTorch CUDA max pooling, skipping padded cells and retaining the first row-major winner. -/
 def maxPool : KernelCapsule :=
@@ -263,6 +287,7 @@ def maxPool : KernelCapsule :=
     s!"libtorch.{op.name}" op
     s!"LibTorch CUDA `{op.name}` follows the channel-first runtime contract."
     s!"LibTorch CUDA `{op.name}` VJP is checked by CUDA runtime coverage."
+    .backendVJP
 
 /-- LibTorch CUDA smooth max pooling. -/
 def smoothMaxPool : KernelCapsule :=
@@ -271,6 +296,7 @@ def smoothMaxPool : KernelCapsule :=
     .smoothMaxPool
     "Smooth max pooling uses finite nonzero beta and stable max/min-shifted window weights."
     "Forward and VJP stability are checked against the reference runtime at overflow-scale inputs."
+    .backendVJP
 
 /-- LibTorch CUDA average pooling. -/
 def avgPool : KernelCapsule :=
@@ -279,6 +305,7 @@ def avgPool : KernelCapsule :=
     .avgPool
     "Average-pooling follows the channel-first window contract."
     "Average-pooling VJP is checked by CUDA runtime coverage."
+    .backendVJP
 
 /-- LibTorch CUDA linear layer. -/
 def linear : KernelCapsule :=
@@ -287,6 +314,7 @@ def linear : KernelCapsule :=
     .linear
     "Linear layer kernels follow the matvec/matmul plus bias contract."
     "Linear VJP is checked by CUDA runtime coverage."
+    .torchLeanTape
 
 /-- LibTorch CUDA mean-squared-error loss. -/
 def mseLoss : KernelCapsule :=
@@ -295,15 +323,17 @@ def mseLoss : KernelCapsule :=
     .mseLoss
     "MSE loss follows the mean squared residual contract."
     "MSE VJP is checked by CUDA runtime coverage."
+    .torchLeanTape
 
-/-- LibTorch CUDA FFT/FNO kernels. -/
+/-- LibTorch numerical FFTs with Lean adjoints and spectral-layer composition. -/
 def fftFno : KernelCapsule :=
   accumulationCapsule
     "libtorch.fft_fno"
     .fftFno
-    "Packed rFFT/irFFT and spectral convolution follow the documented half-spectrum contract."
-    ("Packed transforms use the real-linear half-spectrum adjoints; spectral convolution " ++
-      "propagates gradients to its input and both weight components.")
+    "Packed rFFT/irFFT follow the documented half-spectrum contract."
+    ("Lean composes the real-linear transform adjoints and spectral channel mixing, " ++
+      "propagating gradients to the input and both weight components.")
+    .torchLeanTape
 
 /-- LibTorch CUDA selective scan kernels. -/
 def selectiveScan : KernelCapsule :=
@@ -313,13 +343,15 @@ def selectiveScan : KernelCapsule :=
     "Shared and token-dependent coefficients follow the diagonal recurrence contract."
     ("Reverse recurrence differentiates coefficients, inputs, and the initial state; shared " ++
       "coefficient cotangents are accumulated across time.")
+    .backendVJP
 
 /--
-Direct LibTorch attention bridge.
+Lean-composed attention over LibTorch numerical primitives.
 
-The native bridge evaluates forward and the selected local VJP using ATen operations. TorchLean
-still owns the global tape. Neither call records a LibTorch autograd graph, and the capsule makes
-no promise about an IO-tiled algorithm or a particular reduction schedule.
+TorchLean composes forward and the local VJP and owns the saved Q/K/V and probability buffers.
+The existing capsule identity is retained for routing and audits. No native attention context or
+fused-provider selection is involved; full score matrices require quadratic sequence memory.
+Numerical primitives execute without a LibTorch autograd graph or a fixed reduction schedule.
 -/
 def attention : KernelCapsule :=
   { name := "libtorch.direct_attention"
@@ -328,12 +360,12 @@ def attention : KernelCapsule :=
     device := .cuda
     trustLevel := .checked
     supportsForward := true
-    vjpMode := .backendVJP
+    vjpMode := .torchLeanTape
     shapeContract :=
       ContractDescriptor.guarded (.shapeSafety .attention)
         ("Q/K/V use a folded (batch, head, n, headDim) layout; the optional mask broadcasts " ++
           "over the folded batch-head axis.")
-        "torchlean_libtorch_attention_fwd/bwd size and saved-context checks"
+        "Buffer.attentionForward/attentionBackward dimension, scale, and buffer-size checks"
     layoutContract :=
       ContractDescriptor.guarded
         (.layoutCompatibility .attention .libTorchCudaView)
@@ -341,12 +373,12 @@ def attention : KernelCapsule :=
         "LibTorch bridge dtype, device, contiguity, and element-count checks"
     valueContract :=
       ContractDescriptor.tested (.valueRefinement .attention)
-        "LibTorch attention with hard-mask zero numerators and zero fully blocked rows."
+        "Lean-composed attention with hard-mask zero numerators and zero fully blocked rows."
         "NN.Tests.Runtime.Cuda.Attention"
     vjpContract :=
       ContractDescriptor.tested
-        (.vjpRefinement .attention .backendVJP)
-        "ATen operations evaluate the selected local VJP and return dQ, dK, and dV."
+        (.vjpRefinement .attention .torchLeanTape)
+        "Lean composes matrix products and the softmax VJP over saved probabilities for dQ/dK/dV."
         "NN.Tests.Runtime.Cuda.Attention"
     numericalPolicy := { reduction := .implementationDefined } }
 

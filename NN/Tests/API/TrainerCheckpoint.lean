@@ -55,7 +55,7 @@ def trainer (arithmetic : Runtime.Arithmetic) (seed : Nat) : TorchLean.Trainer [
 
 def probe : Tensor Float [2] := [0.25, -0.75]
 
-/-- Two equally shaped `Float` tensors agree up to a small absolute tolerance. -/
+/-- The sum of absolute differences between equally shaped tensors is at most `1e-6`. -/
 def tensorClose {shape : Shape} (left right : Tensor Float shape) : Bool :=
   Tensor.sum (Tensor.map Float.abs (Tensor.sub left right : Tensor Float shape)) ≤ 1e-6
 
@@ -75,11 +75,7 @@ def statesClose {leftShapes rightShapes : List Shape}
   else
     false
 
-def check (arithmetic : Runtime.Arithmetic) : IO Unit := do
-  let path : System.FilePath :=
-    s!"/tmp/torchlean-trainer-checkpoint-{arithmetic.cliName}.state"
-  if ← path.pathExists then
-    IO.FS.removeFile path
+def check (arithmetic : Runtime.Arithmetic) : IO Unit := IO.FS.withTempFile fun _ path => do
   let source := trainer arithmetic 11
   let trained ← source.train data { steps := 3, logDestination := .disabled }
   expect "report should record the requested arithmetic"
@@ -105,7 +101,6 @@ def check (arithmetic : Runtime.Arithmetic) : IO Unit := do
   let restoredState ← restored.state
   expect "restored state should equal the saved state"
     (statesClose trainedState restoredState)
-  IO.FS.removeFile path
 
 /-- Continuing a session must not change a result that was already returned. -/
 def checkSnapshot (arithmetic : Runtime.Arithmetic) : IO Unit := do
@@ -132,9 +127,7 @@ def checkSnapshot (arithmetic : Runtime.Arithmetic) : IO Unit := do
   let repeatedVerification ← result.verify probe (radius := 0.1) (algorithm := .ibp)
   expect "verification should use the same snapshot as prediction"
     (reprStr verification == reprStr repeatedVerification)
-  let path : System.FilePath :=
-    s!"/tmp/torchlean-trainer-snapshot-{arithmetic.cliName}.state"
-  try
+  IO.FS.withTempFile fun _ path => do
     result.save path
     let saved ← Checkpoint.State.load source.model path
     expect "saving a finished result should save its snapshot" (statesClose state saved)
@@ -142,8 +135,6 @@ def checkSnapshot (arithmetic : Runtime.Arithmetic) : IO Unit := do
     session.step sample
     expect "loading and updating the session should leave the result alone"
       (statesClose state (← result.state))
-  finally
-    if ← path.pathExists then IO.FS.removeFile path
 
 /-- Batched evaluation preserves ordered means, leading axes, and the live state. -/
 def checkBatchEvaluation (arithmetic : Runtime.Arithmetic) : IO Unit := do

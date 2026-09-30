@@ -14,7 +14,9 @@ public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Core
 Both coefficient layouts return all states after their updates. Their backward closures retain
 the forward states and accumulate into all four parents. The variable-coefficient kernel returns
 one gradient per token; the shared-coefficient kernel sums those contributions across time.
-Each native thread owns one state channel and traverses time in order.
+The native implementation uses a parallel affine prefix scan for eligible inputs, with a
+sequential recurrence fallback for expansive or nonfinite inputs and nonfinite parallel results.
+Reassociation can change floating-point rounding; the capsule leaves reduction order unspecified.
 -/
 
 @[expose] public section

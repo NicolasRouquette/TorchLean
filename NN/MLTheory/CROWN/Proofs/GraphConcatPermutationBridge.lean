@@ -9,6 +9,7 @@ module
 public import NN.MLTheory.CROWN.Proofs.GraphConcatBridge
 public import NN.MLTheory.CROWN.Proofs.GraphConcatPermutation
 public import NN.MLTheory.CROWN.Proofs.GraphConcatInversePermutation
+public import NN.IR.ShapeSoundness
 
 /-!
 # Runtime concatenation through axis permutations
@@ -28,14 +29,6 @@ open NN.Verification.Builtin.Proved.Correctness.IRStep
 attribute [local simp] Bind.bind Pure.pure Except.bind Except.pure NN.IR.throw_eq_error
   Option.bind Shape.toList Shape.ofList Shape.dim
 
-private theorem bind_eq_ok {α β : Type} {action : Except String α}
-    {next : α → Except String β} {result : β}
-    (h : (action >>= next) = .ok result) :
-    ∃ value, action = .ok value ∧ next value = .ok result := by
-  cases action with
-  | error message => cases h
-  | ok value => exact ⟨value, rfl, h⟩
-
 private theorem array_mapM_ofFn_of_ok {α β : Type} {count : Nat}
     (values : Fin count → α) (results : Fin count → β) (f : α → Except String β)
     (h : ∀ index result, f (values index) = .ok result → result = results index)
@@ -48,8 +41,8 @@ private theorem array_mapM_ofFn_of_ok {α β : Type} {count : Nat}
     | nil => simpa using heval.symm
     | cons index indices ih =>
         rw [List.mapM_cons] at heval
-        obtain ⟨value, hvalue, hnext⟩ := bind_eq_ok heval
-        obtain ⟨tail, htail, hresult⟩ := bind_eq_ok hnext
+        obtain ⟨value, hvalue, hnext⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+        obtain ⟨tail, htail, hresult⟩ := NN.IR.Graph.bind_ok_iff.mp hnext
         have houtput : value :: tail = output := Except.ok.inj hresult
         rw [← houtput, h index value hvalue, ih tail htail]
         rfl
@@ -224,7 +217,7 @@ private theorem evalConcat_family_of_permutations
         (first :: second :: lengths).sum frontShape hshape
       subst frontShape
       simp only [hshape] at heval
-      obtain ⟨frontParents, hfrontParents, hcontinue⟩ := bind_eq_ok heval
+      obtain ⟨frontParents, hfrontParents, hcontinue⟩ := NN.IR.Graph.bind_ok_iff.mp heval
       have hparents : frontParents = Array.ofFn
           (fun parent => SomeTensor.ofTensor (move _ (values parent))) := by
         apply array_mapM_ofFn_of_ok _ _ _ _ hfrontParents
@@ -243,14 +236,16 @@ private theorem evalConcat_family_of_permutations
             subst output
             exact hfront _ _ _ hpermute
       rw [hparents] at hcontinue
-      obtain ⟨sigmas, hsigmas, hfold⟩ := bind_eq_ok hcontinue
+      rw [NN.IR.Graph.evalConcatLeadingAxisFold] at hcontinue
+      obtain ⟨folded, hfolded, hbackfold⟩ := NN.IR.Graph.bind_ok_iff.mp hcontinue
+      obtain ⟨sigmas, hsigmas, hfold⟩ := NN.IR.Graph.bind_ok_iff.mp hfolded
       have hsigmas' : sigmas = Array.ofFn
           (fun parent : Fin (first :: second :: lengths).length =>
             (⟨(first :: second :: lengths).get parent, move _ (values parent)⟩ :
               LeadingAxisConcat.Input α (leading ++ trailing))) := by
         apply array_mapM_ofFn_of_ok _ _ _ _ hsigmas
         intro parent output hread
-        simpa [SomeTensor.ofTensor] using hread.symm
+        simpa [NN.IR.Graph.expectLeadingAxisInput, SomeTensor.ofTensor] using hread.symm
       rw [hsigmas'] at hfold
       rw [Array.getElem?_eq_getElem (by simp)] at hfold
       dsimp only at hfold
@@ -259,20 +254,26 @@ private theorem evalConcat_family_of_permutations
       rw [← hfamily] at hfoldResult
       rw [hfoldResult] at hfold
       simp only [↓reduceDIte] at hfold
+      have hfoldValue : SomeTensor.ofTensor
+          (move (first :: second :: lengths).sum
+            (Rep.concatenateAxes leading trailing (first :: second :: lengths) values)) = folded :=
+        Except.ok.inj hfold
+      clear hfold
+      subst folded
       cases hpermute : NN.IR.Graph.permuteSomeTensor
           (SomeTensor.ofTensor (move (first :: second :: lengths).sum
             (Rep.concatenateAxes leading trailing (first :: second :: lengths) values)))
           (List.range' 1 leading.length ++ [0] ++
             List.range' (leading.length + 1) trailing.length).toArray with
       | error message =>
-          erw [hpermute] at hfold
-          simp only [NN.IR.throw_eq_error] at hfold
-          cases hfold
+          erw [hpermute] at hbackfold
+          simp only [NN.IR.throw_eq_error] at hbackfold
+          cases hbackfold
       | ok output =>
           have houtput := hback output hpermute
-          erw [hpermute] at hfold
-          rw [houtput] at hfold
-          simpa [NN.IR.Graph.expectShape, SomeTensor.ofTensor] using hfold.symm
+          erw [hpermute] at hbackfold
+          rw [houtput] at hbackfold
+          simpa [NN.IR.Graph.expectShape, SomeTensor.ofTensor] using hbackfold.symm
 
 /-- Successful concat of a typed family has the independent tensor concatenation as its value. -/
 theorem evalConcat_family {α : Type} [TorchLean.Storage α] [Context α]

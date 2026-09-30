@@ -41,7 +41,7 @@ abbrev Builder := rand.SeedM
 
 namespace functional
 export Runtime.Autograd.Model.F
-  (square checkpoint
+  (square
    exp sin cos log scale shift affine
    detach
    addB mulB
@@ -573,7 +573,7 @@ def oneHotEmbedding (vocabularySize embeddingWidth : Nat)
           (batchShape := batchShape)
 
 /--
-Build a trainable lookup table for a tensor of natural-number indices.
+Build a lookup table for bounded token indices of type `Fin vocabularySize`.
 
 Example:
 ```lean
@@ -625,7 +625,7 @@ def rope (batchShape : Shape := []) {sequenceLength headWidth : Nat}
       pure <| Impl.rope batchShape
         (sequenceLength := sequenceLength) (headWidth := headWidth) config
 
-/-- Build learned positional embeddings from a freshly allocated parameter seed. -/
+/-- Build learned positional embeddings, consuming a seed only for stochastic initialization. -/
 def learnedPositionalEmbedding (batchShape : Shape := [])
     {sequenceLength embeddingWidth : Nat}
     (config : LearnedPositionalEmbedding.Config := {}) :

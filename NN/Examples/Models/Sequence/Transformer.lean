@@ -39,7 +39,7 @@ def exeName : String := "transformer"
 /-- Default JSON loss-curve path for this command. -/
 def defaultLogPath : System.FilePath := Support.trainLogPath "transformer"
 
-/-- Short multi-token window for the quick encoder training run. -/
+/-- Short multi-token window for the causal next-byte training run. -/
 def contextLength : Nat := 4
 /-- Transformer feature width. -/
 def modelWidth : Nat := 4
@@ -67,7 +67,7 @@ abbrev modelConfig : nn.models.CausalTransformer.Config :=
     feedForwardWidth := feedForwardWidth
     layerCount := 1 }
 
-/-- Input shape: batched one-hot byte buckets. -/
+/-- Input shape: one sequence of one-hot byte buckets. -/
 abbrev input : Shape :=
   modelConfig.vocabularyShape
 

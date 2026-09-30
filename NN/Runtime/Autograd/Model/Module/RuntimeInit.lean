@@ -35,21 +35,10 @@ open Proofs.Autograd.Algebra
 
 namespace Module
 
-/--
-Cast a Float tensor to a backend scalar type `α` by mapping a scalar cast function.
-
-This is mainly used to turn ordinary Float tensor literals into
-`Float`/`ExecFloat.Binary 8 23`/etc.
--/
-def castTensor {α : Type} [TorchLean.Storage α]
-    (cast : Float → α) {s : Shape} (t : Tensor Float s) : Tensor α s :=
-  TorchLean.Tensor.map cast t
-
-/-- List-shaped `castTensor` for TorchLean's `TorchLean.TensorPack` parameter bundles. -/
+/-- Cast every scalar in a heterogeneous Float tensor pack to the backend scalar type. -/
 def castPack {α : Type} [TorchLean.Storage α] (cast : Float → α) :
-    {ss : List Shape} → TorchLean.TensorPack Float ss → TorchLean.TensorPack α ss
-  | .nil, .nil => .nil
-  | .cons _s ss, .cons x xs => .cons (castTensor cast x) (castPack (cast := cast) (ss := ss) xs)
+    {ss : List Shape} → TorchLean.TensorPack Float ss → TorchLean.TensorPack α ss :=
+  TorchLean.TensorPack.map (fun t => TorchLean.Tensor.map cast t)
 
 /-! ## Runtime Float Initializers -/
 
@@ -146,20 +135,28 @@ def append : {ss₁ ss₂ : List Shape} → Plan ss₁ → Plan ss₂ → Plan (
   | .nil, _, .nil, ys => ys
   | .cons _ _, _, .cons x xs, ys => .cons x (append xs ys)
 
-/-- Forget the shape index when interoperating with runtime-sized callers. -/
-def toArray : {ss : List Shape} → Plan ss → Array FloatInit
-  | .nil, .nil => #[]
-  | .cons _ _, .cons init rest => #[init] ++ toArray rest
+def Internal.toArrayAux : {ss : List Shape} → Plan ss → Array FloatInit → Array FloatInit
+  | .nil, .nil, inits => inits
+  | .cons _ _, .cons init rest, inits => Internal.toArrayAux rest (inits.push init)
+
+theorem Internal.size_toArrayAux : {ss : List Shape} → (plan : Plan ss) →
+    (inits : Array FloatInit) → (Internal.toArrayAux plan inits).size = inits.size + ss.length
+  | .nil, .nil, _ => by simp [Internal.toArrayAux]
+  | .cons _ _, .cons _ rest, _ => by
+      simp [Internal.toArrayAux, Internal.size_toArrayAux rest, Nat.add_comm, Nat.add_left_comm]
+
+/-- Forget the shape index, pushing initializers into the result in parameter order. -/
+def toArray {ss : List Shape} (plan : Plan ss) : Array FloatInit :=
+  Internal.toArrayAux plan #[]
 
 /--
 The type index is not decorative: forgetting a `Plan ss` to an array produces exactly `ss.length`
 initializers.  This checked fact lets the runtime API avoid the usual
 "initializer sequence does not match parameter list" class of bugs once a plan has been built.
 -/
-theorem size_toArray : {ss : List Shape} → (plan : Plan ss) → plan.toArray.size = ss.length
-  | .nil, .nil => rfl
-  | .cons _ _, .cons _ rest => by
-      simp [toArray, size_toArray rest, Nat.add_comm]
+theorem size_toArray {ss : List Shape} (plan : Plan ss) :
+    plan.toArray.size = ss.length := by
+  simp [toArray, Internal.size_toArrayAux]
 
 /-- Validate every initializer against its parameter shape before applying the plan. -/
 def validate : {ss : List Shape} → Plan ss → Except String Unit
@@ -186,10 +183,6 @@ def ofArray? (ss : List Shape) (inits : Array FloatInit) : Except String (Plan s
 
 end Plan
 
-/-- Product of a list of dimensions, used for convolutional receptive-field sizes. -/
-def dimProduct (xs : List Nat) : Nat :=
-  xs.foldl (fun acc x => acc * x) 1
-
 /--
 Infer `(fanIn, fanOut)` from a parameter shape using the common linear/conv convention.
 
@@ -210,7 +203,7 @@ This is the same fan convention documented by PyTorch's Xavier/Kaiming initializ
 def fanInOut? (s : Shape) : Option (Nat × Nat) :=
   match Shape.toList s with
   | .cons outDim (.cons inDim spatial) =>
-      let receptive := dimProduct spatial
+      let receptive := spatial.prod
       some (inDim * receptive, outDim * receptive)
   | _ => none
 
@@ -247,7 +240,8 @@ shorter than the index is an error, not a panic. -/
 def sampleAt : FloatInit → Nat → Except String Float
   | .zeros, _ => .ok 0.0
   | .ones, _ => .ok 1.0
-  | .uniform lo hi seed, idx => .ok (lo + unitAt seed idx * (hi - lo))
+  | .uniform lo hi seed, idx =>
+      .ok (Torch.Init.sampleAt (.uniform lo hi) seed idx)
   | .normal mean std seed, idx =>
       .ok (Torch.Init.sampleAt (.normal mean std) seed idx)
   | .xavierUniform fanIn fanOut seed, idx =>
@@ -280,18 +274,14 @@ def floatArrayOf (n : Nat) (init : FloatInit) : IO FloatArray := do
   | _ =>
       let mut out : Array Float := Array.mkEmpty n
       for i in [0:n] do
-        match sampleAt init i with
-        | .ok value => out := out.push value
-        | .error message => throw <| IO.userError message
+        let value ← Runtime.Autograd.okOrThrow (sampleAt init i)
+        out := out.push value
       pure (FloatArray.mk out)
 
 /-- Checked conversion to the current CUDA buffer API's `UInt32` element count. -/
 def natToU32Checked (ctx : String) (n : Nat) : IO UInt32 := do
-  let u := UInt32.ofNat n
-  if u.toNat = n then
-    pure u
-  else
-    throw <| IO.userError s!"{ctx}: tensor too large for CUDA buffer API ({n} elements)"
+  IO.ofExcept <| (Runtime.Autograd.LibTorch.AnyBuffer.natToU32Checked n).mapError fun _ =>
+    s!"{ctx}: tensor too large for CUDA buffer API ({n} elements)"
 
 /--
 Allocate a CUDA buffer filled with `U(lo, hi)`.
@@ -348,18 +338,6 @@ def hostTensorOf {α : Type} [TorchLean.Storage α]
   let tensor := Runtime.Autograd.LibTorch.Convert.Internal.unflattenFloat (s := s) values 0
   pure <| TorchLean.Tensor.map cast tensor
 
-/--
-Host slots for a parameter list before runtime initialization installs the real values.
-
-CUDA runtime initialization immediately replaces these with CUDA mirrors and marks the host values
-stale. These entries still give the existing `Param` type a valid host slot for later explicit
-readback.
--/
-def zeroPack {α : Type} [TorchLean.Storage α]
-    (zero : α) : {ss : List Shape} → TorchLean.TensorPack α ss
-  | .nil => .nil
-  | .cons s ss => .cons (Tensor.full s zero) (zeroPack zero (ss := ss))
-
 /-- Apply a plan after the public entrypoint has validated every initializer. -/
 def Internal.applyPlanUnchecked {α : Type} [TorchLean.Storage α] [Torch.TensorTransfer α]
     (cast : Float → α) (options : Torch.Config) :
@@ -390,10 +368,8 @@ cannot leave the module partially initialized.
 def applyPlan {α : Type} [TorchLean.Storage α] [Torch.TensorTransfer α]
     (cast : Float → α) (options : Torch.Config) {ss : List Shape}
     (parameters : Torch.ParamList α ss) (plan : Plan ss) : IO Unit := do
-  match plan.validate with
-  | .error message => throw <| IO.userError message
-  | .ok () =>
-      Internal.applyPlanUnchecked (α := α) cast options parameters plan
+  Runtime.Autograd.okOrThrow plan.validate
+  Internal.applyPlanUnchecked (α := α) cast options parameters plan
 
 end RuntimeInit
 

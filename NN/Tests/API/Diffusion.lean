@@ -82,7 +82,7 @@ def checkDdim : IO Unit := do
 
   -- Mixing coordinates rules out a theorem restricted to elementwise postprocessing.
   let postprocess := fun x : Tensor Float [2, 1] =>
-    Tensor.full [2, 1] (Spec.get2 x 0 0 - 2 * Spec.get2 x 1 0)
+    Tensor.full [2, 1] (x[0][0] - 2 * x[1][0])
   let batched : Tensor Float [2, 1] := [[2], [-1]]
   let noise : Tensor Float [2, 1] := [[0.25], [-0.5]]
   for floor in [0.0, negativeZero, 0.125, 0.5, 2.0, -1.0, infinity, nan] do

@@ -6,8 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import Mathlib.Analysis.SpecialFunctions.Trigonometric.Arctan
-import Mathlib.Tactic.Measurability.Init
 public import NN.MLTheory.CROWN.Graph.Theorems
 public import NN.Spec.Core.Context.Real
 public import NN.Spec.Layers.Linear
@@ -46,13 +44,13 @@ abbrev Val := FlatTensor ℝ
 abbrev encloses (B : FlatBox ℝ) (x : Tensor ℝ [B.dim]) : Prop :=
   NN.MLTheory.CROWN.Graph.Theorems.Semantics.encloses (α := ℝ) B x
 
-/-- `EnclosesBox B v` means the value vector `v` lies inside the interval box `B`.
-
-We phrase enclosure using the existing `Sem.encloses` predicate, but our semantic values are
-`FlatTensor`s (carrying their dimension as a `Nat`), so we also carry a dimension equality witness.
+/-- A flat box encloses a flat tensor when their dimensions agree and every coordinate is bounded.
 -/
-def EnclosesBox (B : FlatBox ℝ) (v : Val) : Prop :=
-  ∃ h : B.dim = v.n, encloses B (castDimScalar (α := ℝ) h.symm v.v)
+def EnclosesBox {α : Type} [TorchLean.Storage α] [Context α]
+    (B : FlatBox α) (v : FlatTensor α) : Prop :=
+  ∃ h : B.dim = v.n,
+    NN.MLTheory.CROWN.Graph.Theorems.Semantics.encloses B
+      (castDimScalar h.symm v.v)
 
 /-!
 ## Denotational (value) semantics for the verifier graph dialect
@@ -119,20 +117,20 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
       match NN.IR.unaryParent? node.parents with
       | some p1 => getVal? vals p1
       | _ => none
-    | .add =>
-        match NN.IR.binaryParents? node.parents with
-        | some (p1, p2) =>
-            match getVal? vals p1, getVal? vals p2 with
-            | some x, some y =>
-                if h : x.n = y.n then
-                  -- Use an explicit cast rather than `by simpa [h]` to keep later proofs stable.
-                  let yv : Tensor ℝ [x.n] :=
-                    castDimScalar (α := ℝ) (Eq.symm h) y.v
-                  some { n := x.n, v := Tensor.addSpec (α := ℝ) x.v yv }
-                else
-                  none
-            | _, _ => none
-        | _ => none
+  | .add =>
+      match NN.IR.binaryParents? node.parents with
+      | some (p1, p2) =>
+          match getVal? vals p1, getVal? vals p2 with
+          | some x, some y =>
+              if h : x.n = y.n then
+                -- Use an explicit cast rather than `by simpa [h]` to keep later proofs stable.
+                let yv : Tensor ℝ [x.n] :=
+                  castDimScalar (α := ℝ) (Eq.symm h) y.v
+                some { n := x.n, v := Tensor.addSpec (α := ℝ) x.v yv }
+              else
+                none
+          | _, _ => none
+      | _ => none
   | .sub =>
       match NN.IR.binaryParents? node.parents with
       | some (p1, p2) =>
@@ -233,19 +231,19 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
           | none => none
       | _ => none
   | .linear =>
-        match NN.IR.unaryParent? node.parents with
-        | some p1 =>
-            match getVal? vals p1, ps.linearWB[id]? with
-            | some x, some p =>
-                if h : x.n = p.n then
-                  let xv : Tensor ℝ [p.n] := castDimScalar (α := ℝ) h x.v
-                  let yv : Tensor ℝ [p.m] :=
-                    Spec.linearSpec (α := ℝ) { weights := p.w, bias := p.b } xv
-                  some { n := p.m, v := yv }
-                else
-                  none
-            | _, _ => none
-        | _ => none
+      match NN.IR.unaryParent? node.parents with
+      | some p1 =>
+          match getVal? vals p1, ps.linearWB[id]? with
+          | some x, some p =>
+              if h : x.n = p.n then
+                let xv : Tensor ℝ [p.n] := castDimScalar (α := ℝ) h x.v
+                let yv : Tensor ℝ [p.m] :=
+                  Spec.linearSpec (α := ℝ) { weights := p.w, bias := p.b } xv
+                some { n := p.m, v := yv }
+              else
+                none
+          | _, _ => none
+      | _ => none
   | .matmul =>
       match NN.IR.unaryParent? node.parents with
       | some p1 =>
@@ -303,6 +301,44 @@ def evalNode? (nodes : Array Node) (ps : ParamStore ℝ) (inputs : Std.HashMap N
       concatFlatValues? layout parents
   | _ =>
       none
+
+/-- Optional traversal depends only on the callback values at array members. -/
+theorem array_mapM_congr_of_mem {α β : Type} {f g : α → Option β} (xs : Array α)
+    (h : ∀ x ∈ xs, f x = g x) : xs.mapM f = xs.mapM g := by
+  have hlist : ∀ ys : List α, (∀ x ∈ ys, f x = g x) → ys.mapM f = ys.mapM g := by
+    intro ys
+    induction ys with
+    | nil => intro _; rfl
+    | cons y ys ih =>
+        intro hys
+        simp only [List.mapM_cons, hys y (by simp),
+          ih fun x hx => hys x (by simp [hx])]
+  rw [Array.mapM_eq_mapM_toList, Array.mapM_eq_mapM_toList,
+    hlist xs.toList fun x hx => h x (Array.mem_toList_iff.mp hx)]
+
+/-- `evalNode?` reads the value table only at the node's parents, through `getVal?`. Every arm
+decodes its parents with `unaryParent?`, `binaryParents?`, or a traversal of `parents`. -/
+theorem evalNode?_congr (nodes : Array Node) (ps : ParamStore ℝ)
+    (inputs : Std.HashMap Nat Val) (vals₁ vals₂ : Array (Option Val)) (id : Nat)
+    (h : ∀ p ∈ (nodes[id]!).parents, getVal? vals₁ p = getVal? vals₂ p) :
+    evalNode? nodes ps inputs vals₁ id = evalNode? nodes ps inputs vals₂ id := by
+  have hu : ∀ {p}, NN.IR.unaryParent? (nodes[id]!).parents = some p →
+      getVal? vals₁ p = getVal? vals₂ p :=
+    fun hp => h _ (NN.IR.mem_of_unaryParent?_eq_some hp)
+  have hb : ∀ {pq : Nat × Nat}, NN.IR.binaryParents? (nodes[id]!).parents = some pq →
+      getVal? vals₁ pq.1 = getVal? vals₂ pq.1 ∧ getVal? vals₁ pq.2 = getVal? vals₂ pq.2 :=
+    fun hp => ⟨h _ (NN.IR.fst_mem_of_binaryParents?_eq_some hp),
+      h _ (NN.IR.snd_mem_of_binaryParents?_eq_some hp)⟩
+  cases hk : (nodes[id]!).kind
+  case concat axis =>
+    simp only [evalNode?, hk, array_mapM_congr_of_mem (nodes[id]!).parents h]
+  all_goals
+    cases hp : NN.IR.unaryParent? (nodes[id]!).parents <;>
+    cases hq : NN.IR.binaryParents? (nodes[id]!).parents with
+    | none => simp_all [evalNode?]
+    | some pq =>
+        obtain ⟨h₁, h₂⟩ := hb hq
+        simp_all [evalNode?]
 
 /-!
 The main soundness theorem does not fix a particular graph evaluator. It is stated for *any* array

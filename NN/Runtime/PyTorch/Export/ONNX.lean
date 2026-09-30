@@ -305,7 +305,7 @@ def convLowering : Array String :=
        "add_node, include_debug, initializers):")
    , indentFour "if len(input_names) < 2:"
    , indentEight "raise RuntimeError(\"Conv: expected data and weight inputs\")"
-   , indentFour "x_name, w_name = input_names[0], input_names[1]"
+   , indentFour "x_name = input_names[0]"
    , indentFour "x_shape, w_shape = input_shapes[0], input_shapes[1]"
    , indentFour "if len(w_shape) < 3:"
    , indentEight ("raise RuntimeError(f\"Conv: expected OI plus at least one spatial kernel " ++

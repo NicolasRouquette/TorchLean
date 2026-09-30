@@ -51,11 +51,12 @@ instance {α Δ : Type} [TorchLean.Storage α] [Context α] {Γ : List Shape} :
       let values ← update (← readState getState) (← getValue input.id)
       let rec writes : {ss : List Shape} →
           RefList Runtime.Autograd.TypedGraph.GraphM.Var ss → TensorPack α ss →
+          Array (Nat × Spec.SomeTensor α) →
           Array (Nat × Spec.SomeTensor α)
-        | [], .nil, .nil => #[]
-        | _ :: _, .cons ref rest, .cons value values =>
-            #[(ref.id, Spec.SomeTensor.ofTensor value)] ++ writes rest values
-      pure (writes refs values)
+        | [], .nil, .nil, acc => acc
+        | _ :: _, .cons ref rest, .cons value values, acc =>
+            writes rest values (acc.push (ref.id, Spec.SomeTensor.ofTensor value))
+      pure (writes refs values #[])
     modify fun state => { state with bufferUpdates := state.bufferUpdates.push observer }
   const := fun {s} t => Runtime.Autograd.TypedGraph.GraphM.const (α := α) (Γ := Γ) (s := s) t
   add := fun {s} a b => Runtime.Autograd.TypedGraph.GraphM.add (α := α) (Γ := Γ) (s := s) a b

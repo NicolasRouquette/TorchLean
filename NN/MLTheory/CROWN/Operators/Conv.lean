@@ -161,7 +161,7 @@ def convLinearMatrix
 /-- Flattened broadcast of a convolution bias over spatial and leading batch coordinates. -/
 def convBiasBroadcast
     {d outC : Nat} {outSpatial : TorchLean.Tensor Nat [d]}
-    (bias : Tensor α [outC]) (leading : Shape := .scalar) :
+    (bias : Tensor α [outC]) (leading : Shape) :
     let outShape := leading.concat (Shape.ofList (outC :: Tensor.to outSpatial (List Nat)))
     Tensor α [outShape.size] :=
   let outShape := leading.concat (Shape.ofList (outC :: Tensor.to outSpatial (List Nat)))

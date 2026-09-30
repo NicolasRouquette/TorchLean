@@ -217,24 +217,15 @@ def pretokenizeWithFuel : Nat → List Char → List String
   | 0, _ => []
   | _fuel + 1, List.nil => []
   | fuel + 1, xs =>
-      match consumeContraction? xs with
-      | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
-      | none =>
-          match consumeClassRun? .letter xs with
-          | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
-          | none =>
-              match consumeClassRun? .number xs with
-              | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
-              | none =>
-                  match consumeClassRun? .other xs with
-                  | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
-                  | none =>
-                      match consumeLookaheadWhitespace? xs with
-                      | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
-                      | none =>
-                          match consumeWhitespaceRun? xs with
-                          | some (tok, rest) => tok :: pretokenizeWithFuel fuel rest
-                          | none => []
+      let fragment? := consumeContraction? xs <|>
+        consumeClassRun? .letter xs <|>
+        consumeClassRun? .number xs <|>
+        consumeClassRun? .other xs <|>
+        consumeLookaheadWhitespace? xs <|>
+        consumeWhitespaceRun? xs
+      match fragment? with
+      | some (token, rest) => token :: pretokenizeWithFuel fuel rest
+      | none => []
 
 /-- Split a string into GPT-2-style pre-token fragments. -/
 def pretokenize (s : String) : List String :=
@@ -591,8 +582,7 @@ def parseMergeLine (rank : Nat) (line : String) : Except String (Option MergeRan
 /-- Parse GPT-2 `merges.txt`, retaining hash-prefixed symbols and rejecting malformed pairs. -/
 def parseMerges (s : String) : Except String (Array MergeRank) := do
   let lines := s.splitOn "\n"
-  let parsed ← (List.zip (List.range lines.length) lines).mapM
-    (fun (rank, line) => parseMergeLine rank line)
+  let parsed ← lines.zipIdx.mapM (fun (line, rank) => parseMergeLine rank line)
   pure (parsed.filterMap id).toArray
 
 end Internal

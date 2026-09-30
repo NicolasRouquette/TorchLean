@@ -69,7 +69,7 @@ Run one update and write the artifacts to files:
 ```terminal
 # Keep the evaluation path and policy so the measured return
 # can be reconstructed.
-lake exe torchlean ppo_gridworld --device cpu \
+scripts/lake.sh exe torchlean ppo_gridworld --device cpu \
   --updates 1 \
   --eval-every 1 --eval-episodes 1 --eval-max-steps 8 \
   --log /tmp/ppo-gridworld-trainlog.json \
@@ -77,7 +77,8 @@ lake exe torchlean ppo_gridworld --device cpu \
   --path /tmp/ppo-gridworld-path.json
 ```
 
-A captured run produced the following output and exited 0:
+A captured run produced the following output and exited 0. Terminal transcripts in this chapter
+record earlier runs; banners and results can change with the backend, seed, and package versions.
 
 ```terminal +output
 [TorchLean] arithmetic: native binary32
@@ -744,9 +745,9 @@ in the application
 The message identifies the mismatched argument and required shape. The PyTorch column example
 instead produces a valid tensor of an unintended shape.
 
-The same horizon appears in every input and output tensor of GAE. The specification and runtime
-share these functions, so there is one recurrence and no separate array implementation that can
-silently shorten a trajectory.
+The same horizon appears in every input and output tensor of this GAE function. The runtime
+exports the specification's single-mask recurrence. The PPO collector uses the separate
+termination and episode-boundary masks described below, while keeping the common horizon.
 
 The broadcast counterexample creates all pairwise sums of three advantages and three values.
 Its nine entries can look numerically plausible, and taking a mean afterwards could even hide
@@ -872,8 +873,12 @@ $$`-L^{\mathrm{clip}}_t
 
 and the differentiable batch version over backend references lives in
 {src "NN/Runtime/RL/PolicyGradient/Autograd.lean"}[`NN.Runtime.RL.PolicyGradient.Autograd`],
-where the categorical log probability is built from `logSoftmax` and a one-hot action tensor. The
-pure scalar functions above are the scalar formulas without a tape. The ratio-based clipped
+where the categorical log probability is built from `logSoftmax` and a one-hot action tensor.
+Before multiplying by that tensor, the implementation clamps log probabilities to
+$`[-10^{30},10^{30}]`. This prevents an unselected $`-\infty` entry from contributing
+$`0\cdot(-\infty)=\mathrm{NaN}`. It changes selected log probabilities below the lower bound,
+requires the bound to be finite in the scalar type, and does not repair NaN log-softmax rows.
+The pure scalar functions above are the scalar formulas without a tape. The ratio-based clipped
 objective can be checked
 exactly at `ℚ`; computing the ratio from log probabilities additionally requires an exponential.
 Their tape implementations live inside {ref "runtime-autograd"}[the autograd runtime] and need
@@ -1783,11 +1788,11 @@ the original gap:
 -- Over the reals, the displacement equals the mixing weight
 -- times the original gap.
 open Proofs.RL.DQN Runtime.RL.DQN in
-#check @softUpdateScalar_sub_target_real
+#check @softUpdateScalar_sub_target
 ```
 
 ```leanOutput rlSoftThm (whitespace := lax)
-softUpdateScalar_sub_target_real : ∀ (tau online target : ℝ),
+softUpdateScalar_sub_target : ∀ (tau online target : ℝ),
   softUpdateScalar tau online target - target =
     tau * (online - target)
 ```

@@ -28,7 +28,7 @@ scan, we can append tokens and inspect the earlier outputs. Shapes identify the 
 calculations, while the mask and scan definitions determine which inputs can affect them.
 
 The Lean blocks compute shapes from the model configurations. The accompanying PyTorch
-transcripts show shapes obtained by executing the corresponding operations
+transcripts record shapes from corresponding operations
 {Informal.citep pytorch2019}[].
 
 The reusable constructors live under {srcDir "NN/API/Models"}[`NN/API/Models`] and the runnable
@@ -138,8 +138,8 @@ print(tuple(out.shape), bool(torch.all(out == out[0])))
 
 Both versions share parameters across the batch. Because `[8, 3]` appears in the TorchLean model's
 type, a theorem or an exported graph
-about this model states which batch shape it is about, and an operation that is not batch-invariant
-cannot hide behind an implicit leading axis; {ref "torchlean_vs_pytorch"}[TorchLean and PyTorch]
+about this model states which batch shape it is about. That annotation does not itself prove
+that rows are independent; {ref "torchlean_vs_pytorch"}[TorchLean and PyTorch]
 shows a real batched-versus-sliced discrepancy of that kind. The cost is that the batch axis has to
 be named, and `nn.mapLeading` is where you name it.
 
@@ -362,7 +362,7 @@ agreement: the `mmClash` block above fails to elaborate because its two output w
 
 A vision Transformer first turns a spatial field into a token sequence
 {Informal.citep vit2021}[]. For an input with spatial extent $`n_1\times\cdots\times n_d`, patch
-kernel $`k`, stride $`s`, and padding $`p`, each output extent is the usual convolution expression
+kernel $`k`, stride $`s`, padding $`p`, and unit dilation, each output extent is
 
 $$`n'_i
 =\left\lfloor\frac{n_i+2p_i-k_i}{s_i}\right\rfloor+1.`
@@ -399,8 +399,9 @@ abbrev mmVit : nn.models.ViT.Config 2 :=
     pooling := .cls
     classCount := 10 }
 
-#eval (mmVit.encoder.patchGrid.to Shape,
-  mmVit.encoder.patchCount, mmVit.encoder.sequenceLength)
+#eval (mmVit.toEncoderConfig.patchGrid.to Shape,
+  mmVit.toEncoderConfig.patchCount,
+  mmVit.toEncoderConfig.sequenceLength)
 ```
 ```leanOutput mmVitConfig
 ([8, 8], 64, 65)
@@ -413,9 +414,9 @@ tensor shapes follow, for a batch of eight:
 ```lean (name := mmVitStages)
 -- Track where spatial axes become a token axis and the
 -- class token is inserted.
-#eval (mmVit.encoder.patchShape [8],
-  mmVit.encoder.patchTokenShape [8],
-  mmVit.encoder.outputShape [8])
+#eval (mmVit.toEncoderConfig.patchShape [8],
+  mmVit.toEncoderConfig.patchTokenShape [8],
+  mmVit.toEncoderConfig.outputShape [8])
 ```
 ```leanOutput mmVitStages (whitespace := lax)
 ([8, 64, 8, 8], [8, 64, 64], [8, 65, 64])
@@ -458,7 +459,8 @@ print(tuple(torch.cat([cls, tokens], dim=1).shape))
 ```
 
 The intermediate shapes agree at every stage. `flatten(2).transpose(1, 2)` computes the token tensor
-at runtime, while `mmVit.encoder.patchTokenShape [8]` computes its shape without running the model.
+at runtime, while `mmVit.toEncoderConfig.patchTokenShape [8]` computes its shape without running
+the model. `toEncoderConfig` selects the encoder settings inherited by the classifier configuration.
 Computing that shape does not run validation; the model constructor separately calls
 `ViT.EncoderConfig.validate` to reject an unusable patch grid.
 
@@ -478,9 +480,9 @@ abbrev mmVitOdd : nn.models.ViT.Config 2 :=
         stride := [5, 5]
         padding := [0, 0] } }
 
-#eval (mmVitOdd.encoder.patchGrid.to Shape,
-  mmVitOdd.encoder.patchCount,
-  mmVitOdd.encoder.sequenceLength)
+#eval (mmVitOdd.toEncoderConfig.patchGrid.to Shape,
+  mmVitOdd.toEncoderConfig.patchCount,
+  mmVitOdd.toEncoderConfig.sequenceLength)
 ```
 ```leanOutput mmVitOdd
 ([6, 6], 36, 37)
@@ -861,9 +863,10 @@ open NN.Proofs.Models.Attention in
 ```
 
 Every strict-future attention weight is exactly zero. The
-executable path is the one whose numbers we compared against PyTorch above, and
-{ref "runtime-approximation"}[Runtime Approximation] is where the rounded version of the same
-softmax is related back to this real-valued one.
+specification is the one evaluated with `Float` in the comparison above.
+{ref "runtime-approximation"}[Runtime Approximation] develops error bounds for rounded operations;
+those bounds have their own hypotheses and do not by themselves prove this entire attention
+execution equivalent to its real-valued specification.
 
 Read the theorem's indices as query row `i` and key column `j`. The assumption `i < j` is exactly
 the strict-future case, and the conclusion concerns a weight in the normalized matrix. It is

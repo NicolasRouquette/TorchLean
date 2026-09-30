@@ -324,7 +324,7 @@ Outputs:
 This is written to match the forward equations in `gruCellSpec`. It is not an optimized kernel;
 it is a precise spec for what gradients *should* be.
 -/
-def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
+def gruCellBackwardSpec {inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
   (input : Tensor α [inputSize])
   (prevHidden : Tensor α [hiddenSize])
@@ -356,8 +356,7 @@ def gruCellBackwardFullSpec {inputSize hiddenSize : Nat}
   let dPrevDirect := mulSpec gradOutput updateGate
 
   -- tanh preactivation derivative using output newCandidate = tanh(pre_h)
-  let dPreH := mulSpec dHtilde (subSpec (Tensor.full (.dim hiddenSize .scalar) 1) (mulSpec
-    newCandidate newCandidate))
+  let dPreH := mulSpec dHtilde (Activation.tanhOutputDerivSpec newCandidate)
 
   -- h_reset = r ⊙ h_prev, resetConcat = [x; h_reset]
   let reset_hidden := mulSpec resetGate prevHidden
@@ -409,7 +408,7 @@ This function consumes the same intermediates produced by `gruExtractIntermediat
 per-timestep gate activations and candidates. The backward pass walks time in reverse and
 accumulates gradients for the Cho-style forward equation.
 -/
-def gruSequenceBackwardFullSpec {seqLen inputSize hiddenSize : Nat}
+def gruSequenceBackwardSpec {seqLen inputSize hiddenSize : Nat}
   (gru : GRUSpec α inputSize hiddenSize)
   (inputs : Tensor α [seqLen, inputSize])
   (hiddens : Tensor α [seqLen, hiddenSize])
@@ -445,7 +444,7 @@ def gruSequenceBackwardFullSpec {seqLen inputSize hiddenSize : Nat}
     let totalGradient := addSpec (get gradOutputs index) dHiddenNext
     let (dInput, dHidden, dResetWeights, dResetBias, dUpdateWeights, dUpdateBias,
         dNewWeights, dNewBias) :=
-      gruCellBackwardFullSpec gru input previous totalGradient (get resetGates index)
+      gruCellBackwardSpec gru input previous totalGradient (get resetGates index)
         (get updateGates index) (get newCandidates index)
     ((dHidden, addSpec resetWeights dResetWeights, addSpec resetBias dResetBias,
       addSpec updateWeights dUpdateWeights, addSpec updateBias dUpdateBias,

@@ -3,7 +3,7 @@
 Run this small, offline format check from the repository root:
 
 ```bash
-lake exe verify -- abcrown-leaf
+scripts/lake.sh exe verify -- abcrown-leaf
 ```
 
 The bundled report describes the box `[-1, 1] × [-1, 1]`, claims a lower bound of `1`, and gives
@@ -20,7 +20,7 @@ is
 This example teaches an **export/import consistency check**. It loads no network and does not
 recompute the claimed lower bounds. A made-up bound can pass these checks, so acceptance alone is
 not a robustness proof.
-For a model-to-bound workflow, start with `lake exe verify -- torchlean-ibp` instead.
+For a model-to-bound workflow, start with `scripts/lake.sh exe verify -- torchlean-ibp` instead.
 
 The two fixtures show the format boundary:
 

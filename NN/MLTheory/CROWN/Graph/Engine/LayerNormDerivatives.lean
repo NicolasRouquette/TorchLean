@@ -34,9 +34,9 @@ def derivativeMagnitude (bounds : α × α) : α :=
 /-- Bound each coordinate after subtracting the same row's mean. -/
 def centeredDerivativeRadii? {n : Nat} (bounds : Fin n → α × α) :
     Option (Fin n → α) := do
-  let _ ← Internal.traverseFin fun i => checkedFiniteBounds? (bounds i)
+  let _ ← Tensor.Internal.sequenceFinM fun i => checkedFiniteBounds? (bounds i)
   let mean ← directedRowMean? bounds
-  Internal.traverseFin fun i => do
+  Tensor.Internal.sequenceFinM fun i => do
     let centered ← checkedFiniteBounds?
       (subDown (bounds i).1 mean.2, subUp (bounds i).2 mean.1)
     pure (derivativeMagnitude centered)
@@ -81,7 +81,7 @@ def layerNormDerivativeRow? {n : Nat}
       let rRight := mulUp (mulUp half.2 t3) qRight
       let rMixed := addUp (mulUp (mulUp (mulUp threeQuarters.2 t5) qLeft) qRight)
         (mulUp (mulUp half.2 t3) qMixed)
-      let radii ← Internal.traverseFin fun i : Fin n => do
+      let radii ← Tensor.Internal.sequenceFinM fun i : Fin n => do
         let scale ← checkedFiniteBounds? (gamma.getScalar i, gamma.getScalar i)
         let scaleRadius := derivativeMagnitude scale
         let first := mulUp scaleRadius (addUp (mulUp (a i) t) (mulUp (u i) rLeft))
@@ -114,7 +114,7 @@ def layerNormDerivativeBoxes? (s : Shape) (axis : Nat)
     { layerNorm? := fun _ => parameters } 0 axis s width).toOption
   let _ ← checkedFiniteBounds? (affine.epsilon, affine.epsilon)
   let _ ← if affine.epsilon > 0 then some () else none
-  let _ ← Internal.traverseFin fun i : Fin width => do
+  let _ ← Tensor.Internal.sequenceFinM fun i : Fin width => do
     let _ ← checkedFiniteBounds? (affine.gamma.getScalar i, affine.gamma.getScalar i)
     checkedFiniteBounds? (affine.beta.getScalar i, affine.beta.getScalar i)
   let x ← layerNormDerivativeMatrix? s rows width input
@@ -123,7 +123,7 @@ def layerNormDerivativeBoxes? (s : Shape) (axis : Nat)
   let w ← layerNormDerivativeMatrix? s rows width mixed
   let endpoints (box : Tensor α [rows, width] × Tensor α [rows, width]) (i : Fin rows) :=
     fun j : Fin width => ((box.1.unstack i).getScalar j, (box.2.unstack i).getScalar j)
-  let bounds ← Internal.traverseFin fun i : Fin rows =>
+  let bounds ← Tensor.Internal.sequenceFinM fun i : Fin rows =>
     layerNormDerivativeRow? (endpoints x i) (endpoints u i) (endpoints v i)
       (endpoints w i) affine.gamma affine.epsilon
   let collect (select : ((Tensor α [width] × Tensor α [width]) ×

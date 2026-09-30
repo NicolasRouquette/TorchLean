@@ -68,9 +68,9 @@ A successful choice leaves the preferred provider exactly when no available, adm
 candidate of that provider implements the requested operation.
 -/
 theorem chooseCapsuleFor_prefer_fallback_iff
-    (policy : KernelPolicy) (availability : Availability)
-    (registry : Array KernelCapsule) (op : BackendOp)
-    (preferred : Provider) (selected : KernelCapsule)
+    {policy : KernelPolicy} {availability : Availability}
+    {registry : Array KernelCapsule} {op : BackendOp}
+    {preferred : Provider} {selected : KernelCapsule}
     (hprefer : policy.provider = .prefer preferred)
     (hselected :
       chooseCapsuleFor? policy op (availability.filterCapsules registry) = some selected) :

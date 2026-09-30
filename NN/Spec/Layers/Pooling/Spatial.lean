@@ -194,7 +194,7 @@ def getPaddedMaxInputVal?
 
 /-- Number of cells in a pooling window, the denominator average pooling counts with. -/
 def kernelProd (kernel : List Nat) : Nat :=
-  kernel.foldl (fun acc k => acc * k) 1
+  kernel.prod
 
 /-- Start of adaptive-pooling bin `i`: `floor(i * input / output)`. -/
 def adaptiveStart (input output i : Nat) : Nat :=
@@ -244,16 +244,12 @@ def adaptiveWindowDims (input output index : List Nat) : List Nat :=
       (adaptiveEnd i o x - adaptiveStart i o x) :: adaptiveWindowDims is os xs
   | _, _, _ => []
 
-/-- Add two coordinate lists axiswise, dropping any tail the shorter list does not cover. -/
-def addCoords (left right : List Nat) : List Nat :=
-  match left, right with
-  | x :: xs, y :: ys => (x + y) :: addCoords xs ys
-  | _, _ => []
-
 /-- Average of one adaptive-pooling bin.
 
-`adaptiveStart_lt_adaptiveEnd` is what keeps this honest: with positive input and output extents the
-bin is nonempty, so the division below is never a division by zero. -/
+For positive input and output extents and a valid output coordinate,
+`adaptiveStart_lt_adaptiveEnd` makes the bin's natural cell count positive. Casting that count and
+dividing by it still use the scalar backend; positivity of the natural count alone is not a
+representability guarantee. -/
 def adaptiveAvgPoolValue
     {d : Nat} {inSpatial : Tensor Nat [d]}
     (input : Tensor α (Shape.ofList inSpatial.data.toList))
@@ -261,7 +257,7 @@ def adaptiveAvgPoolValue
   let starts := adaptiveStarts inSpatial.data.toList outSpatial.data.toList outIdxs
   let window := adaptiveWindowDims inSpatial.data.toList outSpatial.data.toList outIdxs
   let sum := Conv.Internal.foldlIndices window (0 : α) (fun acc offset =>
-    acc + getAtOrZero input (addCoords starts offset))
+    acc + getAtOrZero input (List.zipWith Nat.add starts offset))
   sum / (kernelProd window : Nat)
 
 /-- Maximum over one adaptive-pooling bin.
@@ -275,7 +271,7 @@ def adaptiveMaxPoolValue
   let starts := adaptiveStarts inSpatial.data.toList outSpatial.data.toList outIdxs
   let window := adaptiveWindowDims inSpatial.data.toList outSpatial.data.toList outIdxs
   let best? := Conv.Internal.foldlIndices window none (fun best offset =>
-    let value := getAtOrZero input (addCoords starts offset)
+    let value := getAtOrZero input (List.zipWith Nat.add starts offset)
     match best with
     | none => some value
     | some current => if value > current then some value else best)
@@ -301,6 +297,20 @@ def maxPoolValue
   -- The default makes this helper total; valid pooling shapes always select an input value.
   best?.getD 0
 
+/-- First winning kernel coordinate and value, ignoring padding, shared by the JVP and VJP. -/
+def maxPoolWinner?
+    {d : Nat} {inSpatial : Tensor Nat [d]}
+    (input : Tensor α (Shape.ofList inSpatial.data.toList))
+    (outIdxs : List Nat)
+    (kernel stride padding : List Nat) : Option (List Nat × α) :=
+  Conv.Internal.foldlIndices kernel none (fun best winIdxs =>
+    match getPaddedMaxInputVal? (d := d) (inSpatial := inSpatial)
+      (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
+      (padding := padding), best with
+    | none, _ => best
+    | some v, none => some (winIdxs, v)
+    | some v, some (_, b) => if v > b then some (winIdxs, v) else best)
+
 /--
 Selected-branch tangent for one hard max-pooling window.
 
@@ -312,14 +322,7 @@ def maxPoolSelectedTangentValue
     (input tangent : Tensor α (Shape.ofList inSpatial.data.toList))
     (outIdxs : List Nat)
     (kernel stride padding : List Nat) : α :=
-  let best? := Conv.Internal.foldlIndices kernel none (fun best winIdxs =>
-    match getPaddedMaxInputVal? (d := d) (inSpatial := inSpatial)
-      (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := stride)
-      (padding := padding), best with
-    | none, _ => best
-    | some v, none => some (winIdxs, v)
-    | some v, some (_, b) => if v > b then some (winIdxs, v) else best)
-  match best? with
+  match maxPoolWinner? (d := d) (inSpatial := inSpatial) input outIdxs kernel stride padding with
   | none => 0
   | some (bestWin, _) =>
       match paddedCoords? outIdxs bestWin stride with
@@ -521,15 +524,8 @@ def maxPoolSpatialBackwardSpec
     Tensor.generate inSpatial.data.toList (fun _ => 0)
 
   Conv.Internal.foldlIndices outDims gradInit (fun accGrad outIdxs =>
-    let best? : Option (List Nat × α) :=
-      Conv.Internal.foldlIndices kernelL none (fun best winIdxs =>
-        match Pooling.Internal.getPaddedMaxInputVal? (d := d) (inSpatial := inSpatial)
-          (input := input) (outIdxs := outIdxs) (winIdxs := winIdxs) (stride := strideL)
-          (padding := paddingL), best with
-        | none, _ => best
-        | some curr, none => some (winIdxs, curr)
-        | some curr, some (_, bestVal) =>
-            if curr > bestVal then some (winIdxs, curr) else best)
+    let best? := Pooling.Internal.maxPoolWinner? (d := d) (inSpatial := inSpatial)
+      input outIdxs kernelL strideL paddingL
     let gOut : α := getAtOrZero gradOutput outIdxs
     match best? with
     | none => accGrad
@@ -542,7 +538,7 @@ def maxPoolSpatialBackwardSpec
             | some orig =>
                 if Pooling.Internal.coordsInBounds orig inSpatial.data.toList then
                   let current : α := getAtOrZero accGrad orig
-                  updateTensorSpec accGrad orig (current + gOut)
+                  updateSpec accGrad orig (current + gOut)
                 else
                   accGrad)
 
@@ -580,7 +576,7 @@ def avgPoolSpatialBackwardSpec
           | none => acc
           | some orig =>
               let current : α := getAtOrZero acc orig
-              updateTensorSpec acc orig (current + gOut / poolSize)))
+              updateSpec acc orig (current + gOut / poolSize)))
 
 /-!
 ### Forward (channels-first: `C × spatial...`)
@@ -866,7 +862,7 @@ def smoothMaxPoolSpatialBackwardSpec
               let expVal := MathFunctions.exp (beta * (x - pivot))
               let w : α := coeff * (expVal / sumExp)
               let current : α := getAtOrZero acc orig
-              updateTensorSpec acc orig (current + gOut * w)))
+              updateSpec acc orig (current + gOut * w)))
 
 /-- Multi-channel VJP for `smoothMaxPoolSpec` (apply spatial backward per channel). -/
 def smoothMaxPoolBackwardSpec

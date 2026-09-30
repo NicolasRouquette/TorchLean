@@ -36,6 +36,10 @@ namespace Models
 open Spec TorchLean
 open TorchLean.Tensor
 
+/-- Parameter ABI for the 2-layer MLP: `(W₁, b₁, W₂, b₂)`. -/
+abbrev mlpParams (inputWidth hiddenWidth outputWidth : Nat) : List Shape :=
+  [[hiddenWidth, inputWidth], [hiddenWidth], [outputWidth, hiddenWidth], [outputWidth]]
+
 /--
 2-layer MLP: `Linear(input, hidden) → ReLU → Linear(hidden, output)`.
 
@@ -51,9 +55,7 @@ So the overall parameter list is exactly:
 `[[hiddenWidth, inputWidth], [hiddenWidth], [outputWidth, hiddenWidth], [outputWidth]]`.
 -/
 def mlp (inputWidth hiddenWidth outputWidth : Nat) :
-    Chain
-      [[hiddenWidth, inputWidth], [hiddenWidth], [outputWidth, hiddenWidth], [outputWidth]]
-      [inputWidth] [outputWidth] :=
+    Chain (mlpParams inputWidth hiddenWidth outputWidth) [inputWidth] [outputWidth] :=
   Chain.linear inputWidth hiddenWidth >>>
   Chain.relu [hiddenWidth] >>>
   Chain.linear hiddenWidth outputWidth

@@ -47,7 +47,7 @@ open TorchLean
 
 namespace NN.Examples.Models.Supervised.LstmRegression
 
-/-- Runner subcommand: `lake exe torchlean lstm_regression ...`. -/
+/-- Runner subcommand: `scripts/lake.sh exe torchlean lstm_regression ...`. -/
 def exeName : String := "lstm_regression"
 
 /--

@@ -263,7 +263,7 @@ Run the complete checked-in command from the repository root:
 ```terminal
 # Train the checked-in MLP example for 200 updates from
 # initialization seed 2026.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu \
   --steps 200 \
   --seed 2026
@@ -286,7 +286,7 @@ The same command accepts `--arithmetic ieee`, which selects FloatLib's executabl
 arithmetic in place of the host's native operations:
 
 ```terminal
-lake exe torchlean quickstart_mlp --device cpu --steps 200 \
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 200 \
   --seed 2026 --arithmetic ieee
 ```
 
@@ -738,7 +738,7 @@ some 0.000000
 some 0.002521
 ```
 
-A nudge of $`10^{-5}` leaves the loss bit-identical, and so does a nudge of $`1`. Unit zero has
+The difference quotient prints zero for nudges of $`10^{-5}` and $`1`. Unit zero has
 pre-activation $`-0.4797` and the entry we are moving enters it multiplied by $`x_1=0.25`, so it
 takes $`\delta>1.92` to wake the unit up. At $`\delta=3` the upward perturbation activates it while
 the downward one does not, the two loss values stop being equal, and the quotient reports `0.002521`
@@ -757,8 +757,8 @@ the activation hypotheses explicit in derivative theorems, while
 PyTorch's `gradcheck` packages the perturbations and comparisons into one call:
 
 ```
-# Copy the Lean payload into double tensors before checking
-# derivatives by finite differences.
+# Initialize a separate PyTorch model in double precision
+# and check its derivatives by finite differences.
 # Python / PyTorch
 import torch
 torch.manual_seed(2026)
@@ -782,7 +782,9 @@ w1.requires_grad_(True)
 print(torch.autograd.gradcheck(loss, (w1,), eps=1e-6))
 ```
 
-This reports `True`. Double precision suits `gradcheck`'s default tolerances; the Lean version
+The recorded run reports `True`. This checks PyTorch's separately initialized payload; it does
+not compare its gradients with the Lean payload above. Double precision suits `gradcheck`'s
+default tolerances; the Lean version
 above already uses binary64 `Float`. The Python loss uses its `w1` argument directly, preserving the
 autograd connection that wrapping it in a new `Parameter` would break. `gradcheck` compares all
 coordinates and returns a Boolean on success, which is convenient for a test suite but hides the
@@ -796,7 +798,7 @@ configuration:
 
 ```terminal
 # Run the training example with a CPU execution request.
-lake exe torchlean quickstart_mlp --device cpu --steps 200
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 200
 ```
 
 or, in a CUDA-enabled build:
@@ -804,7 +806,7 @@ or, in a CUDA-enabled build:
 ```terminal
 # Build with CUDA support and request CUDA execution for the
 # same example.
-lake -R -K cuda=true exe torchlean \
+scripts/lake.sh -R -Kcuda=true exe torchlean \
   quickstart_mlp --device cuda --steps 200
 ```
 

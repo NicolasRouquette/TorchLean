@@ -68,9 +68,6 @@ def runScatterAddBaseOrder : IO Unit := do
   assertFloatArrayEq "scatterAddRows includes base before updates"
     (Buffer.toFloatArray rowResult) (FloatArray.mk #[1.0, 1.0])
 
-def outDim (inDim k stride padding : Nat) : Nat :=
-  Spec.Shape.slidingWindowOutDim inDim k stride padding
-
 def runAvgPoolBwdTwice : IO Unit := do
   IO.println "== deterministic avg_pool backward: exact repeatability =="
 
@@ -81,8 +78,8 @@ def runAvgPoolBwdTwice : IO Unit := do
   let stride : Array Nat := #[1, 1]
   let padding : Array Nat := #[1, 1]
 
-  let outH : Nat := outDim 17 3 1 1
-  let outW : Nat := outDim 17 3 1 1
+  let outH : Nat := Spec.Shape.slidingWindowOutDim 17 3 1 1
+  let outW : Nat := Spec.Shape.slidingWindowOutDim 17 3 1 1
   let outElems : UInt32 := UInt32.ofNat (inC.toNat * outH * outW)
 
   let gradOutput ← Buffer.randUniformIO outElems 12345

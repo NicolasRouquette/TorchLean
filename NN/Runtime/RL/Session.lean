@@ -112,11 +112,9 @@ def ofEnv {State : Type} {obsShape : Shape} {nActions : Nat}
       let obs : Tensor Float obsShape := env.observe st
       let out := env.step st a
       let nextObs : Tensor Float obsShape := env.observe out.state
-      let tr ←
-        match Boundary.checkTransitionFin (obsShape := obsShape) (nActions := nActions) contract
-            obs nextObs a out.reward out.terminated out.truncated with
-        | .ok t => pure t
-        | .error e => throw <| IO.userError e
+      let tr ← IO.ofExcept (Boundary.checkTransitionFin
+        (obsShape := obsShape) (nActions := nActions)
+        contract obs nextObs a out.reward out.terminated out.truncated)
       let done : Bool := Boundary.Transition.done tr
       let st' :=
         if resetOnDone && done then

@@ -80,6 +80,10 @@ def Config.modelWidth (config : Config) : Nat :=
 
 namespace Config
 
+/-- Shared token and positional embedding initialization, including the layer default. -/
+def embeddingInitialization (config : Config) : Init.Scheme :=
+  config.parameterInitialization?.getD (.uniform (-0.02) 0.02)
+
 /-- Block settings shared by validation and construction of the hidden stack. -/
 def block (config : Config) : nn.TransformerEncoder.Block.Config :=
     { headCount := config.headCount
@@ -152,12 +156,10 @@ def hidden (config : Config) (batchShape : Shape := [])
         let encoderConfig : nn.TransformerEncoder.Stack.Config :=
           { layerCount := config.layerCount
             block := config.block }
-        let positionInitialization :=
-          config.parameterInitialization?.getD (.uniform (-0.02) 0.02)
         do
           let builtPositionalEmbedding ← nn.learnedPositionalEmbedding batchShape
             (sequenceLength := config.sequenceLength) (embeddingWidth := modelWidth)
-            { initialization := positionInitialization }
+            { initialization := config.embeddingInitialization }
           let positionalEmbedding :
               nn.Sequential
                 (config.embeddingShape batchShape)
@@ -232,11 +234,9 @@ def oneHot (config : Config) (batchShape : Shape := [])
         "CausalTransformer" message
   | .ok () =>
       let modelWidth := config.modelWidth
-      let embeddingInitialization :=
-        config.parameterInitialization?.getD (.uniform (-0.02) 0.02)
       do
         let builtTokenEmbedding ← nn.oneHotEmbedding config.vocabularySize modelWidth
-          { weightInitialization := embeddingInitialization }
+          { weightInitialization := config.embeddingInitialization }
           (batchShape := batchShape.appendDim config.sequenceLength)
         let tokenEmbedding :
             nn.Sequential

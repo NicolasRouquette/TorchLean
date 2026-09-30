@@ -126,8 +126,8 @@ every nonempty tensor rank. The normalized suffix must be nonempty; the leading 
 def layerNormMatrixDims (axis : Nat) (s : Shape) : Except String (Nat × Nat) := do
   checkAxisValid axis s
   let dims := Shape.toList s
-  let seqLen : Nat := (dims.take axis).foldl (fun acc d => acc * d) 1
-  let embedDim : Nat := (dims.drop axis).foldl (fun acc d => acc * d) 1
+  let seqLen : Nat := (dims.take axis).prod
+  let embedDim : Nat := (dims.drop axis).prod
   checkPositive "layernorm" "embedDim" embedDim
   pure (seqLen, embedDim)
 
@@ -394,14 +394,6 @@ not identical. The contracts below share validation and traversal while retainin
 output formula for each operation family.
 -/
 
-/-- Effective kernel width for a dilated window. -/
-def effectiveKernel (kernel dilation : Nat) : Nat :=
-  Shape.dilatedKernelExtent kernel dilation
-
-/-- Output length for a dilated window with independent low/high padding. -/
-def slideOutDilated (input kernel stride dilation paddingBefore paddingAfter : Nat) : Nat :=
-  Shape.slidingWindowOutDimDilated input kernel stride dilation paddingBefore paddingAfter
-
 /-- Infer dilated convolution dimensions from one parameter per spatial axis. -/
 def inferConvDims (tag : String) (axisNames : List String)
     (inputs kernels strides dilations paddingBefore paddingAfter : List Nat) :
@@ -416,14 +408,14 @@ where
       checkPositive tag s!"{axis} kernel" kernel
       checkPositive tag s!"{axis} stride" stride
       checkPositive tag s!"{axis} dilation" dilation
-      let effective := effectiveKernel kernel dilation
+      let effective := Shape.dilatedKernelExtent kernel dilation
       let padded := input + low + high
       if padded < effective then
         throw <|
           s!"{tag}: {axis} window does not fit padded input: input={input}, \
             padding=({low}, {high}), effectiveKernel={effective}"
       let rest ← go axes inputs kernels strides dilations lows highs
-      pure (slideOutDilated input kernel stride dilation low high :: rest)
+      pure (Shape.slidingWindowOutDimDilated input kernel stride dilation low high :: rest)
     | _, _, _, _, _, _, _ =>
       throw s!"{tag}: spatial metadata ranks must agree"
 

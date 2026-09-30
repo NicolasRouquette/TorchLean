@@ -39,18 +39,10 @@ theorem relu_relax_scalar_upper_real_runtime
       by_cases hxpos : 0 < x
       · have hxnonneg : 0 ≤ x := le_of_lt hxpos
         simp [Activation.Math.reluSpec_eq_max, max_eq_left hxnonneg]
-        -- Standard triangular relaxation inequality.
+        -- Triangular relaxation: after clearing `u - l > 0` the claim is `l * (u - x) ≤ 0`.
         have hx_to_goal : x ≤ u / (u - l) * (x - l) := by
-          have hrewrite : (u - l) * x - u * (x - l) = l * (u - x) := by ring
-          have hxux : 0 ≤ u - x := sub_nonneg.mpr hxu
-          have hxmul_le : l * (u - x) ≤ 0 := mul_nonpos_of_nonpos_of_nonneg hle0 hxux
-          have hmul_goal : (u - l) * x ≤ u * (x - l) := by
-            have : (u - l) * x - u * (x - l) ≤ 0 := by simpa [hrewrite] using hxmul_le
-            exact sub_nonpos.mp this
-          have hx_to_goal' : x ≤ (u * (x - l)) / (u - l) := by
-            have : x * (u - l) ≤ u * (x - l) := by simpa [mul_comm] using hmul_goal
-            exact (le_div_iff₀ (G₀ := ℝ) hden).mpr this
-          simpa [div_eq_mul_inv, mul_comm, mul_left_comm, mul_assoc] using hx_to_goal'
+          rw [div_mul_eq_mul_div, le_div_iff₀ hden]
+          linarith [mul_nonpos_of_nonpos_of_nonneg hle0 (sub_nonneg.mpr hxu)]
         have h2 : u / (u - l) * (x - l) = u / (u - l) * x + -(u / (u - l)) * l := by ring
         simpa [h2] using hx_to_goal
       · have hxle : x ≤ 0 := le_of_not_gt hxpos

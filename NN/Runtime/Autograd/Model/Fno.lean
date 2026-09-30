@@ -26,12 +26,6 @@ namespace Runtime.Autograd.Model.Layers.FNO
 
 open Spec TorchLean TorchLean.Tensor
 
-/-- Shape of an `m × n` matrix. -/
-abbrev matrixShape (m n : Nat) : Shape := [m, n]
-
-/-- Shape of a vector with `n` entries. -/
-abbrev vectorShape (n : Nat) : Shape := [n]
-
 /-- Reshape `[modes, width]` for mode-wise batched matrix multiplication. -/
 def reshapeModesForMatmul (modes width : Nat) :
     Layer [modes, width] [modes, 1, width] :=
@@ -130,7 +124,7 @@ def phase {α : Type} [TorchLean.Storage α] [Context α] (extents : List Nat)
 /-- Cosine part of the dense multidimensional DFT matrix. -/
 def dftCosMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
     (spatial : TorchLean.Tensor Nat [d]) :
-    Tensor α (matrixShape (gridSize spatial) (gridSize spatial)) :=
+    Tensor α [gridSize spatial, gridSize spatial] :=
   Tensor.dim (fun frequency =>
     Tensor.dim (fun input =>
       let angle := 2 * MathFunctions.pi *
@@ -140,7 +134,7 @@ def dftCosMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
 /-- Negative-sine part of the dense multidimensional DFT matrix. -/
 def dftNegSinMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
     (spatial : TorchLean.Tensor Nat [d]) :
-    Tensor α (matrixShape (gridSize spatial) (gridSize spatial)) :=
+    Tensor α [gridSize spatial, gridSize spatial] :=
   Tensor.dim (fun frequency =>
     Tensor.dim (fun input =>
       let angle := 2 * MathFunctions.pi *
@@ -150,7 +144,7 @@ def dftNegSinMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
 /-- Normalized cosine part of the dense multidimensional inverse DFT matrix. -/
 def idftCosMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
     (spatial : TorchLean.Tensor Nat [d]) :
-    Tensor α (matrixShape (gridSize spatial) (gridSize spatial)) :=
+    Tensor α [gridSize spatial, gridSize spatial] :=
   Tensor.dim (fun input =>
     Tensor.dim (fun frequency =>
       let angle := 2 * MathFunctions.pi *
@@ -160,7 +154,7 @@ def idftCosMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
 /-- Normalized sine part of the dense multidimensional inverse DFT matrix. -/
 def idftSinMatrix {α : Type} [TorchLean.Storage α] [Context α] {d : Nat}
     (spatial : TorchLean.Tensor Nat [d]) :
-    Tensor α (matrixShape (gridSize spatial) (gridSize spatial)) :=
+    Tensor α [gridSize spatial, gridSize spatial] :=
   Tensor.dim (fun input =>
     Tensor.dim (fun frequency =>
       let angle := 2 * MathFunctions.pi *
@@ -247,8 +241,8 @@ def block {d : Nat} (spatial modes : TorchLean.Tensor Nat [d]) (width : Nat)
   let field : Shape := fieldShape spatial width
   let flat : Shape := flatFieldShape spatial width
   let spectralShape : Shape := spectralWeightShape spatial width
-  let skipShape : Shape := matrixShape width width
-  let biasShape : Shape := vectorShape width
+  let skipShape : Shape := [width, width]
+  let biasShape : Shape := [width]
   let spectralReal0 : Tensor Float spectralShape :=
     Torch.Init.tensor (s := spectralShape) (sch := .uniform (-0.05) 0.05)
       (seed := spectralRealSeed)

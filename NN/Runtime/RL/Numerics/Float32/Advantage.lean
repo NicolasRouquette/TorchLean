@@ -101,10 +101,7 @@ theorem tdResidual_eq_ok
       (bootstrap := nextValue) (done := done) with
   | error e =>
       -- Contradiction: the TD residual is an `.error` in this branch.
-      have : False := by
-        have h' := h
-        simp [tdResidualChecked, htarget] at h'
-      exact this.elim
+      simp [tdResidualChecked, htarget] at h
   | ok target =>
       -- The `.ok` TD residual means the value finiteness check and the subsequent checked
       -- subtraction both succeeded.
@@ -113,10 +110,7 @@ theorem tdResidual_eq_ok
         | true =>
             rfl
         | false =>
-            have : False := by
-              have h' := h
-              simp [tdResidualChecked, htarget, requireFinite, hf] at h'
-            exact this.elim
+            simp [tdResidualChecked, htarget, requireFinite, hf] at h
 
       have hsub :
           checkedSub "tdResidual/sub(target,value)" target value = .ok out := by
@@ -135,19 +129,12 @@ theorem tdResidual_eq_ok
         | true =>
             rfl
         | false =>
-            have : False := by
-              have h' := hsub
-              simp [checkedSub, requireFinite, out0, hf] at h'
-            exact this.elim
+            simp [checkedSub, requireFinite, out0, hf] at hsub
 
       have hout : out = out0 := by
         have : checkedSub "tdResidual/sub(target,value)" target value = .ok out0 := by
           simp [checkedSub, requireFinite, out0, hout0]
-        have hok : (Except.ok out : Except String (Binary 8 23)) = Except.ok out0 := by
-          exact hsub.symm.trans this
-        have : out = out0 := by
-          injection hok
-        exact this
+        exact Except.ok.inj (hsub.symm.trans this)
 
       -- Assemble the final statement.
       refine ⟨h₁, h₂, h₃, hval, ?_, ?_⟩

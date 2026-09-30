@@ -700,19 +700,19 @@ the graph:
 -- These functions return optional boxes; a type alone does
 -- not promise a bound at every node.
 open NN.MLTheory.CROWN in
-#check @propagateRealBounds
+#check propagateBounds (α := ℝ)
 
 open NN.MLTheory.CROWN in
-#check @propagateFP32Bounds
+#check propagateBounds (α := Floats.FP32)
 ```
 
 ```leanOutput irNoncomputable (whitespace := lax)
-propagateRealBounds : Graph.ParamStore ℝ →
+propagateBounds : Graph.ParamStore ℝ →
   Array (Option (FlatBox ℝ))
 ```
 
 ```leanOutput irNoncomputable (whitespace := lax)
-propagateFP32Bounds : Graph.ParamStore Floats.FP32 →
+propagateBounds : Graph.ParamStore Floats.FP32 →
   Array (Option (FlatBox Floats.FP32))
 ```
 
@@ -882,7 +882,7 @@ The whole experiment is one command:
 ```terminal
 # Check sampled executions against the intervals derived for
 # this example.
-lake exe torchlean one_semantic_universe --samples 50
+scripts/lake.sh exe torchlean one_semantic_universe --samples 50
 ```
 
 The command evaluates the center input in FloatLib binary32, propagates an output interval, and
@@ -1095,7 +1095,7 @@ sides:
 ```terminal
 # Exercise nontrivial axes so a last-axis-only
 # implementation cannot pass unnoticed.
-lake exe torchlean ir_axis_ops
+scripts/lake.sh exe torchlean ir_axis_ops
 ```
 
 ```terminal +output
@@ -1169,7 +1169,7 @@ to `none`, as it does for `.const` and `.detach`. Notice also that the `.sum` ta
 both a full sum and an axis reduction.
 
 A `KernelCapsule` describes the selected contract. It contains no executable closure, so planning
-node 1 for `libTorch` does not call ATen.
+node 1 for `libtorch` does not call ATen.
 Eager execution must bind the selected capsule to a typed handler with the same operation, provider,
 and device before that handler can run, and the current typed graph trainer does not consume a plan
 at all. {ref "backend-selection"}[Backend Selection] follows the selection and assurance

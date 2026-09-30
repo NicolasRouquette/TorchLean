@@ -212,22 +212,4 @@ def timeDistributedLinearBackward {seqLen inDim outDim : Nat}
     biasGradient := parameterGradients.biasGradient
     inputGradient := Tensor.dim inputGradients.getScalar }
 
-/--
-Accumulate two weight gradients by addition.
-
-This is a small helper used by batching/training code.
--/
-def linearGradientAccumulateSpec {inDim outDim : Nat}
-  (grad1 : Tensor α [outDim, inDim])
-  (grad2 : Tensor α [outDim, inDim]) :
-  Tensor α [outDim, inDim] :=
-  addSpec grad1 grad2
-
-/-- Scale a weight gradient by a scalar factor (e.g. learning-rate adjustment). -/
-def linearGradientScaleSpec {inDim outDim : Nat}
-  (grad : Tensor α [outDim, inDim])
-  (scaleFactor : α) :
-  Tensor α [outDim, inDim] :=
-  scaleSpec grad scaleFactor
-
 end Spec

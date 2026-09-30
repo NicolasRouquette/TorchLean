@@ -22,7 +22,7 @@ public import NN.Runtime.PyTorch.Import.Transformer
 Check exact scalar emission, nonsymmetric matrix orientation, normalization epsilon, and
 representative imported-model execution against PyTorch. Generated fixtures use no downloaded data.
 
-Run `lake exe pytorch_export_check`.
+Run `scripts/lake.sh exe pytorch_export_check`.
 -/
 
 @[expose] public section
@@ -38,7 +38,7 @@ def usage : String :=
     [ "TorchLean PyTorch export bridge check"
     , ""
     , "Usage:"
-    , "  lake exe pytorch_export_check"
+    , "  scripts/lake.sh exe pytorch_export_check"
     , ""
     , "Checks exact float emission, parameter orientation, and imported numerical execution."
     ]
@@ -331,10 +331,14 @@ def runFloatCodegenChecks : IO Unit := do
      , s!"matrix = {Export.PyTorch.tensorToPyString matrix}"
      , s!"transposed = {Export.PyTorch.transposedMatrixTensorToPy matrix}"
      , s!"expected = [{expected}]"
+     , "assert len(matrix) == 2 and all(len(row) == 4 for row in matrix)"
+     , "assert len(transposed) == 4 and all(len(row) == 2 for row in transposed)"
+     , "assert len(sum(matrix, [])) == len(expected)"
      , "for value, bits in zip(sum(matrix, []), expected): check(value, bits)"
      , "for i in range(2):"
      , "  for j in range(4): check(transposed[j][i], expected[i * 4 + j])"
      , "tensor_values = torch.tensor(matrix, dtype=torch.float64).flatten().tolist()"
+     , "assert len(tensor_values) == len(expected)"
      , "for value, bits in zip(tensor_values, expected):"
      , "  check(value, bits)"
      ] ++ checks.toList ++
@@ -406,7 +410,7 @@ def run : IO Unit := do
   runSupportedCase "TinyBatchNormEpsilon" "1,2,4,4"
   IO.println "pytorch_export_check: ok"
 
-/-- Entrypoint used by `lake exe pytorch_export_check`. -/
+/-- Entrypoint used by `scripts/lake.sh exe pytorch_export_check`. -/
 def main (args : List String) : IO UInt32 := do
   let args := TorchLean.CLI.dropDashDash args
   if TorchLean.CLI.hasHelp args then

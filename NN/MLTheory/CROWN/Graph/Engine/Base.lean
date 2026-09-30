@@ -9,6 +9,7 @@ module
 public import NN.MLTheory.CROWN.Graph.Core
 public import NN.IR.Semantics
 public import NN.MLTheory.CROWN.Runtime.Ops
+public import NN.Tensor.Internal.Laws.Sequence
 
 /-!
 Shared definitions for the graph CROWN engine.
@@ -156,9 +157,6 @@ def concatNodeBoxes? (nodes : Array Node) (boxes : Array (Option (FlatBox α)))
   let layout ← concatNodeLayout? nodes node axis
   let inputs ← node.parents.mapM fun parent => (boxes[parent]?).join
   concatFlatBoxes? layout inputs
-
-
--- The flat-tensor engine is the canonical executable path for the current graph verifier.
 
 /--
 Parameters for a linear layer `y = W*x + b` in flattened form.
@@ -406,10 +404,6 @@ instance : Inhabited (FlatBox α) where
         exact some { dim := n1, lo := lo, hi := hi }
     else none
 
-/-- Chain-rule multiplication for derivative intervals. Returns `none` on dimension mismatch. -/
-def chainMul (dZ dF : FlatBox α) : Option (FlatBox α) :=
-  boxMulElem (α:=α) dZ dF
-
 /-- Convert a dependent `Box` of shape `.dim n .scalar` into a `FlatBox` with `dim := n`. -/
 @[expose]
 def toFlatBox (n : Nat) (B : Box α (.dim n .scalar)) : FlatBox α :=
@@ -486,52 +480,11 @@ public def boxRelu (B : FlatBox α) : FlatBox α :=
     BoundOps.max2 (BoundOps.subUp 0 (B.lo.getScalar i)) (B.hi.getScalar i)
   { dim := B.dim, lo := lo', hi := hi' }
 
-/-!
-Finite traversals collect coordinatewise results while retaining typed indices.
--/
-namespace Internal
-
-/-- Traverse a finite family without converting its index to an untyped list. -/
-def traverseFin {β : Type} {n : Nat} (f : Fin n → Option β) : Option (Fin n → β) :=
-  if h : ∀ i, (f i).isSome then
-    some fun i => (f i).get (h i)
-  else
-    none
-
-/-- `traverseFin` succeeds exactly when every component does, and then returns those components.
-
-This is the only fact the box operations need about it: it lets a coordinatewise enclosure argument
-be read off from the aggregate `Option` without ever mentioning the `dif` in the definition. -/
-theorem traverseFin_eq_some_iff {β : Type} {n : Nat}
-    {f : Fin n → Option β} {g : Fin n → β} :
-    traverseFin f = some g ↔ ∀ i, f i = some (g i) := by
-  unfold traverseFin
-  split_ifs with h
-  · constructor
-    · intro hfg i
-      have : (fun i => (f i).get (h i)) = g := Option.some.inj hfg
-      rw [← this]
-      exact (Option.some_get (h i)).symm
-    · intro hfg
-      congr
-      funext i
-      obtain ⟨_, hi⟩ := Option.eq_some_iff_get_eq.mp (hfg i)
-      exact hi
-  · constructor
-    · simp
-    · intro hfg
-      exfalso
-      apply h
-      intro i
-      simp [hfg i]
-
-end Internal
-
 /-- Apply a scalar interval enclosure coordinatewise to a flat box. -/
 @[expose]
-def boxUnaryEnclosure? [NonlinearBoundOps α]
+def boxUnaryEnclosure?
     (enclose : α → α → Option (α × α)) (B : FlatBox α) : Option (FlatBox α) := do
-  let bounds ← Internal.traverseFin fun i =>
+  let bounds ← Tensor.Internal.sequenceFinM fun i =>
     enclose (B.lo.getScalar i) (B.hi.getScalar i)
   let lower : Tensor α [B.dim] := Tensor.ofFn fun i => (bounds i).1
   let upper : Tensor α [B.dim] := Tensor.ofFn fun i => (bounds i).2
@@ -598,11 +551,6 @@ def boxNeg (B : FlatBox α) : FlatBox α :=
   { dim := B.dim
     lo := Tensor.mapSpec (fun x => -x) B.hi
     hi := Tensor.mapSpec (fun x => -x) B.lo }
-
-/-- Apply a full axis permutation to a shape-tagged tensor when the permutation is valid. -/
-def permuteSomeTensor? {α : Type} [TorchLean.Storage α] [Context α]
-    (v : Spec.SomeTensor α) (perm : Array Nat) : Option (Spec.SomeTensor α) :=
-  (NN.IR.Graph.permuteSomeTensor v perm).toOption
 
 /-- Convert a row-major flat index into coordinates for the given dimensions. -/
 private def flatCoordinates (dims : Array Nat) (index : Nat) : Array Nat := Id.run do
@@ -775,7 +723,7 @@ def ibpReduceSumAxis (axis : Nat) (Xin : FlatBox α) (s : Shape) : Option (FlatB
 Format-independent softmax enclosure on a flattened tensor.
 
 A singleton row is exactly one. Every coordinate of a longer row lies in `[0,1]`. This deliberately
-forgoes the tighter exponential formula above so executable checking does not assume a directed
+forgoes a tighter exponential relaxation so executable checking does not assume a directed
 transcendental implementation that its scalar backend has not supplied.
 -/
 def ibpSoftmaxRange (s : Shape) (axis dim : Nat) : FlatBox α :=
@@ -882,7 +830,7 @@ def ibpBatchNormEval? [NonlinearBoundOps α] (parentShape : Shape) (channelAxis 
   let channels ← parentShape.toList[channelAxis]?
   if config.c = 0 || channels != config.c || input.dim != parentShape.size then none else do
     let _ ← checkedFiniteBounds? (config.eps, config.eps)
-    let parameters ← Internal.traverseFin fun ci : Fin config.c => do
+    let parameters ← Tensor.Internal.sequenceFinM fun ci : Fin config.c => do
       let mean := config.mean.getScalar ci
       let scale := config.gamma.getScalar ci
       let bias := config.beta.getScalar ci
@@ -897,7 +845,7 @@ def ibpBatchNormEval? [NonlinearBoundOps α] (parentShape : Shape) (channelAxis 
         NonlinearBoundOps.sqrtBounds stabilizedLo stabilizedHi >>= checkedFiniteBounds?
       if !(denominatorLo > 0) then none else
         pure (mean, scale, bias, denominatorLo, denominatorHi)
-    let bounds ← Internal.traverseFin fun i : Fin input.dim => do
+    let bounds ← Tensor.Internal.sequenceFinM fun i : Fin input.dim => do
       let channel := axisCoordinateOfFlat parentShape channelAxis i.val % config.c
       if hchannel : channel < config.c then do
         let (mean, scale, bias, denominatorLo, denominatorHi) := parameters ⟨channel, hchannel⟩
@@ -970,14 +918,14 @@ arithmetic laws. Agreement with native arithmetic requires its own numerical cor
     Option (Tensor α [n] × Tensor α [n]) := do
   let _ ← checkedFiniteBounds? (epsilon, epsilon)
   if !(epsilon > 0) then none else do
-    let _ ← Internal.traverseFin fun i : Fin n => do
+    let _ ← Tensor.Internal.sequenceFinM fun i : Fin n => do
       let _ ← checkedFiniteBounds? (lo.getScalar i, hi.getScalar i)
       let _ ← checkedFiniteBounds? (gamma.getScalar i, gamma.getScalar i)
       checkedFiniteBounds? (beta.getScalar i, beta.getScalar i)
     let (meanLo, meanHi) ← directedRowMean? fun i => (lo.getScalar i, hi.getScalar i)
     let centeredLo := Tensor.ofFn fun i => BoundOps.subDown (lo.getScalar i) meanHi
     let centeredHi := Tensor.ofFn fun i => BoundOps.subUp (hi.getScalar i) meanLo
-    let _ ← Internal.traverseFin fun i : Fin n =>
+    let _ ← Tensor.Internal.sequenceFinM fun i : Fin n =>
       checkedFiniteBounds? (centeredLo.getScalar i, centeredHi.getScalar i)
     let (centerMeanLo, centerMeanHi) ← directedRowMean? fun i =>
       (centeredLo.getScalar i, centeredHi.getScalar i)
@@ -985,7 +933,7 @@ arithmetic laws. Agreement with native arithmetic requires its own numerical cor
       Tensor.ofFn fun i => BoundOps.subDown (centeredLo.getScalar i) centerMeanHi
     let recenteredHi :=
       Tensor.ofFn fun i => BoundOps.subUp (centeredHi.getScalar i) centerMeanLo
-    let _ ← Internal.traverseFin fun i : Fin n =>
+    let _ ← Tensor.Internal.sequenceFinM fun i : Fin n =>
       checkedFiniteBounds? (recenteredLo.getScalar i, recenteredHi.getScalar i)
     let squaredLo := Tensor.ofFn fun i =>
       let l := recenteredLo.getScalar i
@@ -1005,7 +953,7 @@ arithmetic laws. Agreement with native arithmetic requires its own numerical cor
       NonlinearBoundOps.sqrtBounds (max2 stabilizedLo 0) (max2 stabilizedHi 0) >>=
         checkedFiniteBounds?
     if !(denominatorLo > 0) then none else do
-      let bounds ← Internal.traverseFin fun i : Fin n => do
+      let bounds ← Tensor.Internal.sequenceFinM fun i : Fin n => do
         let (lower, upper) ←
           NonlinearBoundOps.divBounds (centeredLo.getScalar i) (centeredHi.getScalar i)
             denominatorLo denominatorHi >>= checkedFiniteBounds?
@@ -1035,7 +983,7 @@ def ibpLayerNormPayloadBox? [NonlinearBoundOps α]
     (NN.IR.Graph.resolveLayerNormAffine payload 0 axis s width).toOption
   let _ ← checkedFiniteBounds? (affine.epsilon, affine.epsilon)
   let _ ← if affine.epsilon > 0 then some () else none
-  let _ ← Internal.traverseFin fun i : Fin width => do
+  let _ ← Tensor.Internal.sequenceFinM fun i : Fin width => do
     let _ ← checkedFiniteBounds? (affine.gamma.getScalar i, affine.gamma.getScalar i)
     checkedFiniteBounds? (affine.beta.getScalar i, affine.beta.getScalar i)
   let matrixShape : Shape := .dim rows (.dim width .scalar)
@@ -1043,7 +991,7 @@ def ibpLayerNormPayloadBox? [NonlinearBoundOps α]
     if hMatrix : s.size = matrixShape.size then
       let lo := ibpUnflatten (s := matrixShape) input.dim input.lo (hInput.trans hMatrix)
       let hi := ibpUnflatten (s := matrixShape) input.dim input.hi (hInput.trans hMatrix)
-      let bounds ← Internal.traverseFin fun i : Fin rows =>
+      let bounds ← Tensor.Internal.sequenceFinM fun i : Fin rows =>
         directedLayerNormRow? (lo.unstack i) (hi.unstack i)
           affine.gamma affine.beta affine.epsilon
       let outputLo : Tensor α matrixShape := Tensor.dim fun i => (bounds i).1
@@ -1064,7 +1012,7 @@ def ibpLayerNormBox? [NonlinearBoundOps α]
     (s : Shape) (input : FlatBox α) (axis : Nat := s.rank - 1) : Option (FlatBox α) := do
   let _ ← (OpContracts.layerNormMatrixDims axis s).toOption
   if input.dim = s.size then
-    let _ ← Internal.traverseFin fun i : Fin input.dim =>
+    let _ ← Tensor.Internal.sequenceFinM fun i : Fin input.dim =>
       checkedFiniteBounds? (input.lo.getScalar i, input.hi.getScalar i)
     match ibpLayerNormRange? (α := α) s input.dim axis with
     | some result => pure result
@@ -1079,10 +1027,6 @@ def ibpLayerNormBox? [NonlinearBoundOps α]
   else
     none
 
-/-- For tensors known to have shape `.dim n .scalar`, extract the underlying function. -/
-@[expose] public def getDimScalarFn {n : Nat} (t : Tensor α [n]) : Fin n → Tensor α .scalar :=
-  Tensor.unstack t
-
 -- Casting helpers for dependent shapes
 /-- Cast a 1D `Box` along an equality of dimensions. -/
 @[expose]
@@ -1090,13 +1034,6 @@ public def castBoxDim {n n' : Nat}
   (h : n = n')
   (B : Box α (.dim n .scalar)) : Box α (.dim n' .scalar) := by
   simpa [h] using B
-
-/-- Cast a ReLU relaxation vector across a proven-equal hidden dimension. -/
-def castRelax {n n' : Nat}
-  (h : n = n')
-  (r : Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n]) :
-  Tensor (NN.MLTheory.CROWN.Runtime.Ops.ReLURelax α) [n'] := by
-  simpa [h] using r
 
 /-- Cast the input dimension of an affine map across a proven equality. -/
 def castAffineIn {n n' m : Nat}
@@ -1219,7 +1156,7 @@ private def directedAvgPoolTensor? [NonlinearBoundOps α]
       let outDims :=
         (poolOutSpatialPad spatial config.kernel config.stride config.padding).data.toList
       let kernelDims := config.kernel.data.toList
-      let bounds ← Internal.traverseFin fun i : Fin (Shape.ofList outDims).size =>
+      let bounds ← Tensor.Internal.sequenceFinM fun i : Fin (Shape.ofList outDims).size =>
         let outIndices := (flatCoordinates outDims.toArray i.val).toList
         directedRowMean? (n := (Shape.ofList kernelDims).size) fun j =>
           let windowIndices := (flatCoordinates kernelDims.toArray j.val).toList
@@ -1233,7 +1170,7 @@ private def directedAvgPoolTensor? [NonlinearBoundOps α]
           hi := Tensor.unflattenSpec (Shape.ofList outDims)
             (Tensor.ofFn fun i => (bounds i).2) }
   | .dim n rest => do
-      let bounds ← Internal.traverseFin fun i : Fin n =>
+      let bounds ← Tensor.Internal.sequenceFinM fun i : Fin n =>
         directedAvgPoolTensor? config spatial rest (lo.unstack i) (hi.unstack i)
       pure
         { lo := Tensor.dim fun i => (bounds i).lo

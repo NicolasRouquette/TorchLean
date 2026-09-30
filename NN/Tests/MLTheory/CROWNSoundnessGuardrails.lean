@@ -25,7 +25,7 @@ ReLU slopes it cannot use, and the rounded IBP soundness theorem must apply to `
 The real sum equation must agree with `Tensor.sumSpec` for every shape, even without an IBP row.
 -/
 
-@[expose] public section
+public section
 
 namespace NN.Tests.MLTheory.CROWNSoundnessGuardrails
 
@@ -37,7 +37,7 @@ open NN.MLTheory.CROWN.Graph
 open Tests.Utils (assertBoundAt assertNoBoundAt)
 open NN.Tests.MLTheory.Utils (pointFlatBox)
 
-def checkConvolutionGuards : IO Unit := do
+private def checkConvolutionGuards : IO Unit := do
   let inputSpatial : Tensor Nat [1] := [4]
   let kernel : Tensor Nat [1] := [2]
   let stride : Tensor Nat [1] := [1]
@@ -68,7 +68,7 @@ def checkConvolutionGuards : IO Unit := do
       inputSpatial := inputSpatial
       kernelNonzero := hKernel
       strideNonzero := hStride
-      spec := { kernel := by simpa [kernel] using weights, bias := bias } }
+      spec := { kernel := Tensor.castShape weights (by simp [kernel]), bias := bias } }
   let baseConfig : ConvConfig :=
     { spatialRank := 1
       kernel := kernel
@@ -100,7 +100,7 @@ def checkConvolutionGuards : IO Unit := do
   let groupedConfig := { baseConfig with groups := 0 }
   let groupedGraph := graphFor groupedConfig [2, 5]
   let groupedStore := storeFor groupedParams
-  unless !crownGraphSemanticsSupported groupedGraph groupedStore do
+  if crownGraphSemanticsSupported groupedGraph groupedStore then
     throw <| IO.userError "convolution with zero groups was accepted"
   assertNoBoundAt "convolution with zero groups" (runIBP groupedGraph groupedStore) 1
 
@@ -108,7 +108,7 @@ def checkConvolutionGuards : IO Unit := do
   let dilatedConfig := { baseConfig with dilation := dilationZero }
   let dilatedGraph := graphFor dilatedConfig [2, 6]
   let dilatedStore := storeFor dilatedParams
-  unless !crownGraphSemanticsSupported dilatedGraph dilatedStore do
+  if crownGraphSemanticsSupported dilatedGraph dilatedStore then
     throw <| IO.userError "convolution with zero dilation was accepted"
   assertNoBoundAt "convolution with zero dilation" (runIBP dilatedGraph dilatedStore) 1
 
@@ -116,7 +116,7 @@ def checkConvolutionGuards : IO Unit := do
   let asymmetricConfig := { baseConfig with paddingAfter := paddingAfterZero }
   let asymmetricGraph := graphFor asymmetricConfig [2, 5]
   let asymmetricStore := storeFor asymmetricParams
-  unless !crownGraphSemanticsSupported asymmetricGraph asymmetricStore do
+  if crownGraphSemanticsSupported asymmetricGraph asymmetricStore then
     throw <| IO.userError "asymmetric convolution with a mismatched output shape was accepted"
   let ibp := runIBP asymmetricGraph asymmetricStore
   assertNoBoundAt "asymmetric convolution output shape" ibp 1
@@ -132,7 +132,7 @@ The backward objective sums all four entries, so its bounds must contain twelve.
 the same number of entries but a different shape must still be rejected, even if a caller
 supplies a precomputed output box.
 -/
-def checkLayerNormPayloadGuard : IO Unit := do
+private def checkLayerNormPayloadGuard : IO Unit := do
   let input : Tensor Float [2, 2] := Tensor.full (α := Float) [2, 2] 1
   let params : LayerNormParams Float :=
     { normalizedShape := [2]
@@ -172,7 +172,7 @@ def checkLayerNormPayloadGuard : IO Unit := do
       beta := Tensor.full (α := Float) [1, 2] 3
       eps := params.eps }
   let invalidStore := { store with layerNorm := store.layerNorm.insert 1 wrongShape }
-  unless !crownGraphSemanticsSupported graph invalidStore do
+  if crownGraphSemanticsSupported graph invalidStore then
     throw <| IO.userError "mismatched LayerNorm payload shape was accepted"
   let invalidIbp := runIBP graph invalidStore
   assertNoBoundAt "mismatched LayerNorm IBP" invalidIbp 1
@@ -187,7 +187,7 @@ def checkLayerNormPayloadGuard : IO Unit := do
   | some _ => throw <| IO.userError "mismatched LayerNorm backward CROWN was accepted"
 
 /-- Coefficient cancellation must not turn a lower logit into a certified winner. -/
-def checkAffineCancellation : IO Unit := do
+private def checkAffineCancellation : IO Unit := do
   let graph : NN.IR.Graph := ⟨#[
     { id := 0, parents := #[], kind := .input, outShape := [1] },
     { id := 1, parents := #[0], kind := .linear, outShape := [3] },
@@ -210,7 +210,7 @@ def checkAffineCancellation : IO Unit := do
   -- The stored weights sum to one in real arithmetic; execution rounds its first logit to 0.125.
   unless getAtOrZero output.lo [0] ≤ 0.1 && 0.125 ≤ getAtOrZero output.hi [0] do
     throw <| IO.userError "CROWN lost coefficient-rounding error"
-  unless !(getAtOrZero output.lo [1] > getAtOrZero output.hi [0]) do
+  if getAtOrZero output.lo [1] > getAtOrZero output.hi [0] then
     throw <| IO.userError "CROWN certified the wrong class after coefficient cancellation"
   let net : TwoLayerMLP Float32 1 3 2 :=
     { hiddenWeight := w1, hiddenBias := b1, outputWeight := w2, outputBias := b2 }
@@ -219,7 +219,7 @@ def checkAffineCancellation : IO Unit := do
     throw <| IO.userError "standalone MLP CROWN lost coefficient-rounding error"
 
 /-- Negative weights must consume a lower parent bound, even in the upper-only API. -/
-def checkUpperAffineSign : IO Unit := do
+private def checkUpperAffineSign : IO Unit := do
   let graph : NN.IR.Graph := ⟨#[
     { id := 0, parents := #[], kind := .input, outShape := [1] },
     { id := 1, parents := #[0], kind := .relu, outShape := [1] },
@@ -236,7 +236,7 @@ def checkUpperAffineSign : IO Unit := do
     throw <| IO.userError "upper affine bound excludes -ReLU(0) = 0"
 
 /-- A rounded backend has no ReLU relaxation in its directed pass, so it refuses imported slopes. -/
-def checkRoundedReluAlphaRejected : IO Unit := do
+private def checkRoundedReluAlphaRejected : IO Unit := do
   let graph : NN.IR.Graph := ⟨#[
     { id := 0, parents := #[], kind := .input, outShape := [1] },
     { id := 1, parents := #[0], kind := .relu, outShape := [1] },
@@ -257,7 +257,7 @@ def checkRoundedReluAlphaRejected : IO Unit := do
     throw <| IO.userError "rounded CROWN failed without ReLU slopes"
 
 /-- The original core-family classifier keeps its meaning alongside the unrestricted theorem. -/
-def checkIBPForwardSupport : IO Unit := do
+private def checkIBPForwardSupport : IO Unit := do
   let covered : Array NN.IR.Node := #[
     { id := 0, parents := #[], kind := .input, outShape := [2] },
     { id := 1, parents := #[0], kind := .linear, outShape := [2] },
@@ -272,8 +272,6 @@ def checkIBPForwardSupport : IO Unit := do
 namespace SumEquationRegression
 
 open DirectedBackward
-
-noncomputable section
 
 /-- Summing two ones cannot give zero, even when no IBP parent row exists. -/
 theorem real_sum_rejects_wrong_value_without_row :
@@ -310,18 +308,11 @@ theorem actual_tensor_sum_equation {s : Shape} (t : Tensor ℝ s)
     have hsum : Tensor.sumSpec t =
         ∑ i : Fin s.size, t (Shape.Coord.unlinearize i) := by
       rw [Spec.sum_spec_eq_coord_sum]
-      let e : s.Coord ≃ Fin s.size :=
-        { toFun := Shape.Coord.linearize
-          invFun := Shape.Coord.unlinearize
-          left_inv := Shape.Coord.unlinearize_linearize
-          right_inv := Shape.Coord.linearize_unlinearize }
-      exact (e.symm.sum_comp (fun c => t c)).symm
+      exact ((Shape.Coord.equivFin s).symm.sum_comp (fun c => t c)).symm
     rw [hsum]
     apply Finset.sum_congr rfl
     intro i _
     simp only [dite_eq_left i.isLt]
-
-end
 
 end SumEquationRegression
 
@@ -347,7 +338,8 @@ example (g : NN.IR.Graph) (ps : ParamStore FP32) (dims : Nat → Nat) (v : Nat �
     (id : Nat) (hid : id < g.nodes.size) (box : FlatBox FP32)
     (hbox : (runIBP g ps)[id]! = some box) :
     DirectedBackward.RowEncloses box (dims id) (v id) :=
-  DirectedBackward.runIBP_encloses_all g ps DirectedBackward.normalizationEpsilon_nonneg_fp32
+  DirectedBackward.runIBP_encloses_all g ps
+    FP32.normalizationEpsilon_nonneg
     hparent hinputs hequation id hid box hbox
 
 /-- The complete objective workflow specializes to FP32 with its actual arithmetic instances. -/
@@ -370,7 +362,7 @@ example {g : NN.IR.Graph} {ps : ParamStore FP32} {ctx : AffineCtx}
         (fun i => LawfulBoundOps.toReal (getAtOrZero obj.v [i])) (v output)) :=
   DirectedBackward.backwardObjectiveBox_encloses_runIBP_all rfl
     input_lt input_dim input_kind node_id parent_lt
-    DirectedBackward.normalizationEpsilon_nonneg_fp32 hinputs equation
+    FP32.normalizationEpsilon_nonneg hinputs equation
     xB hx output houtput obj hdim hresult
 
 def run : IO Unit := do

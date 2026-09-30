@@ -47,8 +47,10 @@ and numerical parity tests provide evidence for a particular build and set of in
 - `csrc/libtorch/torchlean.cpp`
   Shared implementation of storage ownership, allocation, transfers, seeded random values,
   runtime controls, tensor operations, and explicit backward calls through ATen.
-  The source is organized into runtime, elementwise, tensor, attention, matrix multiplication,
-  and convolution/pooling sections. Attention retains forward state in its output buffer.
+  It implements elementwise operations, reductions, indexing, matrix multiplication,
+  normalization, Fourier transforms, scans, and convolution/pooling.
+  Lean composes attention in `LibTorch.Ops.Attention` and retains Q/K/V and probability buffers
+  on its tape; the native buffer has no attention context.
   LibTorch owns the CUDA allocator; TorchLean's payload counters track logical ownership.
   The `LibTorch.DGemm` interface accepts binary64 host arrays; eager CUDA buffers remain binary32.
 

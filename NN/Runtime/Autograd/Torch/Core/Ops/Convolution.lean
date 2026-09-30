@@ -48,19 +48,17 @@ def conv {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α]
     (Shape.ofList (outC ::
       Tensor.to (Spec.convOutSpatial inSpatial kernel stride padding) (List Nat)))) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.conv (t := t0)
+    s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.conv (t := t0)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       w.id b.id x.id
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.conv (t := t0)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       w.id b.id x.id
-    pure (some { id := id })
-  execute (α := α) s .conv #[w.identity?, b.identity?, x.identity?] cpu cuda
+  executeRecorded (α := α) s .conv #[w.identity?, b.identity?, x.identity?] cpu cuda
 
 /--
 N-D transpose convolution for channels-first tensors `(inC, spatial...)` (no batch axis).
@@ -79,20 +77,18 @@ def convTranspose {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Cont
       Tensor.to (Spec.convTransposeOutSpatial inSpatial kernel stride padding) (List Nat))))
     := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <|
+    s.recordCpu fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.Tape.convTranspose (t := t0)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       w.id b.id x.id
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.convTranspose (t := t0)
       (d := d) (inC := inC) (outC := outC)
       (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
       w.id b.id x.id
-    pure (some { id := id })
-  execute (α := α) s .convTranspose #[w.identity?, b.identity?, x.identity?] cpu cuda
+  executeRecorded (α := α) s .convTranspose #[w.identity?, b.identity?, x.identity?] cpu cuda
 
 end EagerSession
 

@@ -266,8 +266,57 @@ def expectCudaSessionMatchesRuntime : IO Unit := do
         expectContains "unavailable native CUDA session rejection" "no usable CUDA device"
           e.toString
 
+/-- Audit local VJP ownership independently of the provider and global tape policy. -/
+def checkLibTorchLocalVJPs : IO Unit := do
+  -- These groups follow the backward closures in Engine.LibTorch.Ops.
+  let leanComposed : Array BackendOp :=
+    #[.attention, .matmul, .linear, .mseLoss, .add, .sub, .mul, .scale, .sigmoid,
+      .tanh, .softplus, .exp, .sin, .cos, .log, .inv, .safeLog, .logSoftmax,
+      .softmax, .hardMaskedSoftmax, .reduceSum, .reduceMean, .reshape, .permute,
+      .concat, .slice, .gather, .scatterAdd, .batchNorm, .fftFno]
+  -- Broadcast calls the native reduceFromBroadcastTo adjoint, unlike the Lean
+  -- broadcast/scale closures for sum and mean. LayerNorm likewise calls layerNormBwd,
+  -- whereas batchNorm composes its derivative in Lean.
+  let nativeBackward : Array BackendOp :=
+    #[.relu, .gelu, .abs, .sqrt, .clamp, .max, .min, .broadcast, .layerNorm,
+      .conv, .convTranspose, .maxPool, .smoothMaxPool, .avgPool, .selectiveScan]
+  let forwardOnly : Array BackendOp := #[.randUniform, .bernoulliMask]
+  let classifications :=
+    #[(VJPMode.torchLeanTape, leanComposed), (.backendVJP, nativeBackward), (.none, forwardOnly)]
+  for capsule in LibTorch.capsules do
+    let matchingGroups := classifications.filter fun (_, ops) => ops.contains capsule.op
+    expect s!"{capsule.name}: exactly one ownership classification" (matchingGroups.size == 1)
+    for (mode, _) in matchingGroups do
+      expect s!"{capsule.name}: local VJP ownership" (capsule.vjpMode == mode)
+    expect s!"{capsule.name}: LibTorch CUDA provider is independent of VJP ownership"
+      (capsule.provider == .libTorch && capsule.device == .cuda)
+    expect s!"{capsule.name}: VJP contract matches its ownership" capsule.contractsAligned
+    expect s!"{capsule.name}: compatible with the TorchLean global tape"
+      (capsule.matchesVJP BackendProfile.checkedCuda.policy)
+  for (_, ops) in classifications do
+    for op in ops do
+      expect s!"{op.name}: exactly one maintained LibTorch capsule"
+        ((LibTorch.capsules.filter fun capsule => capsule.op == op).size == 1)
+
+  let nativeOnly : BackendProfile :=
+    { BackendProfile.checkedCuda with
+      policy := { BackendProfile.checkedCuda.policy with vjpMode := .backendVJP } }
+  for op in leanComposed do
+    expectPlanningFails s!"native-only VJP policy rejects Lean-composed `{op.name}`"
+      nativeOnly #[op]
+  let nativePlan ← planOrThrow "native-only VJP policy accepts native backward primitives"
+    nativeOnly nativeBackward
+  expectCapsules "native backward routing retains capsule identities" nativePlan.capsuleNames
+    (nativeBackward.map fun op => s!"libtorch.{op.name}")
+  expect "native backward contracts satisfy the checked policy"
+    (isAccepted (nativePlan.checkContracts AssurancePolicy.checked))
+  let randomPlan ← planOrThrow "random generation remains forward-only" nativeOnly forwardOnly
+  expect "forward-only operations do not acquire a VJP"
+    (randomPlan.kernels.all fun kernel => kernel.capsule.vjpMode == .none)
+
 def run : IO Unit := do
   checkHandlerIdentity
+  checkLibTorchLocalVJPs
   expect "reference scatter-add records accumulation order"
     (Reference.scatterAdd.numericalPolicy.reduction == .fixedLeft)
   expect "LibTorch scatter-add records implementation-defined accumulation order"
@@ -566,11 +615,11 @@ def run : IO Unit := do
 
   let directAttention ← planOrThrow "default LibTorch direct attention" BackendProfile.checkedCuda
     #[.attention]
-  expectCapsules "checked CUDA selects the LibTorch forward and local VJP bridge"
+  expectCapsules "checked CUDA selects Lean-composed attention over LibTorch"
     directAttention.capsuleNames #["libtorch.direct_attention"]
-  expect "LibTorch attention supplies its local VJP to the TorchLean tape"
-    (directAttention.kernels.all fun kernel => kernel.capsule.vjpMode == .backendVJP)
-  expect "backend local VJP satisfies the existing TorchLean tape policy"
+  expect "Lean owns attention's local VJP"
+    (directAttention.kernels.all fun kernel => kernel.capsule.vjpMode == .torchLeanTape)
+  expect "attention satisfies the TorchLean tape policy"
     (LibTorch.attention.matchesVJP BackendProfile.checkedCuda.policy)
   expect "LibTorch direct attention has aligned checked contracts"
     (isAccepted (directAttention.checkContracts AssurancePolicy.checked))
@@ -602,7 +651,8 @@ def run : IO Unit := do
       expectContains "LibTorch profile retains TorchLean tape ownership"
         "vjp=torchlean-tape" report
       expectContains "LibTorch attention report names the selected local VJP"
-        "vjp=backend-vjp" report
+        "attention: libtorch.direct_attention provider=libtorch trust=checked vjp=torchlean-tape"
+        report
       expectContains "LibTorch attention report names its capsule"
         "attention: libtorch.direct_attention" report
   | .error msg =>

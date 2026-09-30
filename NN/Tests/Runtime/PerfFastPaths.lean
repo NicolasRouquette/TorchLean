@@ -38,12 +38,6 @@ private def sameBits (left right : Array Float) : Bool :=
   left.size == right.size &&
     (List.range left.size).all fun i => left[i]!.toBits == right[i]!.toBits
 
-private def floats {s : Shape} (x : Tensor Float s) : Array Float :=
-  Tensor.to x (Array Float)
-
-private def naturals {s : Shape} (x : Tensor Nat s) : Array Nat :=
-  Tensor.to x (Array Nat)
-
 /-- Entries with distinct values, signed zeros, and a NaN, so a misplaced copy is visible. -/
 private def sample (s : Shape) : Tensor Float s :=
   TorchLean.Tensor.Internal.Rep.ofFlatFn fun index =>
@@ -62,42 +56,45 @@ def checkSlices : IO Unit := do
     let fast := TorchLean.Tensor.Internal.Rep.unstack x i
     let reference : Tensor Float [2, 3] :=
       TorchLean.Tensor.Internal.Rep.ofFn fun coordinate => x (i, coordinate)
-    check s!"unstack Float row {i}" (sameBits (floats fast) (floats reference))
+    check s!"unstack Float row {i}"
+      (sameBits (Tensor.to fast (Array Float)) (Tensor.to reference (Array Float)))
   let n := naturalSample [3, 5]
   for i in List.finRange 3 do
     let fast := TorchLean.Tensor.Internal.Rep.unstack n i
     let reference : Tensor Nat [5] :=
       TorchLean.Tensor.Internal.Rep.ofFn fun coordinate => n (i, coordinate)
-    check s!"unstack Nat row {i}" (naturals fast == naturals reference)
+    check s!"unstack Nat row {i}" (Tensor.to fast (Array Nat) == Tensor.to reference (Array Nat))
   let empty := sample [3, 0]
-  check "unstack empty tail" ((floats (TorchLean.Tensor.Internal.Rep.unstack empty 1)).size == 0)
+  check "unstack empty tail"
+    ((Tensor.to (TorchLean.Tensor.Internal.Rep.unstack empty 1) (Array Float)).size == 0)
   let components : Fin 5 → Tensor Float [2, 3] := fun i =>
     TorchLean.Tensor.Internal.Rep.ofFlatFn fun index =>
       if index.val == 2 then -0.0 else (i.val * 10 + index.val).toFloat
   let stacked := TorchLean.Tensor.Internal.Rep.stack components
   let reference : Tensor Float [5, 2, 3] :=
     TorchLean.Tensor.Internal.Rep.ofFn fun coordinate => components coordinate.1 coordinate.2
-  check "stack Float" (sameBits (floats stacked) (floats reference))
+  check "stack Float"
+    (sameBits (Tensor.to stacked (Array Float)) (Tensor.to reference (Array Float)))
   let natComponents : Fin 4 → Tensor Nat [3] := fun i =>
     TorchLean.Tensor.Internal.Rep.ofFlatFn fun index => i.val * 100 + index.val
   let natStacked := TorchLean.Tensor.Internal.Rep.stack natComponents
   let natReference : Tensor Nat [4, 3] :=
     TorchLean.Tensor.Internal.Rep.ofFn fun coordinate =>
       natComponents coordinate.1 coordinate.2
-  check "stack Nat" (naturals natStacked == naturals natReference)
+  check "stack Nat" (Tensor.to natStacked (Array Nat) == Tensor.to natReference (Array Nat))
   let emptyStack := TorchLean.Tensor.Internal.Rep.stack fun (_ : Fin 6) => sample [0]
-  check "stack empty tail" ((floats emptyStack).size == 0)
+  check "stack empty tail" ((Tensor.to emptyStack (Array Float)).size == 0)
 
 /-- `mapAccumRight` visits indices from right to left and returns results in index order. -/
 def checkMapAccumRight : IO Unit := do
   let n := 9
-  let (visited, results) := Sequence.mapAccumRight n ([] : List Nat) fun i state =>
-    (state ++ [i.val], i.val * i.val + state.length)
-  check "mapAccumRight visit order" (visited == (List.range n).reverse)
+  let (visited, results) := Sequence.mapAccumRight n (#[] : Array Nat) fun i state =>
+    (state.push i.val, i.val * i.val + state.size)
+  check "mapAccumRight visit order" (visited == (List.range n).reverse.toArray)
   let expected := (List.range n).toArray.map fun i => i * i + (n - 1 - i)
-  check "mapAccumRight results" (naturals results == expected)
+  check "mapAccumRight results" (results.to (Array Nat) == expected)
   let (state, nothing) := Sequence.mapAccumRight 0 (7 : Nat) fun _ state => (state + 1, (0 : Nat))
-  check "mapAccumRight empty" (state == 7 && (naturals nothing).size == 0)
+  check "mapAccumRight empty" (state == 7 && (nothing.to (Array Nat)).size == 0)
 
 /-- A failed eager operation leaves the tape as it was and later gradients stay correct. -/
 def checkEagerRecording : IO Unit := do
@@ -152,7 +149,7 @@ def checkUnrollLeading : IO Unit := do
     let total ← (Torch.Ops.sum (m := Torch.Internal.EagerM Float) (α := Float) output) session
     let gradients ← session.backwardScalarDenseAll total
     let dxs ← Torch.Internal.EagerSession.grad gradients xs
-    pure (floats (← session.getValue output), floats dxs)
+    pure ((← session.getValue output).to (Array Float), dxs.to (Array Float))
   let (fastValue, fastGrad) ← run true
   let (referenceValue, referenceGrad) ← run false
   check "unrollLeading forward" (sameBits fastValue referenceValue)
@@ -174,7 +171,8 @@ def checkMapLeading : IO Unit := do
   let layer : Spec.LinearSpec Float 3 2 := { weights := weightValue, bias := biasValue }
   for i in List.finRange rows do
     let expected := Spec.linearSpec layer (Spec.get inputValue i)
-    check s!"mapLeading row {i}" (sameBits (floats (Spec.get value i)) (floats expected))
+    check s!"mapLeading row {i}"
+      (sameBits ((Spec.get value i).to (Array Float)) (expected.to (Array Float)))
 
 /-- Linear backward skips parents without gradients and keeps the others unchanged. -/
 def checkLinearGating : IO Unit := do
@@ -189,7 +187,7 @@ def checkLinearGating : IO Unit := do
     let dw ← Torch.Internal.EagerSession.grad gradients weight
     let db ← Torch.Internal.EagerSession.grad gradients bias
     let dx ← Torch.Internal.EagerSession.grad gradients input
-    pure (floats dw, floats db, floats dx)
+    pure (dw.to (Array Float), db.to (Array Float), dx.to (Array Float))
   let (dwAll, dbAll, dxAll) ← gradientsFor true
   let (dwData, dbData, dxData) ← gradientsFor false
   check "linear weight gradient" (sameBits dwAll dwData)

@@ -194,16 +194,6 @@ end TypedGraph
 
 namespace TypedScalarGraph
 
-/-- Evaluate the scalar output for leaf values `x`. -/
-def forward {α : Type} [TorchLean.Storage α] {Γ : List Shape}
-    (c : TypedScalarGraph α Γ) (x : TorchLean.TensorPack α Γ) : Tensor α .scalar :=
-  TypedGraph.forward c x
-
-/-- Forward-mode Jacobian-vector product at `x` with tangent `dx`. -/
-def jvp {α : Type} [TorchLean.Storage α] {Γ : List Shape}
-    (c : TypedScalarGraph α Γ) (x dx : TorchLean.TensorPack α Γ) : Tensor α .scalar :=
-  TypedGraph.jvp c x dx
-
 /-- Reverse-mode backpropagation for a scalar output with implicit cotangent seed `1`. -/
 def backward {α : Type} [TorchLean.Storage α] [Add α] [Zero α] [One α]
     {Γ : List Shape} (c : TypedScalarGraph α Γ) (x : TorchLean.TensorPack α Γ) :
@@ -226,7 +216,7 @@ def lowerToTypedGraphWithData {α Δ : Type} [TorchLean.Storage α]
     Runtime.Autograd.Result (TypedGraphWithData α Δ Γ τ) := do
   let (outVar, st) ← StateT.run build Runtime.Autograd.TypedGraph.GraphM.emptyWith
   let output ← Runtime.Autograd.TypedGraph.GraphM.mkIdx
-    (_α := α) (Γ := Γ) st.nodeShapes outVar
+    (Γ := Γ) st.nodeShapes outVar
   pure
     { nodeShapes := st.nodeShapes
       data := st.data

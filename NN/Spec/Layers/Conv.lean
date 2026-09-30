@@ -272,8 +272,10 @@ that group, so only the block-diagonal part of `weights` is ever consulted. PyTo
 weights packed as `(outC, inC / groups, k...)`; use `groupedConvPackedCoreSpec` for that layout,
 or `groupedConvDenseWeights` to expand a packed tensor into this one.
 
-The definition is total. It is meaningful only when `groups ∣ inC` and `groups ∣ outC`; otherwise
-the trailing `inC % groups` input channels are never read. `groups = 0` reads no channels at all.
+The standard grouped-convolution interpretation requires `groups > 0`, `groups ∣ inC`, and
+`groups ∣ outC`. Outside those conditions the definition retains natural-number division and
+zero-filled out-of-range reads. Trailing channels can be read: with `inC = outC = 5` and
+`groups = 2`, output channel `4` reads input channel `4`. `groups = 0` reads no channels.
 -/
 def groupedConvCoreSpec
     {d inC outC : Nat}
@@ -329,9 +331,10 @@ The grouped, dilated contraction with weights in PyTorch's packed layout
 Output channel `oc` belongs to group `g = oc / (outC / groups)` and reads input channels
 `g * (inC / groups) + j` for `j < inC / groups`, weighting each by `weights[oc, j, k...]`.
 
-The definition is total but only meaningful when `groups ∣ inC` and `groups ∣ outC`. When the
-divisibility fails the trailing `inC % groups` input channels are never read, and `groups = 0`
-reads no channels at all (the output is then the bias alone once it is added).
+The standard grouped-convolution interpretation requires `groups > 0` and divisibility of both
+channel counts. Other configurations retain natural-number division and zero-filled out-of-range
+reads; they need not omit the trailing channels (for example, `inC = outC = 5`, `groups = 2`).
+With `groups = 0` the contraction is zero; the affine spec still performs its addition of the bias.
 -/
 def groupedConvPackedCoreSpec
     {d inC outC : Nat}

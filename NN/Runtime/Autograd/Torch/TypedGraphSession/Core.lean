@@ -93,6 +93,8 @@ structure TypedGraphSession (α : Type) [TorchLean.Storage α] where
   state : IO.Ref (TypedGraphSessionState α)
   /-- Map from graph leaf ids to mutable parameter objects. -/
   parametersByLeaf : IO.Ref (Std.HashMap Nat (AnyParam α))
+  /-- Storage identities for grouping repeated parameter leaves at update time. -/
+  parameterStorageByLeaf : IO.Ref (Std.HashMap Nat (ParameterStorage α))
   /-- Process-unique owner id for session references. -/
   referenceOwner : Nat
   /-- Current recording generation for session references. -/
@@ -116,13 +118,14 @@ def new {α : Type} [TorchLean.Storage α] (options : Config := {}) : IO (TypedG
       s!"typed graph execution currently supports device `cpu`; requested `{options.deviceName}`"
   let state ← IO.mkRef (TypedGraphSessionState.empty (α := α))
   let parametersByLeaf ← IO.mkRef (Std.HashMap.emptyWithCapacity)
+  let parameterStorageByLeaf ← IO.mkRef (Std.HashMap.emptyWithCapacity)
   let referenceOwner ← RefIdentity.freshOwner
   let referenceGeneration ← IO.mkRef 0
   let stateVersion ← IO.mkRef 0
   let valueCache ← IO.mkRef none
   pure
-    { options, state, parametersByLeaf, referenceOwner, referenceGeneration, stateVersion
-      valueCache }
+    { options, state, parametersByLeaf, parameterStorageByLeaf, referenceOwner, referenceGeneration
+      stateVersion, valueCache }
 
 /-- Replace the session snapshot. Every write goes through here so cached values stay current. -/
 def setState {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α)
@@ -183,6 +186,7 @@ Important invariant: this session requires that **all leaves are created before 
 def resetTape {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α) : IO Unit := do
   s.setState (TypedGraphSessionState.empty (α := α))
   s.parametersByLeaf.set (Std.HashMap.emptyWithCapacity)
+  s.parameterStorageByLeaf.set (Std.HashMap.emptyWithCapacity)
   s.referenceGeneration.modify (fun generation => generation + 1)
 
 /--
@@ -254,6 +258,9 @@ def use {α : Type} [TorchLean.Storage α] [TensorTransfer α]
     (s.options.gradEnabled && p.requiresGrad)
   s.parametersByLeaf.modify (fun parameters =>
     parameters.insert leaf.id (AnyParam.ofParam p))
+  s.parameterStorageByLeaf.modify fun storages =>
+    storages.insert leaf.id
+      { shape := sh, value := p.value, cudaValue := p.cudaValue, hostCurrent := p.hostCurrent }
   pure leaf
 
 /--
@@ -311,7 +318,7 @@ Build a typed index into the current context `Γ ++ ss` from a raw numeric id an
 This is the main "dynamic check" used by `getValue` (and by a few index-driven nodes): it ensures
 that the `Nat` id points to an existing tensor in the session context and that the shape matches.
 -/
-def mkIdxOrThrow {_α : Type} {Γ ss : List Shape} (id : Nat) (s : Shape) :
+def mkIdxOrThrow {Γ ss : List Shape} (id : Nat) (s : Shape) :
     Runtime.Autograd.Result (Proofs.Idx (Γ ++ ss) s) := by
     if h : id < (Γ ++ ss).length then
       let fin : Fin (Γ ++ ss).length := ⟨id, h⟩
@@ -343,7 +350,7 @@ def getValue {α : Type} [TorchLean.Storage α]
         if cached == version then pure values
         else evaluate st0 version
     | none => evaluate st0 version
-  let _ ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st0.Γ) (ss := st0.ss) x.id sh)
+  let _ ← okOrThrow (mkIdxOrThrow (Γ := st0.Γ) (ss := st0.ss) x.id sh)
   match values[x.id]? with
   | some value =>
       if h : value.shape = sh then pure (value.cast h)

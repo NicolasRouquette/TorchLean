@@ -57,7 +57,7 @@ private theorem inferConvDims_ofFn
       (List.ofFn inputs) (List.ofFn kernels) (List.ofFn strides)
       (List.ofFn dilations) (List.ofFn lows) (List.ofFn highs) = .ok outputs) :
     outputs = List.ofFn (fun axis =>
-      NN.IR.OpContracts.slideOutDilated (inputs axis) (kernels axis) (strides axis)
+      Shape.slidingWindowOutDimDilated (inputs axis) (kernels axis) (strides axis)
         (dilations axis) (lows axis) (highs axis)) := by
   induction n generalizing axes outputs with
   | zero =>
@@ -96,12 +96,12 @@ private theorem inferConvDims_tensor
   simp only [tensor_list_eq_ofFn] at h ⊢
   have hget :
       (convOutSpatialDilated inputs kernels strides dilations lows highs).getScalar =
-        fun axis => NN.IR.OpContracts.slideOutDilated (inputs.getScalar axis)
+        fun axis => Shape.slidingWindowOutDimDilated (inputs.getScalar axis)
           (kernels.getScalar axis) (strides.getScalar axis) (dilations.getScalar axis)
           (lows.getScalar axis) (highs.getScalar axis) := by
     funext axis
     simp only [convOutSpatialDilated, Tensor.getScalar_ofFn,
-      NN.IR.OpContracts.slideOutDilated]
+      Shape.slidingWindowOutDimDilated]
   rw [hget]
   exact inferConvDims_ofFn tag axes inputs.getScalar kernels.getScalar strides.getScalar
     dilations.getScalar lows.getScalar highs.getScalar h

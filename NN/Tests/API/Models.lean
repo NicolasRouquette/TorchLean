@@ -534,18 +534,9 @@ def run : IO Unit := do
   runModel "autoencoder" autoencoder
   runModel "generator" generator
   runModel "discriminator" discriminator
-  let autoencoderSummary ←
-    match nn.summary autoencoder with
-    | .ok summary => pure summary
-    | .error message => throw <| IO.userError message
-  let generatorSummary ←
-    match nn.summary generator with
-    | .ok summary => pure summary
-    | .error message => throw <| IO.userError message
-  let discriminatorSummary ←
-    match nn.summary discriminator with
-    | .ok summary => pure summary
-    | .error message => throw <| IO.userError message
+  let autoencoderSummary ← IO.ofExcept (nn.summary autoencoder)
+  let generatorSummary ← IO.ofExcept (nn.summary generator)
+  let discriminatorSummary ← IO.ofExcept (nn.summary discriminator)
   expect "generic autoencoder leaves its output activation to the caller"
     (!(autoencoderSummary.layers.any fun layer => layer.kind == "Sigmoid"))
   expect "generic generator leaves its output activation to the caller"

@@ -60,19 +60,9 @@ namespace LowerToDAG
 /-!
 ### Lowering internals
 
-The definitions below (`castTerm`, `toTerm`, …) are adapters for the structural lowering. The
+The definitions below (`argsOfFn`, `toTerm`, …) implement the structural lowering. The
 principal entry point is `Chain.toDAGTerm`.
 -/
-
-/-- Cast a `DAG.Term` across a proven equality of output shapes. -/
-def castTerm {Γ : List Shape} {s t : Shape} (h : s = t) :
-    DAG.Term Γ s → DAG.Term Γ t :=
-  fun x => DAG.Term.cast x h
-
-/-- Cast the environment of a `DAG.Term` across a proven equality of environments. -/
-def castEnvTerm {Γ Γ' : List Shape} {τ : Shape} (h : Γ = Γ') :
-    DAG.Term Γ τ → DAG.Term Γ' τ :=
-  fun x => DAG.Term.castEnv x h
 
 /-! ### Primitive embedding: `Primitive` → `DAG.PrimOp` -/
 
@@ -112,15 +102,8 @@ def argsOfFn {Γ : List Shape} :
       -- Tail: shift indices by 1, and cast the `List.get` result to match `ss.get i`.
       let tail : DAG.Args Γ ss :=
         argsOfFn ss (fun i =>
-          castTerm (Γ := Γ) (s := (s :: ss).get ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩) (t := ss.get i)
-            List.get_cons_succ' (f ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩))
+          DAG.Term.cast (f ⟨i.1 + 1, Nat.succ_lt_succ i.2⟩) List.get_cons_succ')
       .cons (by simpa using head) tail
-
-/-- Append one final term to a typed DAG argument list. -/
-def Args.append1 {Γ : List Shape} {ps : List Shape} {σ : Shape} :
-    DAG.Args Γ ps → DAG.Term Γ σ → DAG.Args Γ (ps ++ [σ])
-  | .nil, x => .cons x .nil
-  | .cons t ts, x => .cons t (Args.append1 ts x)
 
 /--
 Reference the `i`th parameter block inside a larger environment layout.
@@ -139,7 +122,7 @@ def mkParamTerm
     omega⟩
   have hGet : Γ.get idx = ps.get i := by
     simp [Γ, idx, List.get_eq_getElem, i.isLt]
-  exact castTerm hGet (DAG.Term.var (DAG.Var.ofFin idx))
+  exact DAG.Term.cast (DAG.Term.var (DAG.Var.ofFin idx)) hGet
 
 /--
 Lower a unary `Primitive` application into the DAG term language.
@@ -158,7 +141,7 @@ def primCall
     argsOfFn (Γ := Γ) ps (fun i => mkParamTerm (pre := pre) (ps := ps) (post := post)
       (extra := extra) i)
   let args : DAG.Args Γ (ps ++ [σ]) :=
-    Args.append1 (Γ := Γ) (ps := ps) (σ := σ) paramsArgs x
+    DAG.Args.append paramsArgs (.cons x .nil)
   exact (by
     -- Discharge the local `Γ` abbreviation.
     simpa [Γ] using (DAG.Term.op (Γ := Γ) op args))
@@ -188,14 +171,14 @@ def toTerm
           Γ0 := by
         simp [Γ0, List.append_assoc]
       let t₁ : DAG.Term Γ0 τm :=
-        castEnvTerm (Γ := (pre ++ ps₁ ++ (ps₂ ++ post)) ++ extra) (Γ' := Γ0) hΓ1 <|
-          toTerm (pre := pre) (ps := ps₁) (post := ps₂ ++ post) (extra := extra) g₁
+        DAG.Term.castEnv
+          (toTerm (pre := pre) (ps := ps₁) (post := ps₂ ++ post) (extra := extra) g₁
             (by
               have x0 : DAG.Term Γ0 σ := by
                 simpa [Γ, Γ0] using x
               exact
-                castEnvTerm (Γ := Γ0) (Γ' := (pre ++ ps₁ ++ (ps₂ ++ post)) ++ extra) (by
-                  simp [Γ0, List.append_assoc]) x0)
+                DAG.Term.castEnv x0 (by simp [Γ0, List.append_assoc])))
+          hΓ1
       -- `let1`-bind and translate the right subgraph.
       let bodyEnv : List Shape := Γ0 ++ [τm]
       -- Bound var in the body env (the last element, at index `Γ0.length`).
@@ -203,17 +186,17 @@ def toTerm
       let boundVar : DAG.Term bodyEnv τm :=
         have hGet : bodyEnv.get boundIdx = τm := by
           simp [bodyEnv, boundIdx]
-        castTerm hGet (DAG.Term.var (Γ := bodyEnv) (DAG.Var.ofFin boundIdx))
+        DAG.Term.cast (DAG.Term.var (Γ := bodyEnv) (DAG.Var.ofFin boundIdx)) hGet
       -- Translate `g₂` under its own parenthesization, then cast back to `bodyEnv`.
       let rhsEnv : List Shape := ((pre ++ ps₁) ++ ps₂ ++ post) ++ (extra ++ [τm])
       have hRhs : rhsEnv = bodyEnv := by
         simp [rhsEnv, bodyEnv, Γ0, List.append_assoc]
       let boundVar' : DAG.Term rhsEnv τm :=
-        castEnvTerm (Γ := bodyEnv) (Γ' := rhsEnv) hRhs.symm boundVar
+        DAG.Term.castEnv boundVar hRhs.symm
       let t₂' : DAG.Term rhsEnv τ :=
         toTerm (pre := pre ++ ps₁) (ps := ps₂) (post := post) (extra := extra ++ [τm]) g₂ boundVar'
       let t₂ : DAG.Term bodyEnv τ :=
-        castEnvTerm (Γ := rhsEnv) (Γ' := bodyEnv) hRhs t₂'
+        DAG.Term.castEnv t₂' hRhs
       let out : DAG.Term Γ0 τ := DAG.Term.let1 t₁ t₂
       -- Discharge the local `Γ` abbreviation.
       simpa [Γ, Γ0] using out
@@ -241,7 +224,7 @@ def Chain.toDAGTerm {ps : List Shape} {σ τ : Shape} (g : Chain ps σ τ) :
       rfl
     have hGet : Γ.get xIdx = σ := by
       simpa [hxIdx] using hGet0
-    exact castTerm hGet (DAG.Term.var (Γ := Γ) (DAG.Var.ofFin xIdx))
+    exact DAG.Term.cast (DAG.Term.var (Γ := Γ) (DAG.Var.ofFin xIdx)) hGet
   -- `toTerm`’s environment is definitional `([] ++ ps ++ [] ++ [σ])`; normalize to `ps ++ [σ]`.
   by
     simpa [List.nil_append, List.append_nil, List.append_assoc] using

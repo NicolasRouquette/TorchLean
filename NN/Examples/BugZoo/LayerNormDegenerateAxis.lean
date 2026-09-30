@@ -99,24 +99,22 @@ def reproLayerNormForward : Float :=
       (by decide)
       (0.00001 : Float))[((0 : Fin 1), (0 : Fin 1))]
 
+/-- Both backward observations come from the same LayerNorm derivative specification. -/
+def reproLayerNormBackward : Spec.NormalizationGradients Float [1, 1] [1] :=
+  Spec.layerNormBackward (α := Float) (seqLen := 1) (embedDim := 1)
+    (by decide)
+    (by decide)
+    (oneMat (1000000.0 : Float))
+    (oneVec (2.0 : Float))
+    (oneMat (1.0 : Float))
+    (0.00001 : Float)
+
 /-- TorchLean spec value for the public PyTorch repro: gradient with respect to `weight`. -/
-def reproLayerNormDWeight : Float :=
-  (Spec.layerNormBackward (α := Float) (seqLen := 1) (embedDim := 1)
-      (by decide)
-      (by decide)
-      (oneMat (1000000.0 : Float))
-      (oneVec (2.0 : Float))
-      (oneMat (1.0 : Float))
-      (0.00001 : Float)).scaleGradient[0]
+def reproLayerNormWeightGradient : Float :=
+  reproLayerNormBackward.scaleGradient[0]
 
 /-- TorchLean spec value for the public PyTorch repro: gradient with respect to input. -/
-def reproLayerNormDX : Float :=
-  (Spec.layerNormBackward (α := Float) (seqLen := 1) (embedDim := 1)
-      (by decide)
-      (by decide)
-      (oneMat (1000000.0 : Float))
-      (oneVec (2.0 : Float))
-      (oneMat (1.0 : Float))
-      (0.00001 : Float)).inputGradient[((0 : Fin 1), (0 : Fin 1))]
+def reproLayerNormInputGradient : Float :=
+  reproLayerNormBackward.inputGradient[((0 : Fin 1), (0 : Fin 1))]
 
 end NN.Examples.BugZoo.LayerNormDegenerateAxis

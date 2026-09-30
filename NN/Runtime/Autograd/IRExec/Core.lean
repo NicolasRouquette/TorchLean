@@ -25,7 +25,8 @@ runtime imports do not pull in that proof.
 ## Main declarations
 
 - `ForwardGraph` packages a forward-only graph lowered from `NN.IR.Graph`.
-- `Internal.packedTensorsOfContext` converts typed runtime contexts back into IR-style value arrays.
+- `TorchLean.TensorPack.toShapeErasedArray` converts typed runtime contexts back into
+  IR-style value arrays.
 - `Internal.buildFrom` is the lowering pass from `NN.IR.Graph` to executable graph data.
 - `lowerToForwardGraph` is the public lowering entry point.
 
@@ -64,8 +65,7 @@ open Proofs (Idx getIdx)
 `simp` rule for `Except`-`do` chains: binding an `.ok` value is just function application.
 -/
 @[simp] theorem Except.ok_bind {ε α β : Type} (a : α) (f : α → Except ε β) :
-    (Except.ok a >>= f) = f a := by
-  simp [Bind.bind, Except.bind]
+    (Except.ok a >>= f) = f a := rfl
 
 /--
 `simp` rule for `Except`-`do` chains: binding an `.error` short-circuits.
@@ -73,8 +73,7 @@ open Proofs (Idx getIdx)
 Used heavily when discharging impossible branches in lowering correctness proofs.
 -/
 @[simp] theorem Except.error_bind {ε α β : Type} (e : ε) (f : α → Except ε β) :
-    (Except.error e >>= f) = Except.error e := by
-  simp [Bind.bind, Except.bind]
+    (Except.error e >>= f) = Except.error e := rfl
 
 
 /--
@@ -252,24 +251,10 @@ end ForwardGraph
 
 For debugging and for the forward-correctness development in
 `NN.Runtime.Autograd.IRExec.Correctness`,
-we provide a helper that erases this context
+`TorchLean.TensorPack.toShapeErasedArray` erases this context
 into an IR-style value table `Array (Spec.SomeTensor α)` in node-id order.
 -/
 
-namespace Internal
-
-/--
-Convert a typed runtime context `TorchLean.TensorPack α ss` into an IR-style value table.
-
-This is phrased in terms of `Array (Spec.SomeTensor α)` because the IR denotation functions
-(`denoteAll*`) are array-based, while forward-graph execution evaluates into a typed context
-(`TorchLean.TensorPack`).
--/
-def packedTensorsOfContext {α : Type} [TorchLean.Storage α] {ss : List Shape}
-    (ctx : TorchLean.TensorPack α ss) : Array (Spec.SomeTensor α) :=
-  TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := ss) ctx
-
-end Internal
 
 namespace ForwardGraph
 
@@ -282,7 +267,7 @@ This is the bridge used to compare forward-graph evaluation with `NN.IR.Graph.de
 -/
 def denoteAll (e : Runtime.Autograd.IRExec.ForwardGraph α)
     (x : Tensor α e.inShape) : Array (Spec.SomeTensor α) :=
-  Internal.packedTensorsOfContext (α := α) (ss := [e.inShape] ++ e.ss)
+  TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := [e.inShape] ++ e.ss)
     (Runtime.Autograd.IRExec.ForwardGraph.eval e x)
 
 /-- Return the evaluated array directly, avoiding a pack conversion at the untyped boundary. -/
@@ -293,8 +278,7 @@ def denoteAllWithArray (e : ForwardGraph α) (x : Tensor α e.inShape) :
 /-- Array denotation preserves the typed logical evaluator and every intermediate value. -/
 @[csimp] theorem denoteAll_eq_denoteAllWithArray : @denoteAll = @denoteAllWithArray := by
   funext α inst e x
-  simp [denoteAllWithArray, Internal.evalArray_eq, denoteAll, ForwardGraph.eval,
-    Internal.packedTensorsOfContext]
+  simp [denoteAllWithArray, Internal.evalArray_eq, denoteAll, ForwardGraph.eval]
 
 end ForwardGraph
 

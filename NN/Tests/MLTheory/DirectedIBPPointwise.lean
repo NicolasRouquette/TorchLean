@@ -18,9 +18,10 @@ and encloses its exact absolute value. Random equations accept the seeded source
 a fractional mask at probability zero, and require the parent structure checked by IR evaluation.
 -/
 
-namespace NN.MLTheory.CROWN.Graph.DirectedBackward
+namespace NN.Tests.MLTheory.DirectedIBPPointwise
 
 open Spec TorchLean TorchLean.Tensor NN.IR
+open NN.MLTheory.CROWN NN.MLTheory.CROWN.Graph NN.MLTheory.CROWN.Graph.DirectedBackward
 
 noncomputable section
 
@@ -53,7 +54,8 @@ theorem boxAbs_fp32_third_encloses :
 
 namespace SeededRandomRegression
 
-private def maskNodes (inputShape outShape : Shape) (parents : Array Nat := #[0]) : Array Node :=
+private def maskNodes (inputShape outShape : Shape) (parents : Array Nat := #[0]) :
+    Array NN.IR.Node :=
   #[{ id := 0, parents := #[], kind := .input, outShape := inputShape },
     { id := 1, parents := parents, kind := .bernoulliMask 17, outShape := outShape }]
 
@@ -126,4 +128,4 @@ end SeededRandomRegression
 
 end
 
-end NN.MLTheory.CROWN.Graph.DirectedBackward
+end NN.Tests.MLTheory.DirectedIBPPointwise

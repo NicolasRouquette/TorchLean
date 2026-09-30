@@ -15,10 +15,8 @@ public import FloatLib.Floats.Formats.Flocq.Theory.Rounding.Core
 Rounding-level approximation lemmas.
 
 This module begins the runtime-to-spec bridge. It gives compositional error bounds for expressions
-evaluated under a declared `Flocq.round` rounded-real model such as `NF`.
-
-These lemmas are scalar-level and can be lifted to tensors/graphs once a concrete set of ops is
-fixed (MLP first, then larger models).
+evaluated under a declared `Flocq.round` rounded-real model such as `NF`. The NF operator and graph
+modules lift these scalar lemmas to tensors and end-to-end executions.
 
 ## PyTorch correspondence / citations
 In ordinary PyTorch execution, floating-point ops are performed in a chosen dtype (e.g. `float32`)
@@ -28,7 +26,6 @@ https://pytorch.org/docs/stable/tensor_attributes.html#torch.dtype
 -/
 
 @[expose] public section
-
 
 namespace Proofs
 namespace RuntimeRoundingApprox
@@ -58,15 +55,6 @@ def scalarApprox (x xhat eps : ℝ) : Prop :=
 theorem scalarApprox_to_approxR_absOnly {x xhat eps : ℝ} (h : scalarApprox x xhat eps) :
     Proofs.RuntimeApprox.approxR x xhat (Proofs.RuntimeApprox.ApproxTol.absOnly eps) :=
   (RuntimeApprox.approxR_absOnly_iff ((abs_nonneg _).trans h)).2 h
-
-/-- Exact equality is zero-error scalar approximation. -/
-theorem scalarApprox_refl_zero (x : ℝ) : scalarApprox x x 0 := by
-  simp [scalarApprox]
-
-/-- Enlarging the error budget preserves scalar approximation. -/
-theorem scalarApprox_mono {x xhat eps₁ eps₂ : ℝ} (h : scalarApprox x xhat eps₁) (hε : eps₁ ≤ eps₂) :
-    scalarApprox x xhat eps₂ :=
-  le_trans h hε
 
 /-! ## Single-Step Rounding Bounds -/
 

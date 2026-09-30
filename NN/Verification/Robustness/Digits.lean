@@ -58,7 +58,7 @@ def inDim : Nat := 64
 def outDim : Nat := 10
 
 /-- Weight shape for a linear classifier $y=Wx+b$ (10×64). -/
-def WShape : Shape := [outDim, inDim]
+def wShape : Shape := [outDim, inDim]
 /-- Bias shape for a linear classifier (10). -/
 def bShape : Shape := [outDim]
 /-- Input shape (64). -/
@@ -67,7 +67,7 @@ def xShape : Shape := [inDim]
 def yShape : Shape := [outDim]
 
 /-- Parameter shapes list used by the lowered TorchLean program (`[W, b]`). -/
-def paramShapes : List Shape := [WShape, bShape]
+def paramShapes : List Shape := [wShape, bShape]
 
 /-- Bundled sklearn-digits linear classifier weights. -/
 def defaultWeightsPath : String :=
@@ -133,8 +133,12 @@ def checkEps (eps : Float) : Except String Unit :=
   unless eps ≥ 0 && eps.isFinite do
     throw s!"--eps must be a finite nonnegative radius, got {eps}"
 
-/-- Parse CLI args into `Options` (returns `usage` as the error message on `--help`). -/
-def parseArgs (args : List String) : Except String Options := do
+/--
+Consume the certification flags shared by both digits commands (after `--` stripping and the
+`--help` check), returning the remaining arguments. Flags are extracted by key, so the caller may
+consume its own flags from the remainder in any order.
+-/
+def takeCertifyFlags (args : List String) : Except String (Options × List String) := do
   let args := TorchLean.CLI.dropDashDash args
   if TorchLean.CLI.hasHelp args then
     throw usage
@@ -143,20 +147,18 @@ def parseArgs (args : List String) : Except String Options := do
   let (eps, args) ← TorchLean.CLI.takeFloatFlag args "eps" (default := 0.02)
   checkEps eps
   let (max, args) ← TorchLean.CLI.takeNatFlag args "max" (default := 100)
+  pure ({ weights := weights, dataset := dataset, eps := eps, max := max }, args)
+
+/-- Parse CLI args into `Options` (returns `usage` as the error message on `--help`). -/
+def parseArgs (args : List String) : Except String Options := do
+  let (options, args) ← takeCertifyFlags args
   TorchLean.CLI.checkNoArgs args
-  pure { weights := weights, dataset := dataset, eps := eps, max := max }
+  pure options
 
 /-- Parse the combined trainer/certifier CLI for `digits-train-certify`. -/
 def parseTrainCertifyArgs (args : List String) : Except String TrainCertifyOptions := do
-  let args := TorchLean.CLI.dropDashDash args
-  if TorchLean.CLI.hasHelp args then
-    throw usage
+  let (certify, args) ← takeCertifyFlags args
   let (script, args) ← TorchLean.CLI.takeFlagValue args "script" (default := defaultTrainScript)
-  let (weights, args) ← TorchLean.CLI.takeFlagValue args "weights" (default := defaultWeightsPath)
-  let (dataset, args) ← TorchLean.CLI.takeFlagValue args "dataset" (default := defaultDatasetPath)
-  let (eps, args) ← TorchLean.CLI.takeFloatFlag args "eps" (default := 0.02)
-  checkEps eps
-  let (max, args) ← TorchLean.CLI.takeNatFlag args "max" (default := 100)
   let (seed, args) ← TorchLean.CLI.takeNatFlag args "seed" (default := 0)
   let (epochs, args) ← TorchLean.CLI.takeNatFlag args "epochs" (default := 200)
   let (batch, args) ← TorchLean.CLI.takeNatFlag args "batch" (default := 128)
@@ -165,7 +167,7 @@ def parseTrainCertifyArgs (args : List String) : Except String TrainCertifyOptio
   let (maxTest, args) ← TorchLean.CLI.takeNatFlag args "max-test" (default := 360)
   TorchLean.CLI.checkNoArgs args
   pure {
-    certify := { weights := weights, dataset := dataset, eps := eps, max := max }
+    certify := certify
     script := script
     seed := seed
     epochs := epochs
@@ -202,25 +204,15 @@ def classifier {α : Type} [TorchLean.Storage α] [Context α] :
 /-- Load linear classifier weights exported from PyTorch into a typed `LinearSpec`. -/
 def loadWeights (path : String) : IO (Spec.LinearSpec Float inDim outDim) := do
   let j ← readJsonObjectFile path
-  match j with
-  | .obj o =>
-      let wJ ←
-        match o.get? "layers.0.weight" with
-        | some jw => pure jw
-        | none => throw <| IO.userError "Missing weights key: layers.0.weight"
-      let bJ ←
-        match o.get? "layers.0.bias" with
-        | some jb => pure jb
-        | none => throw <| IO.userError "Missing weights key: layers.0.bias"
-      let wArr ← NN.Verification.Json.expectFiniteFloatMatrix wJ "layers.0.weight"
-      let bArr ← NN.Verification.Json.expectFiniteFloatArray bJ "layers.0.bias"
-      let some w := NN.Verification.Util.Tensor.matOfArray outDim inDim wArr
-        | throw <| IO.userError "layers.0.weight must be a float matrix of shape [10][64]"
-      let some b := NN.Verification.Util.Tensor.vecOfArray outDim bArr
-        | throw <| IO.userError "layers.0.bias must be a float array of length 10"
-      pure { weights := w, bias := b }
-  | _ =>
-      throw <| IO.userError "Weights JSON must be an object"
+  let wJ ← expectField j "layers.0.weight" "weights"
+  let bJ ← expectField j "layers.0.bias" "weights"
+  let wArr ← expectFiniteFloatMatrix wJ "layers.0.weight"
+  let bArr ← expectFiniteFloatArray bJ "layers.0.bias"
+  let some w := NN.Verification.Util.Tensor.matOfArray outDim inDim wArr
+    | throw <| IO.userError
+        s!"layers.0.weight must be a float matrix of shape [{outDim}][{inDim}]"
+  let b ← NN.Verification.Util.Tensor.requireVecOfArray "layers.0.bias" outDim bArr
+  pure { weights := w, bias := b }
 
 /-- Load the digits test dataset exported from Python (JSON). -/
 def loadDataset (path : String) : IO (Array (Tensor Float xShape × Nat)) := do
@@ -234,9 +226,8 @@ def loadDataset (path : String) : IO (Array (Tensor Float xShape × Nat)) := do
     let eo ← expectObject e "dataset example"
     let xJ ← expectField eo "x" "dataset example"
     let y ← expectFieldNat eo "y" "dataset example"
-    let vec ← NN.Verification.Json.expectFiniteFloatArray xJ "dataset example.x"
-    let some xT := NN.Verification.Util.Tensor.vecOfArray inDim vec
-      | throw <| IO.userError "Dataset example 'x' must be a float array of length 64"
+    let vec ← expectFiniteFloatArray xJ "dataset example.x"
+    let xT ← NN.Verification.Util.Tensor.requireVecOfArray "dataset example.x" inDim vec
     out := out.push (xT, y)
   pure out
 
@@ -253,38 +244,20 @@ structure Report where
   deriving Repr
 
 /--
-Convert a binary64 value to `α`, rounding toward `-∞` (`up = false`) or `+∞` (`up = true`).
-
-`FromFloat.ofFloat` rounds to nearest. `roundForValidation` reports the binary64 value of that
-rounding, so the candidate is moved away from `x` until its rounding lands on the correct side.
-If no candidate is found the result is the matching infinity, which is still an enclosure.
--/
-def ofFloatDirected {α : Type} [TorchLean.Runtime.FromFloat α] (up : Bool) (x : Float) : α :=
-  Id.run do
-    let rounded (c : Float) := TorchLean.Runtime.FromFloat.roundForValidation (α := α) c
-    let onSide (c : Float) := if up then x ≤ rounded c else rounded c ≤ x
-    if onSide x then
-      return TorchLean.Runtime.ofFloat x
-    let mut gap := if up then x - rounded x else rounded x - x
-    for _ in [0:64] do
-      let candidate := if up then x + gap else x - gap
-      if onSide candidate then
-        return TorchLean.Runtime.ofFloat candidate
-      gap := gap + gap
-    return TorchLean.Runtime.ofFloat (if up then (1.0 / 0.0) else -(1.0 / 0.0))
-
-/--
 The certified input box: the binary64 `ℓ∞` ball around `x`, rounded outward by `FlatBox.lInfBall`,
-clipped to the pixel range `[0, 1]`, and converted to `α` with directed rounding. It contains every
-real input within `eps` of the binary64 center that lies in `[0, 1]`.
+clipped to the pixel range `[0, 1]`, and converted to `α` with the directed rounding of
+`TorchLean.Runtime.ofFloatDirected`. It contains every real input within `eps` of the binary64
+center that lies in `[0, 1]`.
 -/
 def certifiedInputBox {α : Type} [TorchLean.Storage α] [Context α] [TorchLean.Runtime.FromFloat α]
     (x : Tensor Float xShape) (eps : Float) : FlatBox α :=
   let ball := FlatBox.lInfBall (α := Float) x eps
   let clip (v : Float) : Float := min 1 (max 0 v)
   { dim := ball.dim
-    lo := TorchLean.Tensor.map (fun v => ofFloatDirected (α := α) false (clip v)) ball.lo
-    hi := TorchLean.Tensor.map (fun v => ofFloatDirected (α := α) true (clip v)) ball.hi }
+    lo := TorchLean.Tensor.map
+      (fun v => TorchLean.Runtime.ofFloatDirected (α := α) false (clip v)) ball.lo
+    hi := TorchLean.Tensor.map
+      (fun v => TorchLean.Runtime.ofFloatDirected (α := α) true (clip v)) ball.hi }
 
 /--
 CROWN verdict for `label` on the input box `xB`.
@@ -320,11 +293,8 @@ def runOnce {α : Type} [TorchLean.Storage α] [Context α]
       |>.push (TorchLean.Tensor.map cast linF.weights)
       |>.push (TorchLean.Tensor.map cast linF.bias)
 
-  let lowered ←
-    match TorchLean.Verification.lowerProgramToIR
-          (α := α) (classifier (α := α)) params with
-    | .ok c => pure c
-    | .error e => throw <| IO.userError e
+  let lowered ← IO.ofExcept <|
+    TorchLean.Verification.lowerProgramToIR (α := α) (classifier (α := α)) params
 
   IO.println s!"[digits] lowered IR nodes: {lowered.graph.nodes.size}"
 
@@ -344,10 +314,8 @@ def runOnce {α : Type} [TorchLean.Storage α] [Context α]
     let ibp := lowered.runIBP ps
     let outB ← lowered.outputBoxOrThrow ibp
     if hOut : outB.dim = outDim then
-      let loY : Tensor α yShape := by
-        simpa [yShape] using outB.loAsDim hOut
-      let hiY : Tensor α yShape := by
-        simpa [yShape] using outB.hiAsDim hOut
+      let loY : Tensor α yShape := outB.loAsDim hOut
+      let hiY : Tensor α yShape := outB.hiAsDim hOut
       if TopLabel.certifiesLabelFromTensorBounds (α := α) loY hiY yNat then
         report := { report with ibpOk := report.ibpOk + 1 }
     else
@@ -372,15 +340,9 @@ This is wired into `lake exe verify -- digits`.
 -/
 def main (args : List String) : IO Unit := do
   IO.println "== TorchLean digits certified robustness =="
-  let (arithmetic, rest) ←
-    match TorchLean.Runtime.Arithmetic.parseAndStrip args with
-    | .ok v => pure v
-    | .error msg => throw <| IO.userError msg
+  let (arithmetic, rest) ← IO.ofExcept (TorchLean.Runtime.Arithmetic.parseAndStrip args)
   TorchLean.Runtime.Arithmetic.log arithmetic
-  let options ←
-    match parseArgs rest with
-    | .ok o => pure o
-    | .error msg => throw <| IO.userError msg
+  let options ← IO.ofExcept (parseArgs rest)
   NN.Verification.Builtin.withBoundArithmetic arithmetic
     (fun {α} _ _ _ _ _ _ => do
       let _ ← runOnce (α := α) options
@@ -395,15 +357,9 @@ report from the checked artifacts.
 -/
 def mainTrainThenCertify (args : List String) : IO Unit := do
   IO.println "== TorchLean digits train → lower → certify =="
-  let (arithmetic, rest) ←
-    match TorchLean.Runtime.Arithmetic.parseAndStrip args with
-    | .ok v => pure v
-    | .error msg => throw <| IO.userError msg
+  let (arithmetic, rest) ← IO.ofExcept (TorchLean.Runtime.Arithmetic.parseAndStrip args)
   TorchLean.Runtime.Arithmetic.log arithmetic
-  let options ←
-    match parseTrainCertifyArgs rest with
-    | .ok o => pure o
-    | .error msg => throw <| IO.userError msg
+  let options ← IO.ofExcept (parseTrainCertifyArgs rest)
 
   let pythonCmd ← TorchLean.External.Process.resolveCmdFromEnv "TORCHLEAN_PYTHON" "python3"
   let python ← TorchLean.External.Process.ensureCmdAvailable

@@ -45,8 +45,8 @@ python3 scripts/datasets/torchlean_data_convert.py image-folder \
 Train on ImageNet64 and save visual artifacts:
 
 ```bash
-lake -R -K cuda=true build
-CUDA_VISIBLE_DEVICES=0 lake -R -K cuda=true exe torchlean diffusion --device cuda \
+scripts/lake.sh -Kcuda=true build
+CUDA_VISIBLE_DEVICES=0 scripts/lake.sh -Kcuda=true exe torchlean diffusion --device cuda \
   --dataset imagenet64 --n-total 800 --steps 1000 --hidden-c 8 --T 100 --beta-end 0.12 \
   --log data/examples/diffusion_trainlog.json \
   --reference-ppm data/examples/diffusion_reference.ppm \
@@ -59,7 +59,7 @@ CIFAR run:
 
 ```bash
 python3 scripts/datasets/download_example_data.py --cifar10
-lake -R -K cuda=true exe torchlean diffusion --device cuda --dataset cifar10 --n-total 1 \
+scripts/lake.sh -Kcuda=true exe torchlean diffusion --device cuda --dataset cifar10 --n-total 1 \
   --steps 1 --hidden-c 2 --T 2
 ```
 -/
@@ -257,9 +257,7 @@ def Training.run
             schedule (by simpa [output] using x0)
             (seed := runtime.seed) (step := step + 1))
     evalSample
-    { steps := config.training.steps
-      cudaMemorySampleEvery := config.training.cudaMemorySampleEvery
-      logDestination := .disabled }
+    (config.training.trainOptions (enableLog := false))
     (curveEvery := curveEvery)
   let curve := trained.curve
   trained.printSummary
@@ -316,8 +314,8 @@ namespace Options
 /--
 Parse diffusion-specific training flags after runtime/device flags and dataset flags.
 
-The shared parser handles `--steps`, `--log`, and `--cuda-mem-watch`; this parser handles diffusion
-schedule parameters, model width, and optional PPM artifact paths.
+The shared parser handles `--steps`, `--batch-size`, `--log`, and `--cuda-mem-watch`; this parser
+handles diffusion schedule parameters, model width, and optional PPM artifact paths.
 -/
 def parse (args : List String) :
     Except String (Options × List String) := do

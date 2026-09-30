@@ -77,15 +77,15 @@ variable {n : Nat}
 theorem v_positive (lyap : NeuralLyapunov ℝ n) (cert : LyapunovCert ℝ n)
     (hcert : cert.ValidFor lyap)
     (h_pos : cert.vLower > 0) (x : Tensor ℝ [n])
-    (hx : Box.contains cert.region x) : lyap.value x > 0 := by
-  exact lt_of_lt_of_le h_pos (hcert.valueBounds x hx).1
+    (hx : Box.contains cert.region x) : lyap.value x > 0 :=
+  lt_of_lt_of_le h_pos (hcert.valueBounds x hx).1
 
 /-- For `ℝ`: `V̇` is negative when its certified upper bound is negative. -/
 theorem vdot_negative (lyap : NeuralLyapunov ℝ n) (cert : LyapunovCert ℝ n)
     (hcert : cert.ValidFor lyap)
     (h_neg : cert.derivativeUpper < 0) (x : Tensor ℝ [n])
-    (hx : Box.contains cert.region x) : lyap.orbitalDerivative x < 0 := by
-  exact lt_of_le_of_lt (hcert.orbitalDerivativeBounds x hx).2 h_neg
+    (hx : Box.contains cert.region x) : lyap.orbitalDerivative x < 0 :=
+  lt_of_le_of_lt (hcert.orbitalDerivativeBounds x hx).2 h_neg
 
 /-- Strict certificate margins give `V > 0` and `V̇ < 0` at every point of the region. The two
 functions are not linked to any dynamics here, so this is a sign condition, not stability. -/

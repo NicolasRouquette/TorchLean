@@ -7,8 +7,6 @@ Authors: TorchLean Team
 module
 
 public import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
-public import Mathlib.Analysis.SpecialFunctions.Trigonometric.DerivHyp
-import Mathlib.Tactic.Measurability.Init
 public import NN.MLTheory.CROWN.Runtime.Ops
 public import NN.Spec.Core.Context.Real
 
@@ -81,77 +79,10 @@ theorem map_minmax_sound_real {s : Shape} (f : ℝ → ℝ) (hf : Monotone f)
 ### Soundness of the 1-Lipschitz `sin`/`cos` enclosures
 
 `Runtime.Ops.IBP.sin` / `Runtime.Ops.IBP.cos` use a midpoint enclosure with radius `r=(u-l)/2`,
-clamped to `[-1,1]`. This avoids periodic case splits while remaining sound.
+clamped to `[-1,1]`. This avoids periodic case splits while remaining sound: the Lipschitz constant
+one (`Real.abs_sin_sub_sin_le`, `Real.abs_cos_sub_cos_le`) turns the input half-width directly into
+an output half-width.
 -/
-
-theorem sin_lipschitz_real (x y : ℝ) : |Real.sin x - Real.sin y| ≤ |x - y| := by
-  have h := Real.sin_sub_sin x y
-  calc
-    |Real.sin x - Real.sin y|
-        = |2 * Real.sin ((x - y) / 2) * Real.cos ((x + y) / 2)| := by
-            simp [h, mul_left_comm, mul_comm]
-    _ = 2 * |Real.sin ((x - y) / 2)| * |Real.cos ((x + y) / 2)| := by
-          simp [abs_mul, mul_left_comm, mul_comm]
-    _ ≤ 2 * |(x - y) / 2| * 1 := by
-          have hsin : |Real.sin ((x - y) / 2)| ≤ |(x - y) / 2| := by
-            simpa using (Real.abs_sin_le_abs (x := (x - y) / 2))
-          have hcos : |Real.cos ((x + y) / 2)| ≤ 1 := by
-            simpa using Real.abs_cos_le_one ((x + y) / 2)
-          -- Multiply the two bounds, keeping track of nonnegativity.
-          have h2 : (2 : ℝ) * |Real.sin ((x - y) / 2)| ≤ 2 * |(x - y) / 2| :=
-            mul_le_mul_of_nonneg_left hsin (by norm_num)
-          have hstep1 :
-              (2 * |Real.sin ((x - y) / 2)|) * |Real.cos ((x + y) / 2)|
-                ≤ (2 * |(x - y) / 2|) * |Real.cos ((x + y) / 2)| :=
-            mul_le_mul_of_nonneg_right h2 (abs_nonneg _)
-          have hstep2 :
-              (2 * |(x - y) / 2|) * |Real.cos ((x + y) / 2)|
-                ≤ (2 * |(x - y) / 2|) * 1 :=
-            mul_le_mul_of_nonneg_left hcos (mul_nonneg (by norm_num) (abs_nonneg _))
-          -- Reassociate back into `2 * |sin| * |cos|`.
-          simpa [mul_assoc, mul_left_comm, mul_comm] using le_trans hstep1 hstep2
-    _ = |x - y| := by
-          -- `2 * |(x-y)/2| = |x-y|`.
-          have htwo : (2 : ℝ) ≠ 0 := by norm_num
-          calc
-            2 * |(x - y) / 2| * 1 = 2 * (|x - y| / 2) := by
-              simp [div_eq_mul_inv, mul_left_comm]
-            _ = |x - y| := by nlinarith
-
-/-- Cosine is 1-Lipschitz, proved from the sum-to-product identity.
-
-The interval rules for `sin` and `cos` fall back on this whenever the input interval is too wide for
-a monotone branch: a Lipschitz constant of one turns the input width directly into an output width.
--/
-theorem cos_lipschitz_real (x y : ℝ) : |Real.cos x - Real.cos y| ≤ |x - y| := by
-  have h := Real.cos_sub_cos x y
-  calc
-    |Real.cos x - Real.cos y|
-        = |(-2) * Real.sin ((x + y) / 2) * Real.sin ((x - y) / 2)| := by
-            simp [h, mul_assoc]
-    _ = 2 * |Real.sin ((x + y) / 2)| * |Real.sin ((x - y) / 2)| := by
-          simp [abs_mul, mul_assoc]
-    _ ≤ 2 * 1 * |(x - y) / 2| := by
-          have hsin1 : |Real.sin ((x + y) / 2)| ≤ 1 := by
-            simpa using Real.abs_sin_le_one ((x + y) / 2)
-          have hsin2 : |Real.sin ((x - y) / 2)| ≤ |(x - y) / 2| := by
-            simpa using (Real.abs_sin_le_abs (x := (x - y) / 2))
-          have h2 : (2 : ℝ) * |Real.sin ((x + y) / 2)| ≤ 2 * 1 :=
-            mul_le_mul_of_nonneg_left hsin1 (by norm_num)
-          have hstep1 :
-              (2 * |Real.sin ((x + y) / 2)|) * |Real.sin ((x - y) / 2)|
-                ≤ (2 * 1) * |Real.sin ((x - y) / 2)| :=
-            mul_le_mul_of_nonneg_right h2 (abs_nonneg _)
-          have hstep2 :
-              (2 * 1) * |Real.sin ((x - y) / 2)| ≤ (2 * 1) * |(x - y) / 2| :=
-            mul_le_mul_of_nonneg_left hsin2 (by norm_num)
-          simpa [mul_assoc, mul_left_comm, mul_comm] using le_trans hstep1 hstep2
-    _ = |x - y| := by
-          have htwo : (2 : ℝ) ≠ 0 := by norm_num
-          calc
-            2 * 1 * |(x - y) / 2| = 2 * (|x - y| / 2) := by
-              simp [div_eq_mul_inv, mul_left_comm, mul_comm]
-            _ = |x - y| := by nlinarith
 
 /-- Interval bound propagation through `sin` is sound over `ℝ`.
 
@@ -169,13 +100,13 @@ theorem ibp_sin_sound_real {s : Shape} (xB : Box ℝ s) (x : Tensor ℝ s)
     apply abs_le.2
     constructor <;> dsimp [m, r] <;> nlinarith [hv.1, hv.2]
   have hLip : |Real.sin v - Real.sin m| ≤ r :=
-    le_trans (sin_lipschitz_real v m) hxm
+    le_trans (Real.abs_sin_sub_sin_le v m) hxm
   have hdiff : -r ≤ Real.sin v - Real.sin m ∧ Real.sin v - Real.sin m ≤ r :=
     abs_le.1 hLip
   have hmidLo : Real.sin m - r ≤ Real.sin v := by linarith [hdiff.1]
   have hmidHi : Real.sin v ≤ Real.sin m + r := by linarith [hdiff.2]
-  have hsinRange : (-1 : ℝ) ≤ Real.sin v ∧ Real.sin v ≤ (1 : ℝ) := by
-    exact abs_le.1 (by simpa using Real.abs_sin_le_one v)
+  have hsinRange : (-1 : ℝ) ≤ Real.sin v ∧ Real.sin v ≤ (1 : ℝ) :=
+    ⟨Real.neg_one_le_sin v, Real.sin_le_one v⟩
   have hBounds :
       max (-1 : ℝ) (Real.sin m - r) ≤ Real.sin v ∧
         Real.sin v ≤ min (1 : ℝ) (Real.sin m + r) :=
@@ -196,13 +127,13 @@ theorem ibp_cos_sound_real {s : Shape} (xB : Box ℝ s) (x : Tensor ℝ s)
     apply abs_le.2
     constructor <;> dsimp [m, r] <;> nlinarith [hv.1, hv.2]
   have hLip : |Real.cos v - Real.cos m| ≤ r :=
-    le_trans (cos_lipschitz_real v m) hxm
+    le_trans (Real.abs_cos_sub_cos_le v m) hxm
   have hdiff : -r ≤ Real.cos v - Real.cos m ∧ Real.cos v - Real.cos m ≤ r :=
     abs_le.1 hLip
   have hmidLo : Real.cos m - r ≤ Real.cos v := by linarith [hdiff.1]
   have hmidHi : Real.cos v ≤ Real.cos m + r := by linarith [hdiff.2]
-  have hcosRange : (-1 : ℝ) ≤ Real.cos v ∧ Real.cos v ≤ (1 : ℝ) := by
-    exact abs_le.1 (by simpa using Real.abs_cos_le_one v)
+  have hcosRange : (-1 : ℝ) ≤ Real.cos v ∧ Real.cos v ≤ (1 : ℝ) :=
+    ⟨Real.neg_one_le_cos v, Real.cos_le_one v⟩
   have hBounds :
       max (-1 : ℝ) (Real.cos m - r) ≤ Real.cos v ∧
         Real.cos v ≤ min (1 : ℝ) (Real.cos m + r) :=

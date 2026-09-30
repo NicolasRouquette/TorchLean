@@ -57,8 +57,8 @@ Artifacts:
 - The PPO/GAE math and the autograd loss program are Lean definitions, so they are suitable targets
   for formal reasoning.
 - When Gymnasium is external, TorchLean cannot prove the environment satisfies Markov/measurability
-  assumptions. The trust-boundary contract turns some common assumptions (finite tensors, reward
-  bounds, done-flag semantics) into checked preconditions.
+  assumptions. This command's boundary contract checks finite observations and rewards. It leaves
+  observation and reward ranges unrestricted and permits both done flags to be true.
 - The run favors readability, typed boundaries, and widget inspection over benchmark-specific PPO
   tuning.
 

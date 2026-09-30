@@ -37,7 +37,7 @@ def model : TorchLean.nn.Sequential [1] [1] :=
 def objective : TorchLean.Trainer.Objective [1] := .mse
 
 /-- Concrete state layout of the single affine layer used by this test. -/
-theorem taskStateShapes :
+theorem model_stateShapes :
     TorchLean.nn.stateShapes model = [([1, 1] : Spec.Shape), ([1] : Spec.Shape)] := by
   rfl
 
@@ -56,7 +56,7 @@ def dropoutSample : TorchLean.Sample.Supervised Float [1] [1] :=
 def readLinearParams
     (state : TorchLean.nn.State Float (TorchLean.nn.stateShapes model)) :
     Float × Float :=
-  let state := state.cast taskStateShapes
+  let state := state.cast model_stateShapes
   let weight := state.get 0
   let bias := state.get 1
   ( TorchLean.Tensor.item <|
@@ -81,7 +81,7 @@ def batchNormModel :
       (by decide) (momentum := 0.5)
 
 /-- Concrete parameter-and-buffer layout of the BatchNorm layer used by this test. -/
-theorem batchNormStateShapes :
+theorem batchNormModel_stateShapes :
     TorchLean.nn.stateShapes batchNormModel =
       [ ([1] : Spec.Shape)
       , ([1] : Spec.Shape)
@@ -98,7 +98,7 @@ def batchNormSample (value : Float) :
 def readBatchNormBuffers
     (state : TorchLean.nn.State Float (TorchLean.nn.stateShapes batchNormModel)) :
     Float × Float :=
-  let state := state.cast batchNormStateShapes
+  let state := state.cast batchNormModel_stateShapes
   let mean := state.get 2
   let variance := state.get 3
   ( TorchLean.Tensor.item (TorchLean.Tensor.get mean (0 : Fin 1))
@@ -238,7 +238,7 @@ def checkWarmupCosineSchedule : IO Unit := do
   unless close (empty.rate 0) 0.1 do
     throw <| IO.userError "zero-step warmup/cosine schedule did not remain at its floor"
 
-/-- Schedules reject invalid numerical domains before optimizer state is allocated. -/
+/-- Schedules reject invalid rates, decay factors, and schedule parameters. -/
 def checkSchedulerValidation : IO Unit := do
   let validate := fun schedule => TorchLean.Trainer.Scheduler.Config.validate schedule
   expectAccepted "constant scheduler" <| validate (.constant 0.1)
@@ -267,7 +267,7 @@ def checkStepperBatchBoundary : IO Unit := do
   stepper.step (batch := true) #[sample 3.0 1.0]
   expectNat "silent update advances the counter" (← stepper.steps) 2
 
-/-- Invalid training configurations fail before a sample or optimizer update is consumed. -/
+/-- Training, session opening, and stepper creation reject invalid configurations. -/
 def checkTrainingValidation : IO Unit := do
   let trainer := TorchLean.Trainer.new model
     { optimizer := TorchLean.optim.sgd { learningRate := 0.01 } }
@@ -303,6 +303,7 @@ def checkNoLossFastPath : IO Unit := do
   let _ ← step runner opt state true #[sample 1.0 0.0] (loss := true)
   expectNat "loss-returning attempt" (← counters.lossSteps.get) 1
   expectNat "native no-loss steps after loss request" (← counters.nativeSteps.get) 1
+  expectNat "generic fallback after loss request" (← counters.genericSteps.get) 1
 
 /--
 Multi-sample batches keep every update on the generic optimizer state, including a trailing

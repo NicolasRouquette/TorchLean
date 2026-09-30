@@ -97,7 +97,7 @@ together with the evidence for their contracts. The model description contains t
 layers*. Each becomes a sequence of reshapes, permutations, matrix multiplications, broadcasts,
 and additions, so the report names operations
 below the level of a whole layer. Each capsule describes an operation that crossed a backend
-boundary. The only numerical field is the reduction policy; a native accumulation is marked
+boundary. The reported numerical field is the reduction policy; a native accumulation is marked
 implementation-defined so that a fixed-left range certificate cannot be applied to it.
 
 Two linear layers can reuse the same matmul capsule, and one operation can launch more than one
@@ -239,9 +239,9 @@ the reader can distinguish a checked input condition from a tested numerical res
 The VJP contract records backward ownership and the derivative specification to implement.
 `backend-vjp` means the runtime calls a backend derivative kernel while retaining TorchLean's
 tape structure.
-`torchLeanTape` means TorchLean owns the graph and reverse traversal even if a capsule uses a named
-backend kernel for its local VJP. A capsule marked `backend-vjp` makes that local numerical boundary
-explicit in the audit.
+A capsule marked `torchLeanTape` composes its local VJP from TorchLean runtime operations.
+A profile requesting `torchLeanTape` admits both kinds of capsule: TorchLean owns the graph and
+reverse traversal in either case.
 
 Capsules record contracts. Runtime code supplies a typed `KernelHandler` for the result type of the
 operation. Binding produces an `ExecutableKernel` only when the handler and capsule have equal
@@ -374,10 +374,10 @@ contracts name runtime guards and regression suites. Calling a library does not 
 its capsules the `external` assurance policy; that policy concerns the evidence recorded for
 each obligation.
 
-This also explains why `vjp=torchlean-tape` in the profile summary and `vjp=backend-vjp` in the
-matmul row can appear together. The profile describes who assembles and traverses the whole
-backward computation. The capsule describes how one node computes its contribution. TorchLean can
-walk the tape while a native kernel evaluates that node's matrix derivative.
+The profile describes who assembles and traverses the whole backward computation. Each capsule
+also records how one node computes its contribution. For matmul, Lean composes the two matrix
+products in the local derivative, so both entries say `vjp=torchlean-tape`. An operation such as
+convolution uses `vjp=backend-vjp` because its local rule calls a native backward primitive.
 
 The CUDA matmul plan can also be printed on this CPU build:
 
@@ -394,7 +394,7 @@ The CUDA matmul plan can also be printed on this CPU build:
 ```leanOutput gpuPlanReport (whitespace := lax)
 profile=checked_cuda device=cuda assurance=checked vjp=torchlean-tape
 trusted-external capsules: none
-  matmul: libtorch.matmul provider=libtorch trust=checked vjp=backend-vjp
+  matmul: libtorch.matmul provider=libtorch trust=checked vjp=torchlean-tape
     reduction=implementation-defined
     shape: shape safety for matmul; guarded at runtime by LibTorch bridge size/rank checks at the
     Lean/native boundary
@@ -402,7 +402,7 @@ trusted-external capsules: none
     bridge dtype, device, contiguity, and element-count checks
     value: matmul forward refines its TorchLean semantics; covered by test suite
     NN.Tests.Runtime.Cuda.Suite
-    vjp: matmul backend-vjp VJP refines its TorchLean semantics; covered by test suite
+    vjp: matmul torchlean-tape VJP refines its TorchLean semantics; covered by test suite
     NN.Tests.Runtime.Cuda.Suite
 ```
 
@@ -556,6 +556,10 @@ inverse result and have zero derivative. Generic execution uses dense specificat
 the CUDA route uses ATen's Fourier operators. Matching the operation does not fix their
 floating-point order.
 
+Spectral layers compose these transforms with frequency selection and learned channel mixing in
+Lean, then call the inverse transform. LibTorch supplies the FFT and tensor primitives; TorchLean
+retains model composition, the local reverse calculation, and the buffers needed by its tape.
+
 The public `nn.functional.rfft` and `nn.functional.irfft` operations transform the last axis and
 preserve any leading batch dimensions. For example, a real tensor with shape `[2, 3, 5]` produces
 packed coefficients with shape `[2, 3, 3, 2]`: there are six independent length-five transforms,
@@ -590,26 +594,37 @@ from the surrounding loss reduction and must not be added a second time inside a
 
 # Forward Values And Backward Ownership
 
-GPU attention uses the single LibTorch route, registered as `LibTorch.attention`.
-Its adapter retains the
-chosen forward implementation and the state needed by that implementation's backward rule. The
-TorchLean tape later supplies the output cotangent and receives $`\mathrm dQ`, $`\mathrm dK`, and
-$`\mathrm dV`. All of this runs with LibTorch gradient recording disabled.
+GPU attention is registered as `LibTorch.attention` and composed in
+{src "NN/Runtime/Autograd/Engine/LibTorch/Ops/Attention.lean"}[`Ops/Attention.lean`].
+For Q, K, and V shaped `(batch, n, d)`, `Buffer.attentionForward` takes an optional support mask,
+the dimensions, and a scale. It forms the scores, computes the probabilities P, and multiplies
+P by V. Its `Except` result contains both the output and P; the tape retains Q/K/V and P for
+backward.
 
-The local derivative must describe the forward operation that actually ran. Attention scale, mask
-convention, and any stochastic choices must agree across the boundary. Reusing a familiar VJP
-with a differently configured external forward would differentiate the wrong function even if
-all shapes matched. Retained forward values and configuration therefore form part of the
-interface between that provider and the TorchLean tape.
+Given output cotangent G, `Buffer.attentionBackward` composes the local rule in Lean:
 
-The direct route asks the SDK to select an eligible attention implementation with a supported
-backward pair. Where the math route is needed, backward uses the saved forward probabilities with
-ATen softmax backward and matrix products. Keeping those probabilities also avoids recomputing a
-potentially different forward softmax. The bridge does not promise that every shape uses Flash
-Attention or that every selected route avoids quadratic attention storage.
+$$`
+\mathrm dP = GV^\mathsf{T},\qquad
+\mathrm dS = P \odot \left(\mathrm dP -
+  \operatorname{rowsum}(P \odot \mathrm dP)\right),
+`
 
-The native implementation needs value and VJP evidence; owning the tape does not prove its
-arithmetic correct.
+$$`
+\mathrm dQ = \mathrm{scale}\,\mathrm dS K,\qquad
+\mathrm dK = \mathrm{scale}\,\mathrm dS^\mathsf{T} Q,\qquad
+\mathrm dV = P^\mathsf{T}G.
+`
+
+The row sum is broadcast across each row. Masked positions contribute zero, and fully blocked
+rows have zero cotangents. Keeping the forward probabilities ensures that this rule uses the
+same softmax values as forward. LibTorch executes the matrix products and numerical primitives
+with gradient recording disabled; the tape owns and releases the saved buffers.
+
+This implementation materializes the full score and probability matrices. With B batch entries,
+H heads, and n tokens, P alone contains $`BHn^2` Float32 values, or $`4BHn^2` bytes. Scores,
+backward temporaries, projections, and a mask add further storage. Doubling sequence length
+quadruples the probability storage. There is no fused attention selection or tiled-memory
+guarantee. Lean composition still needs value and VJP evidence for its native primitives.
 
 # Hard Attention Masks
 
@@ -620,9 +635,9 @@ true  = this key participates
 false = this key has exactly zero softmax numerator
 ```
 
-A fully blocked row returns zero. Both attention routes must preserve this convention. The direct
-adapter accepts the Boolean support mask, constructs the representation needed by its selected
-ATen operator, and handles fully blocked rows explicitly.
+A fully blocked row returns zero. The CPU reference and CUDA composition preserve this convention.
+The CUDA path broadcasts the Boolean support mask over the folded batch-head axis and applies
+hard-masked softmax to the score rows.
 
 Replacing blocked logits by a finite sentinel such as $`-1000` can fail when surviving logits
 are smaller than the replacement. If an allowed logit is $`-5000` and a blocked one is set to
@@ -806,20 +821,17 @@ results with a reference over the same stored inputs and state its precision. A 
 outputs measures repeatability; an error against the reference measures something else. Neither
 measurement on its own measures speed.
 
-## Attention Selection And Saved State
+## Attention Controls And Saved State
 
 `setSDPEnabled` accepts `.flash`, `.efficient`, `.math`, or `.cuDNN` and a Boolean permission.
-These settings control the implementations available to `libtorch.direct_attention`.
+These SDK permissions do not select an implementation for TorchLean's composed attention:
+`libtorch.direct_attention` retains its existing name but runs Lean matrix-product and softmax
+composition. Its capsule reports `torchLeanTape` for the local VJP.
 
-A permitted implementation still has to support the actual shape, dtype, device, mask, and
-forward/backward pair. The adapter may need the math route for a request that the enabled fused
-pairs cannot handle. Disabling math can therefore make such a request fail. The planner's capsule
-name identifies the direct route; it does not certify that Flash Attention ran inside it.
-
-Configure selection before recording the forward call. Its result retains the state needed for
-backward, which may include probabilities or other upstream intermediates. Backward uses that
-saved choice. Changing the deterministic policy between the paired calls is rejected, since the
-backward calculation must honor the policy under which forward was recorded.
+The tape saves ordinary Q/K/V and probability buffers. Backward receives those buffers and the
+output cotangent explicitly; there is no native attention context holding a selected pair of
+forward and backward kernels. Configure precision and determinism before the workload so that
+its numerical primitive calls run under the intended settings.
 
 ## Reading Mutable Native State
 
@@ -833,7 +845,8 @@ when the action runs. Device selection is effectful too: `deviceCount` reports v
 `getDevice` reads the selected index, and `setDevice` selects a device for subsequent bridge work.
 The setter requires all existing buffer wrappers to be finalized, including empty and explicitly
 released wrappers; it does not migrate their tensors. Select the device before allocating model
-state. Without LibTorch, `version` reports `unavailable` and these calls fail.
+state. Without LibTorch, `version` reports `unavailable`, `deviceCount` returns zero, and
+`getDevice` returns the stub index zero. That index does not establish availability; setters fail.
 
 # Reading CUDA Memory Usage
 
@@ -850,7 +863,7 @@ def gpuPrintMemory : IO Unit := do
 
 `liveBytes` and `peakBytes` count logical payloads owned by TorchLean handles. A view can share
 storage with another handle, so these counts can count the same storage twice. Conversely, an ATen
-temporary or saved attention context can own storage without a separate TorchLean handle.
+temporary or library workspace can own storage without a separate TorchLean handle.
 `allocCount` and `freeCount` count payload lifetimes, not calls to the CUDA allocator. The wrapper
 counters also include empty and explicitly released objects until Lean finalizes those wrappers.
 These ownership counters are process-wide.
@@ -865,9 +878,9 @@ same device. Without LibTorch these device counters are zero. The fields are rea
 concurrent activity can make the report differ from an atomic snapshot.
 
 For example, retiring a temporary tensor can reduce allocated bytes while leaving reserved bytes
-unchanged. That is compatible with an allocator keeping storage for another operation. A forward
-attention result can also retain the context needed by backward; dropping an unrelated local
-handle does not retire that context. Reading only free device memory would conflate allocator
+unchanged. That is compatible with an allocator keeping storage for another operation. An attention
+tape node also retains Q/K/V and probabilities for backward; dropping an unrelated local handle
+does not retire those saved buffers. Reading only free device memory would conflate allocator
 reuse with values that the tape still needs.
 
 An application can set the selected device's allocation limit and later release unused cache:

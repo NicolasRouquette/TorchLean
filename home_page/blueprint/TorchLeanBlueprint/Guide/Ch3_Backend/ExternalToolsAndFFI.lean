@@ -241,7 +241,7 @@ Run:
 ```terminal
 # Capture the maintained Python probes and validate their
 # exported IR documents.
-lake exe pytorch_export_check
+scripts/lake.sh exe pytorch_export_check
 ```
 
 The command asks Python and `torch.export` to capture several small `nn.Module`s
@@ -424,7 +424,8 @@ accepted, output = 1.820822
 ```
 
 In the first graph, ReLU turns the input into `[[1, 0, 3, 0]]`, whose sum is `4`. In the second,
-sigmoid maps each entry into `(0,1)` before the sum, giving the displayed `1.820822`. Both
+sigmoid maps these four finite inputs into `(0,1)` before the sum, giving the displayed
+`1.820822`. Both
 elementwise operations preserve `[1,4]`, so both documents pass `parseGraph` and satisfy
 `parseGraph_wellShaped`. Distinguishing which graph represents the intended Python module requires
 a statement relating capture to the module's semantics. The structural theorem does not supply
@@ -514,7 +515,7 @@ Run:
 ```terminal
 # Generate the default family artifacts for joint inspection
 # of model and payload.
-lake exe torchlean pytorch_roundtrip
+scripts/lake.sh exe torchlean pytorch_roundtrip
 ```
 
 This writes the generated MLP PyTorch artifacts under
@@ -686,18 +687,18 @@ surrounding `IO` sequence. Executing it again with the same host array allocates
 The allocation effect belongs to this native call, rather than to a pure upload evaluated inside
 `pure`. The borrowed host array remains available to the caller.
 
-Failure is also part of the call's result. When device allocation runs out of memory, the allocator
-releases unused cached blocks and retries. If that retry also runs out of memory, the action throws
-`IO.Error.resourceExhausted`, which the caller can handle through the usual `IO` exception
-mechanism.
+Failure is also part of the call's result. LibTorch owns the device allocator's retry policy.
+Native allocation failures return `IO.Error.resourceExhausted`, which the caller can handle
+through the usual `IO` exception mechanism.
 The call has returned no new buffer, and the caller retains its host array and existing device
 buffers. This is the checked upload contract; the `IO` type makes sequencing and failure visible,
 while correct allocation and ownership still depend on the native implementation.
 
-The release wrapper `releaseIO` still uses a token. It is
-called only at an ownership boundary where no alias will be used again; session caches atomically
-remove their published alias before calling it, and the native finalizer stays safe after explicit
-release because the implementation nulls the pointer.
+The release wrapper `releaseIO` still uses a token. It is called only at an ownership boundary
+where no alias will be used again. Removing a cache entry is insufficient if a tape still retains
+the same buffer. Parameter mirrors and their recorded snapshots therefore use ordinary Lean
+reference counting. After explicit release, the native finalizer stays safe because the
+implementation nulls the pointer.
 
 Both upload entry points copy the same host values, rounding each element to float32. The checked
 `IO` entry point additionally exposes when allocation happens and how allocation failure returns
@@ -707,8 +708,9 @@ copyable.
 
 After explicit release, every alias still refers to the native object whose payload was retired.
 Copying a Lean reference does not bring the allocation back. The index in `Tensor α s` constrains
-rank and dimensions, so it cannot detect use of a stale cached handle. Session code must remove
-that handle before release, and consumers must respect the same lifetime.
+rank and dimensions, so it cannot detect use of a stale handle. Explicit release must retire all
+usable aliases, including those retained by a tape; reference-counted snapshots instead keep the
+allocation alive until their last owner is gone.
 
 # Workspaces And Backward
 
@@ -754,8 +756,10 @@ For long training runs this prevents two forms of growth:
 - GPU allocations waiting for Lean external-object finalizers;
 - tape closures retaining workspaces after their VJP has run.
 
-Allocator counters report live and peak bytes, allocation and free counts, wrapper counts, and
-device free memory. These measurements help test the cleanup protocol: for example, live bytes
+Allocator counters report logical live and peak payload bytes, payload ownership counts, wrapper
+counts, native allocated and reserved bytes, and driver free memory. Logical payload bytes can
+count shared tensor storage more than once and need not include native temporaries. These
+measurements help test the cleanup protocol: for example, live bytes
 should not grow indefinitely when a fixed workload repeatedly releases its temporaries. The
 measurements describe that run and do not prove the absence of native leaks.
 
@@ -849,8 +853,8 @@ call, run:
 ```terminal
 # Exercise external graph capture and a separately
 # configured CUDA runtime call.
-lake exe pytorch_export_check
-lake -R -K cuda=true exe torchlean quickstart_mlp \
+scripts/lake.sh exe pytorch_export_check
+scripts/lake.sh -Kcuda=true exe torchlean quickstart_mlp \
   --device cuda --steps 2 --show-backend
 ```
 
@@ -859,8 +863,8 @@ Then deliberately break one condition:
 1. add an unsupported PyTorch operation and observe import rejection;
 2. change a JSON shape and observe `checkShapes` reject it;
 3. request CUDA from a build without LibTorch and observe runtime availability rejection;
-4. pass a wrong-size Q buffer to the LibTorch SDPA test and observe the Lean and native guard reject
-   it.
+4. pass a wrong-size Q buffer to the LibTorch attention test and observe the Lean composition's
+   size guard reject it before matrix multiplication.
 
 The live blocks illustrate the first two rejection paths using JSON strings. The last two depend
 on the build configuration and native library: availability is checked when the CUDA session is

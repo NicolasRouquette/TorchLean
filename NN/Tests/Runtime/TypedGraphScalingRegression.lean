@@ -76,7 +76,7 @@ private def checkBranch : IO Unit := do
   compare "branch forward" compiled.context.values reference.2.toShapeErasedArray
   compare "Tape adapter forward" (compiled.toTape.nodes.map (·.value))
     reference.2.toShapeErasedArray
-  let idx ← okOrThrow (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes output)
+  let idx ← okOrThrow (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes output)
   let seed := TensorPack.single idx (Tensor.full [4] (1.0 : Float32))
   let gradients ← checkSeed "branch" compiled reference.1 seed
   expect "reverse branch order gives 1; creation order would give 0"
@@ -93,14 +93,14 @@ private def checkBranch : IO Unit := do
   compare "maintained checked output" #[Spec.SomeTensor.ofTensor checkedValue]
     #[Spec.SomeTensor.ofTensor (Proofs.getIdx reference.2 idx)]
   let inputIdx ← okOrThrow
-    (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes (GraphM.Var.mk (s := [4]) 0))
+    (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes (GraphM.Var.mk (s := [4]) 0))
   let special : Tensor Float32 [4] :=
     Tensor.Internal.Rep.ofArray
       #[Float32.ofBits 0x80000000, Float32.ofBits 1, -1.0, 16777216.0] (by decide)
   let _ ← checkSeed "input seed and signed zero" compiled reference.1
     (TensorPack.single inputIdx special)
   let intermediate ← okOrThrow
-    (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes (GraphM.Var.mk (s := [4]) 2))
+    (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes (GraphM.Var.mk (s := [4]) 2))
   let _ ← checkSeed "intermediate seed" compiled reference.1
     (TensorPack.single intermediate special)
 
@@ -112,9 +112,9 @@ private def checkRepeatedParent : IO Unit := do
   let inputs : TorchLean.TensorPack Float32 [[4]] := .cons (Tensor.full [4] 1.0) .nil
   let compiled ← okOrThrow (compileChecked state.data inputs ())
   let reference := Graph.lowerGraphDataToTape state.data inputs ()
-  let outputIdx ← okOrThrow (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes output)
+  let outputIdx ← okOrThrow (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes output)
   let inputIdx ← okOrThrow
-    (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes (GraphM.Var.mk (s := [4]) 0))
+    (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes (GraphM.Var.mk (s := [4]) 0))
   let seed := TorchLean.TensorPack.add
     (TensorPack.single inputIdx (Tensor.full [4] (16777216.0 : Float32)))
     (TensorPack.single outputIdx (Tensor.full [4] (1.0 : Float32)))
@@ -134,7 +134,7 @@ private def checkRepeatedParent : IO Unit := do
   let reference := Graph.lowerGraphDataToTape state.data inputs ()
   compare "repeated multiply/subtract forward" compiled.context.values
     reference.2.toShapeErasedArray
-  let idx ← okOrThrow (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes output)
+  let idx ← okOrThrow (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes output)
   let _ ← checkSeed "repeated multiply/subtract" compiled reference.1
     (TensorPack.single idx (Tensor.full [4] (1.0 : Float32)))
 
@@ -148,7 +148,7 @@ private def checkZeroCotangent : IO Unit := do
   let compiled ← okOrThrow (compileChecked state.data inputs ())
   let reference := Graph.lowerGraphDataToTape state.data inputs ()
   compare "singular forward" compiled.context.values reference.2.toShapeErasedArray
-  let idx ← okOrThrow (GraphM.mkIdx (_α := Float32) (Γ := [[4]]) state.nodeShapes output)
+  let idx ← okOrThrow (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes output)
   let gradients ← checkSeed "zero cotangent singular VJP" compiled reference.1
     (TensorPack.single idx (Tensor.full [4] (1.0 : Float32)))
   expect "the disconnected singular VJP is evaluated"
@@ -193,7 +193,7 @@ private def checkSession : IO Unit := do
   let reference ← okOrThrow (Torch.Internal.TypedGraphSession.lowerTape state)
   let seed : Tensor Float32 [4] := Tensor.full [4] 1.0
   let idx ← okOrThrow (Torch.Internal.TypedGraphSession.mkIdxOrThrow
-    (_α := Float32) (Γ := state.Γ) (ss := state.ss) output.id [4])
+    (Γ := state.Γ) (ss := state.ss) output.id [4])
   let expected ← okOrThrow (backwardDenseAllFrom reference idx seed)
   let actual ← session.backwardDenseAll output seed
   compare "normal session with frozen input" actual expected
@@ -202,7 +202,7 @@ private def checkSession : IO Unit := do
   let frozenSeed : Tensor Float32 [4] := Tensor.Internal.Rep.ofArray
     #[Float32.ofBits 0x80000000, Float32.ofBits 1, -2.0, 16777216.0] (by decide)
   let frozenIdx ← okOrThrow (Torch.Internal.TypedGraphSession.mkIdxOrThrow
-    (_α := Float32) (Γ := state.Γ) (ss := state.ss) frozen.id [4])
+    (Γ := state.Γ) (ss := state.ss) frozen.id [4])
   let expected ← okOrThrow (backwardDenseAllFrom reference frozenIdx frozenSeed)
   let actual ← session.backwardDenseAll frozen frozenSeed
   compare "explicit frozen leaf seed" actual expected

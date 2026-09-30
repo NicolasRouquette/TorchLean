@@ -14,9 +14,7 @@ public import NN.Runtime.Autograd.IRExec.Lowering.Common
 
 Checked lowering for graph inputs, constants, detachment, and random operations.
 
-Each operation has its own small `lower*` definition. `lowerBasic` only dispatches on the operation
-kind, and the `lowerBasic_*` equation lemmas let correctness proofs reduce a dispatch to the branch
-they care about without unfolding the whole dispatcher.
+Each operation has a named lowerer, called directly by the exhaustive `lowerNode` dispatch.
 -/
 
 @[expose] public section
@@ -35,7 +33,7 @@ open NN.IR
 
 namespace Internal
 
-/-- A second `.input` node cannot appear after node 0; the lowering loop rejects it. -/
+/-- Reject an `.input` encountered by the lowering loop after its distinguished node 0. -/
 @[inline] def lowerInput {α : Type} [TorchLean.Storage α] [Context α]
     {Γ : List Shape} (ctx : NodeLoweringContext α Γ) : NodeLoweringResult ctx :=
   throw s!"IRExec: internal error (handled above)"
@@ -116,40 +114,6 @@ def lowerBernoulliMask {α : Type} [TorchLean.Storage α] [Context α]
         Spec.Random.mask (α := α) key kp (s := τ)
       pure <| fwd forward
   | _ => throw s!"IRExec: node {i}: bernoulli_mask expects 1 parent ({n.summary})"
-
-/-- Checked lowering for graph inputs, constants, detachment, and random operations. -/
-def lowerBasic {α : Type} [TorchLean.Storage α] [Context α]
-    {Γ : List Shape} (ctx : NodeLoweringContext α Γ) (kind : OpKind) :
-    NodeLoweringResult ctx :=
-  match kind with
-  | .input => lowerInput ctx
-  | .const s => lowerConst ctx s
-  | .detach => lowerDetach ctx
-  | .randUniform seed => lowerRandUniform ctx seed
-  | .bernoulliMask seed => lowerBernoulliMask ctx seed
-  | _ => throw s!"IRExec: internal error: operation routed to lowerBasic"
-
-variable {α : Type} [TorchLean.Storage α] [Context α] {Γ : List Shape}
-
-/-- Dispatch equation for `.input`. -/
-@[simp] theorem lowerBasic_input (ctx : NodeLoweringContext α Γ) :
-    lowerBasic ctx .input = lowerInput ctx := rfl
-
-/-- Dispatch equation for `.const s`. -/
-@[simp] theorem lowerBasic_const (ctx : NodeLoweringContext α Γ) (s : Shape) :
-    lowerBasic ctx (.const s) = lowerConst ctx s := rfl
-
-/-- Dispatch equation for `.detach`. -/
-@[simp] theorem lowerBasic_detach (ctx : NodeLoweringContext α Γ) :
-    lowerBasic ctx .detach = lowerDetach ctx := rfl
-
-/-- Dispatch equation for `.randUniform seed`. -/
-@[simp] theorem lowerBasic_randUniform (ctx : NodeLoweringContext α Γ) (seed : Nat) :
-    lowerBasic ctx (.randUniform seed) = lowerRandUniform ctx seed := rfl
-
-/-- Dispatch equation for `.bernoulliMask seed`. -/
-@[simp] theorem lowerBasic_bernoulliMask (ctx : NodeLoweringContext α Γ) (seed : Nat) :
-    lowerBasic ctx (.bernoulliMask seed) = lowerBernoulliMask ctx seed := rfl
 
 end Internal
 end IRExec

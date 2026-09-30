@@ -32,8 +32,8 @@ variable {α : Type} [TorchLean.Storage α] [Context α]
 /--
 Real-semantic enclosure laws for `BoundOps`.
 
-The executable interface above is intentionally available without this class: a backend may be
-useful for diagnostics before its arithmetic has been connected to a proof.  Sound CROWN theorems
+The executable interface `BoundOps` is intentionally available without this class: a backend may
+be useful for diagnostics before its arithmetic has been connected to a proof.  Sound CROWN theorems
 require `LawfulBoundOps` in addition to `BoundOps`. The interpretation `toReal` says what a scalar
 endpoint means mathematically, and the laws compare each directed operation with exact arithmetic
 on those real values. This is stronger than merely surrounding the backend's ordinary rounded
@@ -161,6 +161,18 @@ noncomputable instance instLawfulBoundOpsReal : LawfulBoundOps ℝ where
 /-- The exact real backend preserves minimum. -/
 noncomputable instance instLawfulMinBoundOpsReal : LawfulMinBoundOps ℝ where
   toReal_min _ _ := rfl
+
+/-- Over `ℝ`, the comparison-based `BoundOps.min2` is `min`. -/
+theorem min2_eq_min (a b : ℝ) : BoundOps.min2 a b = min a b := by
+  by_cases h : a > b
+  · simp [BoundOps.min2, h, min_eq_right (le_of_lt h)]
+  · simp [BoundOps.min2, h, min_eq_left (le_of_not_gt h)]
+
+/-- Over `ℝ`, the comparison-based `BoundOps.max2` is `max`. -/
+theorem max2_eq_max (a b : ℝ) : BoundOps.max2 a b = max a b := by
+  by_cases h : a > b
+  · simp [BoundOps.max2, h, max_eq_left (le_of_lt h)]
+  · simp [BoundOps.max2, h, max_eq_right (le_of_not_gt h)]
 
 /-- Exact nonlinear interval transfers over the real numbers. -/
 noncomputable instance instNonlinearBoundOpsReal : NonlinearBoundOps ℝ where

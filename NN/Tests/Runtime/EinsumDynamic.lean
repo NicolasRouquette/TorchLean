@@ -192,12 +192,12 @@ private def checkRejected (device : NN.Backend.Device) : IO Unit := do
        ("i,i->", [[0], [0]])] do
     let session ← Torch.Internal.EagerSession.new (α := Float) { device, execution := .eager }
     try
-      let mut inputs : List (Σ s : Shape, Torch.TensorRef Float s) := []
+      let mut inputs : Array (Σ s : Shape, Torch.TensorRef Float s) := #[]
       for shape in shapes do
         let input ← session.input (Tensor.ones (α := Float) shape)
-        inputs := inputs ++ [⟨shape, input⟩]
+        inputs := inputs.push ⟨shape, input⟩
       let result ← Model.F.einsum? (α := Float) (m := Torch.Internal.EagerM Float)
-        equation inputs session
+        equation inputs.toList session
       check s!"rejected equation {equation} / {shapes}" result.isNone
     finally session.resetTape
 

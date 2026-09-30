@@ -23,8 +23,6 @@
 struct torchlean_cuda_buffer {
   size_t size;
   at::Tensor tensor;
-  // Operator-specific forward state, retained until the owning tape node is released.
-  std::shared_ptr<void> context;
 };
 
 extern "C" {

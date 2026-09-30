@@ -193,7 +193,7 @@ uses that layout as well.
 def actorPolicy
     {obsShape logitsShape rolloutStateShape rolloutLogitsShape rolloutValueShape : Spec.Shape}
     {actorStateShapes : List Spec.Shape}
-    {α : Type} [TorchLean.Storage α] [Context α]
+    {α : Type} [TorchLean.Storage α]
     (actorGraph : nn.TypedGraphModel actorStateShapes obsShape logitsShape α)
     (actorRollout : nn.Sequential rolloutStateShape rolloutLogitsShape)
     (criticRollout : nn.Sequential rolloutStateShape rolloutValueShape)
@@ -215,7 +215,7 @@ Scalar tensors and any number of singleton axes are accepted.
 def criticValue
     {obsShape valueShape rolloutStateShape rolloutLogitsShape rolloutValueShape : Spec.Shape}
     {criticStateShapes : List Spec.Shape}
-    {α : Type} [TorchLean.Storage α] [Context α]
+    {α : Type} [TorchLean.Storage α]
     (criticGraph : nn.TypedGraphModel criticStateShapes obsShape valueShape α)
     (actorRollout : nn.Sequential rolloutStateShape rolloutLogitsShape)
     (criticRollout : nn.Sequential rolloutStateShape rolloutValueShape)

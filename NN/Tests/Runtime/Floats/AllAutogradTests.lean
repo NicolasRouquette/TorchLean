@@ -11,7 +11,7 @@ public import NN.API.Neural.Execution
 public import NN.API.Optim
 public import NN.Runtime.Autograd.Train
 public import NN.Spec.Models.Mlp
-public import NN.Tests.Utils
+public import NN.Tests.Runtime.Floats.Utils
 public import NN.Tests.Runtime.TypedGraphScalingRegression
 
 /-!
@@ -303,10 +303,15 @@ def run : IO Unit := do
   match res with
   | .error msg => throw <| IO.userError s!"autograd_linear_regression_test (Float): {msg}"
   | .ok (reports, evalReport) =>
-    for report in reports do
-      Tests.Utils.assertFinite "linear regression training loss" report.loss
-    Tests.Utils.assertFinite "linear regression evaluation loss" evalReport.loss
-    IO.println "autograd_linear_regression_test (Float): OK"
+    if hReports : reports.size = 5 then
+      for report in reports do
+        Tests.Utils.assertFinite "linear regression training loss" report.loss
+      Tests.Utils.assertFinite "linear regression evaluation loss" evalReport.loss
+      unless evalReport.loss < reports[0].loss do
+        throw <| IO.userError "linear regression: training did not reduce the dataset loss"
+      IO.println "autograd_linear_regression_test (Float): OK"
+    else
+      throw <| IO.userError "linear regression: expected five training reports"
 
 end AutogradLinearRegression
 end Floats
@@ -413,7 +418,7 @@ def trainStep (parameters : Parameters) (learningRate : Float := 0.1) :
           outputBias := outputBiasStep.parameters }
       output := lossVal }
 
-/-- Run the low-level step driver and retain each loss for the finite-value checks. -/
+/-- Run the low-level step driver and retain each loss to check progress. -/
 def train (epochs : Nat) (learningRate : Float := 0.1) :
   Runtime.Autograd.Result (Array Float) := do
   let result ← Train.runSteps (m := Runtime.Autograd.Result) epochs initialParameters
@@ -423,8 +428,12 @@ def train (epochs : Nat) (learningRate : Float := 0.1) :
 def run : IO Unit := do
   match train 6 0.1 with
   | .ok losses =>
+    unless losses.size == 6 do
+      throw <| IO.userError "MLP training: expected six losses"
     for loss in losses do
       Tests.Utils.assertFinite "MLP training loss" loss
+    unless losses[5]! < losses[0]! do
+      throw <| IO.userError "MLP training: SGD did not reduce the loss"
     IO.println "autograd_train_test (Float): OK"
   | .error msg => throw <| IO.userError s!"autograd_train_test (Float): {msg}"
 
@@ -433,7 +442,7 @@ end Floats
 end Tests
 
 /-!
-CPU LayerNorm tape execution, including lookup and finite-value checks for all three gradients.
+CPU LayerNorm tape execution, including analytic checks for all three gradients.
 -/
 
 open Spec TorchLean
@@ -496,6 +505,20 @@ def run : IO Unit := do
       Tests.Utils.assertFinite "LayerNorm scale gradient" value
     for value in Tensor.to dBeta (Array Float) do
       Tests.Utils.assertFinite "LayerNorm bias gradient" value
+    -- Both rows have centered coordinates [-0.1, 0, 0.1] and variance 1/150.
+    -- For the summed output, dx_i = (gamma_i - mean gamma
+    --   - centered_i * mean(gamma * centered) / (variance + epsilon)) / stddev.
+    let variance : Float := 1 / 150 + TorchLean.normalizationEpsilon
+    let stddev := Float.sqrt variance
+    let first := (0.1 / 300 / variance) / stddev
+    let middle := -0.1 / stddev
+    let last := (0.1 - 0.1 / 300 / variance) / stddev
+    Utils.assertArrayApprox "LayerNorm input gradient"
+      (Tensor.to dX (Array Float)) #[first, middle, last, first, middle, last] 1e-10
+    Utils.assertArrayApprox "LayerNorm scale gradient"
+      (Tensor.to dGamma (Array Float)) #[-0.2 / stddev, 0, 0.2 / stddev] 1e-10
+    Utils.assertArrayApprox "LayerNorm bias gradient" (Tensor.to dBeta (Array Float)) #[2, 2, 2] 0
+    Tests.Utils.assertApprox "LayerNorm summed output" loss (0.02 / stddev) 1e-10
     IO.println "autograd_layernorm_test (Float): OK"
 
 end AutogradLayerNorm
@@ -503,7 +526,7 @@ end Floats
 end Tests
 
 /-!
-CPU convolution tape execution with two spatial axes and finite kernel/bias gradients.
+CPU convolution tape execution with exact kernel/bias gradients for one two-dimensional window.
 -/
 
 open Spec TorchLean
@@ -523,10 +546,6 @@ abbrev stride := 1
 abbrev padding := 0
 abbrev inH := 2
 abbrev inW := 2
-
-theorem h1 : inC ≠ 0 := by decide
-theorem h2 : kH ≠ 0 := by decide
-theorem h3 : kW ≠ 0 := by decide
 
 def outH : Nat := Spec.Shape.slidingWindowOutDim inH kH stride padding
 def outW : Nat := Spec.Shape.slidingWindowOutDim inW kW stride padding
@@ -571,6 +590,10 @@ def run : IO Unit := do
       Tests.Utils.assertFinite "convolution kernel gradient" value
     for value in Tensor.to dB (Array Float) do
       Tests.Utils.assertFinite "convolution bias gradient" value
+    -- A single unpadded window gives dK = input and dB = 1 for the summed output.
+    Utils.assertArrayApprox "convolution kernel gradient" (Tensor.to dK (Array Float))
+      #[1, 2, 3, 4] 0
+    Utils.assertArrayApprox "convolution bias gradient" (Tensor.to dB (Array Float)) #[1] 0
     IO.println "autograd_conv_test (Float): OK"
 
 end AutogradConv
@@ -1022,15 +1045,12 @@ def checkOneCycleEndpoints : Bool :=
 
 /-- Public optimizer configurations reject domains that make their updates undefined. -/
 def checkPublicOptimizerValidation : Bool :=
-  let rejected : Except String Unit -> Bool
-    | .error _ => true
-    | .ok () => false
   (TorchLean.optim.adam { learningRate := 1e-3 }).validate.isOk &&
-    rejected (TorchLean.optim.adam { learningRate := 1e-3, beta1 := 1.0 }).validate &&
-    rejected (TorchLean.optim.adamW { learningRate := 1e-3, weightDecay := -0.1 }).validate &&
-    rejected (TorchLean.optim.rmsProp { learningRate := 1e-3, epsilon := 0.0 }).validate &&
-    rejected (TorchLean.optim.sgd
-      { learningRate := 0.1, momentum := Float.ofBits 0x7ff8000000000000 }).validate
+    (!(TorchLean.optim.adam { learningRate := 1e-3, beta1 := 1.0 }).validate.isOk) &&
+    (!(TorchLean.optim.adamW { learningRate := 1e-3, weightDecay := -0.1 }).validate.isOk) &&
+    (!(TorchLean.optim.rmsProp { learningRate := 1e-3, epsilon := 0.0 }).validate.isOk) &&
+    (!(TorchLean.optim.sgd
+      { learningRate := 0.1, momentum := Float.ofBits 0x7ff8000000000000 }).validate.isOk)
 
 /-- Run the optimizer and scheduler edge-case regressions. -/
 def run : IO Unit := do

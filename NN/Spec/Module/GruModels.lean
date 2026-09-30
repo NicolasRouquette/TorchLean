@@ -322,8 +322,8 @@ def Classifier.forward {seqLen inputSize hiddenSize numClasses : Nat}
   (initialHidden : Tensor α [hiddenSize]) (h : 0 < seqLen) :
   Tensor α [numClasses] :=
   let hiddenStates := gruSequenceSpec model.gru inputs initialHidden
-  have hLast : seqLen - 1 < seqLen := by
-    simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
+  have hLast : seqLen - 1 < seqLen :=
+    Nat.sub_one_lt (Nat.ne_of_gt h)
   let finalHidden := get hiddenStates ⟨seqLen - 1, hLast⟩
   linearSpec model.classifier finalHidden
 
@@ -343,8 +343,8 @@ def Generator.forward {seqLen vocabularySize hiddenSize : Nat}
   let hiddenStates := gruSequenceSpec model.gru embedded initialHidden
   let outputs := Tensor.mapLeading ([seqLen])
     (linearSpec model.outputProjection) hiddenStates
-  have hLast : seqLen - 1 < seqLen := by
-    simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
+  have hLast : seqLen - 1 < seqLen :=
+    Nat.sub_one_lt (Nat.ne_of_gt h)
   let finalHidden := get hiddenStates ⟨seqLen - 1, hLast⟩
   (outputs, finalHidden)
 
@@ -397,8 +397,8 @@ def LanguageModel.forward {seqLen vocabularySize hiddenSize : Nat}
     | layer :: remainingLayers => do
       let hidden ← initialHiddens[index]?
       let layerOutput := gruSequenceSpec layer layerInput hidden
-      have hLast : seqLen - 1 < seqLen := by
-        simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
+      have hLast : seqLen - 1 < seqLen :=
+        Nat.sub_one_lt (Nat.ne_of_gt h)
       let finalHidden := get layerOutput ⟨seqLen - 1, hLast⟩
       let (finalOutput, finalHiddens) ←
         processLayers remainingLayers (index + 1) layerOutput
@@ -432,14 +432,14 @@ def EncoderDecoder.forward {srcSeqLen tgtSeqLen inputVocabSize hiddenSize output
   let sourceEmbedded := Tensor.mapLeading ([srcSeqLen])
     (linearSpec model.encoderEmbedding) sourceTokens
   let encoderStates := gruSequenceSpec model.encoderGru sourceEmbedded encoderHidden
-  have hSourceLast : srcSeqLen - 1 < srcSeqLen := by
-    simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt hSource)
+  have hSourceLast : srcSeqLen - 1 < srcSeqLen :=
+    Nat.sub_one_lt (Nat.ne_of_gt hSource)
   let encoderFinal := get encoderStates ⟨srcSeqLen - 1, hSourceLast⟩
   let targetEmbedded := Tensor.mapLeading ([tgtSeqLen])
     (linearSpec model.decoderEmbedding) targetTokens
   let decoderStates := gruSequenceSpec model.decoderGru targetEmbedded encoderFinal
-  have hTargetLast : tgtSeqLen - 1 < tgtSeqLen := by
-    simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt hTarget)
+  have hTargetLast : tgtSeqLen - 1 < tgtSeqLen :=
+    Nat.sub_one_lt (Nat.ne_of_gt hTarget)
   let decoderFinal := get decoderStates ⟨tgtSeqLen - 1, hTargetLast⟩
   let outputs := Tensor.mapLeading ([tgtSeqLen])
     (linearSpec model.outputProjection) decoderStates
@@ -449,11 +449,12 @@ def EncoderDecoder.forward {srcSeqLen tgtSeqLen inputVocabSize hiddenSize output
 /-- Backward pass for `Gru.Model` using full backpropagation through time.
 
 This assumes you already ran a forward pass that saved:
-- `hidden_states`,
-- the GRU intermediates (`resetGates`, `updateGates`, `newCandidates`, `resetHiddens`).
+- `hiddenStates`,
+- the GRU intermediates `resetGates`, `updateGates`, and `candidates`.
 
 Those intermediates can be produced using `Spec.gruExtractIntermediateValues` from
-`NN.Spec.Layers.Gru`.
+`NN.Spec.Layers.Gru`. Supply the same `initialHidden` as the forward pass; omitting it retains
+the zero-initial-state convention.
 -/
 def Model.backward {seqLen inputSize hiddenSize outputSize : Nat}
   (model : Model α inputSize hiddenSize outputSize)
@@ -463,7 +464,8 @@ def Model.backward {seqLen inputSize hiddenSize outputSize : Nat}
   (resetGates : Tensor α [seqLen, hiddenSize])
   (updateGates : Tensor α [seqLen, hiddenSize])
   (candidates : Tensor α [seqLen, hiddenSize])
-  (h : seqLen ≠ 0) :
+  (h : seqLen ≠ 0)
+  (initialHidden : Tensor α [hiddenSize] := Tensor.full [hiddenSize] 0) :
   Grads α inputSize hiddenSize outputSize ×
     Tensor α [seqLen, inputSize] :=
   let hiddenGrad := Tensor.mapLeading ([seqLen])
@@ -475,10 +477,9 @@ def Model.backward {seqLen inputSize hiddenSize outputSize : Nat}
     (Shape.hasNonemptyAxisZeroOfNe h).proof
   let outputBiasGrad := Tensor.reduceSum 0 outputGrad
     (Shape.hasNonemptyAxisZeroOfNe h).proof
-  let initialHidden := Tensor.full ([hiddenSize]) 0
   let (resetWeight, resetBias, updateWeight, updateBias,
        candidateWeight, candidateBias, inputGrad, _) :=
-    gruSequenceBackwardFullSpec model.gru inputs hiddenStates hiddenGrad
+    gruSequenceBackwardSpec model.gru inputs hiddenStates hiddenGrad
       resetGates updateGates candidates initialHidden
   ({ cell := { resetWeight, resetBias, updateWeight, updateBias, candidateWeight, candidateBias }
      outputWeight := outputWeightGrad
@@ -503,7 +504,9 @@ structure ResidualModel (α : Type) [TorchLean.Storage α]
 Forward pass for `Gru.ResidualModel`.
 
 This runs the GRU, adds a projected version of the input as a residual connection, and applies the
-output head per timestep.
+output head per timestep. The second result is the last residual feature
+`hiddenStates[last] + projectedInputs[last]`. For a continuation chunk, retain the raw GRU hidden
+state before this residual addition and use that as `initialHidden`.
 -/
 def ResidualModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
   (model : ResidualModel α inputSize hiddenSize outputSize)
@@ -517,10 +520,10 @@ def ResidualModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
     addSpec hiddenStates projectedInputs
   let outputs := Tensor.mapLeading ([seqLen])
     (linearSpec model.outputLayer) residualStates
-  have hLast : seqLen - 1 < seqLen := by
-    simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
-  let finalHidden := get residualStates ⟨seqLen - 1, hLast⟩
-  (outputs, finalHidden)
+  have hLast : seqLen - 1 < seqLen :=
+    Nat.sub_one_lt (Nat.ne_of_gt h)
+  let finalResidual := get residualStates ⟨seqLen - 1, hLast⟩
+  (outputs, finalResidual)
 
 /--
 Package `Gru.Model` as a shape-indexed module.

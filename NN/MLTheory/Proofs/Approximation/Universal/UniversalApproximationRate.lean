@@ -76,22 +76,13 @@ theorem relu_universal_approximation_Icc_rate {f : ℝ → ℝ} {a b L : ℝ}
         ∀ x ∈ Set.Icc a b,
           |f x - mlpEvalScalar (reluApproximationWidth L a b ε) l1 l2 x| < ε := by
   intro ε hε
-  classical
-  rcases
-      relu_universal_approximation_Icc_hinge_rate (f := f) (a := a) (b := b) (L := L)
-        h_ab hL h_lip ε hε with
-    ⟨t, c, happx⟩
+  obtain ⟨t, c, happx⟩ :=
+    relu_universal_approximation_Icc_hinge_rate (f := f) (a := a) (b := b) (L := L)
+      h_ab hL h_lip ε hε
   refine ⟨hingeLayer1 (reluApproximationWidth L a b ε) t,
-    hingeLayer2 (reluApproximationWidth L a b ε) c (f a),
-    ?_⟩
-  intro x hx
-  have hnet :
-      mlpEvalScalar (reluApproximationWidth L a b ε)
-          (hingeLayer1 (reluApproximationWidth L a b ε) t)
-          (hingeLayer2 (reluApproximationWidth L a b ε) c (f a)) x =
-        hingeFun (reluApproximationWidth L a b ε) t c (f a) x := by
-    simpa using (mlp_eval_scalar_hinge (reluApproximationWidth L a b ε) t c (f a) x)
-  simpa [hnet] using happx x hx
+    hingeLayer2 (reluApproximationWidth L a b ε) c (f a), fun x hx => ?_⟩
+  rw [mlp_eval_scalar_hinge]
+  exact happx x hx
 
 end
 

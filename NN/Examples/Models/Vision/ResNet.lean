@@ -76,28 +76,10 @@ def model : nn.Builder (nn.Sequential input output) :=
 
 /-- Train the residual classifier with the public classification trainer. -/
 def train (runtime : Runtime.Config) (flags : Support.Training.Options Support.Npy.Options) :
-    IO Trainer.Report := do
-  let batches ←
-    RealData.loadCifarBatches exeName batchSize flags.data.nRows flags.data.seed
-      flags.data.xPath flags.data.yPath
-  let batches ← batches.mapM fun sample =>
-    CLI.orThrow exeName <|
-      RealData.cropCifarBatch batchSize cropHeight cropWidth sample
-  let trainer :=
-    Trainer.new model <|
-      Trainer.RunConfig.forObjective
-        (Trainer.RunConfig.fromRuntime runtime
-          { optimizer := optim.adam { learningRate := flags.training.learningRate } })
-        (.oneHotCrossEntropy 1)
-        (seed := flags.data.seed)
-  let trained ← trainer.train
-    (Data.fromSamples batches)
-    (flags.training.trainOptions
-      (logTitle := "ResNet CIFAR training")
-      (logNotes := RealData.trainingNotes "cifar10" batchSize flags
-        #[s!"spatial={cropHeight}x{cropWidth}",
-          s!"hiddenChannels={hiddenChannels}"]))
-  pure trained.report
+    IO Trainer.Report :=
+  RealData.trainCifarClassifier batchSize cropHeight cropWidth exeName
+    "ResNet CIFAR training" model runtime flags
+    #[s!"spatial={cropHeight}x{cropWidth}", s!"hiddenChannels={hiddenChannels}"]
 
 /-- CLI entrypoint for the CIFAR residual-classifier training path. -/
 def main (args : List String) : IO UInt32 :=

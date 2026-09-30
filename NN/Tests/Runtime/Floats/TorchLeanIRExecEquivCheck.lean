@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Tests.Runtime.Floats.Utils
+public import NN.Tests.Utils
 public import NN.Verification.Builtin.ExecutableLowering
 public import NN.API.Seeded
 public import NN.MLTheory.CROWN.Graph.Engine.Derivatives -- shake: keep
@@ -27,7 +27,6 @@ We lower a small TorchLean model to `NN.IR.Graph` with its payload, then lower t
 open Spec TorchLean
 open TorchLean TorchLean.Tensor
 open Tests.Utils
-open Tests.Floats.Utils
 
 namespace Tests
 namespace Floats
@@ -102,6 +101,10 @@ private def checkValues (label : String) (actual expected : Array (Spec.SomeTens
         match NN.IR.Graph.denoteAll graph {} (Spec.SomeTensor.ofTensor x) with
         | .error _ => pure ()
         | .ok _ => throw <| IO.userError "raw log IR unexpectedly accepted a nonpositive input"
+      else
+        match NN.IR.Graph.denoteAll graph {} (Spec.SomeTensor.ofTensor x) with
+        | .ok values => checkValues "positive raw log IR context" values expected
+        | .error error => throw <| IO.userError s!"positive raw log IR rejected: {error}"
   else
     throw <| IO.userError "raw log contexts: wrong input shape"
 
@@ -117,7 +120,8 @@ def checkHardMaskedSoftmaxIbpBoundary : IO Unit := do
     NN.MLTheory.CROWN.Graph.ibpHardMaskedSoftmaxLastTensor logitsLo logitsHi singletonMask
   let checkTensor (label : String) (actual expected : Tensor Float [3]) : IO Unit :=
     for i in List.finRange 3 do
-      assertApprox s!"{label}[{i.val}]" (vecVal actual i) (vecVal expected i) 0.0
+      assertApprox s!"{label}[{i.val}]"
+        (Tensor.getScalar actual i) (Tensor.getScalar expected i) 0.0
   let mixedExpectedLo : Tensor Float [3] := [0.0, 0.0, 0.0]
   let mixedExpectedHi : Tensor Float [3] := [1.0, 0.0, 1.0]
   let singletonExpected : Tensor Float [3] := [0.0, 1.0, 0.0]
@@ -144,8 +148,9 @@ def checkSoftmaxDerivativeShapeGuard : IO Unit := do
   let first := NN.MLTheory.CROWN.Graph.runScalarDerivative graph params values
   let directional :=
     NN.MLTheory.CROWN.Graph.runDirectionalDerivative graph params values inputBox
-  let second := NN.MLTheory.CROWN.Graph.runScalarSecondDerivative graph params values first
-  unless first[1]!.isNone && directional[1]!.isNone && second[1]!.isNone do
+  let second := NN.MLTheory.CROWN.Graph.runSecondDirectionalDerivative graph params values first
+  unless (first[1]?).any Option.isNone && (directional[1]?).any Option.isNone &&
+      (second[1]?).any Option.isNone do
     throw <| IO.userError "matrix softmax used the vector-only derivative transfer rule"
 
 /-- Finite-precision graph checks fail closed when no directed nonlinear enclosure is available. -/
@@ -162,7 +167,7 @@ def checkNonlinearBoundCapabilities : IO Unit := do
       ] }
 
   let expBoxes := NN.MLTheory.CROWN.Graph.runIBP (unaryGraph .exp) params
-  unless expBoxes[1]!.isNone do
+  unless (expBoxes[1]?).any Option.isNone do
     throw <| IO.userError "Float exp IBP accepted an uncertified host transcendental"
 
   let sqrtBoxes := NN.MLTheory.CROWN.Graph.runIBP (unaryGraph .sqrt) params
@@ -174,7 +179,7 @@ def checkNonlinearBoundCapabilities : IO Unit := do
   unless softmaxBoxes[1]!.isSome do
     throw <| IO.userError "Float softmax IBP failed to return its codomain enclosure"
   let softmaxDeriv := NN.MLTheory.CROWN.Graph.runScalarDerivative softmaxGraph params softmaxBoxes
-  unless softmaxDeriv[1]!.isNone do
+  unless (softmaxDeriv[1]?).any Option.isNone do
     throw <| IO.userError "Float softmax derivative used exact-scalar coupled arithmetic"
 
   let reluGraph := unaryGraph .relu
@@ -189,8 +194,8 @@ def checkNonlinearBoundCapabilities : IO Unit := do
         let affIn := NN.MLTheory.CROWN.Graph.castAffineIn (α := Float) hIn upper.aff
         let aff22 := NN.MLTheory.CROWN.Graph.castAffineOut (α := Float) hOut affIn
         assertApprox "ReLU constant affine coefficient"
-          (matVal aff22.A ⟨0, by decide⟩ ⟨0, by decide⟩) 0.0 0.0
-        let endpoint := vecVal aff22.c ⟨0, by decide⟩
+          (Tensor.get2 aff22.A ⟨0, by decide⟩ ⟨0, by decide⟩) 0.0 0.0
+        let endpoint := Tensor.getScalar aff22.c ⟨0, by decide⟩
         unless 2.0 ≤ endpoint && endpoint < 2.000001 do
           throw <| IO.userError "ReLU affine endpoint lost its directed enclosure"
       else
@@ -322,7 +327,7 @@ def checkBatchedAttentionLowering : IO Unit := do
     let ySpecFlat := Tensor.flattenSpec ySpec
     for i in List.finRange (Spec.Shape.size inputShape) do
       assertApprox s!"{label} attention lowering[{i.val}]"
-        (vecVal yIRFlat i) (vecVal ySpecFlat i) 2e-5
+        (Tensor.getScalar yIRFlat i) (Tensor.getScalar ySpecFlat i) 2e-5
 
     -- An exact input box must remain evaluable by IBP.  In particular, a fully blocked mask may
     -- not leave an inverse whose interval contains zero.
@@ -413,7 +418,8 @@ def run : IO Unit := do
             throw <| IO.userError s!"torchlean_ir_exec_equiv_check: exec output shape mismatch: {e}"
 
   for i in List.finRange outputWidth do
-    assertApprox s!"ir/exec forward[{i.val}]" (vecVal yIR i) (vecVal yExec i) 1e-6
+    assertApprox s!"ir/exec forward[{i.val}]"
+      (Tensor.getScalar yIR i) (Tensor.getScalar yExec i) 1e-6
 
   checkBatchedAttentionLowering
 

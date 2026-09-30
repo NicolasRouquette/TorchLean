@@ -38,8 +38,9 @@ supplies it:
   `toReal_eval`, `toReal_jvpCtx`, `toReal_backpropCtx` show the specialization preserves all
   three semantics.
 * **Input-prefix extraction.** `TensorPack.takeLeft` reads the input (`Γ`-prefix) block out of a
-  full context, and `takeLeft_backpropAllCtx` (also in `GraphData` form) identifies the input
-  block of the full backpropagation with the inputs-only `backpropCtx`, the missing lemma
+  full context (it is the left half of `TorchLean.TensorPack.split`), and
+  `takeLeft_backpropAllCtx` (for `GraphData`, and for `Graph` through `toData`) identifies the
+  input block of the full backpropagation with the inputs-only `backpropCtx`, the missing lemma
   relating the runtime-facing `backpropAllCtx` to the proof-facing `backpropCtx`.
 * **Vectorization transport.** The `flattenCtx_*` lemmas of `NN.Proofs.Autograd.Tape.Core.FDeriv`
   commute context vectorization with `cast`/`snoc`/`unsnoc`/`add`, so the `TensorPack`-level
@@ -69,10 +70,6 @@ open Spec TorchLean
 open TorchLean TorchLean.Tensor
 
 noncomputable section
-
--- ---------------------------------------------------------------------------
--- Embedding the analytic model as the `Δ := Unit` slice of the algebraic model
--- ---------------------------------------------------------------------------
 
 namespace Algebra
 
@@ -190,28 +187,16 @@ end Graph
 
 namespace TensorPack
 
-/-- Read the input (`Γ`-prefix) block out of a full context over `Γ ++ ss`. -/
-def takeLeft {α : Type} [TorchLean.Storage α] :
-    {Γ ss : List Shape} → TorchLean.TensorPack α (Γ ++ ss) → TorchLean.TensorPack α Γ
-  | [], _, _ => .nil
-  | _ :: Γ, ss, .cons x xs => .cons x (takeLeft (Γ := Γ) (ss := ss) xs)
+/-- Read the input (`Γ`-prefix) block out of a full context over `Γ ++ ss`: the left half of the
+public `TorchLean.TensorPack.split`, under the name the link theorems use. -/
+abbrev takeLeft {α : Type} [TorchLean.Storage α] {Γ ss : List Shape}
+    (xs : TorchLean.TensorPack α (Γ ++ ss)) : TorchLean.TensorPack α Γ :=
+  (TorchLean.TensorPack.split (ss₁ := Γ) xs).1
 
 /-- The proof context's input projection is the public tensor-pack split. -/
 theorem takeLeft_eq_split {α : Type} [TorchLean.Storage α] {Γ ss : List Shape}
     (xs : TorchLean.TensorPack α (Γ ++ ss)) :
-    takeLeft xs = (TorchLean.TensorPack.split (ss₁ := Γ) xs).1 := by
-  induction Γ with
-  | nil => rfl
-  | cons shape Γ ih =>
-      cases xs with
-      | cons x xs => simp only [takeLeft, TorchLean.TensorPack.split, ih xs]
-
-/-- Push a `cast` along a `cons` cell. -/
-theorem cast_cons {α : Type} [TorchLean.Storage α] {s : Shape} {ss₁ ss₂ : List Shape}
-    (h : s :: ss₁ = s :: ss₂) (h' : ss₁ = ss₂) (x : Tensor α s) (xs : TorchLean.TensorPack α ss₁) :
-    TorchLean.TensorPack.cast (α := α) h (.cons x xs) =
-      .cons x (TorchLean.TensorPack.cast (α := α) h' xs) := by
-  cases h'
+    takeLeft xs = (TorchLean.TensorPack.split (ss₁ := Γ) xs).1 :=
   rfl
 
 /-- On a context with no intermediates, `takeLeft` is the cast along `Γ ++ [] = Γ`. -/
@@ -229,7 +214,7 @@ theorem takeLeft_append_nil {α : Type} [TorchLean.Storage α] {Γ : List Shape}
       show .cons x (takeLeft (Γ := Γ) (ss := []) w') =
           TorchLean.TensorPack.cast (α := α)
             (show s :: (Γ ++ []) = s :: Γ from List.append_nil (s :: Γ)) (.cons x w')
-      rw [cast_cons (α := α) (s := s) (ss₁ := Γ ++ []) (ss₂ := Γ)
+      rw [TorchLean.TensorPack.cast_cons (α := α) (s := s) (ss₁ := Γ ++ []) (ss₂ := Γ)
         (show s :: (Γ ++ []) = s :: Γ from List.append_nil (s :: Γ)) (List.append_nil Γ) x w', ih]
 
 /-- `takeLeft` ignores a snoc-ed final block (after reassociating the context). -/
@@ -252,7 +237,8 @@ theorem takeLeft_cast_snoc {α : Type} [TorchLean.Storage α] {Γ : List Shape} 
             (TorchLean.TensorPack.cast (α := α) h
               (.cons x (TorchLean.TensorPack.snoc w' y))) =
           .cons x (takeLeft (Γ := Γ) (ss := ss) w')
-      rw [cast_cons (α := α) (s := s) (ss₁ := (Γ ++ ss) ++ [τ]) (ss₂ := Γ ++ (ss ++ [τ])) h
+      rw [TorchLean.TensorPack.cast_cons (α := α) (s := s)
+        (ss₁ := (Γ ++ ss) ++ [τ]) (ss₂ := Γ ++ (ss ++ [τ])) h
         (List.append_assoc Γ ss [τ]) x (TorchLean.TensorPack.snoc w' y)]
       show TorchLean.TensorPack.cons x (takeLeft (Γ := Γ) (ss := ss ++ [τ])
             (TorchLean.TensorPack.cast (α := α) (List.append_assoc Γ ss [τ])
@@ -262,9 +248,9 @@ theorem takeLeft_cast_snoc {α : Type} [TorchLean.Storage α] {Γ : List Shape} 
 
 end TensorPack
 
-namespace Graph
+namespace GraphData
 
-variable {α : Type} [TorchLean.Storage α] [CommSemiring α]
+variable {α : Type} [TorchLean.Storage α] [Add α]
 variable {Δ : Type}
 variable {Γ : List Shape}
 
@@ -275,25 +261,6 @@ This identifies the link-facing `backpropAllCtx` (which retains a cotangent for 
 value, mirroring the tape engine's dense reverse pass) with the proof-facing `backpropCtx`
 on the input block.
 -/
-theorem takeLeft_backpropAllCtx {ss : List Shape} (g : Graph (α := α) (Δ := Δ) (Γ := Γ) ss)
-    (x : TorchLean.TensorPack α Γ) (d : Δ) (seed : TorchLean.TensorPack α (Γ ++ ss)) :
-    TensorPack.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed := by
-  induction g with
-  | nil =>
-    exact TensorPack.takeLeft_append_nil (α := α) seed
-  | snoc g node ih =>
-    simp only [backpropAllCtx, backpropCtx]
-    rw [TensorPack.takeLeft_cast_snoc]
-    exact ih _
-end Graph
-
-namespace GraphData
-
-variable {α : Type} [TorchLean.Storage α] [Add α]
-variable {Δ : Type}
-variable {Γ : List Shape}
-
-/-- `GraphData` version of `Graph.takeLeft_backpropAllCtx`. -/
 theorem takeLeft_backpropAllCtx {ss : List Shape} (g : GraphData α Δ Γ ss)
     (x : TorchLean.TensorPack α Γ) (d : Δ) (seed : TorchLean.TensorPack α (Γ ++ ss)) :
     TensorPack.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed := by
@@ -306,6 +273,21 @@ theorem takeLeft_backpropAllCtx {ss : List Shape} (g : GraphData α Δ Γ ss)
     exact ih _
 
 end GraphData
+
+namespace Graph
+
+variable {α : Type} [TorchLean.Storage α] [CommSemiring α]
+variable {Δ : Type}
+variable {Γ : List Shape}
+
+/-- `Graph` form of `GraphData.takeLeft_backpropAllCtx`: both `backpropAllCtx` and `backpropCtx`
+of a proof-carrying graph are the `GraphData` programs on `g.toData`. -/
+theorem takeLeft_backpropAllCtx {ss : List Shape} (g : Graph (α := α) (Δ := Δ) (Γ := Γ) ss)
+    (x : TorchLean.TensorPack α Γ) (d : Δ) (seed : TorchLean.TensorPack α (Γ ++ ss)) :
+    TensorPack.takeLeft (backpropAllCtx (α := α) g x d seed) = backpropCtx (α := α) g x d seed :=
+  GraphData.takeLeft_backpropAllCtx (α := α) g.toData x d seed
+
+end Graph
 
 -- ---------------------------------------------------------------------------
 -- Composed endpoints: the algebraic reverse pass at `ℝ` is `(fderiv eval)†`

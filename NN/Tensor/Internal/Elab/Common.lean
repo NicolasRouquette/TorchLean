@@ -701,15 +701,15 @@ def buildTensorFamily (scalarType storage : Expr)
         tensorIndex
     mkLambdaFVars #[tensorIndex] body
 
-/-- One operand of a tensor family after promotion, with the coercion it needs applied. -/
+/-- One original tensor operand and its pending conversion to the common scalar type. -/
 private structure CommonScalarInput where
   /-- Syntax this operand came from, for error positions. -/
   sourceSyntax : Syntax
   /-- The operand's tensor expression. -/
   tensor : Expr
-  /-- Scalar type the operand is being read at, after promotion. -/
+  /-- Original scalar type, used as the domain when composing conversions. -/
   scalarType : Expr
-  /-- `Storage` instance for that scalar type. -/
+  /-- Original `Storage` instance, retained when no conversion is needed. -/
   storage : Expr
   /-- The operand's shape, outermost dimension first. -/
   dimensions : List Expr

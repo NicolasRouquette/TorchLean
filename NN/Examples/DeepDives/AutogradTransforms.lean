@@ -200,8 +200,8 @@ theorem expSquareProgram_eval {α : Type} [Storage α] [Context α] {shape : Spe
       (fun graph => graph.forward (TensorPack.singleton x)) =
       .ok (Tensor.expSpec (Tensor.mulSpec x x)) := by
   simp only [lowerToTypedGraph, lowerToTypedGraphWithData, expSquareProgram, GraphM.arg,
-    GraphM.square, GraphM.mul, GraphM.exp, GraphM.push, GraphM.emptyWith, GraphM.mkIdx,
-    GraphM.ctxLen]
+    GraphM.square, GraphM.mul, GraphM.exp, GraphM.Internal.unaryWithSharedDerivative,
+    GraphM.push, GraphM.emptyWith, GraphM.mkIdx, GraphM.ctxLen]
   simp
   dsimp only [Bind.bind, Except.bind, Functor.map, Except.map]
   simp

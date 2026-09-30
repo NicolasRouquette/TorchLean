@@ -121,7 +121,7 @@ def run : IO Unit := do
   expect "wrong input dimension"
     (accepts graph params { certificate with ctx := ⟨0, 2⟩ } (query 2 true)) false
   let wrongBounds : FlatAffineBounds (ExecFloat.Binary 8 23) :=
-    NN.MLTheory.CROWN.Cert.boundsIdentity 2
+    NN.MLTheory.CROWN.Graph.boundsIdentity 2
   expect "artifact shape mismatch"
     (accepts graph params
       { certificate with crown := certificate.crown.set! 3 (some wrongBounds) }
@@ -180,10 +180,13 @@ def run : IO Unit := do
       (accepts ⟨graph.nodes.set! 1 node⟩ params certificate (query 2 true)) false
   expect "empty graph" (accepts ⟨#[]⟩ params certificate (query 2 true)) false
   let empty : Tensor (ExecFloat.Binary 8 23) [0] := Tensor.ofFn Fin.elim0
+  let emptyInputGraph : Graph := ⟨#[⟨0, #[], .input, [0]⟩]⟩
+  let emptyInputParams :=
+    { params with inputBoxes := params.inputBoxes.insert 0 ⟨0, empty, empty⟩ }
   expect "empty input dimension"
-    (accepts ⟨#[⟨0, #[], .input, [0]⟩]⟩
-      { params with inputBoxes := params.inputBoxes.insert 0 ⟨0, empty, empty⟩ }
-      certificate (query 2 true)) false
+    (accepts emptyInputGraph emptyInputParams
+      (replay emptyInputGraph emptyInputParams 0 #[none])
+      ⟨0, ⟨1, 0, Tensor.full [1, 0] 0, vec (-2)⟩, true⟩) false
   let emptyQuery : OutputQuery :=
     ⟨3, ⟨0, 1, Tensor.full [0, 1] 0, empty⟩, false⟩
   expect "empty query dimension" (accepts graph params certificate emptyQuery) false
@@ -201,10 +204,12 @@ def run : IO Unit := do
   expect "input-only graph has a covered output"
     (accepts identityGraph params identityCert ⟨0, scalarLayer 1 (-2), true⟩) true
   let zeroOutputGraph : Graph := ⟨#[⟨0, #[], .input, [1]⟩, ⟨1, #[0], .linear, [0]⟩]⟩
+  let zeroOutputParams :=
+    { params with linearWB := params.linearWB.insert 1 ⟨0, 1, Tensor.full [0, 1] 0, empty⟩ }
   expect "empty linear output"
-    (accepts zeroOutputGraph
-      { params with linearWB := params.linearWB.insert 1 ⟨0, 1, Tensor.full [0, 1] 0, empty⟩ }
-      certificate (query 2 true)) false
+    (accepts zeroOutputGraph zeroOutputParams
+      (replay zeroOutputGraph zeroOutputParams 1 #[none, none])
+      ⟨1, ⟨1, 0, Tensor.full [1, 0] 0, vec (-2)⟩, true⟩) false
   roundingRegression
   IO.println "  Finite binary32 artifact: dominance, margins, coverage, and rejection tests passed"
 

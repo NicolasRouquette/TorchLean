@@ -72,13 +72,6 @@ abbrev FlatBuffer (n : Nat) := Fin n → RefScalar
 /-- A native-result buffer represented only by raw binary32 bits. -/
 abbrev NativeBitsBuffer (n : Nat) := Fin n → UInt32
 
-/-!
-`ref_ext` is the `RefScalar` extensionality lemma from `Float32Contract`, which point 2 of the
-module docstring above already names as this file's source of scalar float32 facts. It had a
-private copy here with the same statement and the same proof, so the copy is gone and the lemma
-is opened instead.
--/
-open Float32Contract (ref_ext)
 /-- Reinterpret a native bit buffer as reference `ExecFloat.Binary 8 23` values. -/
 def fromNativeBitsBuffer {n : Nat} (xs : NativeBitsBuffer n) : FlatBuffer n :=
   fun i => fromNativeBits (xs i)
@@ -182,21 +175,6 @@ theorem fromNativeBitsBuffer_eq_sqrtSpec_of_bits
   apply ref_ext
   simp [fromNativeBitsBuffer, sqrtSpec, mapSpec, hbits i]
 
-/-- Reference operations as native bits, for reuse of the scalar agreement contract. -/
-private def referenceBits : NativePrimitiveBits where
-  addBits x y := toNativeBits (ExecFloat.add x y)
-  mulBits x y := toNativeBits (ExecFloat.mul x y)
-  divBits x y := toNativeBits (ExecFloat.div x y)
-  fmaBits x y z := toNativeBits ((Binary.fmaWithRounding (rounding := .nearestEven)) x y z)
-  sqrtBits x := toNativeBits ((Binary.sqrtWithRounding (rounding := .nearestEven)) x)
-
-private theorem referenceAgreement : NativePrimitiveAgreement referenceBits where
-  add_bits _ _ := Or.inl rfl
-  mul_bits _ _ := Or.inl rfl
-  div_bits _ _ := Or.inl rfl
-  fma_bits _ _ _ := Or.inl rfl
-  sqrt_bits _ := Or.inl rfl
-
 /-- Pointwise real-error bound inherited by an elementwise-add buffer after bit agreement. -/
 theorem native_add_pointwise_abs_error_of_bits
     {n : Nat} {bits : NativeBitsBuffer n} {x y : FlatBuffer n}
@@ -206,14 +184,13 @@ theorem native_add_pointwise_abs_error_of_bits
     abs
         ((toModel (fromNativeBits (bits i))).toReal -
           ((toModel (x i)).toReal + (toModel (y i)).toReal)) ≤
-      eps32 ((toModel (x i)).toReal + (toModel (y i)).toReal) := by
+      Model.epsilonAt .binary32 ((toModel (x i)).toReal + (toModel (y i)).toReal) := by
   have hx : fromNativeBits (bits i) = ExecFloat.add (x i) (y i) := by
     apply ref_ext
     simp [hbits i]
   rw [hx] at hfin ⊢
-  simpa only [referenceBits, fromNativeBits_toNativeBits] using
-    native_add_abs_error_of_isFinite referenceAgreement (x i) (y i)
-      (by simpa only [referenceBits, fromNativeBits_toNativeBits] using hfin)
+  rw [IEEE32Exec.toReal_add_eq_round_of_isFinite hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 Pointwise real-error bound inherited by a native elementwise-multiply buffer after bit agreement.
@@ -226,14 +203,13 @@ theorem native_mul_pointwise_abs_error_of_bits
     abs
         ((toModel (fromNativeBits (bits i))).toReal -
           ((toModel (x i)).toReal * (toModel (y i)).toReal)) ≤
-      eps32 ((toModel (x i)).toReal * (toModel (y i)).toReal) := by
+      Model.epsilonAt .binary32 ((toModel (x i)).toReal * (toModel (y i)).toReal) := by
   have hx : fromNativeBits (bits i) = ExecFloat.mul (x i) (y i) := by
     apply ref_ext
     simp [hbits i]
   rw [hx] at hfin ⊢
-  simpa only [referenceBits, fromNativeBits_toNativeBits] using
-    native_mul_abs_error_of_isFinite referenceAgreement (x i) (y i)
-      (by simpa only [referenceBits, fromNativeBits_toNativeBits] using hfin)
+  rw [IEEE32Exec.toReal_mul_eq_round_of_isFinite hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 Pointwise real-error bound inherited by a native elementwise-division buffer after bit agreement.
@@ -246,14 +222,13 @@ theorem native_div_pointwise_abs_error_of_bits
     abs
         ((toModel (fromNativeBits (bits i))).toReal -
           ((toModel (x i)).toReal / (toModel (y i)).toReal)) ≤
-      eps32 ((toModel (x i)).toReal / (toModel (y i)).toReal) := by
+      Model.epsilonAt .binary32 ((toModel (x i)).toReal / (toModel (y i)).toReal) := by
   have hx : fromNativeBits (bits i) = ExecFloat.div (x i) (y i) := by
     apply ref_ext
     simp [hbits i]
   rw [hx] at hfin ⊢
-  simpa only [referenceBits, fromNativeBits_toNativeBits] using
-    native_div_abs_error_of_isFinite referenceAgreement (x i) (y i)
-      (by simpa only [referenceBits, fromNativeBits_toNativeBits] using hfin)
+  rw [IEEE32Exec.toReal_div_eq_round_of_isFinite (x i) (y i) hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 Pointwise real-error bound inherited by a native elementwise-square-root buffer after bit agreement.
@@ -267,15 +242,14 @@ theorem native_sqrt_pointwise_abs_error_of_bits
     abs
         ((toModel (fromNativeBits (bits i))).toReal -
           Real.sqrt ((toModel (x i)).toReal)) ≤
-      eps32 (Real.sqrt ((toModel (x i)).toReal)) := by
+      Model.epsilonAt .binary32 (Real.sqrt ((toModel (x i)).toReal)) := by
   have hx : fromNativeBits (bits i) =
       (Binary.sqrtWithRounding (rounding := .nearestEven)) (x i) := by
     apply ref_ext
     simp [hbits i]
   rw [hx] at hfin ⊢
-  simpa only [referenceBits, fromNativeBits_toNativeBits] using
-    native_sqrt_abs_error_of_isFinite referenceAgreement (x i)
-      (by simpa only [referenceBits, fromNativeBits_toNativeBits] using hfin)
+  rw [IEEE32Exec.toReal_sqrt_eq_round_of_isFinite (x i) hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /-! ## Fixed-order reductions -/
 
@@ -283,8 +257,9 @@ theorem native_sqrt_pointwise_abs_error_of_bits
 Sequential left-fold reduction over a flat buffer.
 
 This is a *deterministic algorithmic spec*, not a claim about CUDA atomics. Native atomic reductions
-only refine this spec under an additional ordering/agreement assumption. TorchLean's deterministic
-reduction mode is intended to make that assumption true for tested reduction paths.
+only refine this spec under an additional ordering/agreement assumption. The deterministic
+settings in `Controls` require repeatable algorithms; they do not establish this sequential order
+or discharge the agreement assumption.
 -/
 def reduceSumLeftSpec {n : Nat} (x : FlatBuffer n) : RefScalar :=
   (List.finRange n).foldl (fun acc i => ExecFloat.add acc (x i)) (Binary.zero false : Binary 8 23)
@@ -292,9 +267,9 @@ def reduceSumLeftSpec {n : Nat} (x : FlatBuffer n) : RefScalar :=
 /--
 Explicit assumption package for a native reduction implementation.
 
-Use this when a native CUDA reduction has been configured or validated to use the same fixed order
-as `reduceSumLeftSpec`. Non-deterministic `atomicAdd` reductions should not claim this contract
-unless the runtime mode or kernel implementation fixes the accumulation order.
+Use this when a native CUDA reduction has been proved or validated to agree bitwise with
+`reduceSumLeftSpec`. A fixed reduction tree can be deterministic without matching this left fold;
+enabling deterministic algorithms alone does not supply this contract.
 -/
 structure NativeReduceAgreement {n : Nat} (nativeBits : UInt32) (x : FlatBuffer n) : Prop where
   bits_eq_left_fold : nativeBits = toNativeBits (reduceSumLeftSpec x)
@@ -325,13 +300,9 @@ def scatterAddSpec {n k : Nat} (x : FlatBuffer n) (values : FlatBuffer k)
 
 /-! ## Batched row-major matrix multiplication -/
 
-/-- Linear row-major index for `A[b, i, k]` with shape `(batch, m, n)`. -/
-def bmmAIndex (m n : Nat) (b i k : Nat) : Nat :=
-  (b * m + i) * n + k
-
-/-- Linear row-major index for `B[b, k, j]` with shape `(batch, n, p)`. -/
-def bmmBIndex (n p : Nat) (b k j : Nat) : Nat :=
-  (b * n + k) * p + j
+/-- Linear index for either BMM input, viewed as row-major `(batch, rows, cols)` storage. -/
+def Internal.rowMajor3Index (rows cols : Nat) (b i j : Nat) : Nat :=
+  (b * rows + i) * cols + j
 
 /-- Decode a flat row-major output index for shape `(batch, m, p)`. -/
 def bmmDecodeC (m p : Nat) (q : Nat) : Nat × Nat × Nat :=
@@ -357,8 +328,8 @@ def bmmSpec (batch m n p : Nat)
     let (b, i, j) := bmmDecodeC m p q.val
     (List.finRange n).foldl
       (fun acc k =>
-        let a := getD A (bmmAIndex m n b i k.val)
-        let bVal := getD B (bmmBIndex n p b k.val j)
+        let a := getD A (Internal.rowMajor3Index m n b i k.val)
+        let bVal := getD B (Internal.rowMajor3Index n p b k.val j)
         ExecFloat.add acc (ExecFloat.mul a bVal))
       (Binary.zero false : Binary 8 23)
 

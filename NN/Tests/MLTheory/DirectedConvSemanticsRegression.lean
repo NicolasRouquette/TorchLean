@@ -17,9 +17,10 @@ weight in the affine matrix. Zero dilation can identify several kernel coordinat
 retain their sum in the real converter.
 -/
 
-namespace NN.MLTheory.CROWN.Graph.DirectedBackward
+namespace NN.Tests.MLTheory.DirectedConvSemanticsRegression
 
 open Spec TorchLean TorchLean.Tensor
+open NN.MLTheory.CROWN
 
 noncomputable section
 
@@ -46,4 +47,4 @@ theorem convKernelCoefficient_zero_dilation :
 
 end
 
-end NN.MLTheory.CROWN.Graph.DirectedBackward
+end NN.Tests.MLTheory.DirectedConvSemanticsRegression

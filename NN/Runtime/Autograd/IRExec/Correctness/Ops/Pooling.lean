@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon
+public import NN.Runtime.Autograd.IRExec.Correctness.Common
 
 /-!
 # Pooling Correctness

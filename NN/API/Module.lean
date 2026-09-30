@@ -72,8 +72,7 @@ def instantiate {α : Type} [TorchLean.Storage α] [Context α]
     | none =>
         match runtimeInit with
         | some plan => do
-            let empty := Runtime.Autograd.Model.Module.RuntimeInit.zeroPack
-              (cast 0.0) (ss := stateShapes)
+            let empty := TensorPack.fill (cast 0.0) (ss := stateShapes)
             let stateRef ← Runtime.Autograd.Torch.ParamList.ofPackWithRequiresGrad
               empty requiresGrad
             Runtime.Autograd.Model.Module.RuntimeInit.applyPlan
@@ -326,7 +325,7 @@ def instantiate {σ τ : Shape} {β : Type} [TorchLean.Storage β]
   let state ← TorchLean.Module.RuntimeState.Internal.instantiate
     (nn.State.Internal.toTensorPack model.initialState)
     (nn.IndexedModel.Internal.initializationPlan model)
-    (nn.IndexedModel.Internal.trainableMask model)
+    model.requiresGrad
     runtime (Runtime.ofFloat (α := α))
     (initialState? := initialState?.map nn.State.Internal.toTensorPack)
   pure (Internal.fromRuntimeState state)
@@ -483,7 +482,7 @@ def Internal.withConfiguredOptimizer {α Result : Type}
     IO Result := do
   IO.ofExcept (config.validateFor (α := α))
   if runtime.usesCuda then
-    IO.ofExcept config.validateFloat32
+    IO.ofExcept (config.validateFor (α := Float32) (scalarName := "binary32"))
   let cast := Runtime.ofFloat (α := α)
   match optim.Optimizer.Internal.view config with
   | .sgd learningRate momentum =>

@@ -47,11 +47,10 @@ development toolkit, even though TorchLean itself compiles only C++ sources.
 
 This tree was tested locally against pip torch 2.13.0+cu130 with CUDA 13.0 on A100, and previously
 against a PyTorch 2.12 nightly (revision 0291f960b6). The build reads the SDK's `TORCH_VERSION` and
-warns below 2.12, but it does not stop the build. `torchlean.cpp` includes the internal header
-`ATen/native/transformers/cuda/sdp_utils.h` and calls private ATen operators such as
-`_fused_sdp_choice` and the `_scaled_dot_product_*_attention` forward and backward kernels. These
-are not a stable API, so another SDK release may fail to compile or change results. Rerun the CUDA
-suite and both C++ harnesses below after changing SDKs.
+warns below 2.12, but it does not stop the build. Attention is composed in Lean from numerical
+primitives; the bridge no longer calls private ATen attention selectors or paired attention
+kernels. SDK changes can still affect compilation and numerical results. Rerun the CUDA suite
+and the elementwise C++ harness below after changing SDKs.
 
 Optional SDK discovery controls are explicit:
 
@@ -69,7 +68,7 @@ manifest in `libtorch/build.json` and SDK settings in `libtorch/cmake/sdk.txt` u
 build directory. Lake links `libtorch/libtorchlean_libtorch.so` by its resolved absolute path,
 so retain that artifact and the selected SDK for execution.
 See [`scripts/README.md`](../../scripts/README.md) for compiler controls, cache selection, and
-the direct six-unit C++ build command.
+the direct C++ build command.
 
 ## Execution and memory
 
@@ -79,12 +78,26 @@ unwraps that tensor, calls ATen, and returns another owned buffer through the Le
 These tensor calls run without a Python interpreter. An installed CUDA-enabled PyTorch package
 can supply the SDK at build and execution time.
 
+Configure the selected device and process-wide SDK settings before concurrent runtime work,
+as required by `LibTorch.Controls`. The live-wrapper check prevents sequential device changes
+while owners remain; it is not a lock against concurrent configuration and allocation.
+Explicit release likewise requires exclusive use of that buffer. Atomic telemetry supports
+concurrent independent owners, but does not make mutation of one owner thread-safe.
+
 For a linear layer, Lean sends matrix multiplication and bias addition to the buffer API,
 then records the result, parents, and backward rule on its runtime tape. During backward,
 Lean traverses the tape and calls the corresponding gradient operations. Each native call runs under
 `at::NoGradGuard`, so LibTorch does not record another autograd graph. Some operations use
-explicit SDK backward kernels; attention also retains the forward context needed by its
-backward call.
+explicit SDK backward kernels. Attention's forward and local VJP are composed in
+`NN/Runtime/Autograd/Engine/LibTorch/Ops/Attention.lean`: `Buffer.attentionForward` takes Q/K/V,
+an optional mask, dimensions, and scale, returning `Except String (Buffer × Buffer)` for the
+output and probabilities. `Buffer.attentionBackward` takes Q/K/V, those probabilities, the output
+cotangent, dimensions, and scale. The tape retains and releases these ordinary saved buffers;
+there is no native attention context or fused attention selection. The full score and probability
+matrices require quadratic memory in sequence length.
+
+Spectral layers compose FFT, frequency mixing, and inverse FFT in Lean using the existing
+numerical primitives. Model composition and saved-buffer ownership stay with TorchLean.
 
 The build selects the implementation behind those buffer symbols. The default build links
 `unavailable.c` and needs no LibTorch SDK. A `cuda=true` build links
@@ -176,7 +189,7 @@ Current CUDA coverage:
 | `NN/Tests/Runtime/Cuda/DeterministicReductions.lean` | Repeatability under the deterministic reduction control. |
 | `NN/Tests/Runtime/Cuda/SelectiveScan.lean` | Diagonal selective-scan buffer primitives used by the Mamba/SSM runtime path. |
 | `NN/Tests/Runtime/Cuda/PositionalEncoding.lean` | Sinusoidal positional encodings and RoPE/rotary embedding kernels. |
-| `NN/Tests/Runtime/Cuda/MatmulBmm.lean` | `matmul`, `bmm`, and explicit fp32/fp64 dispatch. |
+| `NN/Tests/Runtime/Cuda/Matmul.lean` | `matmul`, `bmm`, and explicit fp32/fp64 dispatch. |
 | `NN/Tests/Runtime/Cuda/Fft.lean` | Packed real FFT, inverse FFT, spectral convolution, and finite-difference gradient checks. |
 | `NN/Tests/Runtime/Cuda/ViewsBroadcastReduce.lean` | Reshape, transpose, rank-3 permutations, broadcast, reduce-sum/mean, and empty-axis behavior. |
 | `NN/Tests/Runtime/Cuda/LinearMseConcatSliceGather.lean` | Linear layer, MSE loss, vector concat/slice, scalar gather, row gather, and gradients. |
@@ -212,7 +225,8 @@ including smooth-max overflow cases with positive and negative inverse temperatu
   test results.
 - Deterministic controls request supported deterministic SDK algorithms. Repeatability on the
   tested SDK/device does not imply bitwise agreement across releases, devices, or algorithms.
-- Attention uses SDK operations with retained forward context for backward. The attention tests
-  compare this path with the CPU reference and check native saved-state ownership.
-  The focused `libtorch_sdpa_test` target links the entire numerical backend.
+- Attention uses Lean-composed matrix products and the explicit softmax VJP over tape-owned
+  probabilities. The attention tests compare values and gradients with the CPU reference and
+  exercise saved-buffer ownership.
+  Run the compiled Lean CUDA suite and the separate Lean `libtorch_sdpa_test` target.
 - Run the GPU suite after changes to native exports, ownership, or numerics.

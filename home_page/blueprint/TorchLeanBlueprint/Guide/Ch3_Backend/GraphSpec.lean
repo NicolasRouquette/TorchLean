@@ -28,7 +28,8 @@ parameters, input, and output. Tools can inspect that description and interpret 
 execution targets.
 
 Every Lean block on this page is elaborated when the guide is built, and every printed value below
-was produced by that elaboration. The command transcripts come from the same checkout.
+is checked against that elaboration. Command transcripts below are recorded runs, separate from
+the page build.
 
 # Architecture Representation
 
@@ -97,11 +98,12 @@ parameter ABI for every choice of widths:
 ```leanOutput gsMlpType (whitespace := lax)
 Models.mlp : (inputWidth hiddenWidth outputWidth : ℕ) →
   Chain
-    [[hiddenWidth, inputWidth], [hiddenWidth],
-      [outputWidth, hiddenWidth], [outputWidth]]
+    (Models.mlpParams inputWidth hiddenWidth outputWidth)
     [inputWidth] [outputWidth]
 ```
 
+`Models.mlpParams` abbreviates the ordered shape list
+`[[hiddenWidth, inputWidth], [hiddenWidth], [outputWidth, hiddenWidth], [outputWidth]]`.
 Read the type from the outside in:
 
 - the chain consumes one tensor of shape `[inputWidth]`;
@@ -521,11 +523,11 @@ The initializer theorem identifies the two layer occurrences:
 ```lean (name := gsInitThm)
 -- The theorem identifies the actual per-layer initializers,
 -- including their occurrence indices.
-#check @Models.mlp_detInitParams_eq_torchlean_linear_inits
+#check @Models.mlp_detInitParams
 ```
 
 ```leanOutput gsInitThm (whitespace := lax)
-Models.mlp_detInitParams_eq_torchlean_linear_inits :
+Models.mlp_detInitParams :
   ∀ (inputWidth hiddenWidth outputWidth : ℕ),
     LowerToDAG.Chain.detInitParams?
         (Models.mlp inputWidth hiddenWidth outputWidth) =
@@ -598,7 +600,7 @@ The repository contains an executable GraphSpec tutorial:
 ```terminal
 # Run the GraphSpec example through its eager execution
 # interpretation.
-lake exe torchlean graphspec --device cpu --execution eager
+scripts/lake.sh exe torchlean graphspec --device cpu --execution eager
 ```
 
 The recorded run prints:
@@ -649,7 +651,7 @@ Now run it again on the other execution target:
 ```terminal
 # Run the same example through the typed-graph
 # interpretation.
-lake exe torchlean graphspec --device cpu --execution typed-graph
+scripts/lake.sh exe torchlean graphspec --device cpu --execution typed-graph
 ```
 
 The recorded runs print the same losses. The runtime chooses a different interpreter for the
@@ -685,21 +687,21 @@ $$`\operatorname{linearSpec}
   \left(\operatorname{ReLU}
     \left(\operatorname{linearSpec}(W_1,b_1,x)\right)\right).`
 
-`Models.mlp_interp_eq_spec_mlp_forward` identifies this composition with TorchLean's hand-written
+`Models.mlp_interp` identifies this composition with TorchLean's hand-written
 MLP specification:
 
 ```lean (name := gsEquivThm)
 -- Inspect the specification equality with its
 -- parameter-pack pattern match exposed.
-#check @Models.mlp_interp_eq_spec_mlp_forward
+#check @Models.mlp_interp
 ```
 
 ```leanOutput gsEquivThm (whitespace := lax)
-@Models.mlp_interp_eq_spec_mlp_forward :
+@Models.mlp_interp :
   ∀ {α : Type} [inst : Storage α] [inst_1 : Context α]
     {inputWidth hiddenWidth outputWidth : ℕ}
     (params : TensorPack α
-      (Models.MLPParams inputWidth hiddenWidth outputWidth))
+      (Models.mlpParams inputWidth hiddenWidth outputWidth))
     (x : Tensor α [inputWidth]),
     Interp.spec
         (Models.mlp inputWidth hiddenWidth outputWidth) params x =
@@ -730,11 +732,11 @@ the interpreter's parameter splits and both model definitions reduce to the same
 ```lean (name := gsAxioms)
 -- List the logical dependencies of this particular
 -- equivalence theorem.
-#print axioms Models.mlp_interp_eq_spec_mlp_forward
+#print axioms Models.mlp_interp
 ```
 
 ```leanOutput gsAxioms (whitespace := lax)
-'NN.GraphSpec.Models.mlp_interp_eq_spec_mlp_forward' depends on
+'NN.GraphSpec.Models.mlp_interp' depends on
 axioms: [propext, Classical.choice, Quot.sound]
 ```
 
@@ -837,7 +839,7 @@ data input, and one output:
 
 ```leanOutput gsResidualType (whitespace := lax)
 Models.residualLinear : (d : ℕ) →
-  DAG.Model (Models.ResidualLinearParams d) [[d]] [d]
+  DAG.Model (Models.residualLinearParams d) [[d]] [d]
 ```
 
 Its body, in {src "NN/GraphSpec/Models/ResidualLinear.lean"}[`ResidualLinear.lean`], reads
@@ -937,22 +939,20 @@ pipeline that was written with `>>>`:
 
 The environment of the result is `ps ++ [σ]`: the parameters that were type-level in the chain
 become ordinary variables, and the data input is last. Each sequential primitive is embedded as a
-DAG operation with inputs `ps ++ [σ]`, and that embedding does have a proof that nothing is lost:
+DAG operation with inputs `ps ++ [σ]`. Unfolding that embedding and splitting the appended
+parameter pack proves that it preserves the forward function:
 
 ```lean (name := gsEmbedThm)
 -- The primitive embedding preserves the pure forward
 -- function by construction.
-#check @Primitive.toDAGPrimOp_specFwd_eq
-```
-
-```leanOutput gsEmbedThm (whitespace := lax)
-@Primitive.toDAGPrimOp_specFwd_eq :
-  ∀ {α : Type} [inst : Storage α] [inst_1 : Context α]
+example {α : Type} [Storage α] [Context α]
     {ps : List Shape} {σ τ : Shape} (p : Primitive ps σ τ)
-    (params : TensorPack α ps) (x : Tensor α σ),
+    (params : TensorPack α ps) (x : Tensor α σ) :
     (LowerToDAG.Primitive.toDAGPrimOp p).specFwd
         (params.append (TensorPack.cons x TensorPack.nil)) =
-      p.specFwd params x
+      p.specFwd params x := by
+  simp only [LowerToDAG.Primitive.toDAGPrimOp,
+    TensorPack.split_append]
 ```
 
 The primitive statement holds for every primitive, including one supplied by a user. The

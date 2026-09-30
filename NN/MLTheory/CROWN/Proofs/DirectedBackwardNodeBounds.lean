@@ -42,7 +42,7 @@ theorem boundsConst_encloses
   dsimp only [AffineRowsEnclose, boundsConst]
   intro i
   simpa only [Spec.get2_full, LawfulBoundOps.toReal_zero (α := α), zero_mul,
-    Finset.sum_const_zero, zero_add, read_fin] using hy.2 i
+    Finset.sum_const_zero, zero_add, Spec.getAtOrZero_eq_getScalar] using hy.2 i
 
 /-- The nodewise public API returns real affine enclosures for every coordinate, provided the
 forward IBP boxes in `point` are sound. Both the coordinate-sweep branch and the constant IBP
@@ -80,7 +80,7 @@ theorem directedNodeBounds_encloses
         have hs := runDirectedBackwardObjective_encloses point output houtput
           (objective i) hdim.symm hr
         rw [hdim] at hs
-        simpa [objective, dot, affineValue, read_fin, apply_ite,
+        simpa [objective, dot, affineValue, Spec.getAtOrZero_eq_getScalar, apply_ite,
           LawfulBoundOps.toReal_zero (α := α), LawfulBoundOps.toReal_one (α := α),
           Tensor.matrix, Spec.get2] using hs
     | none =>

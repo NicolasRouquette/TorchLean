@@ -19,10 +19,7 @@ while lowering. The closures then apply the typed specification operators direct
 parent value, transporting along the shape equalities established by those checks. They do not
 call the dynamic IR evaluator and cannot fail at runtime.
 
-Each operation has its own small `lower*` definition. `lowerConvolutionNormalization` only
-dispatches on the operation kind, and the `lowerConvolutionNormalization_*` equation lemmas let
-correctness proofs reduce a dispatch to the branch they care about without unfolding the whole
-dispatcher.
+Each operation has a named lowerer, called directly by the exhaustive `lowerNode` dispatch.
 -/
 
 @[expose] public section
@@ -256,46 +253,6 @@ def lowerLayernorm {α : Type} [TorchLean.Storage α] [Context α]
             s!"({Spec.Shape.size τ} vs {Spec.Shape.size view2d}) ({n.summary})"
   | _ =>
       throw s!"IRExec: node {i}: layernorm expects 1 parent ({n.summary})"
-
-/-- Checked lowering for pooling, convolution, batch normalization, and layer normalization. -/
-def lowerConvolutionNormalization {α : Type} [TorchLean.Storage α] [Context α]
-    {Γ : List Shape} (ctx : NodeLoweringContext α Γ) (kind : OpKind) :
-    NodeLoweringResult ctx :=
-  match kind with
-  | .maxPool config => lowerMaxPool ctx config
-  | .avgPool config => lowerAvgPool ctx config
-  | .conv config => lowerConv ctx config
-  | .batchNormEval channelAxis channels => lowerBatchNormEval ctx channelAxis channels
-  | .layernorm axis => lowerLayernorm ctx axis
-  | _ => throw s!"IRExec: internal error: operation routed to lowerConvolutionNormalization"
-
-variable {α : Type} [TorchLean.Storage α] [Context α] {Γ : List Shape}
-
-/-- Dispatch equation for `.maxPool config`. -/
-@[simp] theorem lowerConvolutionNormalization_maxPool (ctx : NodeLoweringContext α Γ)
-    (config : WindowConfig) :
-    lowerConvolutionNormalization ctx (.maxPool config) = lowerMaxPool ctx config := rfl
-
-/-- Dispatch equation for `.avgPool config`. -/
-@[simp] theorem lowerConvolutionNormalization_avgPool (ctx : NodeLoweringContext α Γ)
-    (config : WindowConfig) :
-    lowerConvolutionNormalization ctx (.avgPool config) = lowerAvgPool ctx config := rfl
-
-/-- Dispatch equation for `.conv config`. -/
-@[simp] theorem lowerConvolutionNormalization_conv (ctx : NodeLoweringContext α Γ)
-    (config : ConvConfig) :
-    lowerConvolutionNormalization ctx (.conv config) = lowerConv ctx config := rfl
-
-/-- Dispatch equation for `.batchNormEval channelAxis channels`. -/
-@[simp] theorem lowerConvolutionNormalization_batchNormEval (ctx : NodeLoweringContext α Γ)
-    (channelAxis channels : Nat) :
-    lowerConvolutionNormalization ctx (.batchNormEval channelAxis channels) =
-      lowerBatchNormEval ctx channelAxis channels := rfl
-
-/-- Dispatch equation for `.layernorm axis`. -/
-@[simp] theorem lowerConvolutionNormalization_layernorm (ctx : NodeLoweringContext α Γ)
-    (axis : Nat) :
-    lowerConvolutionNormalization ctx (.layernorm axis) = lowerLayernorm ctx axis := rfl
 
 end Internal
 end IRExec

@@ -8,7 +8,6 @@ module
 
 public import NN.Verification.Util.Json
 public import NN.Spec.Layers.Linear
-import Mathlib.Analysis.SpecialFunctions.Trigonometric.DerivHyp
 
 /-! # Shape-checked decoding of exact rational parameters -/
 

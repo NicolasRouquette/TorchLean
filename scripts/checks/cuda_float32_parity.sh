@@ -7,6 +7,8 @@ LAKE="${LAKE:-$repo_root/scripts/lake.sh}"
 torchlean_sdk="${TORCHLEAN_LIBTORCH_HOME:-}"
 torchlean_lean_prefix="${TORCHLEAN_LEAN_PREFIX:-}"
 torchlean_backend="${TORCHLEAN_BACKEND_LIBRARY:-}"
+torchlean_cmake="${TORCHLEAN_CMAKE:-cmake}"
+declare -a cmake_args=()
 sweep=200000
 skip_build=false
 keep=false
@@ -28,23 +30,25 @@ FMA cancellation/double-rounding, staged Adam and noAutograd regressions run as 
 Required paths (or set the corresponding environment variables):
   --libtorch-home PATH   TORCHLEAN_LIBTORCH_HOME: selected SDK root containing share/cmake/Torch
   --backend-library PATH TORCHLEAN_BACKEND_LIBRARY: production libtorchlean_libtorch.so
-  --lean-prefix PATH     TORCHLEAN_LEAN_PREFIX: pinned Lean root (default: lake env lean --print-prefix)
+  --lean-prefix PATH     TORCHLEAN_LEAN_PREFIX: pinned Lean root (default: scripts/lake.sh env lean --print-prefix)
 
 Options:
   --sweep N              random cases in addition to curated cases (default: 200000)
                          Large sweeps take longer because every FMA visits the actual scalar C ABI.
   --skip-build           reuse the Lean reference executable; still build the C++ harness
   --keep                 retain temporary build/results and print their directory
+  --cmake-arg ARG        repeatable CMake discovery option, e.g. -DCUDA_NVRTC_LIB=/path/libnvrtc.so
   -h, --help             print this message
 
 This harness links the selected prebuilt SDK. Its arithmetic and GPU targets are
 determined by that SDK's build configuration. Validation sources are ordinary C++.
+TORCHLEAN_CMAKE selects CMake. Arguments are passed literally without shell evaluation.
 HELP
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --libtorch-home|--backend-library|--lean-prefix|--sweep)
+    --libtorch-home|--backend-library|--lean-prefix|--sweep|--cmake-arg)
       if [[ $# -lt 2 ]]; then
         echo "error: $1 requires a value" >&2
         exit 2
@@ -54,6 +58,7 @@ while [[ $# -gt 0 ]]; do
         --backend-library) torchlean_backend="$2" ;;
         --lean-prefix) torchlean_lean_prefix="$2" ;;
         --sweep) sweep="$2" ;;
+        --cmake-arg) cmake_args+=("$2") ;;
       esac
       shift 2
       ;;
@@ -104,9 +109,10 @@ cases="$tmp_dir/cases.txt"
   --emit-cases --sweep "$sweep" >"$cases"
 echo "reference cases: $(wc -l <"$cases")"
 
-cmake -S "$repo_root/csrc/libtorch/tests/elementwise" -B "$tmp_dir/build" \
+"$torchlean_cmake" -S "$repo_root/csrc/libtorch/tests/elementwise" -B "$tmp_dir/build" \
+  "${cmake_args[@]}" \
   -DTORCHLEAN_LIBTORCH_HOME="$torchlean_sdk" \
   -DTORCHLEAN_LEAN_PREFIX="$torchlean_lean_prefix" \
   -DTORCHLEAN_BACKEND_LIBRARY="$torchlean_backend"
-cmake --build "$tmp_dir/build" -j2
+"$torchlean_cmake" --build "$tmp_dir/build" -j2
 "$tmp_dir/build/torchlean_elementwise_regression" <"$cases"

@@ -23,7 +23,7 @@ interface without selecting the real scalar instance.
 noncomputable instance : Context ℝ :=
   { defaultEpsilon := 1e-6, decidableGT := Classical.decRel _, ratCast := Rat.cast }
 
-/-- The real `Context` is built from Mathlib's field structure, so every law holds by `rfl`. -/
+/-- The real dictionary uses Mathlib's field operations and has strictly positive tolerance. -/
 instance : LawfulContext ℝ where
   add_eq _ _ := rfl
   mul_eq _ _ := rfl

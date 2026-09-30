@@ -60,7 +60,7 @@ theorem centeredDerivativeRadii?_encloses
   obtain ⟨_, _, hout⟩ := Option.bind_eq_some_iff.mp hout
   obtain ⟨⟨meanLo, meanHi⟩, hmean, hout⟩ := Option.bind_eq_some_iff.mp hout
   have hm := directedRowMean?_encloses hn bounds f hb hmean
-  have hpoint := Internal.traverseFin_eq_some_iff.mp hout
+  have hpoint := Tensor.Internal.sequenceFinM_get_of_eq_some hout
   intro j
   obtain ⟨centered, hcentered, hj⟩ := Option.bind_eq_some_iff.mp (hpoint j)
   have heq := checkedFiniteBounds?_eq_of_eq_some hcentered
@@ -233,7 +233,7 @@ theorem layerNormDerivativeRow?_encloses
         (nonneg_mulUp (nonneg_mulUp (nonneg_mulUp hthreeQuartersUpper ht5) hqL) hqR)
         (nonneg_mulUp (nonneg_mulUp hhalfUpper ht3) hqM)
       obtain ⟨radii, hradii, hout⟩ := Option.bind_eq_some_iff.mp hout
-      have hpoint := Internal.traverseFin_eq_some_iff.mp hradii
+      have hpoint := Tensor.Internal.sequenceFinM_get_of_eq_some hradii
       have houtEq := Option.some.inj hout
       cases houtEq
       intro j

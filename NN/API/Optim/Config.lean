@@ -274,8 +274,10 @@ end Internal
 /--
 Check the numerical domain of an optimizer configuration before allocating optimizer state.
 
-The checks rule out undefined bias corrections and non-finite updates. They are shared by the
-trainer, manual-module, and reinforcement-learning entry points.
+The checks require finite hyperparameters, nonnegative rates and weight decay, positive
+stabilizers, and averaging coefficients below one. They are shared by the trainer, manual-module,
+and reinforcement-learning entry points. They do not bound parameters or gradients, so valid
+hyperparameters alone do not guarantee finite updates.
 -/
 def validate (optimizer : Optimizer) : Except String Unit :=
   match Internal.view optimizer with
@@ -318,18 +320,6 @@ def Internal.mapScalars (cast : Float → Float) (optimizer : Optimizer) : Optim
       .adamW (cast learningRate) (cast weightDecay) (cast beta1) (cast beta2) (cast epsilon)
   | .adaDelta learningRate rho epsilon =>
       .adaDelta (cast learningRate) (cast rho) (cast epsilon)
-
-/--
-Check both the supplied configuration and its binary32 representation.
-
-Training must reject coefficients that round to one, stabilizers that round to zero, and finite
-binary64 rates that overflow binary32. `validate` remains available for binary64 callers.
--/
-def validateFloat32 (optimizer : Optimizer) : Except String Unit := do
-  optimizer.validate
-  match (Internal.mapScalars (fun value => value.toFloat32.toFloat) optimizer).validate with
-  | .ok () => pure ()
-  | .error message => throw s!"{message} after conversion to binary32"
 
 end Optimizer
 end optim

@@ -7,10 +7,6 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.RL.Environment
-public import Mathlib.Algebra.Order.Field.Basic
-import Mathlib.Tactic.NormNum.Inv
-import Mathlib.Tactic.NormNum.Pow
-import Mathlib.Tactic.Positivity.Finset
 public import NN.Spec.Core.Tensor.Core
 
 /-!

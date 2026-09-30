@@ -36,12 +36,6 @@ theorem coord_toList_length (s : Shape) (c : s.Coord) :
   | dim n s ih =>
       simpa only [Shape.Coord.toList, List.length_cons] using (congrArg Nat.succ (ih c.2))
 
-theorem coord_toList_injective (s : Shape) :
-    Function.Injective (Shape.Coord.toList s) := by
-  intro a b h
-  have := congrArg (Shape.Coord.ofList? s) h
-  simpa only [Shape.Coord.ofList?_toList, Option.some.injEq] using this
-
 private theorem coordinateIndex_fold_suffix (s : Shape) (c : s.Coord)
     (leading before : List Nat) (hlen : before.length = leading.length) (acc : Nat) :
     (List.range' leading.length s.length).foldl
@@ -75,7 +69,7 @@ private theorem coordinatesFlatIndex_coord (s : Shape) (c : s.Coord) :
   change (forIn (m := Id) (List.range s.length) 0
     (fun axis index => pure (.yield
       (index * s.toArray[axis]! + (Shape.Coord.toList s c).toArray[axis]!)))).run = _
-  rw [forIn_yield_foldl]
+  rw [List.forIn_pure_yield_eq_foldl]
   change (List.range s.length).foldl
     (fun (index : Nat) axis =>
       index * s.toArray[axis]! + (Shape.Coord.toList s c).toArray[axis]!) 0 = _

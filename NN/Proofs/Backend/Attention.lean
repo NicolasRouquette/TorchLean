@@ -12,8 +12,8 @@ import Batteries.Lean.Except
 /-!
 # Maintained CUDA attention selection
 
-The default profile selects the declared LibTorch attention bridge. Its local VJP is compatible
-with the TorchLean tape policy, and its reduction order remains implementation-defined.
+The default profile selects Lean-composed attention over LibTorch primitives. Its local VJP is
+compatible with the TorchLean tape policy, and its reduction order remains implementation-defined.
 This does not select or verify an ATen flash, efficient, cuDNN, or math implementation.
 -/
 
@@ -61,13 +61,13 @@ theorem checkedCuda_attention_plan
       rfl
 
 /--
-The direct LibTorch attention capsule, which `checkedCuda_attention_choice` selects, declares a
-backend local VJP compatible with the TorchLean tape request. Its numerical policy does not
+The LibTorch attention capsule, which `checkedCuda_attention_choice` selects, declares a
+Lean-composed local VJP compatible with the TorchLean tape request. Its numerical policy does not
 promise a fixed reduction order.
 -/
 theorem checkedCuda_attention_contract :
     LibTorch.attention.provider = .libTorch ∧
-      LibTorch.attention.vjpMode = .backendVJP ∧
+      LibTorch.attention.vjpMode = .torchLeanTape ∧
       checkedCuda.policy.vjpMode = .torchLeanTape ∧
       LibTorch.attention.matchesVJP checkedCuda.policy = true ∧
       LibTorch.attention.numericalPolicy.reduction = .implementationDefined := by

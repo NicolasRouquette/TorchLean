@@ -7,7 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.CROWN.Graph.Engine.Derivatives
-public import NN.Spec.Core.Context.Rational
+public import NN.MLTheory.CROWN.BoundOps.Rational
 public import NN.Tensor
 
 /-!
@@ -25,15 +25,6 @@ namespace NN.Tests.MLTheory.SoftmaxDerivatives
 open Spec TorchLean
 open NN.IR NN.MLTheory.CROWN NN.MLTheory.CROWN.Graph
 open scoped Spec.RationalAlgebraic
-
-private instance : BoundOps Rat where
-  addDown := (· + ·)
-  addUp := (· + ·)
-  subDown := (· - ·)
-  subUp := (· - ·)
-  mulDown := (· * ·)
-  mulUp := (· * ·)
-  supportsExactAffineReassociation := true
 
 -- Only the algebraic transfer is under test; no transcendental operation is enabled.
 private instance : NonlinearBoundOps Rat :=

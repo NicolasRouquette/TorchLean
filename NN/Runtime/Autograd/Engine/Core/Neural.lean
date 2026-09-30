@@ -14,8 +14,8 @@ public import NN.Spec.Layers.Normalization.BatchNorm
 /-!
 Neural-network operations for the eager engine.
 
-This file implements runtime nodes such as dropout, normalization, attention, and recurrent/sequence
-building blocks on top of the core tensor operation layer.
+This file records layer normalization, batch normalization, and multi-head attention nodes using
+the corresponding specification-level forward and backward operations.
 -/
 
 @[expose] public section

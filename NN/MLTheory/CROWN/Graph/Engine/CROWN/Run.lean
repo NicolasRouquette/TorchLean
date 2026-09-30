@@ -84,17 +84,4 @@ def outputBoxCROWN? (g : Graph) (ps : ParamStore α) (xB : FlatBox α)
         (directedNodeBounds? g ps ctx ibp outputId)
   evalCROWNOutputBox? (α := α) crown xB outputId inputDim
 
-namespace ParamStore
-
-/--
-Run `outputBoxCROWN?` from an input-seeded parameter store.
-
-This method form reads naturally at call sites that already thread a `ParamStore`.
--/
-def outputBoxCROWN? (ps : ParamStore α) (g : Graph) (xB : FlatBox α)
-    (inputId outputId inputDim : Nat) : Except String (FlatBox α) :=
-  Graph.outputBoxCROWN? (α := α) g ps xB inputId outputId inputDim
-
-end ParamStore
-
 end NN.MLTheory.CROWN.Graph

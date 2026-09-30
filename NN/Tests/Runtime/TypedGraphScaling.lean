@@ -59,7 +59,7 @@ def run (count : Nat) (mode : String := "compiled") : IO Unit := do
   IO.println s!"phase=construct n={count} ns={built - start} {← memory}"
   let inputs : TensorPack Float [[4]] :=
     .cons (Tensor.Internal.Rep.ofArray #[-2.0, -0.0, 0.5, 3.0] (by decide)) .nil
-  let index ← okOrThrow (GraphM.mkIdx (_α := Float) (Γ := [[4]]) state.nodeShapes output)
+  let index ← okOrThrow (GraphM.mkIdx (Γ := [[4]]) state.nodeShapes output)
   let seed : Tensor Float [4] := Tensor.full [4] 1.0
   if mode == "legacy" then
     let beforeLower ← IO.monoNanosNow
@@ -114,8 +114,12 @@ end TypedGraphScaling
 
 def main (args : List String) : IO Unit := do
   match args with
-  | [size] => TypedGraphScaling.run size.toNat!
+  | [size] =>
+      let some count := size.toNat? | throw <| IO.userError "expected a natural node count"
+      TypedGraphScaling.run count
   | [size, mode] =>
-      if mode == "legacy" || mode == "public" then TypedGraphScaling.run size.toNat! mode
+      if mode == "legacy" || mode == "public" then
+        let some count := size.toNat? | throw <| IO.userError "expected a natural node count"
+        TypedGraphScaling.run count mode
       else throw <| IO.userError "mode must be legacy or public"
   | _ => throw <| IO.userError "usage: typedgraph-scaling NODE_COUNT [legacy|public]"

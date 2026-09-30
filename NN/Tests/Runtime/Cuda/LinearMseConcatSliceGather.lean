@@ -18,7 +18,7 @@ Small forward/backward comparisons (CPU tape vs CUDA tape) for:
 - `mse_loss`
 - `concat`
 - `slice`
-- `gather_scalar`, `gather_row`, `gather_scalar_nat_or_zero`
+- axis-parametric `select` for scalars and rows
 -/
 
 @[expose] public section
@@ -68,6 +68,7 @@ def run : IO Unit := do
   let dW_cpu ← Utils.cpuGrad (s := sW) gradsCpu wId
   let db_cpu ← Utils.cpuGrad (s := sB) gradsCpu bId
   let dx_cpu ← Utils.cpuGrad (s := sX) gradsCpu xId
+  let dTargetCpu ← Utils.cpuGrad (s := sB) gradsCpu targetId
 
   -- CUDA tape
   let t0c : Runtime.Autograd.LibTorch.Tape := Runtime.Autograd.LibTorch.Tape.empty
@@ -94,11 +95,13 @@ def run : IO Unit := do
   let dW_cuda ← Utils.cudaGrad (s := sW) gradsCuda wIdc
   let db_cuda ← Utils.cudaGrad (s := sB) gradsCuda bIdc
   let dx_cuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
+  let dTargetCuda ← Utils.cudaGrad (s := sB) gradsCuda targetIdc
 
   Utils.assertTensorApprox (s := Shape.scalar) "linear+mse loss" lossCuda lossCpu (tol := 2e-3)
   Utils.assertTensorApprox (s := sW) "linear+mse dW" dW_cuda dW_cpu (tol := 2e-3)
   Utils.assertTensorApprox (s := sB) "linear+mse db" db_cuda db_cpu (tol := 2e-3)
   Utils.assertTensorApprox (s := sX) "linear+mse dx" dx_cuda dx_cpu (tol := 2e-3)
+  Utils.assertTensorApprox (s := sB) "linear+mse dtarget" dTargetCuda dTargetCpu (tol := 2e-3)
 
   -- concat + slice
   IO.println "== concat + slice =="
@@ -106,7 +109,6 @@ def run : IO Unit := do
   let m : Nat := 3
   let sA : Shape := [n]
   let sBv : Shape := [m]
-  let sCat : Shape := [n + m]
   let start : Nat := 1
   let len : Nat := 3
   have hSlice : start + len ≤ n + m := by decide

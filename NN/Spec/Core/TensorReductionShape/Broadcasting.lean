@@ -211,14 +211,18 @@ theorem broadcastTo_expand {α : Type} [TorchLean.Storage α] {n : Nat} {s t : S
 @[simp] theorem broadcastTo_self {α : Type} [TorchLean.Storage α] {shape : Shape}
     (h : Shape.CanBroadcastTo shape shape) (tensor : Tensor α shape) :
     broadcastTo h tensor = tensor := by
-  induction shape with
-  | scalar => exact broadcastTo_scalar h tensor
-  | dim n rest ih =>
-      rw [broadcastTo_dim_eq rfl h]
-      conv_rhs => rw [← Tensor.dim_unstack tensor]
-      congr 1
-      funext i
-      exact ih _ (Tensor.unstack tensor i)
+  unfold broadcastTo
+  rw [Broadcasting.Internal.broadcastPadded_congr (Nat.sub_self shape.rank)]
+  unfold Broadcasting.Internal.broadcastPadded
+  rw [Spec.padLeft_zero]
+  apply TorchLean.Tensor.Internal.Rep.ext
+  intro coordinate
+  change (TorchLean.Tensor.Internal.Rep.pull
+    (TorchLean.Tensor.Internal.Coord.broadcast shape shape _) tensor) coordinate =
+      tensor coordinate
+  rw [TorchLean.Tensor.Internal.Rep.pull_apply]
+  exact congrArg (TorchLean.Tensor.Internal.Rep.get tensor)
+    (TorchLean.Tensor.Internal.Coord.broadcast_self _ coordinate)
 
 /-- Broadcasting across one new leading target axis replicates the source. -/
 @[simp] theorem broadcastTo_dim_self {α : Type} [TorchLean.Storage α] {n : Nat} {s : Shape}

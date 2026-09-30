@@ -8,6 +8,7 @@ module
 
 public import NN.MLTheory.CROWN.Proofs.DirectedIBPBasic
 public import NN.MLTheory.CROWN.Proofs.LayerNormEnclosure
+public import NN.Proofs.Tensor.Basic.Core
 
 /-!
 # Tensor enclosure for structural interval transfers
@@ -50,11 +51,17 @@ def tensorValues {s : Shape} (x : Tensor ℝ s) (i : Nat) : ℝ :=
 
 @[simp] theorem tensorValues_fin {s : Shape} (x : Tensor ℝ s) (i : Fin s.size) :
     tensorValues x i.val = (Tensor.flattenSpec x).getScalar i :=
-  read_fin _ i
+  Spec.getAtOrZero_eq_getScalar _ i
 
 @[simp] theorem getScalar_flatten_realTensor (s : Shape) (f : Nat → ℝ) (i : Fin s.size) :
     (Tensor.flattenSpec (realTensor s f)).getScalar i = f i.val := by
   simp [realTensor]
+
+/-- `realTensor` reads the flat graph value at the row-major position of each coordinate. -/
+@[simp] theorem realTensor_apply (s : Shape) (f : Nat → ℝ) (c : s.Coord) :
+    realTensor s f c = f (Shape.Coord.linearize c).val := by
+  unfold realTensor
+  rw [← Spec.getScalar_flattenSpec_linearize, Tensor.flattenSpec_unflattenSpec, getScalar_ofFn]
 
 theorem TensorEncloses.unstack {n : Nat} {s : Shape}
     {lo hi : Tensor α (.dim n s)} {x : Tensor ℝ (.dim n s)}

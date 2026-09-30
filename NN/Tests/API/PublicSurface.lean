@@ -61,6 +61,48 @@ def reshaped : Tensor Float [3, 2] :=
 def loaded (path : System.FilePath) : IO (Tensor Float [2, 3]) :=
   Tensor.load path
 
+-- Synthetic grids do not require ordering, transcendental functions, or a full model context.
+example {α : Type} [Storage α] [NatCast α] [Add α] [Sub α] [Mul α] [Div α]
+    (lower upper : α) (count : Nat) : Tensor α [count] :=
+  Data.Synthetic.linspace lower upper count
+
+example {α : Type} [Storage α] [NatCast α] [Add α] [Sub α] [Mul α] [Div α]
+    (lower upper : α) (count : Nat) : Tensor α [count * count, 2] :=
+  Data.Synthetic.squareGrid lower upper count
+
+-- Appending a conditioning channel copies values and requires no scalar arithmetic.
+example {α : Type} [Storage α] (batchShape : Shape) {d channels : Nat}
+    (spatial : Tensor Nat [d])
+    (input : Tensor α (diffusion.sampleShape batchShape channels spatial)) (time : α) :
+    Tensor α (diffusion.sampleShape batchShape (channels + 1) spatial) :=
+  diffusion.appendTimeChannel batchShape spatial input time
+
+-- File sources need conversion and, for class labels, the two one-hot constants.
+example {α : Type} [Storage α] [Runtime.FromFloat α]
+    (source : Data.TabularSupervisedSource) :
+    IO (Data.SampleStream (Sample.Supervised α [source.inputWidth] [source.targetWidth])) :=
+  source.load
+
+example {α : Type} [Storage α] [Runtime.FromFloat α] [Zero α] [One α]
+    (source : Data.LabeledSource) :
+    IO (Data.SampleStream (Sample.Supervised α source.input [source.classCount])) :=
+  source.load
+
+-- LoRA addition and application require only additive and multiplicative scalar operations.
+example {α : Type} [Storage α] [Add α] [Mul α] [Zero α]
+    {inputWidth rank outputWidth : Nat} :
+    Tensor α [inputWidth, outputWidth] →
+      Adapters.LoRA.Parameters α inputWidth rank outputWidth → α →
+      Tensor α [inputWidth, outputWidth] :=
+  Adapters.LoRA.effectiveWeight
+
+example {α : Type} [Storage α] [Add α] [Mul α] [Zero α]
+    {batchShape : Shape} {inputWidth rank outputWidth : Nat} :
+    Tensor α (batchShape.appendDim inputWidth) → Tensor α [inputWidth, outputWidth] →
+      Adapters.LoRA.Parameters α inputWidth rank outputWidth → α →
+      Tensor α (batchShape.appendDim outputWidth) :=
+  Adapters.LoRA.linear
+
 def arguments : Arguments Float [[3], [2]] :=
   (Arguments.empty.push vector).push rowSums
 
@@ -131,12 +173,12 @@ def moduleCheckpoint {α β : Type} [Storage α] [Storage β] [Context α]
   Checkpoint.load objective path
 
 /-- Native binary64 storage must remain usable through the polymorphic checkpoint API. -/
-def floatModuleCheckpoint
+example
     (objective : Module.Objective Float Float [[1]] [[1]]) (path : System.FilePath) : IO Unit :=
   moduleCheckpoint objective path
 
 /-- Backend-owned optimizer checkpoints also accept native binary32 modules. -/
-def float32OptimizerCheckpoint
+example
     (objective : Module.Objective Float32 Float [[1]] [[1]]) (path : System.FilePath) :
     IO Unit := do
   Checkpoint.Optimizer.save objective path

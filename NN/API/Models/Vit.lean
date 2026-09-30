@@ -68,10 +68,6 @@ def ViT.EncoderConfig.classifier {d : Nat}
     (config : ViT.EncoderConfig d) (classCount : Nat) : ViT.Config d :=
   { toEncoderConfig := config, classCount }
 
-/-- Encoder settings embedded in a classifier configuration. -/
-def ViT.Config.encoder {d : Nat} (config : ViT.Config d) : ViT.EncoderConfig d :=
-  config.toEncoderConfig
-
 namespace ViT.EncoderConfig
 
 /-- Transformer block settings shared by encoder validation and construction. -/
@@ -105,7 +101,7 @@ namespace ViT.Config
 
 /-- Validate both the reusable encoder and classifier head before construction. -/
 def validate {d : Nat} (config : ViT.Config d) : Except String Unit := do
-  config.encoder.validate
+  config.toEncoderConfig.validate
   if config.classCount = 0 then
     throw "ViT: class count must be positive"
 
@@ -156,7 +152,7 @@ abbrev ViT.EncoderConfig.outputShape {d : Nat} (config : ViT.EncoderConfig d)
 /-- Classifier input shape for any caller-supplied batch shape. -/
 abbrev ViT.Config.inputShape {d : Nat} (config : ViT.Config d)
     (batchShape : Shape := []) : Shape :=
-  config.encoder.inputShape batchShape
+  config.toEncoderConfig.inputShape batchShape
 
 /-- Classifier output shape for the same batch shape as the input. -/
 abbrev ViT.Config.outputShape {d : Nat} (config : ViT.Config d)
@@ -358,7 +354,7 @@ def vit {d : Nat} (config : ViT.Config d) (batchShape : Shape := []) :
       pure <| nn.Internal.invalidConfiguration
         (config.inputShape batchShape) (config.outputShape batchShape) "ViT" message
   | .ok () => do
-      let encoderConfig := config.encoder
+      let encoderConfig := config.toEncoderConfig
       let encoder ← vitEncoder encoderConfig batchShape
       let pool : Sequential
           (encoderConfig.outputShape batchShape)

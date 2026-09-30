@@ -29,10 +29,9 @@ right ambient structure depends on the application.
 ### Datasets as tensors
 
 We represent a dataset of size `n` as a **length-`n` spec tensor**
+`Dataset n Z := TorchLean.Tensor Z [n]`.
 
-  `Dataset n Z := TorchLean.Tensor Z [n]`.
-
-  This integrates the learning-theory layer with TorchLean’s core, shape-indexed tensor datatype
+- This integrates the learning-theory layer with TorchLean’s core, shape-indexed tensor datatype
   (`NN.Spec.Core.Tensor.Core`) and keeps the “dataset has exactly `n` elements” invariant enforced
   by the type.
 - Even though the underlying tensor representation is functional (`Fin n → ...`), we treat datasets
@@ -60,7 +59,6 @@ references include:
 -/
 
 @[expose] public section
-
 
 noncomputable section
 
@@ -95,22 +93,22 @@ This is definitional content via `TorchLean.Tensor.vectorEquiv`, and is used to:
 - transport the standard product measurable space / IID sampling measure to the tensor type.
 -/
 abbrev toFn (S : Dataset n Z) : Fin n → Z :=
-  (TorchLean.Tensor.vectorEquiv (α := Z) n).toFun S
+  TorchLean.Tensor.vectorEquiv (α := Z) n S
 
 /-- Build a dataset tensor from a function `Fin n → Z`. -/
 abbrev ofFn (f : Fin n → Z) : Dataset n Z :=
-  (TorchLean.Tensor.vectorEquiv (α := Z) n).invFun f
+  (TorchLean.Tensor.vectorEquiv (α := Z) n).symm f
 
 /-- Reading back a dataset built from a function recovers the function. -/
-@[simp] theorem toFn_ofFn (f : Fin n → Z) : toFn (n := n) (Z := Z) (ofFn (n := n) (Z := Z) f) = f :=
-  by
+@[simp] theorem toFn_ofFn (f : Fin n → Z) :
+    toFn (n := n) (Z := Z) (ofFn (n := n) (Z := Z) f) = f := by
   simp [toFn, ofFn]
 
 /-- The other round trip. Together with `toFn_ofFn` this is what lets stability arguments move
-freely
-between the tensor representation of a sample and the function view the measure theory prefers. -/
-@[simp] theorem ofFn_toFn (S : Dataset n Z) : ofFn (n := n) (Z := Z) (toFn (n := n) (Z := Z) S) = S
-  := by
+freely between the tensor representation of a sample and the function view the measure theory
+prefers. -/
+@[simp] theorem ofFn_toFn (S : Dataset n Z) :
+    ofFn (n := n) (Z := Z) (toFn (n := n) (Z := Z) S) = S := by
   simp [toFn, ofFn]
 
 /-- Coordinate access for dataset tensors. -/
@@ -119,9 +117,8 @@ abbrev get (S : Dataset n Z) (i : Fin n) : Z :=
 
 /-- Coordinate access on a dataset built from a function is just application. -/
 @[simp] theorem get_ofFn (f : Fin n → Z) (i : Fin n) :
-    get (n := n) (Z := Z) (ofFn (n := n) (Z := Z) f) i = f i := by
-  change Tensor.vectorEquiv n ((Tensor.vectorEquiv n).symm f) i = f i
-  exact congrFun ((Tensor.vectorEquiv n).apply_symm_apply f) i
+    get (n := n) (Z := Z) (ofFn (n := n) (Z := Z) f) i = f i :=
+  congrFun ((Tensor.vectorEquiv n).apply_symm_apply f) i
 
 section Measure
 
@@ -167,16 +164,15 @@ Replace the example at index `i` with `z'`.
 
 This is the standard “replace-one” perturbation used in uniform stability definitions.
 -/
-def replaceAt {n : Nat} [DecidableEq (Fin n)] (S : Dataset n Z) (i : Fin n) (z' : Z) : Dataset n Z
-  :=
+def replaceAt {n : Nat} (S : Dataset n Z) (i : Fin n) (z' : Z) : Dataset n Z :=
   Dataset.ofFn (n := n) (Z := Z) (Function.update (Dataset.toFn (n := n) (Z := Z) S) i z')
 
 /-- Reading a replaced dataset returns the replacement at that coordinate and the original
 example everywhere else. -/
-@[simp] theorem get_replaceAt {n : Nat} [DecidableEq (Fin n)]
-    (S : Dataset n Z) (i j : Fin n) (z' : Z) :
+@[simp] theorem get_replaceAt {n : Nat} (S : Dataset n Z) (i j : Fin n) (z' : Z) :
     Dataset.get (replaceAt S i z') j = if j = i then z' else Dataset.get S j := by
-  simp [replaceAt, Dataset.get, Function.update_apply]
+  rw [replaceAt, Dataset.get_ofFn]
+  exact Function.update_apply _ _ _ _
 
 /--
 Remove the example at index `i` from a dataset of size `n+1`.
@@ -189,7 +185,7 @@ def removeAt {n : Nat} (S : Dataset (n + 1) Z) (i : Fin (n + 1)) : Dataset n Z :
 /-- Reading a shortened dataset skips the removed index, which is what `Fin.succAbove` encodes. -/
 @[simp] theorem get_removeAt {n : Nat} (S : Dataset (n + 1) Z) (i : Fin (n + 1)) (j : Fin n) :
     Dataset.get (removeAt S i) j = Dataset.get S (i.succAbove j) := by
-  simp [removeAt]
+  exact Dataset.get_ofFn _ _
 
 /-! ## Learning algorithms and loss -/
 
@@ -218,7 +214,7 @@ Empirical error (average loss on a dataset).
 We write this with an explicit $1/n$ normalization so downstream lemmas can control constants.
 At `n = 0`, the totalized real expression is zero.
 -/
-def empiricalError {n : Nat} [Fintype (Fin n)] (ℓ : Loss H Z) (h : H) (S : Dataset n Z) : ℝ :=
+def empiricalError {n : Nat} (ℓ : Loss H Z) (h : H) (S : Dataset n Z) : ℝ :=
   (1 / (n : ℝ)) * ∑ i : Fin n, ℓ h (Dataset.get (n := n) (Z := Z) S i)
 
 /-! ## Deterministic replace-one stability -/
@@ -229,8 +225,7 @@ Deterministic **replace-one uniform stability** (a common core notion).
 `UniformStableReplace A ℓ β` means that if you replace one example in the training set, then the
 loss on *any* test point changes by at most $\beta$.
 -/
-def UniformStableReplace {n : Nat} [DecidableEq (Fin n)]
-    (A : LearningMap n Z H) (ℓ : Loss H Z) (β : ℝ) : Prop :=
+def UniformStableReplace {n : Nat} (A : LearningMap n Z H) (ℓ : Loss H Z) (β : ℝ) : Prop :=
   ∀ (S : Dataset n Z) (i : Fin n) (z z' : Z),
     |ℓ (A S) z - ℓ (A (replaceAt S i z')) z| ≤ β
 
@@ -258,6 +253,3 @@ def iid (μ : MeasureTheory.ProbabilityMeasure Z) (n : Nat) : MeasureTheory.Prob
 end Measure
 
 end NN.MLTheory.LearningTheory.Stability
-/-!
-The definitions above provide a shared vocabulary for downstream stability theorems.
--/

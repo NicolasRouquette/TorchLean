@@ -248,9 +248,7 @@ PyTorch analogy: running a forward pass eagerly on concrete tensors.
 def forwardTensor {σ τ : Shape} (l : Layer σ τ) (mode : Mode)
     {α : Type} [TorchLean.Storage α] [Context α]
     (ps : TorchLean.TensorPack α l.stateShapes) (x : Tensor α σ) : IO (Tensor α τ) := do
-  match l.validate with
-  | .error message => throw <| IO.userError message
-  | .ok () => pure ()
+  Runtime.Autograd.okOrThrow (l.validate)
   let graph ← Runtime.Autograd.Model.Autodiff.lowerToTypedGraph (α := α)
     (paramShapes := l.stateShapes) (inputShapes := [σ]) (τ := τ)
     (l.forward mode)

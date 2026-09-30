@@ -55,9 +55,9 @@ def layerNorm {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
   (epsilon : α := TorchLean.normalizationEpsilon) :
   MWith α Δ Γ (Var (.dim seqLen (.dim embedDim .scalar))) := do
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
-  let ig ← liftM (mkIdx (_α := α) (Γ := Γ) ss gamma)
-  let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss beta)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
+  let ig ← liftM (mkIdx (Γ := Γ) ss gamma)
+  let ib ← liftM (mkIdx (Γ := Γ) ss beta)
   let node : NodeData α Δ (Γ ++ ss) (.dim seqLen (.dim embedDim .scalar)) :=
     NodeData.ofLocalCompact (fun lookup => (lookup.read ix, lookup.read ig, lookup.read ib))
       (forward := fun ctx _d =>
@@ -107,9 +107,9 @@ def batchNorm {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
   MWith α Δ Γ (Var (.dim channels sSpatial)) := do
   let _ : Shape.WellFormed (.dim channels sSpatial) := ⟨hWellFormed⟩
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
-  let ig ← liftM (mkIdx (_α := α) (Γ := Γ) ss gamma)
-  let ib ← liftM (mkIdx (_α := α) (Γ := Γ) ss beta)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
+  let ig ← liftM (mkIdx (Γ := Γ) ss gamma)
+  let ib ← liftM (mkIdx (Γ := Γ) ss beta)
   let outS : Shape := .dim channels sSpatial
   let node : NodeData α Δ (Γ ++ ss) outS :=
     NodeData.ofLocalCompact (fun lookup => (lookup.read ix, lookup.read ig, lookup.read ib))
@@ -164,11 +164,11 @@ def Internal.attentionNode {α : Type} {Δ : Type} [TorchLean.Storage α] [Conte
   (mask : Option (Tensor Bool [n, n]) := none) :
   MWith α Δ Γ (Var (.dim n (.dim dModel .scalar))) := do
   let ⟨ss, g, _⟩ ← get
-  let iwq ← liftM (mkIdx (_α := α) (Γ := Γ) ss wq)
-  let iwk ← liftM (mkIdx (_α := α) (Γ := Γ) ss wk)
-  let iwv ← liftM (mkIdx (_α := α) (Γ := Γ) ss wv)
-  let iwo ← liftM (mkIdx (_α := α) (Γ := Γ) ss wo)
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let iwq ← liftM (mkIdx (Γ := Γ) ss wq)
+  let iwk ← liftM (mkIdx (Γ := Γ) ss wk)
+  let iwv ← liftM (mkIdx (Γ := Γ) ss wv)
+  let iwo ← liftM (mkIdx (Γ := Γ) ss wo)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) (.dim n (.dim dModel .scalar)) :=
     NodeData.ofLocalCompact (fun lookup =>
       (lookup.read iwq, lookup.read iwk, lookup.read iwv, lookup.read iwo, lookup.read ix))

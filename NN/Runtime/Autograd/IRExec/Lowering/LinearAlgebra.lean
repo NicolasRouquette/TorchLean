@@ -19,9 +19,7 @@ Both operations accept the same shapes as the IR semantics. `lowerMatmul` uses t
 `NN.IR.Graph.matmulWithDims`. Linear layers preserve their leading shape and apply
 `NN.IR.Graph.linearLeading`.
 
-Each operation has its own small `lower*` definition. `lowerLinearAlgebra` only dispatches on the
-operation kind, and the `lowerLinearAlgebra_*` equation lemmas let correctness proofs reduce a
-dispatch to the branch they care about without unfolding the whole dispatcher.
+Each operation has a named lowerer, called directly by the exhaustive `lowerNode` dispatch.
 -/
 
 @[expose] public section
@@ -124,25 +122,6 @@ def lowerLinear {α : Type} [TorchLean.Storage α] [Context α]
               s!"IRExec: linear {n.id}: parent shape {repr xShape} does not end in " ++
                 s!"inDim={p.inDim}"
   | _ => throw s!"IRExec: node {i}: linear expects 1 parent ({n.summary})"
-
-/-- Checked lowering for matrix multiplication and payload-backed linear layers. -/
-def lowerLinearAlgebra {α : Type} [TorchLean.Storage α] [Context α]
-    {Γ : List Shape} (ctx : NodeLoweringContext α Γ) (kind : OpKind) :
-    NodeLoweringResult ctx :=
-  match kind with
-  | .matmul => lowerMatmul ctx
-  | .linear => lowerLinear ctx
-  | _ => throw s!"IRExec: internal error: operation routed to lowerLinearAlgebra"
-
-variable {α : Type} [TorchLean.Storage α] [Context α] {Γ : List Shape}
-
-/-- Dispatch equation for `.matmul`. -/
-@[simp] theorem lowerLinearAlgebra_matmul (ctx : NodeLoweringContext α Γ) :
-    lowerLinearAlgebra ctx .matmul = lowerMatmul ctx := rfl
-
-/-- Dispatch equation for `.linear`. -/
-@[simp] theorem lowerLinearAlgebra_linear (ctx : NodeLoweringContext α Γ) :
-    lowerLinearAlgebra ctx .linear = lowerLinear ctx := rfl
 
 end Internal
 end IRExec

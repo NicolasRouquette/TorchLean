@@ -36,13 +36,14 @@ def build() -> pathlib.Path:
         )
     try:
         subprocess.run(
-            ["lake", "-f", config.name, "-Kcuda=false", "build", "irexec_scaling"],
+            ["scripts/lake.sh", "-f", config.name, "-Kcuda=false", "build", "irexec_scaling"],
             cwd=ROOT,
             check=True,
         )
     finally:
         config.unlink()
-    return ROOT / ".lake/build/bin/irexec_scaling"
+    # Keep the CPU profile target even if a subsequent wrapper invocation selects CUDA.
+    return (ROOT / ".lake/build/bin/irexec_scaling").resolve()
 
 
 def sample(binary: pathlib.Path, n: int, lower_only: bool) -> dict[str, int]:

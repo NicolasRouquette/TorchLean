@@ -20,7 +20,6 @@ global reverse-mode accumulation algorithm is sound assuming only commutative se
 This file lives under `NN/Proofs/Autograd/Tape/Algebra/` because it is reused by both proof-only
 and runtime-link developments that target exact backends (e.g. `ℚ`).
 
-
 ## PyTorch correspondence / citations
 This corresponds to the high-level structure of PyTorch’s reverse-mode engine, but stated over an
 arbitrary commutative semiring so we can reuse it for exact backends.
@@ -28,7 +27,6 @@ https://pytorch.org/docs/stable/autograd.html
 -/
 
 @[expose] public section
-
 
 namespace Proofs
 namespace Autograd
@@ -78,9 +76,10 @@ theorem dotList_add_right {ss : List Shape} (x y z : TorchLean.TensorPack α ss)
       | cons yh yt =>
         cases z with
         | cons zh zt =>
-          simp [dotList, TorchLean.TensorPack.add,
-            TensorAlgebra.dot_add_right (α := α) (a := xh) (b := yh) (c := zh),
-            ih, add_assoc, add_left_comm]
+          change dot xh (addSpec yh zh) + dotList xt (TorchLean.TensorPack.add yt zt) = _
+          rw [TensorAlgebra.dot_add_right, ih]
+          simp only [dotList]
+          ac_rfl
 
 /-- Dot respects appending: dot of two `snoc`ed contexts splits into prefix + last entry. -/
 theorem dotList_snoc {ss : List Shape} {τ : Shape} (x y : TorchLean.TensorPack α ss)
@@ -112,8 +111,8 @@ theorem dotList_zero_right {ss : List Shape} (x : TorchLean.TensorPack α ss) :
   | cons s ss ih =>
     cases x with
     | cons xh xt =>
-      simp [dotList, TorchLean.TensorPack.zero,
-        TensorAlgebra.dot_full_zero_right (α := α) (s := s) (a := xh), ih]
+      change dot xh (Tensor.full s 0) + dotList xt TorchLean.TensorPack.zero = 0
+      rw [TensorAlgebra.dot_full_zero_right, ih, zero_add]
 
 end
 
@@ -194,7 +193,7 @@ theorem dotList_single {Γ : List Shape} {s : Shape}
                           exact (congrArg (fun t => dot (α := α) t v) hget0).symm
             | succ j =>
                 have h0 : dot (α := α) dx0 (Tensor.full s0 (0 : α)) = 0 :=
-                  TensorAlgebra.dot_full_zero_right (α := α) (s := s0) (a := dx0)
+                  TensorAlgebra.dot_full_zero_right (α := α) (s := s0) (tensor := dx0)
                 let iHead : Fin (s0 :: Γtail).length := ⟨Nat.succ j, isLt⟩
                 let iTail : Fin Γtail.length := ⟨j, Nat.lt_of_succ_lt_succ isLt⟩
                 let hTail : Γtail.get iTail = s := by
@@ -514,18 +513,12 @@ def backpropCtx [Add α] {ss : List Shape} (g : GraphData α Δ Γ ss) (x : Torc
 
 end GraphData
 
-/-!
-Proof-carrying tape/SSA graphs.
+/--
+A proof-carrying tape/SSA graph.
 
 Nodes are appended in topological order and may reference any previously computed value (fan-out
 and sharing are allowed). This mirrors the structure of PyTorch’s dynamic autograd graph, but with
 shape-typed contexts.
--/
-
-/--
-A proof-carrying tape/SSA graph.
-
-Nodes are appended in topological order and may reference any previously computed value.
 -/
 inductive Graph {α : Type} [TorchLean.Storage α] [CommSemiring α]
     (Δ : Type) (Γ : List Shape) : List Shape → Type where
@@ -545,14 +538,6 @@ variable {Γ : List Shape}
 def toData {ss : List Shape} : Graph (α := α) Δ Γ ss → GraphData α Δ Γ ss
   | .nil => .nil
   | .snoc g node => .snoc (toData (ss := _) g) node.toNodeData
-
-end Graph
-
-namespace Graph
-
-variable {α : Type} [TorchLean.Storage α] [CommSemiring α]
-variable {Δ : Type}
-variable {Γ : List Shape}
 
 /-- Evaluate a proof-carrying graph through its executable representation. -/
 def eval {ss : List Shape} (g : Graph (α := α) Δ Γ ss) (x : TorchLean.TensorPack α Γ) (d : Δ) :

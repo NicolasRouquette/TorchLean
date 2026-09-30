@@ -201,15 +201,6 @@ private theorem foldlIndices_filter (s : Shape) (init : ℝ)
   simpa only [add_ite, add_zero] using
     foldlIndices_eq_coord_sum s init (fun indices => if p indices then weight indices else 0)
 
-private theorem coord_toList_injective (s : Shape) :
-    Function.Injective (Shape.Coord.toList s) := by
-  induction s with
-  | scalar => intro _ _ _; exact Subsingleton.elim _ _
-  | dim n rest ih =>
-      intro a b h
-      have hcons := List.cons.inj h
-      exact Prod.ext (Fin.ext hcons.1) (ih hcons.2)
-
 /-- Positive dilation makes the spatial input-index relation injective in the kernel index. -/
 theorem mkDilatedInputIdx?_kernel_unique
     {outIdx left right stride dilation padding inputIdx : List Nat}
@@ -300,13 +291,17 @@ theorem convKernelCoefficient_eq_sum
           have hne : mkDilatedInputIdx? outIdx (Shape.Coord.toList _ k) stride dilation padding ≠
               some inputIdx := by
             intro h
-            exact hk (coord_toList_injective _ (mkDilatedInputIdx?_kernel_unique hpos h hfound))
+            apply hk
+            have := congrArg (Shape.Coord.ofList? (Shape.ofList kernel))
+              (mkDilatedInputIdx?_kernel_unique hpos h hfound)
+            simpa only [Shape.Coord.ofList?_toList, Option.some.injEq] using this
           simp [hne]
         · simp
   · simpa using foldlIndices_filter (Shape.ofList kernel) 0
       (fun k => mkDilatedInputIdx? outIdx k stride dilation padding = some inputIdx) weight
 
-/-- Selecting a stored coefficient commutes with any scalar map that preserves zero. -/
+/-- For positive dilation, selecting a stored coefficient commutes with any scalar map that
+preserves zero. -/
 theorem convKernelCoefficient_map {α β : Type} [Storage α] [Context α]
     [Storage β] [Context β] (f : α → β) (hf : f 0 = 0)
     (kernel outIdx inputIdx stride dilation padding : List Nat) (weight : List Nat → α)

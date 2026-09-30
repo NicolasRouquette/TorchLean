@@ -6,11 +6,14 @@ Authors: TorchLean Team
 
 module
 
+public import Mathlib.Logic.Function.Iterate
 public import NN.Proofs.Autograd.Tape.Algebra.Context
 
 /-!
 Deferred uniform updates retain the order of scalar operations. Repeated updates can stop at a
 checked fixed point; the proof uses decidable equality, with no additive identity assumption.
+Repetition counts are `Nat.iterate` (`step^[count]`), whose evaluation order is the
+chronological one.
 -/
 
 @[expose] public section
@@ -18,26 +21,6 @@ checked fixed point; the proof uses decidable equality, with no additive identit
 namespace Proofs.Autograd.Algebra
 
 namespace Deferred
-
-/-- Apply the same operation a specified number of times, in evaluation order. -/
-def iterateUpdates {β : Type} (step : β → β) : Nat → β → β
-  | 0, value => value
-  | count + 1, value => iterateUpdates step count (step value)
-
-@[simp] theorem iterateUpdates_zero {β : Type} (step : β → β) (value : β) :
-    iterateUpdates step 0 value = value := rfl
-
-theorem iterateUpdates_succ {β : Type} (step : β → β) (count : Nat) (value : β) :
-    iterateUpdates step (count + 1) value = step (iterateUpdates step count value) := by
-  induction count generalizing value with
-  | zero => rfl
-  | succ count ih => exact ih (step value)
-
-theorem iterateUpdates_fixed {β : Type} (step : β → β) (count : Nat) (value : β)
-    (fixed : step value = value) : iterateUpdates step count value = value := by
-  induction count with
-  | zero => rfl
-  | succ count ih => simpa only [iterateUpdates, fixed] using ih
 
 /-- Stop repeating an operation only after checking that its actual result is a fixed point. -/
 def repeatStable {β : Type} [DecidableEq β] (step : β → β) : Nat → β → β
@@ -49,13 +32,14 @@ def repeatStable {β : Type} [DecidableEq β] (step : β → β) : Nat → β �
 /-- Fixed-point compression preserves every finite sequence of repeated operations. -/
 theorem repeatStable_eq {β : Type} [DecidableEq β] (step : β → β)
     (count : Nat) (value : β) :
-    repeatStable step count value = iterateUpdates step count value := by
+    repeatStable step count value = step^[count] value := by
   induction count generalizing value with
   | zero => rfl
   | succ count ih =>
-      simp only [repeatStable, iterateUpdates]
+      rw [Function.iterate_succ_apply]
+      simp only [repeatStable]
       split
-      next fixed => simp only [fixed, iterateUpdates_fixed step count value fixed]
+      next fixed => rw [fixed, Function.iterate_fixed fixed]
       next _ => exact ih (step value)
 
 /-- Consecutive occurrences of the same uniform contribution share one run. -/
@@ -74,8 +58,7 @@ def applyRecent {α β : Type} (step : α → β → β) :
     History α → Nat → β → β
   | [], _, value => value
   | (uniform, runLength) :: rest, count, value =>
-      iterateUpdates (step uniform) (min count runLength)
-        (applyRecent step rest (count - runLength) value)
+      (step uniform)^[min count runLength] (applyRecent step rest (count - runLength) value)
 
 @[simp] theorem applyRecent_zero {α β : Type} (step : α → β → β)
     (history : History α) (value : β) : applyRecent step history 0 value = value := by
@@ -83,7 +66,7 @@ def applyRecent {α β : Type} (step : α → β → β) :
   | nil => rfl
   | cons entry rest ih =>
       rcases entry with ⟨uniform, count⟩
-      simpa only [applyRecent, Nat.zero_min, Nat.zero_sub, iterateUpdates_zero] using ih
+      simpa only [applyRecent, Nat.zero_min, Nat.zero_sub, Function.iterate_zero_apply] using ih
 
 /-- Extending the history performs exactly one more update, after all previous updates. -/
 theorem applyRecent_push {α β : Type} [DecidableEq α] (step : α → β → β)
@@ -91,7 +74,7 @@ theorem applyRecent_push {α β : Type} [DecidableEq α] (step : α → β → �
     applyRecent step (push history uniform) (count + 1) value =
       step uniform (applyRecent step history count value) := by
   cases history with
-  | nil => simp [push, applyRecent, iterateUpdates]
+  | nil => simp [push, applyRecent]
   | cons entry rest =>
       obtain ⟨previous, runLength⟩ := entry
       simp only [push]
@@ -99,10 +82,10 @@ theorem applyRecent_push {α β : Type} [DecidableEq α] (step : α → β → �
       next same =>
         subst previous
         have lengths : min (count + 1) (runLength + 1) = min count runLength + 1 := by omega
-        simp only [applyRecent, Nat.add_sub_add_right, lengths, iterateUpdates_succ]
+        simp only [applyRecent, Nat.add_sub_add_right, lengths, Function.iterate_succ_apply']
       next _ =>
         simp only [applyRecent, Nat.add_sub_cancel, Nat.min_eq_right (by omega : 1 ≤ count + 1),
-          iterateUpdates]
+          Function.iterate_one]
 
 /-- Execute a deferred history with checked fixed-point compression in each run. -/
 def applyRecentStable {α β : Type} [DecidableEq β] (step : α → β → β) :

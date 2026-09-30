@@ -68,8 +68,8 @@ def validInterval (interval : Interval (Binary 8 23)) : Bool :=
 
 /-- `Binary.Interval.leB` decides the proposition-level IEEE non-strict order. -/
 theorem leB_eq_true_iff (x y : Binary 8 23) :
-    Binary.Interval.leB x y = true <-> LE.le x y := by
-  exact (Model.Interval.le_iff_leB_eq_true
+    Binary.Interval.leB x y = true <-> LE.le x y :=
+  (Model.Interval.le_iff_leB_eq_true
     (ExecFloat.Binary.toModel x) (ExecFloat.Binary.toModel y)).symm.trans
     FloatLib.Floats.ExecFloat.Binary.le_iff_le_toModel.symm
 
@@ -78,32 +78,11 @@ interpretations. This lemma is intentionally finite: IEEE comparisons involving 
 and `toReal` is not the semantic interface for infinities. -/
 theorem toReal_le_toReal_of_le {x y : Binary 8 23}
     (hx : ExecFloat.Binary.isFinite x = true) (hy : ExecFloat.Binary.isFinite y = true)
-    (hxy : LE.le x y) : (ExecFloat.Binary.toModel x).toReal <= (ExecFloat.Binary.toModel y).toReal
-      := by
-  exact (Model.Interval.le_iff_toReal_le_of_isFinite
+    (hxy : LE.le x y) :
+    (ExecFloat.Binary.toModel x).toReal <= (ExecFloat.Binary.toModel y).toReal :=
+  (Model.Interval.le_iff_toReal_le_of_isFinite
     (ExecFloat.Binary.toModel x) (ExecFloat.Binary.toModel y) hx hy).mp
     (FloatLib.Floats.ExecFloat.Binary.le_iff_le_toModel.mp hxy)
-
-private theorem toModel_neg (x : Binary 8 23) :
-    ExecFloat.Binary.toModel (Neg.neg x) = Model.neg (ExecFloat.Binary.toModel x) := by
-  change ExecFloat.Binary.toModel (ExecFloat.Binary.ofModel (Model.neg (ExecFloat.Binary.toModel
-    x))) = _
-  exact ExecFloat.Binary.toModel_ofModel _
-
-/-- Negation of a finite executable binary32 value decodes to real negation. -/
-theorem toReal_neg_of_isFinite {x : Binary 8 23} (hx : ExecFloat.Binary.isFinite x = true)
-  :
-    (ExecFloat.Binary.toModel (Neg.neg x)).toReal = -(ExecFloat.Binary.toModel x).toReal := by
-  rw [toModel_neg]
-  exact Model.toReal_neg (ExecFloat.Binary.toModel x) hx
-
-/-- Flipping the sign bit preserves finiteness. -/
-theorem isFinite_neg_of_isFinite {x : Binary 8 23} (hx : ExecFloat.Binary.isFinite x =
-  true) :
-    ExecFloat.Binary.isFinite (Neg.neg x) = true := by
-  change Model.isFinite (ExecFloat.Binary.toModel (Neg.neg x)) = true
-  rw [toModel_neg, Model.isFinite_neg]
-  exact hx
 
 /-- The executable validity test accepts exactly finite, ordered intervals. -/
 theorem validInterval_eq_true_iff (interval : Interval (Binary 8 23)) :
@@ -187,15 +166,14 @@ all other accepted values have a clear sign bit. Finiteness is supplied by inter
 def nonnegativeEndpoint (x : Binary 8 23) : Bool :=
   ExecFloat.Binary.isZero x || !ExecFloat.Binary.signBit x
 
-private theorem toReal_posZero : (ExecFloat.Binary.toModel (ExecFloat.Binary.zero false :
-  Binary 8 23)).toReal = 0 := by
-  have hmodel : ExecFloat.Binary.toModel (ExecFloat.Binary.zero false :
-      Binary 8 23) = Model.zero FloatFormat.binary32 false :=
+private theorem toReal_posZero :
+    (ExecFloat.Binary.toModel (ExecFloat.Binary.zero false : Binary 8 23)).toReal = 0 := by
+  have hmodel : ExecFloat.Binary.toModel (ExecFloat.Binary.zero false : Binary 8 23) =
+      Model.zero FloatFormat.binary32 false :=
     ExecFloat.Binary.toModel_ofModel _
   exact (congrArg Model.toReal hmodel).trans (Model.toReal_zero _ _)
 
-private theorem toReal_posOne : (ExecFloat.Binary.toModel (1 : Binary 8 23)).toReal = 1 :=
-  by
+private theorem toReal_posOne : (ExecFloat.Binary.toModel (1 : Binary 8 23)).toReal = 1 := by
   have hmodel : ExecFloat.Binary.toModel (1 : Binary 8 23) =
       Model.roundRatQ FloatFormat.binary32 1 :=
     ExecFloat.Binary.toModel_ofModel _

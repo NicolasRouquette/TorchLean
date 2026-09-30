@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Floats.FP32.Error
+public import NN.Floats.FP32
 public import NN.Proofs.RuntimeApprox.IEEE32.Arithmetic
 
 /-!
@@ -102,22 +102,21 @@ whatever the kernel writes back can be read as the same value we would have comp
     fromNativeBits (toNativeBits x) = x := by
   exact Binary.ofBits32_toBits32 x
 
-/-- Host `Float` upload is exactly the FloatLib model conversion. -/
-theorem fromLeanFloat_eq_ieee32_ofFloat (x : Float) :
-    fromLeanFloat x = (ofModel (Model.cast .binary64 .binary32 (toModel (Binary.ofFloat x))) :
-      Binary 8 23) := by
+/-- Host `Float` upload is exactly the FloatLib model cast to the buffer format. -/
+theorem fromLeanFloat_eq_cast (x : Float) :
+    fromLeanFloat x = (ofModel (Model.cast .binary64 .binary32
+      (toModel (Binary.ofFloat x))) : Binary 8 23) := by
   rfl
 
-/-- Host `Float` upload bits are exactly the reference binary32 conversion bits. -/
-theorem fromLeanFloat_bits_eq_ieee32_ofFloat_bits (x : Float) :
-    toNativeBits (fromLeanFloat x) = toBits32 ((ofModel (Model.cast .binary64 .binary32 (toModel
-      (Binary.ofFloat x))) : Binary 8 23)) := by
+/-- The upload bit pattern is the bit pattern of the reference model cast. -/
+theorem fromLeanFloat_bits_eq_cast_bits (x : Float) :
+    toNativeBits (fromLeanFloat x) = toBits32 (ofModel (Model.cast .binary64 .binary32
+      (toModel (Binary.ofFloat x))) : Binary 8 23) := by
   rfl
 
-/-- Runtime Lean `Float32` values can also be reinterpreted as the same bit-level reference
-scalar. -/
-theorem fromNativeBits_float32_toBits (x : Float32) :
-    fromNativeBits x.toBits = FloatLib.Floats.ExecFloat.Binary.ofFloat32 x := by
+/-- Reinterpreting native `Float32` bits agrees with FloatLib's native-value conversion. -/
+theorem fromNativeBits_toBits (x : Float32) :
+    fromNativeBits x.toBits = Binary.ofFloat32 x := by
   rfl
 
 /-! ## Abstract native scalar semantics -/
@@ -201,7 +200,7 @@ the hypothesis costs nothing in practice.
 -/
 
 /-- Native addition is the reference value when its result is finite and the contract holds. -/
-theorem native_add_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (x y : RefScalar)
+theorem native_add_eq_reference_of_isFinite (h : NativePrimitiveAgreement native) (x y : RefScalar)
     (hfin : Binary.isFinite (fromNativeBits (native.addBits x y)) = true) :
     fromNativeBits (native.addBits x y) = ExecFloat.add x y := by
   apply ref_ext
@@ -209,14 +208,14 @@ theorem native_add_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (
 
 /-- Native multiplication is the reference value when its result is finite and the contract
 holds. -/
-theorem native_mul_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (x y : RefScalar)
+theorem native_mul_eq_reference_of_isFinite (h : NativePrimitiveAgreement native) (x y : RefScalar)
     (hfin : Binary.isFinite (fromNativeBits (native.mulBits x y)) = true) :
     fromNativeBits (native.mulBits x y) = ExecFloat.mul x y := by
   apply ref_ext
   simp [fromNativeBits, toNativeBits, (h.mul_bits x y).eq_of_isFinite hfin]
 
 /-- Native division is the reference value when its result is finite and the contract holds. -/
-theorem native_div_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (x y : RefScalar)
+theorem native_div_eq_reference_of_isFinite (h : NativePrimitiveAgreement native) (x y : RefScalar)
     (hfin : Binary.isFinite (fromNativeBits (native.divBits x y)) = true) :
     fromNativeBits (native.divBits x y) = ExecFloat.div x y := by
   apply ref_ext
@@ -224,7 +223,8 @@ theorem native_div_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (
 
 /-- Native fused multiply-add is the reference value when its result is finite and the contract
 holds. -/
-theorem native_fma_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (x y z : RefScalar)
+theorem native_fma_eq_reference_of_isFinite
+    (h : NativePrimitiveAgreement native) (x y z : RefScalar)
     (hfin : Binary.isFinite (fromNativeBits (native.fmaBits x y z)) = true) :
     fromNativeBits (native.fmaBits x y z) =
       (Binary.fmaWithRounding (rounding := .nearestEven)) x y z := by
@@ -232,7 +232,7 @@ theorem native_fma_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (
   simp [fromNativeBits, toNativeBits, (h.fma_bits x y z).eq_of_isFinite hfin]
 
 /-- Native square root is the reference value when its result is finite and the contract holds. -/
-theorem native_sqrt_eq_ieee32_of_isFinite (h : NativePrimitiveAgreement native) (x : RefScalar)
+theorem native_sqrt_eq_reference_of_isFinite (h : NativePrimitiveAgreement native) (x : RefScalar)
     (hfin : Binary.isFinite (fromNativeBits (native.sqrtBits x)) = true) :
     fromNativeBits (native.sqrtBits x) =
       (Binary.sqrtWithRounding (rounding := .nearestEven)) x := by
@@ -252,12 +252,12 @@ theorem native_add_abs_error_of_isFinite
     abs
         ((toModel (fromNativeBits (native.addBits x y))).toReal -
           ((toModel x).toReal + (toModel y).toReal)) ≤
-      eps32 ((toModel x).toReal + (toModel y).toReal) := by
+      Model.epsilonAt FloatFormat.binary32 ((toModel x).toReal + (toModel y).toReal) := by
   have hx : fromNativeBits (native.addBits x y) = ExecFloat.add x y :=
-    native_add_eq_ieee32_of_isFinite h x y hfin
+    native_add_eq_reference_of_isFinite h x y hfin
   rw [hx] at hfin ⊢
-  rw [IEEE32Exec.toReal_add_eq_fp32Round_of_isFinite hfin]
-  exact FP32.round_abs_error _
+  rw [IEEE32Exec.toReal_add_eq_round_of_isFinite hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 If native CUDA multiplication matches the `ExecFloat.Binary 8 23` result bits and the result is
@@ -270,12 +270,12 @@ theorem native_mul_abs_error_of_isFinite
     abs
         ((toModel (fromNativeBits (native.mulBits x y))).toReal -
           ((toModel x).toReal * (toModel y).toReal)) ≤
-      eps32 ((toModel x).toReal * (toModel y).toReal) := by
+      Model.epsilonAt FloatFormat.binary32 ((toModel x).toReal * (toModel y).toReal) := by
   have hx : fromNativeBits (native.mulBits x y) = ExecFloat.mul x y :=
-    native_mul_eq_ieee32_of_isFinite h x y hfin
+    native_mul_eq_reference_of_isFinite h x y hfin
   rw [hx] at hfin ⊢
-  rw [IEEE32Exec.toReal_mul_eq_fp32Round_of_isFinite hfin]
-  exact FP32.round_abs_error _
+  rw [IEEE32Exec.toReal_mul_eq_round_of_isFinite hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 If native CUDA division matches the `ExecFloat.Binary 8 23` result bits and the result is finite,
@@ -288,12 +288,12 @@ theorem native_div_abs_error_of_isFinite
     abs
         ((toModel (fromNativeBits (native.divBits x y))).toReal -
           ((toModel x).toReal / (toModel y).toReal)) ≤
-      eps32 ((toModel x).toReal / (toModel y).toReal) := by
+      Model.epsilonAt FloatFormat.binary32 ((toModel x).toReal / (toModel y).toReal) := by
   have hx : fromNativeBits (native.divBits x y) = ExecFloat.div x y :=
-    native_div_eq_ieee32_of_isFinite h x y hfin
+    native_div_eq_reference_of_isFinite h x y hfin
   rw [hx] at hfin ⊢
-  rw [IEEE32Exec.toReal_div_eq_fp32Round_of_isFinite x y hfin]
-  exact FP32.round_abs_error _
+  rw [IEEE32Exec.toReal_div_eq_round_of_isFinite x y hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 If native CUDA FMA matches the `ExecFloat.Binary 8 23` result bits and the result is finite, then it
@@ -306,13 +306,14 @@ theorem native_fma_abs_error_of_isFinite
     abs
         ((toModel (fromNativeBits (native.fmaBits x y z))).toReal -
           ((toModel x).toReal * (toModel y).toReal + (toModel z).toReal)) ≤
-      eps32 ((toModel x).toReal * (toModel y).toReal + (toModel z).toReal) := by
+      Model.epsilonAt FloatFormat.binary32
+        ((toModel x).toReal * (toModel y).toReal + (toModel z).toReal) := by
   have hx : fromNativeBits (native.fmaBits x y z) =
       (Binary.fmaWithRounding (rounding := .nearestEven)) x y z :=
-    native_fma_eq_ieee32_of_isFinite h x y z hfin
+    native_fma_eq_reference_of_isFinite h x y z hfin
   rw [hx] at hfin ⊢
-  rw [IEEE32Exec.toReal_fma_eq_fp32Round_of_isFinite x y z hfin]
-  exact FP32.round_abs_error _
+  rw [IEEE32Exec.toReal_fma_eq_round_of_isFinite x y z hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 /--
 If native CUDA square root matches the `ExecFloat.Binary 8 23` result bits and the result is finite,
@@ -325,13 +326,13 @@ theorem native_sqrt_abs_error_of_isFinite
     abs
         ((toModel (fromNativeBits (native.sqrtBits x))).toReal -
           Real.sqrt ((toModel x).toReal)) ≤
-      eps32 (Real.sqrt ((toModel x).toReal)) := by
+      Model.epsilonAt FloatFormat.binary32 (Real.sqrt ((toModel x).toReal)) := by
   have hx : fromNativeBits (native.sqrtBits x) =
       (Binary.sqrtWithRounding (rounding := .nearestEven)) x :=
-    native_sqrt_eq_ieee32_of_isFinite h x hfin
+    native_sqrt_eq_reference_of_isFinite h x hfin
   rw [hx] at hfin ⊢
-  rw [IEEE32Exec.toReal_sqrt_eq_fp32Round_of_isFinite x hfin]
-  exact FP32.round_abs_error _
+  rw [IEEE32Exec.toReal_sqrt_eq_round_of_isFinite x hfin]
+  exact Model.abs_roundAt_sub_le FloatFormat.binary32 _
 
 end
 

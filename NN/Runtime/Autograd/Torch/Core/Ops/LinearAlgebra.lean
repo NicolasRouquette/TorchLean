@@ -44,10 +44,9 @@ def matmul {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α]
   (b : TensorRef α (batchB.concat [n, p])) :
   IO (TensorRef α (batch.concat [m, p])) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <|
+    s.recordCpu fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.Tape.matmul (t := t0) (m := m) (n := n) (p := p) a.id b.id
         (batchA := batchA) (batchB := batchB) (batch := batch)
-    pure { id := id }
   let cuda := do
     let t0 ← s.cudaTape.get
     let broadcastAFull :=
@@ -71,8 +70,8 @@ def matmul {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α]
       Runtime.Autograd.LibTorch.Tape.reshape (t := t5) flatOutId
         (TorchLean.Tensor.LinearAlgebra.Internal.flattenBatchMatrix_size batch m p).symm
     s.cudaTape.set t6
-    pure (some { id := id })
-  execute (α := α) s .matmul #[a.identity?, b.identity?] cpu cuda
+    pure id
+  executeRecorded (α := α) s .matmul #[a.identity?, b.identity?] cpu cuda
 
 /-- Concatenate along dim 0 for tensors with leading dimension. PyTorch: `torch.cat(..., dim=0)`. -/
 def concat {α : Type} [TorchLean.Storage α] (s : EagerSession α)
@@ -81,16 +80,14 @@ def concat {α : Type} [TorchLean.Storage α] (s : EagerSession α)
   (b : TensorRef α (.dim m sh)) :
   IO (TensorRef α (.dim (n + m) sh)) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <|
+    s.recordCpu fun t0 => keepTapeOnError t0 <|
       (Runtime.Autograd.Tape.concat (α := α) (t := t0) (n := n) (m := m) (s := sh)
         a.id b.id)
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.concat (t := t0) (n := n) (m := m) (s :=
         sh) a.id b.id
-    pure (some { id := id })
-  execute (α := α) s .concat #[a.identity?, b.identity?] cpu cuda
+  executeRecorded (α := α) s .concat #[a.identity?, b.identity?] cpu cuda
 
 /-- Slice along dim 0: `x[start:start+len]`. PyTorch: standard slicing. -/
 def slice {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Zero α]
@@ -98,16 +95,14 @@ def slice {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Zero α]
   (x : TensorRef α (.dim n sh)) (start len : Nat) (h : start + len ≤ n) :
   IO (TensorRef α (.dim len sh)) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <|
+    s.recordCpu fun t0 => keepTapeOnError t0 <|
       (Runtime.Autograd.Tape.slice (α := α) (t := t0) (n := n) (s := sh)
         x.id start len h)
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.slice (t := t0) (n := n) (s := sh)
         x.id start len h
-    pure (some { id := id })
-  execute (α := α) s .slice #[x.identity?] cpu cuda
+  executeRecorded (α := α) s .slice #[x.identity?] cpu cuda
 
 end EagerSession
 

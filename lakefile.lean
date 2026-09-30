@@ -109,8 +109,8 @@ target torchlean_libtorch pkg : FilePath := do
     addTrace (.ofHash (← computeFileHash output) output.toString)
     return output
 
-/-- Compile the native bulk operations for packed host tensor storage once. -/
-private def buildTensorCpuObject (pkg : Package) := do
+/-- Object shared by the static executable link and the dynamic elaborator library. -/
+target torchlean_tensor_cpu_object pkg : FilePath := do
   let lean ← getLeanInstall
   let srcJob ← inputFile
     (pkg.dir / "csrc/cpu/torchlean_tensor.c") false
@@ -118,10 +118,6 @@ private def buildTensorCpuObject (pkg : Package) := do
   let compilerJob ← nativeCompilerJob "cc"
   compilerJob.bindM fun compiler =>
     buildO oFile srcJob #["-I", lean.includeDir.toString] #["-O3", "-fPIC"] compiler getLeanTrace
-
-/-- Object shared by the static executable link and the dynamic elaborator library. -/
-target torchlean_tensor_cpu_object pkg : FilePath :=
-  buildTensorCpuObject pkg
 
 /-- Packed host tensor primitives linked into compiled executables. -/
 target torchlean_tensor_cpu pkg : FilePath := do
@@ -202,11 +198,11 @@ lean_lib NNSlowProofs where
 lean_lib TorchLeanDocs where
   roots := #[`NN.Docs]
 
--- Unified verification CLI registry: `lake exe verify -- <tool> [args...]`
+-- Unified verification CLI registry: `scripts/lake.sh exe verify -- <tool> [args...]`
 lean_exe verify where
   root := `NN.Verification.Main
 
--- Native runner for `lake test`, including tests that call backend externs.
+-- Native runner for `scripts/lake.sh test`, including tests that call backend externs.
 lean_exe nn_tests_suite where
   root := `NN.Tests.Suite
 
@@ -222,13 +218,13 @@ lean_exe native_float32_parity where
 lean_exe libtorch_sdpa_test where
   root := `NN.Tests.Runtime.Cuda.LibTorchSDPA
 
--- Repo-policy lints (header hygiene, banned constructs, etc.) via `lake lint`.
+-- Repo-policy lints (header hygiene, banned constructs, etc.) via `scripts/lake.sh lint`.
 lean_exe torchlean_lint where
   srcDir := "scripts/checks"
   root := `TorchLeanLint
 
--- Runnable examples: `lake exe torchlean <example> [args...]`.
--- Build with `lake -R -K cuda=true build` before passing `--cuda` to an example.
+-- Runnable examples: `scripts/lake.sh exe torchlean <example> [args...]`.
+-- Build with `scripts/lake.sh -Kcuda=true build` before passing `--cuda` to an example.
 lean_exe torchlean where
   root := `NN.Examples.RunnerMain
 
@@ -236,7 +232,7 @@ lean_exe torchlean where
 require floatlib from git
   "https://github.com/lean-dojo/FloatLib" @ "main"
 
--- Complete API documentation (HTML) via `lake build TorchLeanDocs:docs`.
+-- Complete API documentation (HTML) via `scripts/lake.sh build TorchLeanDocs:docs`.
 require «doc-gen4» from git
   "https://github.com/leanprover/doc-gen4" @ "v4.34.0"
 

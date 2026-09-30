@@ -82,24 +82,10 @@ def invalidConfiguration {β : Type} [TorchLean.Storage β]
     (validateModel := .error message)
 
 /-!
-The readers below are `opaque` on purpose. `IndexedModel` keeps every field but `stateShapes`
-private, so the only way to look inside is through this namespace, and an `opaque` reader is one
-that `simp`, `decide` and `rfl` cannot unfold back into the field. Builders therefore stay free to
-change how a model is represented without any downstream proof noticing, which is the whole reason
-the fields were made private in the first place.
+The model readers are `opaque` so proofs cannot unfold them into private fields. Public readers
+expose model metadata; this namespace supplies the runtime-only configuration and program readers.
+Builders can change the representation without exposing it to downstream proofs.
 -/
-
-/-- Label the builder gave this model, used in summaries and error messages. -/
-opaque kind {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
-    (model : IndexedModel σ τ β) : String :=
-  match model with
-  | ⟨_, kind, _, _, _, _, _, _⟩ => kind
-
-/-- Parameters and buffers the model starts from, in `stateShapes` order. -/
-opaque initialState {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
-    (model : IndexedModel σ τ β) : State Float model.stateShapes :=
-  match model with
-  | ⟨_, _, initialState, _, _, _, _, _⟩ => initialState
 
 /-- How the runtime should fill the state at allocation time, or `none` for an unplanned model. -/
 opaque initializationPlan {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
@@ -107,12 +93,6 @@ opaque initializationPlan {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β
     Option (Runtime.Autograd.Model.Module.RuntimeInit.Plan model.stateShapes) :=
   match model with
   | ⟨_, _, _, initializationPlan, _, _, _, _⟩ => initializationPlan
-
-/-- One flag per state entry saying whether the optimizer may update it. -/
-opaque trainableMask {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
-    (model : IndexedModel σ τ β) : Array Bool :=
-  match model with
-  | ⟨_, _, _, _, trainableMask, _, _, _⟩ => trainableMask
 
 /-- Static verdict on the configuration, checked before anything is allocated. -/
 opaque validateModel {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
@@ -137,19 +117,22 @@ opaque program {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
 end Internal
 
 /-- Model label used in summaries and diagnostics. -/
-def kind {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
+opaque kind {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
     (model : IndexedModel σ τ β) : String :=
-  Internal.kind model
+  match model with
+  | ⟨_, kind, _, _, _, _, _, _⟩ => kind
 
 /-- Semantic initial values for the complete model state. -/
-def initialState {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
+opaque initialState {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
     (model : IndexedModel σ τ β) : State Float model.stateShapes :=
-  Internal.initialState model
+  match model with
+  | ⟨_, _, initialState, _, _, _, _, _⟩ => initialState
 
 /-- Gradient flags aligned with `stateShapes`. -/
-def requiresGrad {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
+opaque requiresGrad {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
     (model : IndexedModel σ τ β) : Array Bool :=
-  Internal.trainableMask model
+  match model with
+  | ⟨_, _, _, _, trainableMask, _, _, _⟩ => trainableMask
 
 /-- Validate static model configuration before allocation or graph execution. -/
 def validate {σ τ : Spec.Shape} {β : Type} [TorchLean.Storage β]
@@ -209,7 +192,7 @@ def andThen {β : Type} [TorchLean.Storage β]
           Runtime.Autograd.Model.Layers.Seq.runtimeInit? rest with
       | some firstPlan, some restPlan => some (firstPlan.append restPlan)
       | _, _ => none)
-    (trainableMask := Internal.trainableMask first ++
+    (trainableMask := first.requiresGrad ++
       Runtime.Autograd.Model.Layers.Seq.requiresGrad rest)
     (validateModel := do
       first.validate
@@ -223,9 +206,9 @@ namespace Objective
 /--
 Pair an indexed-input model with a scalar loss.
 
-The resulting training module accepts one ordinary target tensor followed by the model's
-non-differentiable input tensor. Keeping those packs separate ensures that indices cannot receive
-gradients or be reinterpreted through the model's floating-point element type.
+The resulting objective definition has one ordinary target tensor and a separate
+non-differentiable model-input tensor. Keeping those packs separate ensures that indices cannot
+receive gradients or be reinterpreted through the model's floating-point element type.
 
 The target shape is independent of the model output shape, so this constructor
 also supports losses whose labels use a different representation from the
@@ -240,7 +223,7 @@ def fromLoss {β : Type} [TorchLean.Storage β] {σ τ υ : Spec.Shape}
       model.stateShapes [υ] [σ] :=
   { initState := State.Internal.toTensorPack model.initialState
     runtimeInit := Internal.initializationPlan model
-    requiresGrad := Internal.trainableMask model
+    requiresGrad := model.requiresGrad
     validate := model.validate
     validateDataInputs := fun
       | .cons input .nil => Internal.validateInput model input
@@ -330,13 +313,6 @@ opaque create {vocabularySize embeddingWidth : Nat}
     Embedding vocabularySize embeddingWidth :=
   ⟨initialWeight, initializationPlan, trainable, validation⟩
 
-/-- The table's starting weight matrix, one row per vocabulary entry. -/
-opaque initialWeight {vocabularySize embeddingWidth : Nat}
-    (table : Embedding vocabularySize embeddingWidth) :
-    Tensor Float [vocabularySize, embeddingWidth] :=
-  match table with
-  | ⟨weight, _, _, _⟩ => weight
-
 /-- How the runtime should fill that matrix at allocation time. -/
 opaque initializationPlan {vocabularySize embeddingWidth : Nat}
     (table : Embedding vocabularySize embeddingWidth) :
@@ -351,7 +327,7 @@ opaque isTrainable {vocabularySize embeddingWidth : Nat}
   match table with
   | ⟨_, _, trainable, _⟩ => trainable
 
-/-- Static verdict on the table's configuration; `Embedding.invalid` is how it becomes an error. -/
+/-- Static configuration verdict, including errors from `Embedding.Internal.invalid`. -/
 opaque validation {vocabularySize embeddingWidth : Nat}
     (table : Embedding vocabularySize embeddingWidth) : Except String Unit :=
   match table with
@@ -369,10 +345,11 @@ def invalid (vocabularySize embeddingWidth : Nat) (message : String) :
 end Internal
 
 /-- Initial table values, with one row per vocabulary item. -/
-def initialWeight {vocabularySize embeddingWidth : Nat}
+opaque initialWeight {vocabularySize embeddingWidth : Nat}
     (table : Embedding vocabularySize embeddingWidth) :
     Tensor Float [vocabularySize, embeddingWidth] :=
-  Internal.initialWeight table
+  match table with
+  | ⟨weight, _, _, _⟩ => weight
 
 /-- Construction options for a freshly initialized embedding table. -/
 structure Config where

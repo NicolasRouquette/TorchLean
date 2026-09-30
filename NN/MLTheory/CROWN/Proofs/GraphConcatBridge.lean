@@ -365,16 +365,6 @@ theorem evalConcat_zero_family {α : Type} [TorchLean.Storage α] [Context α]
   simpa [hout, Nat.add_assoc] using
     evalConcatLeadingAxisFold_family id trailing first (second :: lengths) values
 
-/-- A scalar in the flattened tensor is read at its row-major shaped coordinate. -/
-theorem getScalar_flattenSpec {α : Type} [TorchLean.Storage α]
-    {shape : Shape} (tensor : Tensor α shape) (index : Fin shape.size) :
-    Tensor.getScalar (Tensor.flattenSpec tensor) index =
-      tensor (((Tensor.Internal.Coord.equivFin shape).trans
-        (finCongr (Shape.internalSize_eq shape))).symm index) := by
-  obtain ⟨c, rfl⟩ := ((Tensor.Internal.Coord.equivFin shape).trans
-    (finCongr (Shape.internalSize_eq shape))).surjective index
-  rw [Equiv.symm_apply_apply]
-  exact Spec.getScalar_flattenSpec_linearize tensor c
 
 namespace ConcatLayout
 
@@ -419,8 +409,8 @@ theorem concatFlatValues?_flatten {α : Type} [TorchLean.Storage α] [Context α
             (Tensor.Internal.Rep.concatenateAxes layout.leading layout.trailing layout.lengths
               values) } := by
   have hsequence (f : Fin layout.lengths.length → FlatTensor α) :
-      Tensor.Internal.sequenceFinM (fun parent => some (f parent)) = some f := by
-    exact Tensor.Internal.sequenceFinM_pure f
+      Tensor.Internal.sequenceFinM (fun parent => some (f parent)) = some f :=
+    Tensor.Internal.sequenceFinM_pure f
   simp only [concatFlatValues?, Array.size_ofFn, beq_self_eq_true,
     ↓reduceIte, Array.getElem?_ofFn, Fin.isLt]
   erw [hsequence]

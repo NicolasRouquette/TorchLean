@@ -995,8 +995,8 @@ The executable tools have their own runner:
 ```terminal
 # List the available workflows, then run the small
 # model-to-IBP example.
-lake exe verify -- list
-lake exe verify -- torchlean-ibp
+scripts/lake.sh exe verify -- list
+scripts/lake.sh exe verify -- torchlean-ibp
 ```
 
 The objects that matter at this level are `NN.IR.Graph`, the parameter payload, the input region,
@@ -1053,7 +1053,7 @@ Hessian-vector product:
 ```terminal
 # Run the scalar-gradient and detach examples through the
 # public command-line entry point.
-lake exe torchlean quickstart_autograd
+scripts/lake.sh exe torchlean quickstart_autograd
 ```
 
 It also prints a loss and the same loss after `detach`: their forward values agree, but the
@@ -1069,8 +1069,8 @@ Command-specific help lists the runtime options for any example:
 ```terminal
 # Inspect the MLP flags first, then the list of runnable
 # examples.
-lake exe torchlean quickstart_mlp --help
-lake exe torchlean --help
+scripts/lake.sh exe torchlean quickstart_mlp --help
+scripts/lake.sh exe torchlean --help
 ```
 
 The top-level help lists the runnable model families and the common `--device`, `--arithmetic`,

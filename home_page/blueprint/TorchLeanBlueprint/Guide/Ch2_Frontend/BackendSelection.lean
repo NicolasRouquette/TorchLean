@@ -29,11 +29,10 @@ The previous page selected CPU or CUDA through the runtime API. A less
 visible question remains: when a graph asks for matrix multiplication, attention, or a
 reduction, how does TorchLean decide which implementation is allowed to answer?
 
-A device name is not enough. TorchLean's CUDA operations all execute through ATen, but a direct
-attention call and a composition of matrix products and softmax still have different contracts.
-Their intermediate storage, backward rules, and supporting evidence need to be identified. The
-backend planner keeps those choices in data and either returns an accepted plan or explains why it
-could not make one.
+A device name is not enough. TorchLean's CUDA attention composes matrix products and softmax in
+Lean over ATen numerical primitives. Its intermediate storage, backward rule, and supporting
+evidence need to be identified. The backend planner keeps those contracts in data and either
+returns an accepted plan or explains why it could not make one.
 
 The path is:
 
@@ -83,11 +82,11 @@ planning pure makes missing coverage visible before data transfer or training be
 
 # Kernel Capsules
 
-Suppose a graph reaches scaled dot-product attention. The default CUDA route pairs ATen forward
-with its matching local backward computation. An explicit alternative composes matrix products,
-hard-masked softmax, and their VJPs. Both use ATen for CUDA tensor operations; both retain
-TorchLean's tape, selected gradients, and parameter ownership. Neither records a LibTorch autograd
-graph. The operation has the same mathematical target, while the implementation contract differs.
+Suppose a graph reaches scaled dot-product attention. Its CUDA capsule describes a Lean
+composition of matrix products and softmax, with an explicit local VJP over saved probabilities.
+LibTorch supplies the numerical primitives while TorchLean owns the tape, saved buffers, and
+parameter gradients. The capsule's contract covers this composition; it does not select a fused
+attention implementation or record a LibTorch autograd graph.
 
 A `KernelCapsule` records those differences:
 
@@ -210,8 +209,8 @@ and a forward-only capsule cannot describe `.none` as though it were a VJP refin
 - `trustedBoundary reason` names code whose correctness is assumed for the claim;
 - `notApplicable` records an obligation that the capsule intentionally does not provide.
 
-There is no "proved" evidence variant. A capsule cannot claim that a Lean theorem covers its native
-implementation, because no such theorem exists for any registered kernel. What a capsule can say is
+There is no "proved" evidence variant: this descriptor does not carry a Lean proof of native
+implementation correctness. What a capsule can say is
 which guards and tests stand behind it, or that it delegates to code TorchLean does not check. The
 related idea of proof-carrying code {Informal.citep necula1997}[] requires a producer to ship a
 checkable certificate with its binary. A capsule carries a weaker record: a classified claim and
@@ -310,30 +309,29 @@ printing the report. Its input is the registered evidence record. A benchmark th
 `checked_cpu` loses these per-operation choices; storing the selected capsules makes later
 changes in preference or registry order inspectable.
 
-## The Choice Inside An Attention Capsule
+## The Implementation Inside An Attention Capsule
 
-Selecting `libtorch.direct_attention` identifies the route through TorchLean's adapter. ATen then
-chooses an eligible implementation for the actual tensors. The public controls in
-{src "NN/Runtime/Autograd/Engine/LibTorch/Controls.lean"}[`LibTorch`] let a run permit or disable
-the flash, efficient, math, and cuDNN attention implementations.
+Selecting `libtorch.direct_attention` identifies TorchLean's Lean-composed attention route.
+The name is retained for capsule identity; ATen chooses the implementations of its numerical
+primitives, but there is no fused attention provider selection. The public controls in
+{src "NN/Runtime/Autograd/Engine/LibTorch/Controls.lean"}[`LibTorch`] still expose the SDK's
+flash, efficient, math, and cuDNN attention permissions.
 
-For example, this definition disables the flash option when the application calls it:
+For example, this definition changes the SDK's flash permission when called; it does not change
+TorchLean's attention composition:
 
 ```lean (name := bsSDPControl)
 def bsDisableFlash : IO Unit :=
   Runtime.Autograd.LibTorch.setSDPEnabled .flash false
 ```
 
-The other enabled implementations still have to support the shape, dtype, device, mask, and
-backward pair. Permission is not a guarantee of eligibility. The adapter can require the math
-route for an unsupported fused case; disabling that route can turn the request into a runtime
-error. `getSDPEnabled` reads the permission, not the identity of the kernel that ran.
+`getSDPEnabled` reads that SDK permission. TorchLean's attention calls matrix-product and softmax
+primitives directly, so these permissions do not govern its forward or backward execution.
 
-TorchLean's planner can inspect and reject a capsule before data transfer. ATen's implementation
-choice needs the real tensors and linked SDK. A successful plan therefore does not establish
-that Flash Attention ran, that the request fits device memory, or that its backward implementation
-is available for every possible shape. The direct bridge retains its forward choice and saved
-state so that backward follows the same pair.
+The planner can inspect and reject the capsule before data transfer. Its accepted plan does not
+establish that the request fits device memory: attention materializes the full score matrix and
+saves probabilities, using quadratic memory in sequence length.
+{ref "gpu-and-cuda"}[GPU and CUDA] follows those buffers through forward and backward.
 
 # The Attention Specification Theorem
 
@@ -398,15 +396,15 @@ derivative rule used by the optimizer.
 
 TorchLean distinguishes three VJP modes:
 
-- `none`: no gradient is requested;
-- `torchLeanTape`: TorchLean owns the tape and backward traversal; each capsule declares whether its
-  local VJP is expressed through TorchLean operations or a named backend kernel;
-- `backendVJP`: require capsules whose local VJP is computed by a backend kernel.
+- `none`: a capsule supplies no reverse rule; a profile requests forward execution only;
+- `torchLeanTape`: a capsule composes its local VJP from TorchLean runtime operations;
+- `backendVJP`: a capsule supplies its local VJP through a native bridge routine.
 
-For the direct attention route, TorchLean records a node whose local VJP calls the matching ATen
-backward operator, or the explicit math backward composition over saved probabilities. TorchLean
-then adds those input cotangents to the surrounding graph's contributions. The retained forward
-state belongs to this pair; there is no LibTorch autograd graph to traverse. Reverse-mode
+A profile requesting `torchLeanTape` admits either local VJP implementation while retaining
+TorchLean's tape and backward traversal. A profile requesting `backendVJP` specifically requires
+the native local rule. Attention's capsule uses `torchLeanTape`: Lean computes its matrix products
+and explicit softmax VJP over tape-owned probabilities, then adds the input cotangents to the
+surrounding graph's contributions. There is no LibTorch autograd graph to traverse. Reverse-mode
 accumulation remains the classical construction {Informal.citep baydin2018}[].
 
 GPU attention uses LibTorch automatically. There is no separate composed-attention provider to
@@ -418,15 +416,14 @@ select a forward-only capsule. Seeded random sources are the deliberate exceptio
 non-differentiable values, so they do not need a local VJP of their own.
 
 Keep the selected capsule names with an experiment. A preference alone does not identify what
-ran, and `libtorch.direct_attention` still leaves ATen's internal implementation choice to the
-SDK.
+ran, and `libtorch.direct_attention` still leaves the numerical primitives' implementation choices
+to the SDK.
 
 # Boolean Attention Masks
 
 TorchLean gives boolean attention masks one semantics across specifications and runtimes. A blocked
 entry contributes exactly zero to the softmax numerator, as if its score were negative infinity.
-The composed route forms zero numerators for blocked entries; the direct bridge translates that
-support into its selected ATen operator's mask representation and handles fully blocked rows
+The CUDA composition forms zero numerators for blocked entries and handles fully blocked rows
 explicitly. Additive score biases remain a separate operation.
 {ref "modern-models"}[Modern Models] runs that mask against PyTorch and shows the theorem which
 makes “exactly zero” exact over the reals rather than approximate.
@@ -457,7 +454,8 @@ def bsHard : Tensor Float [3, 3] :=
 [[1.000000, 0.000000, 0.000000], [0.622459, 0.377541, 0.000000], [0.333333, 0.333333, 0.333333]]
 ```
 
-Every entry above the diagonal is `0.000000` and every row still sums to one. The first query has
+Every entry above the diagonal prints `0.000000`. In the real specification each nonempty row
+sums to one; the displayed Float entries approximate those normalized weights. The first query has
 only one allowed key, which receives all its mass. The second row normalizes its first two scores.
 The third row is uniform because all three keys are allowed and their scores are equal.
 
@@ -551,9 +549,9 @@ example (i j : Fin 3) (hij : i.val < j.val) :
 `hardMaskedSoftmaxSpec_causal_future_zero` in
 {src "NN/Proofs/Models/Attention/CausalMask.lean"}[`CausalMask.lean`] is stated for every sequence
 length, every score tensor, and every strict-future pair, so the instance above needs no tactic
-block beyond naming it. Its proof is short for a reason: with the numerator defined as `0` rather
-than as $`\exp` of a sentinel, the blocked coordinate reduces to zero definitionally, and the
-lemma is one `unfold` and one `simp`. A
+block beyond naming it. The proof applies the general blocked-coordinate lemma to the causal
+mask. That lemma handles the empty-row branch and simplifies the zero numerator through real
+division; it does not rely on an exponential underflowing. A
 capsule on any provider is then measured against this specification rather than against another
 implementation's tolerance.
 
@@ -641,9 +639,8 @@ also admits trusted boundaries. The same record decides which capsules the plann
 trust level) and which evidence the selected capsules may rely on (by evidence kind). A profile's
 `acceptGraph` uses its configured policy for both steps. Diagnostic evidence checks, such as
 `bsCheck`, can deliberately compare policies without producing an executable accepted value.
-The provider preference in `bsPrefer` chooses between admissible implementations. This evidence
-check is a separate filter: asking for a provider cannot override an obligation's rejected
-evidence.
+Provider preference chooses between admissible implementations. The evidence check is a separate
+filter: asking for a provider cannot override an obligation's rejected evidence.
 
 The evidence check accepts exactly when the filtered
 list of rejected obligations is empty. What it establishes is that every selected capsule rests on
@@ -907,7 +904,8 @@ These statements have different strengths:
 - "the example ran on CUDA" reports an execution path;
 - "CUDA matched the CPU reference on this test suite" reports finite parity evidence;
 - "the fused attention spec equals standard attention" cites a Lean semantic theorem;
-- "the ATen attention route implements the fused spec" requires an implementation refinement
+- "the Lean composition over ATen primitives implements the attention spec" requires an
+  implementation refinement
   argument;
 - "this LibTorch build passed the attention tests" reports the tested cases and configuration,
   while the foreign implementation remains outside the Lean proof.
@@ -940,7 +938,7 @@ The framework whose tensor library supplies CUDA execution is
 
 - PyTorch, [C++ and LibTorch API](https://docs.pytorch.org/cppdocs/), and the
   [`torch.nn.attention`](https://docs.pytorch.org/docs/stable/nn.attention.html) backend selector
-  corresponding to the native attention choices discussed above.
+  for the SDK permissions exposed by the controls above.
 - NVIDIA, [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/).
 - Lean, [validating proofs](https://lean-lang.org/doc/reference/latest/ValidatingProofs/), for what
   `#print axioms` is checking.

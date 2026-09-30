@@ -22,7 +22,7 @@ open FloatLib.Floats.ExecFloat (Binary)
 open FloatLib.Floats.Formats.BinaryInterchange (Model FloatFormat)
 open FloatLib.Numerics (Interval RationalInterval)
 open NN.MLTheory.CROWN
-open TorchLean.Floats.Interval.Comparison (interval32ToRat?)
+open TorchLean.Floats.Interval.Comparison (intervalToRat?)
 
 namespace NN.Tests.Floats.IEEE32IntervalBounds
 
@@ -40,7 +40,7 @@ private def binary32 (q : ℚ) : Endpoint :=
 
 private def decodedBounds? (result : Option (Endpoint × Endpoint)) :
     Option RationalInterval :=
-  result.bind fun (lo, hi) => interval32ToRat? ⟨lo, hi⟩
+  result.bind fun (lo, hi) => intervalToRat? Binary.toRat? ⟨lo, hi⟩
 
 private def satisfies (result : Option (Endpoint × Endpoint))
     (p : RationalInterval → Bool) : Bool :=

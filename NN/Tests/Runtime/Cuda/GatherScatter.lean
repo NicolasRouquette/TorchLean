@@ -28,7 +28,7 @@ open Spec TorchLean
 open TorchLean TorchLean.Tensor
 open Runtime.Autograd
 
-def runGatherVec : IO Unit := do
+def runGatherVec (duplicate : Bool := false) : IO Unit := do
   IO.println "== indexSelect vector =="
 
   let n : Nat := 5
@@ -38,8 +38,12 @@ def runGatherVec : IO Unit := do
   let x : Tensor Float sX :=
     (Tensor.from #[0.10, -0.20, 0.30, 0.40, -0.50]).reshape [n] (by dsimp; decide)
   let indices : Fin k → Fin n :=
-    ![⟨0, by decide⟩, ⟨2, by decide⟩, ⟨4, by decide⟩]
+    if duplicate then ![⟨2, by decide⟩, ⟨0, by decide⟩, ⟨2, by decide⟩]
+    else ![⟨0, by decide⟩, ⟨2, by decide⟩, ⟨4, by decide⟩]
   let idx : Tensor (Fin n) [k] := Tensor.ofFn indices
+  let seed : Tensor Float sY :=
+    if duplicate then (Tensor.from #[2.0, -1.0, 3.0]).reshape [k] (by dsimp; decide)
+    else Tensor.full sY 1.0
 
   -- CPU
   let t0 : Tape Float := Tape.empty
@@ -47,7 +51,7 @@ def runGatherVec : IO Unit := do
   let (t2, yId) ← Utils.okOrThrow
     (Tape.indexSelect (α := Float) (s := sX) (t := t1) xId 0 k idx)
   let yCpu ← Utils.cpuValue (s := sY) t2 yId
-  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor (Tensor.full sY (1.0 : Float))
+  let seedCpu : Spec.SomeTensor Float := Spec.SomeTensor.ofTensor seed
   let gradsCpu ← Utils.okOrThrow (Tape.backwardDenseAll (α := Float) (t := t2) yId seedCpu)
   let dxCpu ← Utils.cpuGrad (s := sX) gradsCpu xId
 
@@ -58,15 +62,17 @@ def runGatherVec : IO Unit := do
   let (t2c, yIdc) ← Utils.okOrThrow
     (Runtime.Autograd.LibTorch.Tape.indexSelect (s := sX) (t := t1c) xIdc 0 k idx)
   let yCuda ← Utils.cudaValue (s := sY) t2c yIdc
-  let seedCuda : Runtime.Autograd.LibTorch.AnyBuffer :=
-    { s := sY, buf := Runtime.Autograd.LibTorch.Buffer.full (UInt32.ofNat (Spec.Shape.size
-      sY)) 1.0 }
+  let seedCuda := Utils.tensorToAnyBuffer seed
   let gradsCuda ← Utils.okOrThrow
     (Runtime.Autograd.LibTorch.Tape.backwardDenseAll (t := t2c) yIdc seedCuda)
   let dxCuda ← Utils.cudaGrad (s := sX) gradsCuda xIdc
 
   Utils.assertTensorApprox (s := sY) "gather_vec forward" yCuda yCpu (tol := 1e-6)
   Utils.assertTensorApprox (s := sX) "gather_vec dx" dxCuda dxCpu (tol := 1e-6)
+  if duplicate then
+    let expected : Tensor Float sX :=
+      (Tensor.from #[-1.0, 0.0, 5.0, 0.0, 0.0]).reshape [n] (by dsimp; decide)
+    Utils.assertTensorApprox (s := sX) "gather_vec repeated-index VJP" dxCuda expected (tol := 0.0)
 
 def runScatterVec : IO Unit := do
   IO.println "== scatter_add_vec =="
@@ -208,6 +214,7 @@ def runScatterRow : IO Unit := do
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: gather/scatter ==="
   runGatherVec
+  runGatherVec true
   runScatterVec
   runGatherRows
   runScatterRow

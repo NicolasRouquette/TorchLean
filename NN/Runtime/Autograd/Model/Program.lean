@@ -32,7 +32,7 @@ open TorchLean TorchLean.Tensor
 export Runtime.Autograd.Torch (ExecutionMode Config Ops Ref RefList CurriedRef)
 
 namespace Curried
-export Runtime.Autograd.Torch.Curried (Fn curry uncurry)
+export Runtime.Autograd.Torch.Curried (Function curry uncurry)
 end Curried
 
 namespace CurriedRef

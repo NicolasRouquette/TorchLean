@@ -29,7 +29,8 @@ The degenerate box `[x, x]` around a concrete tensor, flattened.
 Guardrail tests feed a point rather than an interval because they are checking whether the engine
 certifies a node at all, not how tight the certificate is.
 -/
-def pointFlatBox {s : Shape} (value : Tensor Float s) : FlatBox Float :=
+def pointFlatBox {α : Type} [Storage α] [Context α] {s : Shape} (value : Tensor α s) :
+    FlatBox α :=
   FlatBox.ofTensor (Tensor.flattenSpec value)
 
 end NN.Tests.MLTheory.Utils

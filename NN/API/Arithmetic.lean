@@ -61,6 +61,29 @@ class FromFloat (α : Type) where
 def ofFloat {α : Type} [FromFloat α] (x : Float) : α :=
   FromFloat.ofFloat x
 
+/--
+Convert a binary64 value toward `-∞` (`up = false`) or `+∞` (`up = true`).
+
+This requires `roundForValidation` to report the converted scalar's value faithfully in binary64,
+as it does for the native and configured binary32 instances. Move the source away from `x` until
+its conversion lands on the requested side, falling back to that side's infinity after 64 attempts.
+Custom instances whose validation hook is only the default identity do not supply this guarantee.
+-/
+def ofFloatDirected {α : Type} [FromFloat α] (up : Bool) (x : Float) : α :=
+  Id.run do
+    let rounded (candidate : Float) := FromFloat.roundForValidation (α := α) candidate
+    let onSide (candidate : Float) :=
+      if up then x ≤ rounded candidate else rounded candidate ≤ x
+    if onSide x then
+      return ofFloat x
+    let mut gap := if up then x - rounded x else rounded x - x
+    for _ in [0:64] do
+      let candidate := if up then x + gap else x - gap
+      if onSide candidate then
+        return ofFloat candidate
+      gap := gap + gap
+    return ofFloat (if up then (1.0 / 0.0) else -(1.0 / 0.0))
+
 /-- `Float` values inject into the same type by identity. -/
 instance : FromFloat Float where
   ofFloat := id
@@ -157,12 +180,8 @@ def parse (value : String) : Except String Arithmetic :=
 
 /-- Parse and remove `--arithmetic`, using `default` when the flag is absent. -/
 def parseAndStrip (arguments : List String) (default : Arithmetic := .native) :
-    Except String (Arithmetic × List String) := do
-  let (value?, remainingArguments) ←
-    TorchLean.CLI.takeFlagValue? arguments "arithmetic"
-  match value? with
-  | none => pure (default, remainingArguments)
-  | some value => pure (← parse value, remainingArguments)
+    Except String (Arithmetic × List String) :=
+  TorchLean.CLI.takeParsedFlag arguments "arithmetic" default.cliName parse
 
 /--
 Run `continuation` under the type selected by `arithmetic`.

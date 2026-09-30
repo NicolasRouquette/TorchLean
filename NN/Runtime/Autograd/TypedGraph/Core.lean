@@ -283,7 +283,7 @@ It states fidelity to the executable VJP stored in `GraphData`; derivative corre
 separate local laws carried by `Proofs.Autograd.Algebra.Node`.
 -/
 theorem backwardDenseAllFrom_lowerToTape_eq_backpropAllCtx
-    {α : Type} [CommSemiring α]
+    {α : Type} [TorchLean.Storage α] [Add α] [Zero α]
     {Γ : List Shape} {ss : List Shape} {τ : Shape}
     (g : GraphData α Γ ss) (x : TorchLean.TensorPack α Γ) (output : Idx (Γ ++ ss) τ)
     (seed : Tensor α τ) :
@@ -292,10 +292,10 @@ theorem backwardDenseAllFrom_lowerToTape_eq_backpropAllCtx
         (TorchLean.TensorPack.toShapeErasedArray
           (Proofs.Autograd.Algebra.GraphData.backpropAllCtx
             g x () (Proofs.Autograd.Algebra.TensorPack.single output seed))) := by
-  simpa [backwardDenseAllFrom, lowerToTape] using
-    (Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
+  exact
+    Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
       (α := α) (Δ := Unit) (Γ := Γ) (ss := ss) g x ()
-      (Proofs.Autograd.Algebra.TensorPack.single output seed))
+      (Proofs.Autograd.Algebra.TensorPack.single output seed)
 
 end TypedGraph
 end Autograd

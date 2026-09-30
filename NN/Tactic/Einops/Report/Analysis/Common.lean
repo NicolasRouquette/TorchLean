@@ -9,7 +9,6 @@ public meta import NN.Tactic.Einops.Proof
 public meta import NN.Tensor.Internal.Elab.Einsum.ParallelOutput -- shake: keep
 public import NN.Tensor.Internal.Check.ParseShape -- shake: keep
 public import NN.Tactic.Einops.Proof
-import Mathlib.Algebra.Order.Field.Basic
 
 /-!
 # Shared report decoding
@@ -92,21 +91,6 @@ def decodeTransformAxis (expression : Expr) :
   else
     return none
 
-/-- Decode an einsum axis together with its user-facing description. -/
-def decodeEinsumAxis (expression : Expr) :
-    MetaM (Option (Expr × String)) := do
-  let expression ← reportWhnf expression
-  if expression.isAppOfArity ``Check.EinsumAxis.named 1 then
-    let some name ← decodeStringLiteral expression.getAppArgs[0]!
-      | return none
-    return some (expression, name)
-  else if expression.isAppOfArity ``Check.EinsumAxis.ellipsis 1 then
-    let some index ← decodeNatLiteral expression.getAppArgs[0]!
-      | return none
-    return some (expression, s!"ellipsis[{index}]")
-  else
-    return none
-
 /-- Decode a reflected einsum axis to its concrete checker value. -/
 def decodeEinsumAxisValue (expression : Expr) :
     MetaM (Option Check.EinsumAxis) := do
@@ -121,6 +105,18 @@ def decodeEinsumAxisValue (expression : Expr) :
     return some (.ellipsis index)
   else
     return none
+
+/-- Decode an einsum axis together with its user-facing description. -/
+def decodeEinsumAxis (expression : Expr) :
+    MetaM (Option (Expr × String)) := do
+  let expression ← reportWhnf expression
+  let some axis ← decodeEinsumAxisValue expression
+    | return none
+  let description :=
+    match axis with
+    | .named name => name
+    | .ellipsis index => s!"ellipsis[{index}]"
+  return some (expression, description)
 
 /-- Render one concrete shape in tensor notation. -/
 def formatShape (shape : List Nat) : String :=
@@ -226,11 +222,8 @@ def broadcastDescriptions (shape : List Nat)
     | none => none
 
 /-- Number human-readable lowering stages from the supplied starting index. -/
-def numberedStageLines : Nat → List String → List String
-  | _, [] => []
-  | number, stage :: stages =>
-      s!"    {number}. {stage}" ::
-        numberedStageLines (number + 1) stages
+def numberedStageLines (start : Nat) (stages : List String) : List String :=
+  stages.mapIdx fun index stage => s!"    {start + index}. {stage}"
 
 
 end TorchLean.Tensor.Internal.Report.Impl

@@ -48,7 +48,7 @@ def maxPool {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
   if hKernel : (∀ i : Fin d, kernel.getScalar i ≠ 0) then
     if hStride : (∀ i : Fin d, stride.getScalar i ≠ 0) then
       let ⟨ss, g, _⟩ ← get
-      let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+      let ix ← liftM (mkIdx (Γ := Γ) ss x)
       let layer : Spec.MaxPoolSpec d kernel stride padding hKernel hStride := {}
       let outSpatial := Spec.poolOutSpatialPad inSpatial kernel stride padding
       let outShape : Shape := Shape.ofList (C :: Tensor.to outSpatial (List Nat))
@@ -97,7 +97,7 @@ def avgPool {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
   if hKernel : (∀ i : Fin d, kernel.getScalar i ≠ 0) then
     if hStride : (∀ i : Fin d, stride.getScalar i ≠ 0) then
       let ⟨ss, g, _⟩ ← get
-      let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+      let ix ← liftM (mkIdx (Γ := Γ) ss x)
       let layer : Spec.AvgPoolSpec d kernel stride padding hKernel hStride := {}
       let outSpatial := Spec.poolOutSpatialPad inSpatial kernel stride padding
       let outShape : Shape := Shape.ofList (C :: Tensor.to outSpatial (List Nat))
@@ -154,7 +154,7 @@ def smoothMaxPool {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α] [D
     if hKernel : (∀ i : Fin d, kernel.getScalar i ≠ 0) then
       if hStride : (∀ i : Fin d, stride.getScalar i ≠ 0) then
         let ⟨ss, g, _⟩ ← get
-        let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+        let ix ← liftM (mkIdx (Γ := Γ) ss x)
         let layer : Spec.MaxPoolSpec d kernel stride padding hKernel hStride := {}
         let outSpatial := Spec.poolOutSpatialPad inSpatial kernel stride padding
         let outShape : Shape := Shape.ofList (C :: Tensor.to outSpatial (List Nat))

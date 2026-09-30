@@ -36,7 +36,7 @@ private def contains (box : FlatBox Float) (i : Nat) (value : Float) : Bool :=
 
 /-- The same directed transfer encloses exact constant-row derivatives in each host format. -/
 def checkConstantRows (α : Type) [Storage α] [Context α] [BoundOps α]
-    [NonlinearBoundOps α] (label : String) : IO Unit := do
+    [NonlinearBoundOps α] [DecidableLE α] (label : String) : IO Unit := do
   let affine : LayerNormParams α :=
     { normalizedShape := [2], gamma := [1, 1], beta := [0, 0], eps := 1 }
   let input : Tensor α [4] := [0, 0, 1, 1]
@@ -46,11 +46,11 @@ def checkConstantRows (α : Type) [Storage α] [Context α] [BoundOps α]
       (FlatBox.ofTensor input) (FlatBox.ofTensor direction) (FlatBox.ofTensor direction) zero
     | throw <| IO.userError s!"LayerNorm derivative: {label} constant rows rejected"
   for i in [0:4] do
-    require (!(decide (getAtOrZero first.lo [i] > getAtOrZero direction [i])) &&
-      !(decide (getAtOrZero direction [i] > getAtOrZero first.hi [i])))
+    require (decide (getAtOrZero first.lo [i] ≤ getAtOrZero direction [i]) &&
+      decide (getAtOrZero direction [i] ≤ getAtOrZero first.hi [i]))
       s!"{label} first derivative"
-    require (!(decide (getAtOrZero second.lo [i] > 0)) &&
-      !(decide (0 > getAtOrZero second.hi [i])))
+    require (decide (getAtOrZero second.lo [i] ≤ 0) &&
+      decide (0 ≤ getAtOrZero second.hi [i]))
       s!"{label} second derivative"
 
 def run : IO Unit := do

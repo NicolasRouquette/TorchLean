@@ -17,10 +17,12 @@ The suite is organized as follows:
   regressions without floating point noise.
 * `NN/Tests/Runtime/Cuda` compares Lean driven CPU/eager behavior against the CUDA FFI layer on
   small deterministic inputs.
-* `NN/Tests/API`, `NN/Tests/Tensor`, `NN/Tests/IR`, `NN/Tests/GraphSpec`, `NN/Tests/Backend`, and
+* `NN/Tests/API`, `NN/Tests/Tensor`, `NN/Tests/IR`, `NN/Tests/Backend`, and
   `NN/Tests/MLTheory` hold focused checks for the public API (trainer runs, checkpoints, data,
   models, CLI), the tensor front end (lexer, einsum planning, storage, linear algebra), IR shape
-  contracts, GraphSpec generality, backend profiles, and CROWN operator guardrails.
+  contracts, backend profiles, and numerical and CROWN operator guardrails.
+* `NN/Tests/Floats`, `NN/Tests/Interop`, and `NN/Tests/Verification` cover native scalar parity
+  and intervals, PyTorch export/import, and certificate parsing and checks.
 
 ## What Tests Are For
 

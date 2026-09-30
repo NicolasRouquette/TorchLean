@@ -167,33 +167,6 @@ private def symbolicCheckedUnpackExpr (source : String)
   return (checked, hOutputShape, [(partition, hPartition)])
 
 /--
-Transport a packed tensor across the certified equality between its declared
-shape and the shape reconstructed by unpack metadata.
--/
-private def castTensorToShape
-    (scalarType storage packedTensor shapeEquality : Expr) : MetaM Expr := do
-  let equalityType ← withTransparency .reducible <| whnf (← inferType shapeEquality)
-  let some (_, outputShape, _) := equalityType.eq?
-    | throwError "internal error: expected an unpack shape equality"
-  let tensorConstant := Lean.mkConst ``Rep [← getDecLevel scalarType]
-  let outputTensorType :=
-    mkAppN tensorConstant #[scalarType, outputShape, storage]
-  let packedTensorType ← inferType packedTensor
-  if ← withTransparency .reducible <|
-      isDefEq packedTensorType outputTensorType then
-    return packedTensor
-  let shapeType ← mkAppM ``List #[mkConst ``Nat]
-  let tensorFamily ←
-    withLocalDeclD `shape shapeType fun shape => do
-      let tensorType :=
-        mkAppN tensorConstant #[scalarType, shape, storage]
-      mkLambdaFVars #[shape] tensorType
-  let reversedEquality ← mkAppM ``Eq.symm #[shapeEquality]
-  let tensorTypeEquality ←
-    mkAppM ``congrArg #[tensorFamily, reversedEquality]
-  mkAppM ``cast #[tensorTypeEquality, packedTensor]
-
-/--
 Retain generated arithmetic certificates as nondependent lets in the emitted
 term, so the kernel checks them without changing its result type.
 -/
@@ -434,7 +407,7 @@ def elabUnpack : TermElab := fun stx expectedType? => withRef stx do
             symbolicRequestedShapes
         pure (checked, hOutputShape, arithmeticFacts, none, none)
   let packedTensor ←
-    castTensorToShape scalarType storage packedTensor hOutputShape
+    mkAppM ``Rep.castShape #[← mkAppM ``Eq.symm #[hOutputShape], packedTensor]
   let result ←
     match checkedValue? with
     | some checkedValue =>

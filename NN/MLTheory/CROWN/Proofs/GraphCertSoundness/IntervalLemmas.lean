@@ -56,25 +56,6 @@ theorem interval_mul_bounds
       x * y ≤ max (max (lx * ly) (lx * uy)) (max (ux * ly) (ux * uy)) :=
   FloatLib.Floats.Interval.mul_bounds_Icc lx ux ly uy x y ⟨hx, hx'⟩ ⟨hy, hy'⟩
 
-/-! Helpers: our bound propagation uses `BoundOps.min2/max2`, which are defined via `decide (a >
-  b)`.
-For `ℝ` these coincide with `min/max`. -/
-
-theorem min2_eq_min (a b : ℝ) : NN.MLTheory.CROWN.BoundOps.min2 a b = min a b := by
-  by_cases h : a > b
-  · have hab : b ≤ a := le_of_lt h
-    simp [NN.MLTheory.CROWN.BoundOps.min2, h, min_eq_right hab]
-  · have hab : a ≤ b := le_of_not_gt h
-    simp [NN.MLTheory.CROWN.BoundOps.min2, h, min_eq_left hab]
-
-/-- The bound-arithmetic `max2` is `max` over `ℝ`. -/
-theorem max2_eq_max (a b : ℝ) : NN.MLTheory.CROWN.BoundOps.max2 a b = max a b := by
-  by_cases h : a > b
-  · have hab : b ≤ a := le_of_lt h
-    simp [NN.MLTheory.CROWN.BoundOps.max2, h, max_eq_left hab]
-  · have hab : a ≤ b := le_of_not_gt h
-    simp [NN.MLTheory.CROWN.BoundOps.max2, h, max_eq_right hab]
-
 /-- Elementwise interval multiplication of two boxes is sound.
 
 Coordinatewise this is `interval_mul_bounds`; the box wrapper adds the dimension check, which is why

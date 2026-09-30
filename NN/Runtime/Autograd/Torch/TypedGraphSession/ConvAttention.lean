@@ -45,21 +45,12 @@ def conv {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α) [Context 
   IO (TensorRef α
     (Shape.ofList (outC ::
       Tensor.to (Spec.convOutSpatial inSpatial kernel stride padding) (List Nat)))) :=
-  commitGraphM (α := α) s
-    (β := TensorRef α
-      (Shape.ofList (outC ::
-        Tensor.to (Spec.convOutSpatial inSpatial kernel stride padding) (List Nat))))
-    (refs := #[w.identity?, b.identity?, x.identity?])
-    (fun {Γ} {ss} xv nat g => do
-      let (v, st') ← runGraphM (α := α) (Γ := Γ)
-        (Runtime.Autograd.TypedGraph.GraphM.conv (α := α) (Γ := Γ)
-          (d := d) (inC := inC) (outC := outC)
-          (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
-          { id := w.id } { id := b.id } { id := x.id })
-        ss g
-      let ⟨ss', g'⟩ := st'
-      let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
-      pure ({ id := v.id }, st1))
+  recordGraphM (α := α) s (refs := #[w.identity?, b.identity?, x.identity?])
+    (fun {Γ} =>
+      Runtime.Autograd.TypedGraph.GraphM.conv (α := α) (Γ := Γ)
+        (d := d) (inC := inC) (outC := outC)
+        (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
+        { id := w.id } { id := b.id } { id := x.id })
 
 /--
 N-D transpose convolution for channels-first tensors `(inC, spatial...)` (no batch axis).
@@ -80,21 +71,12 @@ def convTranspose {α : Type} [TorchLean.Storage α]
   IO (TensorRef α
     (Shape.ofList (outC ::
       Tensor.to (Spec.convTransposeOutSpatial inSpatial kernel stride padding) (List Nat)))) :=
-  commitGraphM (α := α) s
-    (β := TensorRef α
-      (Shape.ofList (outC ::
-        Tensor.to (Spec.convTransposeOutSpatial inSpatial kernel stride padding) (List Nat))))
-    (refs := #[w.identity?, b.identity?, x.identity?])
-    (fun {Γ} {ss} xv nat g => do
-      let (v, st') ← runGraphM (α := α) (Γ := Γ)
-        (Runtime.Autograd.TypedGraph.GraphM.convTranspose (α := α) (Γ := Γ)
-          (d := d) (inC := inC) (outC := outC)
-          (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
-          { id := w.id } { id := b.id } { id := x.id })
-        ss g
-      let ⟨ss', g'⟩ := st'
-      let st1 : TypedGraphSessionState α := { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
-      pure ({ id := v.id }, st1))
+  recordGraphM (α := α) s (refs := #[w.identity?, b.identity?, x.identity?])
+    (fun {Γ} =>
+      Runtime.Autograd.TypedGraph.GraphM.convTranspose (α := α) (Γ := Γ)
+        (d := d) (inC := inC) (outC := outC)
+        (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := inSpatial)
+        { id := w.id } { id := b.id } { id := x.id })
 
 /-- Record self-attention for one sequence or a batch, preserving reference ownership checks. -/
 def attention {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α) [Context α]
@@ -108,19 +90,13 @@ def attention {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α) [Con
     (mask : Option (Tensor Bool [n, n]) := none) :
     IO (TensorRef α (match (generalizing := false) batch with
       | none => [n, dModel] | some b => [b, n, dModel])) :=
-  commitGraphM (α := α) s
+  recordGraphM (α := α) s
     (refs := #[wq.identity?, wk.identity?, wv.identity?, wo.identity?, x.identity?])
-    (fun {Γ} {ss} xv nat g => do
-      let (v, st') ← runGraphM (α := α) (Γ := Γ)
-        (Runtime.Autograd.TypedGraph.GraphM.attention (α := α) (Γ := Γ) (batch := batch)
-          (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) h1
-          { id := wq.id } { id := wk.id } { id := wv.id } { id := wo.id } { id := x.id }
-          (mask := mask))
-        ss g
-      let ⟨ss', g'⟩ := st'
-      let st1 : TypedGraphSessionState α :=
-        { Γ := Γ, x := xv, nat := nat, ss := ss', g := g' }
-      pure ({ id := v.id }, st1))
+    (fun {Γ} =>
+      Runtime.Autograd.TypedGraph.GraphM.attention (α := α) (Γ := Γ) (batch := batch)
+        (n := n) (numHeads := numHeads) (dModel := dModel) (headDim := headDim) h1
+        { id := wq.id } { id := wk.id } { id := wv.id } { id := wo.id } { id := x.id }
+        (mask := mask))
 
 end TypedGraphSession
 

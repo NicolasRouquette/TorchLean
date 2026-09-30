@@ -152,7 +152,7 @@ Its signature says the same thing:
 ```leanOutput apiDotSig (whitespace := lax)
 @Tensor.dotSpec : {α : Type} →
   [inst : Storage α] →
-    [Context α] →
+    [Add α] → [Mul α] → [Zero α] →
       {s : Shape} → Tensor α s → Tensor α s → α
 ```
 
@@ -162,9 +162,10 @@ is the choice that lets it be used directly in arithmetic.
 
 The implicit `s` is not restricted to a vector shape: both operands may be any same-shaped tensors,
 and all corresponding products contribute to the returned scalar. `Storage α` supplies their
-representation, while `Context α` supplies the scalar operations used by this definition. Neither
-argument changes the shape relation. In this example Lean infers `α := Float` and `s := [3]` from
-the operands, so the call needs no explicit type or dimension arguments.
+representation; `Add α`, `Mul α`, and `Zero α` supply addition, multiplication, and the initial
+zero for the sum. These instances do not change the shape relation. In this example Lean infers
+`α := Float` and `s := [3]` from the operands, so the call needs no explicit type or dimension
+arguments.
 
 ## Elementwise Arithmetic And Reductions
 
@@ -416,8 +417,8 @@ dimensions:
 The input may have any shape ending in `inputWidth`, and the output replaces that last dimension.
 So the same declaration handles an unbatched vector, a batch of rows, and a batch of sequences of
 rows, with the leading dimensions carried along by the `EndsWith` instance rather than by a runtime
-reshape. This is the pattern to look for throughout the API: batching is a shape fact, resolved by
-instance search, not a separate code path.
+reshape. Instance search checks the trailing feature width while retaining the prefix shape. Runtime
+implementations may still specialize how they execute batched operations.
 
 # Naming And Dot Syntax
 
@@ -530,7 +531,7 @@ Check the definitions without starting the training run:
 
 ```terminal
 # Elaborate the declarations and main without invoking main.
-lake env lean Scratch.lean
+scripts/lake.sh env lean Scratch.lean
 ```
 
 Lean stays silent here apart from diagnostics. To execute the `main` in the file:
@@ -538,10 +539,10 @@ Lean stays silent here apart from diagnostics. To execute the `main` in the file
 ```terminal
 # Run main after elaboration to execute the requested
 # updates and held-out prediction.
-lake env lean --run Scratch.lean
+scripts/lake.sh env lean --run Scratch.lean
 ```
 
-The run is deterministic at `seed := 2026`, and it ends with:
+The recorded CPU run used `seed := 2026` and ended with:
 
 ```terminal +output
 dataset size = 4
@@ -664,8 +665,8 @@ The layer constructor's signature explains the shapes in the error:
 ```
 
 Both the batch shape and the layer configuration are optional parameters with defaults, which is why
-`nn.linear 2 8` is enough in the common case and why the pretty-printed type in the error mentions
-`Shape.appendDim [] 7` rather than a bare `[7]`.
+`nn.linear 2 8` is enough in the common case and why an unbatched layer has boundary shapes
+`[inputWidth]` and `[outputWidth]`.
 
 Place the cursor on `trained.predict`. Its input and output are trainer-facing host-`Float` tensors
 with the model's checked shapes. The retained runner handles conversion to the arithmetic semantics
@@ -801,7 +802,9 @@ Proofs choose `ℝ` or `TorchLean.Floats.FP32` directly. They are not runtime mo
 they are noncomputable. The high-level trainer accepts the real runtime modes. For a real loss on
 complex parameters, use `autograd.complex.grad` and `nn.sgdStep` with explicit complex state.
 The gradient contains both real-coordinate derivatives; predictions and `Checkpoint.State` preserve
-both components. The reference algorithm takes two forward passes per complex parameter entry.
+both components. The reference gradient algorithm takes two forward passes per complex parameter
+entry;
+requesting the objective value adds one ordinary evaluation.
 It does not turn the trainer's real-data interface into a complex-data interface.
 
 Try `scripts/lake.sh exe torchlean complex_regression` for a complete complex binary32 example.
@@ -920,7 +923,8 @@ change the gradient component of another for this particular separable function.
 $`\tfrac{2}{3}I`, as the second derivative of a mean of squares must be, with exact zeros off the
 diagonal rather than small noise. `torch.func.hessian` on the same function returns
 `[[0.6666666865348816, 0.0, 0.0], [0.0, 0.6666666865348816, 0.0], [0.0, 0.0, 0.6666666865348816]]`,
-the same matrix. Composing forward and reverse mode this way, rather than differentiating twice in
+the same matrix at the displayed precision. Composing forward and reverse mode this way, rather
+than differentiating twice in
 reverse, is the standard choice for a small input dimension {Informal.citep baydin2018}[].
 
 The full set is `autograd.grad`, `autograd.vjp`, `autograd.jacfwd`, `autograd.jacrev`, and
@@ -1078,7 +1082,7 @@ The exported families deliberately expose different amounts of fitting and infer
 *
   * random forest
   * symbolic-tree aggregation plus numeric regression fitting and Gini classification-tree fitting
-  * deterministic reference fitting; rotated resamples replace randomized bootstrapping
+  * seeded sampling with replacement for rows and optional feature subsampling per split
 *
   * naive Bayes
   * multinomial string-feature counting, log scores, prediction, and negative log likelihood
@@ -1090,11 +1094,13 @@ The exported families deliberately expose different amounts of fitting and infer
 *
   * GMM
   * component log densities, responsibilities, VJP, log likelihood, initialization, and EM
-  * evaluation is optional and rejects invalid weights or non-positive-definite covariances
+  * optional evaluation checks weights and a scalar-arithmetic covariance criterion; a rounded
+    check is not a proof of real positive definiteness
 *
   * PCA
   * projection, inverse, VJP, reconstruction statistics, and a leading-component fit
-  * fitting approximates one component with fixed power iteration; it is not a full SVD-based PCA
+  * fitting approximates one component with deterministic multistart power iteration; it is not a
+    full SVD-based PCA
     fit
 *
   * linear regression
@@ -1219,10 +1225,10 @@ Run:
 # These commands exercise public tensor, derivative, and
 # training interfaces from compiled
 # examples.
-lake exe torchlean --help
-lake exe torchlean quickstart_tensors
-lake exe torchlean quickstart_autograd
-lake exe torchlean quickstart_mlp --steps 20
+scripts/lake.sh exe torchlean --help
+scripts/lake.sh exe torchlean quickstart_tensors
+scripts/lake.sh exe torchlean quickstart_autograd
+scripts/lake.sh exe torchlean quickstart_mlp --steps 20
 ```
 
 The tensor quickstart uses one interface with four scalar types. The output lets us compare their

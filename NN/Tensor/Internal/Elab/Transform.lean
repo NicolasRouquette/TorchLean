@@ -266,11 +266,10 @@ private def symbolicCheckedTransformExpr (operation source : String)
   return (checked, outputShape)
 
 /--
-Extract a successful checker result in the generated term.
+Rebuild a concrete checker result with kernel-checked validity proofs.
 
-The elaborator has already run the checker to select a diagnostic or continue.
-This expression reruns the accepted computation, and the proof required by
-`Option.get` makes its success part of the kernel-checked term.
+The elaborator has already run the checker. This reconstruction records its
+normalization, axis lengths, and output shape, then proves the plan invariants.
 -/
 private def reifyCheckedTransform (checked : Check.CheckedTransform) :
     TermElabM Expr := do

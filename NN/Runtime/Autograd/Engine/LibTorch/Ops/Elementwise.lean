@@ -96,11 +96,12 @@ returned buffers are owned by the tape/gradient accumulator; workspace buffers a
     (forward := Buffer.div)
     (backward := fun a b dLdy =>
       let da := Buffer.div dLdy b
-      let b2 := Buffer.mul b b
-      let aOverB2 := Buffer.div a b2
+      -- Match the eager VJP schedule: squaring b can overflow or underflow first.
+      let aOverB := Buffer.div a b
+      let aOverB2 := Buffer.div aOverB b
       let dLdyA := Buffer.mul dLdy aOverB2
       let dbRaw := Buffer.scale dLdyA (-1.0)
-      let db := Buffer.releaseThen b2 <| Buffer.releaseThen aOverB2 <|
+      let db := Buffer.releaseThen aOverB <| Buffer.releaseThen aOverB2 <|
         Buffer.releaseThen dLdyA dbRaw
       (da, db))
 

@@ -149,7 +149,7 @@ theorem eval_inline {Γ ps ins outs : List Shape} (model : MultiModel ps ins out
   rfl
 
 /-- An execution-polymorphic program returning several shape-indexed tensor references. -/
-abbrev MultiOutputProgram (α : Type 0) [TorchLean.Storage α] [Context α]
+abbrev Program (α : Type 0) [TorchLean.Storage α] [Context α]
     (ins outs : List Shape) : Type 1 :=
   ∀ {μ : Type → Type}, [Monad μ] → [Runtime.Autograd.Torch.Ops (m := μ) (α := α)] →
     CurriedRef (fun s => Runtime.Autograd.Model.RefTy (m := μ) (α := α) s) ins
@@ -157,7 +157,7 @@ abbrev MultiOutputProgram (α : Type 0) [TorchLean.Storage α] [Context α]
 
 /-- Lower every result of a multi-output model for the selected TorchLean execution target. -/
 def toProgram {ps ins outs : List Shape} (m : MultiModel ps ins outs)
-    {α : Type 0} [TorchLean.Storage α] [Context α] : MultiOutputProgram α (ps ++ ins) outs :=
+    {α : Type 0} [TorchLean.Storage α] [Context α] : Program α (ps ++ ins) outs :=
   fun {μ} _ _ =>
     CurriedRef.curry
       (Ref := Runtime.Autograd.Model.RefTy (m := μ) (α := α))

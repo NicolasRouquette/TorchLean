@@ -248,6 +248,10 @@ def nextDown (x : Float) : Float :=
 The Knuth two-sum error term is exact for finite operands under round-to-nearest, so the rounded
 sum steps up one ulp only when it lies below the exact sum. On overflow the error term is NaN and
 the infinite rounded sum is returned unchanged.
+
+Unlike `instBoundOpsFloat`, which always widens, this keeps exact `center + radius` endpoints when
+JSON input boxes are decoded (`NN.Verification.Util.Json`); only the two directions that decoder
+needs are provided.
 -/
 def addUpTight (a b : Float) : Float :=
   let s := a + b

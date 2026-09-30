@@ -23,6 +23,8 @@ namespace NN
 namespace Backend
 namespace Reference
 
+namespace Internal
+
 /-- Build a checked portable CPU capsule with explicit value, VJP, shape, and layout contracts. -/
 def capsule
     (name : String) (op : BackendOp) (valueSummary vjpSummary : String)
@@ -97,6 +99,10 @@ def forwardOnlyCapsule (op : BackendOp) (valueSummary : String) : KernelCapsule 
     s!"Reference `{op.name}` is a forward-only capsule with no registered VJP."
     .none
 
+end Internal
+
+open Internal
+
 /-- Reference ReLU activation. -/
 def relu : KernelCapsule :=
   capsule
@@ -147,7 +153,7 @@ def sin : KernelCapsule := pointwiseCapsule .sin
 def cos : KernelCapsule := pointwiseCapsule .cos
 /-- Reference pointwise reciprocal. -/
 def inv : KernelCapsule := pointwiseCapsule .inv
-/-- Reference guarded logarithm used by numerically defensive programs. -/
+/-- Reference smooth logarithm surrogate `log (softplus x + epsilon)`. -/
 def safeLog : KernelCapsule := pointwiseCapsule .safeLog
 /-- Reference log-softmax reduction and normalization. -/
 def logSoftmax : KernelCapsule :=

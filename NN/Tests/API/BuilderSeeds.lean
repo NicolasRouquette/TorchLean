@@ -459,6 +459,12 @@ def run : IO Unit := do
     counterAfter
       (nn.models.resnet { resnetConfig with classCount := 0 })
       11
+  let (residualPredictor, residualStream) :=
+    (nn.models.Diffusion.NoisePredictor.residual diffusionConfig) (rand.SeedStream.init 11)
+  expectCounter "residual diffusion allocates distinct keys for both repeated blocks"
+    6 residualStream.counter
+  expectSeeds "residual diffusion retains the complete initializer order"
+    (expectedStreamSeeds 11 6) (stochasticInitializerSeeds residualPredictor)
   expectCounter "invalid basic diffusion configuration consumes no keys" 0 <|
     counterAfter
       (nn.models.Diffusion.NoisePredictor.basic

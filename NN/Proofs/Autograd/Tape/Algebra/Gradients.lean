@@ -159,6 +159,7 @@ theorem lookup_addUniform (ctx : GradientContext α shapes) (uniform : α)
 /-- Save an already materialized gradient and its current history version. -/
 def set (ctx : GradientContext α shapes) {shape : Shape} (idx : Idx shapes shape)
     (value : Tensor α shape) : GradientContext α shapes :=
+  -- `bound` discharges the in-bounds auto-parameter of `epochs.set` below.
   have bound : idx.i.val < ctx.epochs.size :=
     Nat.lt_of_lt_of_le (by rw [TensorContext.size_values]; exact idx.i.isLt) ctx.covered
   { ctx with

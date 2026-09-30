@@ -54,14 +54,10 @@ def StateEncloses (dims : Nat → Nat) (st : DirectedBackwardState α)
 private theorem read_set {β : Type} [Inhabited β] (xs : Array β)
     (i j : Nat) (a : β) (hj : j < xs.size) :
     (xs.set! i a)[j]! = if i = j then a else xs[j]! := by
-  rw [Array.set!_eq_setIfInBounds]
-  have hj' : j < (xs.setIfInBounds i a).size := by simpa using hj
-  rw [getElem!_pos (c := xs.setIfInBounds i a) (i := j) hj']
   by_cases hij : i = j
   · subst i
-    simp [Array.getElem_setIfInBounds_self]
-  · rw [Array.getElem_setIfInBounds_ne hj hij, ite_eq_right hij,
-      getElem!_pos (c := xs) (i := j) hj]
+    simp only [Array.getElem!_set!_self xs j a hj, ite_true]
+  · rw [Array.getElem!_set!_ne xs i j a hij, ite_eq_right hij]
 
 /-- Updating one coefficient row adds its exact contribution, even when the row was absent. -/
 theorem addCoeff_encloses {dims : Nat → Nat} {st : DirectedBackwardState α}
@@ -110,13 +106,14 @@ theorem addCoeff_encloses {dims : Nat → Nat} {st : DirectedBackwardState α}
         have hn := hpcoeff.1
         change previousDim = dims pid at hn
         subst previousDim
-        simpa only [castDimScalar_self, read_fin, Tensor.getScalar_map2Spec] using
+        simpa only [castDimScalar_self, Spec.getAtOrZero_eq_getScalar,
+          Tensor.getScalar_map2Spec] using
           And.intro
             ((LawfulBoundOps.addDown_le (previousLo.getScalar i) (boxLo.getScalar i)).trans
-              (add_le_add (by simpa only [read_fin] using (hpcoeff.2 i).1)
-                (by simpa only [read_fin] using (hbox.2 i).1)))
-            ((add_le_add (by simpa only [read_fin] using (hpcoeff.2 i).2)
-              (by simpa only [read_fin] using (hbox.2 i).2)).trans
+              (add_le_add (by simpa only [Spec.getAtOrZero_eq_getScalar] using (hpcoeff.2 i).1)
+                (by simpa only [Spec.getAtOrZero_eq_getScalar] using (hbox.2 i).1)))
+            ((add_le_add (by simpa only [Spec.getAtOrZero_eq_getScalar] using (hpcoeff.2 i).2)
+              (by simpa only [Spec.getAtOrZero_eq_getScalar] using (hbox.2 i).2)).trans
               (LawfulBoundOps.le_addUp (previousHi.getScalar i) (boxHi.getScalar i)))
       · rw [ite_eq_right (Ne.symm heq)]
         simpa only [heq, ↓reduceIte] using hcoeffs id hid'
@@ -143,8 +140,8 @@ theorem negateCoeff_encloses
   have hlo := LawfulBoundOps.subDown_le (0 : α) (hi.getScalar i)
   have hhi := LawfulBoundOps.le_subUp (0 : α) (lo.getScalar i)
   have hb := hbox i
-  simp only [read_fin] at hb
-  simp only [negateDirectedCoeff, read_fin, Tensor.getScalar_mapSpec]
+  simp only [Spec.getAtOrZero_eq_getScalar] at hb
+  simp only [negateDirectedCoeff, Spec.getAtOrZero_eq_getScalar, Tensor.getScalar_mapSpec]
   rw [(LawfulBoundOps.toReal_zero (α := α)), zero_sub] at hlo hhi
   exact ⟨hlo.trans (neg_le_neg hb.2), (neg_le_neg hb.1).trans hhi⟩
 
@@ -182,7 +179,7 @@ theorem initial_encloses (dims : Nat → Nat)
     (size output : Nat) (obj : FlatTensor α)
     (hdim : obj.n = dims output) :
     StateEncloses dims
-      { coeffs := (Array.replicate size none).set! output (some (pointCoeffBox obj))
+      { coeffs := (Array.replicate size none).set! output (some (FlatBox.ofTensor obj.v))
         cstLo := 0, cstHi := 0 }
       (fun id i => if id = output then value (getAtOrZero obj.v [i]) else 0) 0 := by
   refine ⟨?_, by simp [(LawfulBoundOps.toReal_zero (α := α))]⟩

@@ -17,30 +17,23 @@ epsilon `-3/4` produces `[-2, 2]`, which lies outside the width-two uniform boun
 The actual Real and rounded-real FP32 constants satisfy the required nonnegativity.
 -/
 
-@[expose] public section
+public section
 
-namespace NN.MLTheory.CROWN.Graph.DirectedBackward
+
+namespace NN.Tests.MLTheory.DirectedIBPNormalization
 
 open Spec TorchLean TorchLean.Tensor
+open NN.MLTheory.CROWN
 open _root_.Proofs.Autograd.Norm
 
-noncomputable section
-
 /-- The exact-real default normalization stabilizer is nonnegative. -/
-theorem normalizationEpsilon_nonneg_real :
+example :
     0 ≤ LawfulBoundOps.toReal (TorchLean.normalizationEpsilon : ℝ) := by
   change (0 : ℝ) ≤ ((1 / 100000 : ℚ) : ℝ)
   norm_num
 
-/-- FP32 rounds the positive rational stabilizer once; valid rounding preserves nonnegativity. -/
-theorem normalizationEpsilon_nonneg_fp32 :
-    0 ≤ LawfulBoundOps.toReal
-      (TorchLean.normalizationEpsilon : NN.MLTheory.CROWN.FP32) := by
-  change (0 : ℝ) ≤ FloatLib.Floats.Formats.Flocq.round
-    (β := FloatLib.Numerics.binaryRadix) (fexp := TorchLean.Floats.fexp32)
-    TorchLean.Floats.rnd32 ((1 / 100000 : ℚ) : ℝ)
-  apply FloatLib.Floats.Formats.Flocq.round_nonneg
-  norm_num
+example : 0 ≤ LawfulBoundOps.toReal (TorchLean.normalizationEpsilon : FP32) :=
+  FP32.normalizationEpsilon_nonneg
 
 /-- A negative stabilizer invalidates the square-root-width bound for the actual real Spec. -/
 theorem negative_epsilon_exceeds_uniform_layerNorm_bound :
@@ -63,6 +56,4 @@ theorem negative_epsilon_exceeds_uniform_layerNorm_bound :
     rw [show (1 : ℝ) / 4 = (1 / 2) ^ 2 by norm_num, Real.sqrt_sq (by norm_num)]
   norm_num [hs]
 
-end
-
-end NN.MLTheory.CROWN.Graph.DirectedBackward
+end NN.Tests.MLTheory.DirectedIBPNormalization

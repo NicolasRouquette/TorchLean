@@ -116,7 +116,7 @@ def usage : String :=
         ++ "This command has no training flags."
     ]
 
-/-- Runner entrypoint used by `lake exe torchlean dqn_replay`. -/
+/-- Runner entrypoint used by `scripts/lake.sh exe torchlean dqn_replay`. -/
 def main (args : List String) : IO UInt32 := do
   if CLI.hasHelp args then
     IO.println usage

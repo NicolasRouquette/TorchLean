@@ -68,7 +68,7 @@ repository root.
 
 ```bash
 rm -rf .lake/build/doc .lake/build/doc-data .lake/build/api-docs.db
-DISABLE_EQUATIONS=1 scripts/lake.sh build TorchLeanDocs:docs
+DISABLE_EQUATIONS=1 scripts/lake.sh -Kenv=dev build TorchLeanDocs:docs
 rm -rf home_page/docs
 cp -r .lake/build/doc home_page/docs
 find home_page/docs -name "*.trace" -delete

@@ -192,7 +192,7 @@ The runner lists its examples and runtime flags:
 ```terminal
 # List the runnable examples and the shared entry-point
 # options.
-lake exe torchlean --help
+scripts/lake.sh exe torchlean --help
 ```
 
 The help lists the runnable examples, followed by their shared runtime flags:
@@ -207,8 +207,8 @@ Runtime flags:
   --seed N
   --show-backend
 
-Verification commands live under `lake exe verify -- list`.
-Use `lake exe torchlean <example> --help` for command-specific flags.
+Verification commands live under `scripts/lake.sh exe verify -- list`.
+Use `scripts/lake.sh exe torchlean <example> --help` for command-specific flags.
 ```
 
 The top-level parser knows three arithmetics; each
@@ -217,14 +217,14 @@ example states which ones it supports. For our example:
 ```terminal
 # Inspect the controls accepted by this particular training
 # example.
-lake exe torchlean quickstart_mlp --help
+scripts/lake.sh exe torchlean quickstart_mlp --help
 ```
 
 ```
 TorchLean simple MLP quickstart
 
 Usage:
-  lake exe torchlean quickstart_mlp [--steps N] [--seed S]
+  scripts/lake.sh exe torchlean quickstart_mlp [--steps N] [--seed S]
     [--arithmetic native|ieee] [--execution eager|typed-graph] [--device cpu|cuda]
 ```
 
@@ -234,11 +234,11 @@ the device:
 ```terminal +output
 $ # Supply the CPU choice to the interactive device
 $ # selector.
-$ printf 'cpu\n' | lake exe torchlean --choose quickstart_mlp --steps 2 --seed 2026
+$ printf 'cpu\n' | scripts/lake.sh exe torchlean --choose quickstart_mlp --steps 2 --seed 2026
 TorchLean runtime chooser
 Runtime device:
   1) CPU    portable default
-  2) CUDA   GPU runtime, requires `lake -R -K cuda=true exe ...`
+  2) CUDA   GPU runtime, requires `scripts/lake.sh -K cuda=true exe ...`
 Select device [1]: == Quickstart: simple MLP training (seed=2026, steps=2) ==
 ```
 
@@ -255,7 +255,7 @@ The baseline uses native binary32 arithmetic, eager CPU execution, and twenty tr
 ```terminal
 # Run the short CPU baseline and print the selected backend
 # capsules.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --execution eager \
   --device cpu \
   --steps 20 \
@@ -362,10 +362,11 @@ evaluated through a lowered graph without a tape, so those sessions select no ca
 their banners are empty. The banner therefore identifies a session opening; the entries beneath
 it identify capsule selections.
 
-Eager mode is the natural starting point when operation structure depends on runtime values, when
-you want to inspect the tape or the provider choices, or when you are using the maintained CUDA
-runtime. It also accepts more dynamic frontend programs than the fixed typed graph recorder, which
-is the subject of *Dynamic Control Flow And Typed Graphs* below.
+Eager mode lets you inspect the tape and provider choices and use the maintained CUDA runtime.
+A manually assembled eager session can record a different operation sequence on each call. The
+current model frontend still hides tensor elements behind `Function`, so selecting eager mode alone
+does not enable arbitrary tensor-dependent Lean branches. *Dynamic Control Flow And Typed Graphs*
+below explains this frontend boundary.
 
 There are three different loss observations in this short run. The initial `0.495227` is an
 average over the 25 training examples. The `step 0` value, `0.250488`, belongs to the example used
@@ -390,7 +391,7 @@ One flag changes:
 ```terminal
 # Keep the short training setup while selecting typed graph
 # execution.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --execution typed-graph \
   --device cpu \
   --steps 20 \
@@ -416,8 +417,9 @@ magnitude:
 ```terminal +output
 $ # Compare complete printed logs from fresh runs with the
 $ # same seed and update count.
-$ lake exe torchlean quickstart_mlp --execution eager --steps 200 --seed 2026 > eager.txt
-$ lake exe torchlean quickstart_mlp --execution typed-graph --steps 200 --seed 2026 > graph.txt
+$ scripts/lake.sh exe torchlean quickstart_mlp --execution eager --steps 200 --seed 2026 > eager.txt
+$ scripts/lake.sh exe torchlean quickstart_mlp --execution typed-graph --steps 200 \
+$   --seed 2026 > graph.txt
 $ diff eager.txt graph.txt && echo identical
 identical
 ```
@@ -574,7 +576,7 @@ described in the installation guide, then select it with `-K cuda=true`:
 ```terminal
 # Select the CUDA build profile before requesting a CUDA
 # training session.
-lake -R -K cuda=true exe torchlean quickstart_mlp \
+scripts/lake.sh -K cuda=true exe torchlean quickstart_mlp \
   --execution eager \
   --device cuda \
   --steps 20 \
@@ -649,8 +651,8 @@ bridge widens host `Float32` elements to `Float` staging values before packing t
 float32 buffer. This preserves finite binary32 values but adds transfer work. A capsule identifies
 the trusted native provider; it does not prove the kernel, compiler, driver, or device correct.
 
-A build without CUDA support rejects the request. The default build still compiles and tests
-everything else without a GPU.
+A build without CUDA support rejects the request. The default CPU profile supports the portable
+runtime without a GPU; compiling it does not exercise the CUDA provider.
 
 A common seed fixes initialization and the example sequence; it does not fix the order in which
 a backend adds partial sums. Updates can carry numerical differences into later steps, and a ReLU
@@ -663,7 +665,7 @@ optimizer.
 ```terminal
 # Use executable binary32 arithmetic for the same short CPU
 # workload.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --arithmetic ieee \
   --execution eager \
   --device cpu \
@@ -996,7 +998,9 @@ The `p = 0` result is a useful control, not a universal bound on floating point 
 Repeating the `p = 0.5` measurement in freshly opened sessions gives the same result for this seed.
 The builder derives the dropout layer's seed from the model build seed. This demonstrates seeded
 reproducibility; it does not establish independence of masks across calls. `Session.save` saves
-model state, not a complete optimizer, loader, and random-stream snapshot for exact training resume.
+model state; it does not save the optimizer history, loader position, or random stream needed for
+exact training resume. The lower-level `Checkpoint.Optimizer.save` separately supports backend-owned
+CUDA Adam/AdamW state and its eager random counter.
 
 Compare PyTorch, where the same distinction exists but is carried by a mutable attribute
 {Informal.citep pytorch2019}[]:
@@ -1131,7 +1135,7 @@ An unimplemented device:
 ```terminal +output
 $ # Request a recognized device that has no maintained
 $ # runtime profile.
-$ lake exe torchlean quickstart_mlp --device metal --steps 1
+$ scripts/lake.sh exe torchlean quickstart_mlp --device metal --steps 1
 error: quickstart_mlp: device `metal` has no
 maintained runtime profile; use a programmatic backend profile
 ```
@@ -1141,7 +1145,7 @@ An execution mode that has no profile for the requested device:
 ```terminal +output
 $ # Exercise validation of the graph execution and device
 $ # combination.
-$ lake exe torchlean quickstart_mlp --execution typed-graph --device cuda --steps 1
+$ scripts/lake.sh exe torchlean quickstart_mlp --execution typed-graph --device cuda --steps 1
 error: typed graph execution currently supports
 device `cpu`; requested `cuda`
 ```
@@ -1151,7 +1155,7 @@ An arithmetic the lower dispatcher can execute but the supervised trainer cannot
 ```terminal +output
 $ # Check that this supervised trainer rejects unsupported
 $ # complex arithmetic.
-$ lake exe torchlean quickstart_mlp --arithmetic complex --steps 1
+$ scripts/lake.sh exe torchlean quickstart_mlp --arithmetic complex --steps 1
 error: quickstart_mlp: TorchLean.Trainer: supervised
 training supports native or IEEE arithmetic; complex arithmetic
 requires an explicit complex-valued training API
@@ -1162,7 +1166,7 @@ A CUDA build with no visible device:
 ```terminal +output
 $ # Hide visible GPUs while keeping the native CUDA build to
 $ # isolate runtime availability.
-$ CUDA_VISIBLE_DEVICES="" lake -R -K cuda=true exe torchlean quickstart_mlp --device cuda
+$ CUDA_VISIBLE_DEVICES="" scripts/lake.sh -K cuda=true exe torchlean quickstart_mlp --device cuda
 error: torch eager session: CUDA was requested and
 this is a CUDA build, but no usable CUDA device is visible
 ```
@@ -1227,7 +1231,7 @@ a requested device is not mistaken for evidence of where an operation ran.
   * eager
   * CPU
 *
-  * use native attention forward and its matched backward
+  * run Lean-composed attention on GPU primitives
   * native `Float32`
   * eager
   * CUDA through LibTorch

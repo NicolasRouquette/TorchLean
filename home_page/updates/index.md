@@ -27,9 +27,9 @@ title: Updates
 
 ## Running CUDA Through LibTorch
 
-The CUDA backend now calls ATen through a LibTorch SDK instead of TorchLean's own kernels. The
-Lean side did not change: the same buffer API, the same extern symbols, and the same runtime tape
-that owns differentiation. What changed is the code behind those symbols. About 7,000 lines of
+The CUDA backend now calls ATen through a LibTorch SDK instead of TorchLean's own kernels.
+TorchLean retains its runtime tape and owns differentiation. Attention and spectral model
+composition live in Lean, using numerical primitives through the buffer API. About 7,000 lines of
 hand-written CUDA (elementwise, reduction, convolution, pooling, tensor, attention and DGEMM
 kernels) are gone, replaced by one shared C++ adapter, `csrc/libtorch/torchlean.cpp`, calling the corresponding
 ATen operations under a no-grad guard. The per-kernel CPU stub files went with them. A build
@@ -38,9 +38,11 @@ call with a message that says how to rebuild.
 
 Select the SDK with `-Klibtorch_home=PATH` or `TORCHLEAN_LIBTORCH_HOME`; a CUDA-enabled pip
 PyTorch installation works as the SDK root. This tree was tested locally against pip torch
-2.13.0+cu130 with CUDA 13.0 on A100, and previously against a PyTorch 2.12 nightly. The attention
-path uses internal ATen entry points, so other SDK versions should be treated as untested until
-the CUDA suite passes on them. LibTorch is the standard backend for CUDA execution
+2.13.0+cu130 with CUDA 13.0 on A100, and previously against a PyTorch 2.12 nightly. Other SDK
+versions need their own CUDA suite results. Attention composes matrix products and softmax in
+Lean, including its local VJP, and the tape owns Q/K/V and saved probabilities. It uses full score
+matrices with quadratic sequence memory and no fused-attention selection.
+LibTorch is the standard backend for CUDA execution
 (`-Kcuda=true`, then `--device cuda`); the default CPU build needs no SDK or toolkit.
 
 We renamed the Lean adapter to `NN.Runtime.Autograd.Engine.LibTorch` so the implementation
@@ -57,8 +59,9 @@ Several native features were removed rather than ported:
 | --- | --- |
 | `Buffer.setDeterministicReductions` | `Runtime.Autograd.LibTorch.setDeterministic` |
 | `TORCHLEAN_CUDA_CACHE_CAP_BYTES`, `AllocatorStats.cacheBytes` and `cacheCapBytes` | `AllocatorStats.allocatedBytes` and `reservedBytes`, with `Runtime.Autograd.LibTorch.setMemoryFraction` and `Runtime.Autograd.LibTorch.emptyCache`. The limit is now a fraction of device memory, not a byte cap. |
-| `flashAttentionFwd`/`Bwd`, `broadcastRowToRows`, `gatherVec`, `reduceSumByColumn` | The corresponding ATen operations behind the existing buffer API |
-| The three fused FNO backward externs | One spectral convolution backward call |
+| `flashAttentionFwd`/`Bwd` and native attention contexts | `Buffer.attentionForward`/`attentionBackward`, composed in Lean with tape-owned saved buffers |
+| `broadcastRowToRows`, `gatherVec`, `reduceSumByColumn` | The corresponding ATen operations behind the existing buffer API |
+| Fused FNO forward/backward externs | Lean composition of FFT, frequency mixing, and inverse FFT using numerical primitives |
 | `matmulCublas`, `matmulCublas32`, `matmulCublas64`, `CublasPrecision` | Ordinary `matmul`; LibTorch chooses the BLAS call |
 | `nn.geluTanh` | `nn.gelu`, which is the same tanh approximation |
 
@@ -92,8 +95,11 @@ can retain $1+2^{-100}$, while binary64 rounds it to 1. The
 [tensor chapter]({{ '/blueprint/Building-Models/Tensors-That-Remember-Their-Shapes/' | relative_url }})
 constructs that parameter directly from a rational, keeps it through a typed affine model,
 and compares its forward value, input derivatives and `nn.sgdStep` update with an elementary
-calculation. This uses software arithmetic on the typed CPU path. The supervised trainer retains
-`Float` data, report and checkpoint boundaries; its `.ieee` option remains fixed to binary32.
+calculation. This uses software arithmetic on the typed CPU path. `trainer.openTyped` also retains
+the chosen scalar in supervised samples, predictions, loss, reports, and checkpoints. These typed
+sessions run on CPU, reject custom backend profiles, and do not expose `Result.verify`.
+Initialization and optimizer settings still enter through `Float`. The ordinary trainer's `.ieee`
+option remains fixed to binary32.
 The eager LibTorch CUDA backend uses binary32 buffers; the separate matrix-product interface uses
 binary64. Configurable FloatLib precision runs on the typed CPU path.
 

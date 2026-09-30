@@ -42,10 +42,9 @@ def ParentsEnclosed (nodes : Array Node) (cert : Array (Option (FlatBox ℝ)))
 /-- A successful safe box lookup is an ordinary array read. -/
 theorem getElem!_of_getBox?_eq_some {cert : Array (Option (FlatBox ℝ))} {p : Nat}
     {B : FlatBox ℝ} (h : getBox? cert p = some B) : cert[p]! = some B := by
-  unfold getBox? at h
-  split at h
-  · exact h
-  · exact absurd h (by simp)
+  have hread := Option.join_eq_some_iff.mp h
+  obtain ⟨hp, hvalue⟩ := Array.getElem?_eq_some_iff.mp hread
+  simpa [getElem!_pos, hp] using hvalue
 
 /-- A successful safe value lookup is an ordinary array read. -/
 theorem getElem!_of_getVal?_eq_some {vals : Array (Option Val)} {p : Nat} {v : Val}

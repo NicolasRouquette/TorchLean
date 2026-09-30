@@ -81,7 +81,7 @@ theorem binaryMatmulBox_encloses (layout : OpContracts.MatmulDims)
         (NN.IR.Graph.matmulFlat layout (pointVector n x) (pointVector m y)) [i]) := by
   refine ⟨rfl, ?_⟩
   intro output
-  simp only [binaryMatmulBox, NN.IR.Graph.matmulFlat, read_fin,
+  simp only [binaryMatmulBox, NN.IR.Graph.matmulFlat, Spec.getAtOrZero_eq_getScalar,
     Tensor.getScalar_ofFn]
   apply orderedSum_encloses
   · intro inner
@@ -202,28 +202,6 @@ theorem multiIndex_get_map_value {dims : List Nat}
   | cons n dims ih =>
     simpa only [MultiIndex.get, Tensor.unstack_map] using ih (tensor.unstack index.1) index.2
 
-private theorem foldl_rel {A B ι : Type} (relation : A → B → Prop) (indices : List ι)
-    {left : A → ι → A} {right : B → ι → B}
-    (step : ∀ a b i, relation a b → relation (left a i) (right b i))
-    {a : A} {b : B} (initial : relation a b) :
-    relation (indices.foldl left a) (indices.foldl right b) := by
-  induction indices generalizing a b with
-  | nil => exact initial
-  | cons i indices ih => exact ih (step a b i initial)
-
-private theorem foldlIndices_rel {A B : Type} (relation : A → B → Prop) (dims : List Nat)
-    {left : A → List Nat → A} {right : B → List Nat → B}
-    (step : ∀ a b i, relation a b → relation (left a i) (right b i))
-    {a : A} {b : B} (initial : relation a b) :
-    relation (Spec.Conv.Internal.foldlIndices dims a left)
-      (Spec.Conv.Internal.foldlIndices dims b right) := by
-  induction dims generalizing left right a b with
-  | nil => exact step a b [] initial
-  | cons n dims ih =>
-    apply foldl_rel relation (List.finRange n) _ initial
-    intro a b head h
-    exact ih (fun a b tail hab => step a b (head.val :: tail) hab) h
-
 private theorem directed_weight_product {lo hi weight : α} {x : ℝ}
     (hl : value lo ≤ x) (hu : x ≤ value hi) :
     value (if BoundOps.mulDown weight lo > BoundOps.mulDown weight hi
@@ -271,9 +249,10 @@ theorem ibpConv_contains_groupedConv
     constructor
     · apply (LawfulBoundOps.addDown_le _ _).trans
       apply add_le_add_left
-      apply foldl_rel (fun a b => value a ≤ b) _ _ (by simp [LawfulBoundOps.toReal_zero])
-      intro lo exactValue localChannel hacc
-      apply foldlIndices_rel (fun a b => value a ≤ b) _ _ hacc
+      apply List.foldl_rel (r := fun a b => value a ≤ b)
+        (by simp [LawfulBoundOps.toReal_zero])
+      intro localChannel _ lo exactValue hacc
+      apply ConvProof.foldlIndices_rel (fun a b => value a ≤ b) _ _ hacc
       intro lo exactValue kernelIndex hacc
       cases hindex : mkDilatedInputIdx? outIndex.toList kernelIndex
           stride.data.toList dilation.data.toList padding.data.toList with
@@ -292,9 +271,10 @@ theorem ibpConv_contains_groupedConv
                     localChannel.val) :: kernelIndex)) hx.1 hx.2).1)
     · apply le_trans _ (LawfulBoundOps.le_addUp _ _)
       apply add_le_add_left
-      apply foldl_rel (fun a b => a ≤ value b) _ _ (by simp [LawfulBoundOps.toReal_zero])
-      intro exactValue hi localChannel hacc
-      apply foldlIndices_rel (fun a b => a ≤ value b) _ _ hacc
+      apply List.foldl_rel (r := fun a b => a ≤ value b)
+        (by simp [LawfulBoundOps.toReal_zero])
+      intro localChannel _ exactValue hi hacc
+      apply ConvProof.foldlIndices_rel (fun a b => a ≤ value b) _ _ hacc
       intro exactValue hi kernelIndex hacc
       cases hindex : mkDilatedInputIdx? outIndex.toList kernelIndex
           stride.data.toList dilation.data.toList padding.data.toList with
@@ -334,7 +314,7 @@ theorem rowEncloses_flatten {s : Shape} {box : Box α s} {input : Tensor ℝ s}
   rw [rowEncloses_iff]
   intro i
   simpa only [realBox, flattenBox, Box.contains, Tensor.unstack_map, Tensor.getScalar,
-    Spec.get, Tensor.item_map, read_fin] using hf i
+    Spec.get, Tensor.item_map, Spec.getAtOrZero_eq_getScalar] using hf i
 
 /-- A flat graph enclosure gives a shaped enclosure after the checked reshape. -/
 theorem realBox_contains_ibpUnflatten {s : Shape} {box : FlatBox α} {n : Nat}
@@ -354,7 +334,7 @@ theorem realBox_contains_ibpUnflatten {s : Shape} {box : FlatBox α} {n : Nat}
   simp only [realBox, Box.contains, Tensor.unstack_map, Tensor.item_map]
   change value (lo.getScalar i) ≤ (pointVector s.size f).getScalar i ∧
     (pointVector s.size f).getScalar i ≤ value (hi.getScalar i)
-  simpa only [pointVector, read_fin, Tensor.getScalar_ofFn] using h.2 i
+  simpa only [pointVector, Spec.getAtOrZero_eq_getScalar, Tensor.getScalar_ofFn] using h.2 i
 
 /-- The real grouped convolution determined by a stored payload. -/
 def convolutionPoint (parameters : ConvParams α) (leading : Shape) (f : Nat → ℝ) :

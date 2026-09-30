@@ -109,9 +109,10 @@ NN.IR.Graph : Type
 NN.Backend.IR.GraphKernelPlan : Type
 ```
 
-`Tape α` takes an element type and nothing else. No shapes appear in the type, which means the tape
-cannot enforce a shape agreement in the type system; it stores shapes as values and checks them at
-runtime. That is a deliberate trade, and we come back to it below.
+`Tape α` takes an element type and nothing else. Each stored tensor still carries its own shape,
+but the tape's type does not record a context of node shapes. Agreement between a node and the
+parents named by its identifiers is checked at runtime. That is a deliberate trade, and we come
+back to it below.
 
 `Torch.TypedGraph α Γ τ` carries a context `Γ : List Shape` and an output shape `τ`. A node cannot
 refer to a parent at the wrong shape, because the shape is part of the graph's type. This is the
@@ -342,9 +343,11 @@ though node identifiers themselves are plain natural numbers.
 # Stop-Gradient Nodes
 
 `detach` is often described as "turning off gradients", which suggests a mutable switch. In this
-engine it is a node like any other, and the node is short enough to read in full. Here is exactly
-what {src "NN/Runtime/Autograd/Torch/Core/Session.lean"}[`Core/Session.lean`] appends, transcribed
-into the pure API:
+engine it is a node like any other, and the node is short enough to read in full. Here is the
+ordinary `Float` case of what
+{src "NN/Runtime/Autograd/Torch/Core/Session/Recording.lean"}[`Session/Recording.lean`]
+appends, transcribed into the pure API. The generic session also clears scalar differentiation
+metadata when the carrier has it.
 
 ```lean (name := rtStop)
 -- Preserve the second branch value while returning no
@@ -438,9 +441,11 @@ it. A key holding zeros means the accumulated runtime cotangent is zero, which c
 cancellation or rounding; an analytic derivative claim needs the usual correctness hypotheses.
 
 Stopping the second branch leaves the forward scalar at `22.5`: the same two arrays are still
-added. Its derivative becomes `[6, -3]` because only the first square sends a cotangent back to the
-input. The printed node list keeps the stopped branch visible, which is useful when checking why
-a forward result survived a change to differentiation behavior.
+added. The reported cotangent becomes `[6, -3]` because only the first square sends a contribution
+back to the input. This is the chosen stop-gradient rule. The ordinary derivative of the unchanged
+real forward function $`2\sum_i x_i^2` is still $`4x`. The printed node list keeps the stopped
+branch visible, which is useful when checking why a forward result survived a change to
+differentiation behavior.
 
 # Differentiation Through The Transform API
 
@@ -491,7 +496,8 @@ The manual tape spells out parent identifiers, while the transform records them 
 handler. Comparing the results checks their agreement at the chosen values.
 
 A useful independent reference here is the algebraic calculation above: two square branches give
-`4x`, and one stopped branch leaves `2x`. For a more complicated program, derive a small special
+`4x`, and the chosen stop-gradient rule on one branch leaves `2x`. For a more complicated program,
+derive a small special
 case or a directional check before comparing two execution routes that reuse the same rules.
 
 # Eager And Graph Interpreters
@@ -776,20 +782,17 @@ expression such as `0 * (1 / 0)`, which need not be zero in floating-point arith
 to a traversal that visits every node therefore needs a zero-preservation condition. That is a
 mathematical obligation about the rules, not just a choice of array or hash-map storage.
 
-# Checkpoint Wrapper Semantics
+# Activation Recomputation
 
-`nn.functional.checkpoint` currently provides a boundary for a future memory optimization. In
-{src "NN/Runtime/Autograd/Model/Functional/Core.lean"}[`Functional/Core.lean`] the definition is
-
-$$`\operatorname{checkpoint}(f, x) = f(x),`
-
-an identity wrapper. Real checkpointing discards intermediate values during the forward pass and
+Saving model state to a checkpoint and checkpointing an activation graph solve different
+problems. Activation checkpointing discards intermediate values during the forward pass and
 recomputes them during the reverse sweep on a schedule that trades arithmetic for memory
-({Informal.citet griewank2000}[]). None of that happens here.
+({Informal.citet griewank2000}[]). The tape examples here retain their recorded values; they do
+not demonstrate that memory optimization.
 
-A backend that implements recomputation can refine this wrapper without changing its mathematical
-meaning. The boundary identifies where the execution strategy may change; the current
-implementation provides no memory saving.
+Recomputation must reproduce the forward values used by the local reverse rules. For a stochastic
+operation, this includes replaying the same random draw. Agreement of the forward function alone
+does not establish a memory saving or validate a recomputation schedule.
 
 # Runtime And Proof
 
@@ -835,12 +838,12 @@ capsule to a matching runtime handler; a missing provider or handler is an error
 ```terminal
 # Inspect the capsules selected for a short eager training
 # run.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --steps 1 --seed 2026 --show-backend
 ```
 
-and each operation reports one line the first time it is selected. Here is the entry for ReLU on
-this machine, rewrapped to fit the page:
+and each operation reports one line the first time it is selected. Here is the ReLU entry from
+the recorded run, rewrapped to fit the page:
 
 ```
   relu: reference.relu provider=reference trust=checked
@@ -874,7 +877,8 @@ structure visually when the cursor is placed on
 ```
 
 The first shows operation nodes and parent edges. The second evaluates a scalar-output reverse pass
-and annotates gradients. The third exposes traversal order. In the branched example above, these
+and annotates gradients. The third exposes traversal order and the final accumulated cotangents.
+In the branched example above, these
 views show both products contributing to the leaf. With `detach`, the second product remains in
 the forward graph but contributes nothing to the leaf's cotangent. See
 {ref "widgets"}[Interactive Widgets].
@@ -886,7 +890,7 @@ The same comparison can be made through the trainer, using a fixed seed, dataset
 ```terminal
 # Keep seed and data fixed for the two-step execution
 # comparison.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --execution eager --steps 2 --seed 2026
 ```
 
@@ -903,8 +907,8 @@ steps=2 arithmetic=native scalar=Float32
 trained(heldout) = [0.019031]
 ```
 
-Replacing `--execution eager` with `--execution typed-graph` prints the same nine lines, digit for
-digit. For this model, changing the execution mode changes whether the loss is recorded once and
+The recorded comparison with `--execution typed-graph` has the same nine lines, digit for digit.
+For this model, changing the execution mode changes whether the loss is recorded once and
 reused or rebuilt each step. The architecture, seed, data, and arithmetic remain fixed. The
 matching transcript checks the displayed results of this run. The graph trainer constructs
 locally saved programs for the current parameters and inputs on each checked execution. This
@@ -946,8 +950,8 @@ The hand-built tape also exposes cases that a successful scalar gradient does no
    just as the first two do.
 2. Setting the leaf's `requiresGrad := false` prevents retention of its cotangent, so
    `rtLeafGrad` reports a missing gradient.
-3. Moving `rtDetachNode` from `b` to `a` preserves the derivative because the products are equal,
-   but changes the node identifiers on the surviving path.
+3. Moving `rtDetachNode` from `b` to `a` preserves the reported cotangent because the products
+   are equal, but changes the node identifiers on the surviving path.
 4. A scalar output independent of the leaf leaves node `0` absent from the gradient map.
 5. A `mul` node with incompatible operand shapes causes `TapeM.run` to return an error value
    in `Except String`.

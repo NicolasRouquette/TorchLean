@@ -31,8 +31,9 @@ environment or an external sampler.
 
 ## Formal hooks
 
-1. The environment has an induced finite stochastic MDP (`Spec.RL.FiniteStochastic.MDP`) and we
-   import a proof that it is well-formed (row-stochastic transition rows, $0\le\gamma<1$).
+1. `proofGridWorld` has an induced finite stochastic MDP (`Spec.RL.FiniteStochastic.MDP`) and a
+   proof that it is well-formed (row-stochastic transition rows, $0\le\gamma<1$). That model uses
+   the specification's sparse rewards; the training environment below uses shaped rewards.
 2. The boundary checker can be turned into a Prop-level hypothesis via
    `Proofs.RL.Boundary.contractHolds_of_checkTransitionFin_eq_ok`
    (see `NN/Proofs/RL/Boundary.lean`), or you can use the proof-layer Gymnasium checked step
@@ -162,8 +163,9 @@ def value : Shape := [1]
 
 We define a real-valued GridWorld model and record the proof that its stochastic-MDP view is valid.
 
-This proof is not used by the executable training loop directly; it exists so that downstream
-theorems about the induced MDP can refer to a concrete environment used in an example.
+The specification uses reward `-1` before reaching the goal and `0` on arrival. The executable's
+`stepState` below uses progress rewards and a goal reward of `1`. This theorem concerns
+`proofGridWorld`; it does not establish an equivalence with the shaped-reward training environment.
 -/
 
 /-- Start position (top-left cell). -/
@@ -227,10 +229,9 @@ def goalDistance (pos : Spec.RL.Envs.GridWorld.State width height) : Float :=
 /--
 Deterministic GridWorld transition function with dense progress rewards.
 
-The original sparse `-1 until terminal` reward gave short runs too little learning signal: random
-rollouts rarely found the goal, so PPO received almost no useful signal. This shaped reward keeps
-the same goal-reaching task, but gives the learner immediate credit for moving closer to the goal
-and a small penalty for dithering.
+Reaching the goal yields `1`; other nonterminal moves yield the decrease in Manhattan distance
+minus `0.05`. The goal remains absorbing with reward `0`. These shaped rewards differ from those
+of `proofGridWorld`; no policy-equivalence theorem is claimed here.
 -/
 def stepState (state : Fin stateCount) (action : Fin actionCount) :
     Spec.RL.StepResult (Fin stateCount) Float :=
@@ -369,7 +370,7 @@ def main (args : List String) : IO UInt32 := do
       let (policyPath, rest) ← CLI.orThrow exeName <|
         CLI.takePathFlag rest "policy"
           (default := Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldPolicy)
-      let (pathPath, rest) ← CLI.orThrow exeName <|
+      let (episodePath, rest) ← CLI.orThrow exeName <|
         CLI.takePathFlag rest "path" (default := Runtime.RL.Artifacts.DefaultPaths.ppoGridWorldPath)
       let (ppo, rest) ← CLI.orThrow exeName <|
         rl.cli.Options.parse
@@ -524,8 +525,8 @@ def main (args : List String) : IO UInt32 := do
       let pathDiff : Runtime.RL.Artifacts.GridWorld.PathDiff :=
         { width := width, height := height, before := pathBefore, after := pathAfter
           notes := #["greedy episode path (states decoded to (row,col))"] }
-      Runtime.RL.Artifacts.GridWorld.PathDiff.writeJson pathPath pathDiff
-      IO.println s!"{exeName}: wrote path snapshot to {pathPath}"
+      Runtime.RL.Artifacts.GridWorld.PathDiff.writeJson episodePath pathDiff
+      IO.println s!"{exeName}: wrote path snapshot to {episodePath}"
 
       IO.println s!"{exeName}: done"
     )

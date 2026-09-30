@@ -129,11 +129,10 @@ Returns `none` for an empty buffer.
 -/
 def getModulo? (b : Buffer α obsShape nActions) (idx : Nat) :
     Option (Transition α obsShape nActions) :=
-  if b.items.isEmpty then
+  if h : b.items.size = 0 then
     none
   else
-    let j := idx % b.items.size
-    b.items[j]?
+    some (b.items[idx % b.items.size]'(Nat.mod_lt _ (Nat.pos_of_ne_zero h)))
 
 /--
 Deterministic contiguous sample with wraparound.
@@ -143,13 +142,14 @@ statistical randomness. Empty buffers return an empty batch.
 -/
 def sampleContiguous (b : Buffer α obsShape nActions) (start batchSize : Nat) :
     Array (Transition α obsShape nActions) :=
-  Id.run do
-    let mut out := #[]
-    for k in [0:batchSize] do
-      match b.getModulo? (start + k) with
-      | some t => out := out.push t
-      | none => pure ()
-    return out
+  if h : b.items.size = 0 then
+    #[]
+  else
+    Id.run do
+      let mut out := #[]
+      for k in [0:batchSize] do
+        out := out.push (b.items[(start + k) % b.items.size]'(Nat.mod_lt _ (Nat.pos_of_ne_zero h)))
+      return out
 
 /--
 Deterministic pseudo-random sample from `(seed, counter)`.
@@ -160,7 +160,7 @@ return an empty batch and leave the counter unchanged.
 -/
 def sampleRandom (b : Buffer α obsShape nActions) (seed counter batchSize : Nat) :
     Nat × Array (Transition α obsShape nActions) :=
-  if b.items.size = 0 then
+  if h : b.items.size = 0 then
     (counter, #[])
   else
     Id.run do
@@ -172,9 +172,7 @@ def sampleRandom (b : Buffer α obsShape nActions) (seed counter batchSize : Nat
           Tensor.item
             (Spec.Random.uniform (α := Float) key (s := Shape.scalar))
         let idx := ((u * Float.ofNat b.items.size).floor.toUInt64.toNat) % b.items.size
-        match b.items[idx]? with
-        | some t => out := out.push t
-        | none => pure ()
+        out := out.push (b.items[idx]'(Nat.mod_lt _ (Nat.pos_of_ne_zero h)))
         c := c + 1
       return (c, out)
 

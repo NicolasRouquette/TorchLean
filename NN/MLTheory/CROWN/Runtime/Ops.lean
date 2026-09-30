@@ -46,7 +46,7 @@ structure ReLURelax (α : Type) where
   /-- Linear coefficient. -/
   slope : α
   /-- Constant offset. -/
-  bias  : α
+  bias : α
 
 namespace ReLU
 
@@ -68,7 +68,7 @@ def relaxScalar (l u : α) : ReLURelax α :=
   else
     { slope := 0, bias := 0 }
 
-/-!
+/--
 Lower (under-approx) relaxation for ReLU.
 
 For crossing bounds `l < 0 < u`, basic CROWN/DeepPoly chooses either:
@@ -107,8 +107,8 @@ Given `y ≈ A*x + c` and per-output relaxations `(slopeᵢ, biasᵢ)`, produces
 `y' ≈ diag(slope) * (A*x + c) + bias`.
 -/
 def propagateAffine {inDim hidDim : Nat}
-  (relax : Tensor (ReLURelax α) [hidDim])
-  (aff : AffineVec α inDim hidDim) : AffineVec α inDim hidDim :=
+    (relax : Tensor (ReLURelax α) [hidDim])
+    (aff : AffineVec α inDim hidDim) : AffineVec α inDim hidDim :=
   let A' := Tensor.dim (fun i =>
     let rp := relax.getScalar i
     Tensor.dim (fun j => Tensor.scalar (get2 aff.A i j * rp.slope)))

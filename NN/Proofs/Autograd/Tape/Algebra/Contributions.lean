@@ -49,12 +49,7 @@ def add [Add α] (left right : TensorLookup α shapes) : TensorLookup α shapes 
 
 @[simp] theorem ofPack_zero [Zero α] :
     ofPack (TorchLean.TensorPack.zero (α := α) (ss := shapes)) = fill 0 := by
-  have same : TorchLean.TensorPack.zero (α := α) (ss := shapes) =
-      TorchLean.TensorPack.fill 0 := by
-    induction shapes with
-    | nil => rfl
-    | cons shape shapes ih => simp only [TorchLean.TensorPack.zero, TorchLean.TensorPack.fill, ih]
-  rw [same, ofPack_fill]
+  exact ofPack_fill 0
 
 @[simp] theorem ofPack_add [Add α] (left right : TorchLean.TensorPack α shapes) :
     ofPack (TorchLean.TensorPack.add left right) = add (ofPack left) (ofPack right) := by
@@ -94,15 +89,6 @@ structure Contributions (α : Type) [Storage α] (shapes : List Shape) where
 namespace Contributions
 
 variable {α : Type} [Storage α] {shapes : List Shape}
-
-/-- A uniform contribution; no parent positions need individual updates. -/
-def fill (value : α) : Contributions α shapes :=
-  { dense := fun _ => TorchLean.TensorPack.fill value
-    lookup := TensorLookup.fill value
-    uniform := value
-    support := []
-    correct := TensorLookup.ofPack_fill value
-    outside := fun _ _ => rfl }
 
 /-- The original all-zero pack, with its explicit uniform contribution retained. -/
 def zero [Zero α] : Contributions α shapes :=

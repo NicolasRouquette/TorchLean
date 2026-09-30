@@ -136,16 +136,13 @@ def checkCustomParity : IO Unit := do
     (close builtinPrediction[0] customPrediction[0])
 
 /-- Checkpoints apply uniformly to built-in and custom supervised objectives. -/
-def checkCustomCheckpoint : IO Unit := do
-  let path : System.FilePath := "/tmp/torchlean-trainer-report-custom-state.json"
-  if ← path.pathExists then
-    IO.FS.removeFile path
+def checkCustomCheckpoint : IO Unit := IO.FS.withTempFile fun _ path => do
   let source ←
     (regressionTrainer (.custom customMse) (seed := 31)).train data
       { steps := 1
         saveCheckpoint? := some path
         logDestination := .disabled }
-  expect "custom training should write its requested checkpoint" (← path.pathExists)
+  expect "custom training should write checkpoint contents" (!(← IO.FS.readFile path).isEmpty)
   let restored ←
     (regressionTrainer (.custom customMse) (seed := 999)).train data
       { steps := 0
@@ -156,7 +153,6 @@ def checkCustomCheckpoint : IO Unit := do
   let restoredPrediction ← restored.predict input
   expect "loading a custom-objective checkpoint should restore the trained state"
     (close sourcePrediction[0] restoredPrediction[0])
-  IO.FS.removeFile path
 
 /-- Stream training supports custom and one-hot objectives with one callback per recorded step. -/
 def checkStreamObjectives : IO Unit := do

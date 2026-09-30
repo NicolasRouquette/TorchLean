@@ -365,7 +365,7 @@ $`y = 0.7x_1 - 0.4x_2 + 0.5x_1x_2`. This fixed target lets us compare loading pa
 controlled regression problem:
 
 ```terminal
-lake exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026
+scripts/lake.sh exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026
 ```
 
 `dataset size = 5` counts materialized minibatches: twenty-five source rows become five items,
@@ -450,7 +450,7 @@ A missing file, an invalid numeric cell, and a short row fail at different stage
 is caught before parsing:
 
 ```terminal +output
-$ lake exe torchlean data_csv --csv /tmp/no-such-data.csv
+$ scripts/lake.sh exe torchlean data_csv --csv /tmp/no-such-data.csv
 ...
 train     = Adam(lr=0.05), steps=30, batch_size=5, shuffle=true, drop_last=true
 error: data_csv: missing CSV dataset: /tmp/no-such-data.csv
@@ -587,7 +587,7 @@ The generator writes the same twenty-five samples as a CSV table and as a pair o
 Run the NPY example with the same training settings:
 
 ```terminal
-lake exe torchlean data_npy --device cpu --batch 5 --steps 5 --seed 2026
+scripts/lake.sh exe torchlean data_npy --device cpu --batch 5 --steps 5 --seed 2026
 ```
 
 Compare the source shapes and loaded values before comparing losses and predictions. Matching
@@ -615,7 +615,7 @@ The loader takes `--x` exactly as written and does not join it to `data_dir`, so
 spelled out in full:
 
 ```terminal
-lake exe torchlean data_npy --device cpu --batch 5 --steps 5 --seed 2026 \
+scripts/lake.sh exe torchlean data_npy --device cpu --batch 5 --steps 5 --seed 2026 \
   --x NN/Examples/Data/X_f64.npy
 ```
 
@@ -633,7 +633,8 @@ in the value's path from disk to a loss computation.
 We can also keep the file and select FloatLib's configured binary32 arithmetic for training:
 
 ```terminal
-lake exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026 --arithmetic ieee
+scripts/lake.sh exe torchlean data_csv \
+  --device cpu --batch 5 --steps 5 --seed 2026 --arithmetic ieee
 ```
 
 This selects `ExecFloat.Binary 8 23` without changing the CSV columns, batch shapes, or shuffle
@@ -647,13 +648,13 @@ Three ways of feeding the NPY loader something structurally wrong, and the three
 produce:
 
 ```terminal +output
-$ lake exe torchlean data_npy --x NN/Examples/Data/small_regression_y.npy
+$ scripts/lake.sh exe torchlean data_npy --x NN/Examples/Data/small_regression_y.npy
 error: data_npy: X.npy: expected shape (N,2), got #[25, 1]
 
-$ lake exe torchlean data_npy --x NN/Examples/Data/X_i32.npy
+$ scripts/lake.sh exe torchlean data_npy --x NN/Examples/Data/X_i32.npy
 error: data_npy: npy: unsupported dtype: <i4
 
-$ lake exe torchlean data_npy --x NN/Examples/Data/X_fortran.npy
+$ scripts/lake.sh exe torchlean data_npy --x NN/Examples/Data/X_fortran.npy
 error: SupervisedSource.load: npy: prefix row loading requires C-order NPY arrays
 ```
 
@@ -834,9 +835,9 @@ def inspectBpe : IO Unit := do
       | .ok decoded => IO.println s!"decoded = {decoded}"
 ```
 
-The generic-tokenizer adapter serves APIs whose interface cannot return tokenization errors, so it
-maps failures to empty output. Use the error-reporting `GPT2BPE.encode` and `GPT2BPE.decode`
-functions directly at an artifact-validation boundary.
+Use the error-reporting `GPT2BPE.encode` and `GPT2BPE.decode` functions at the artifact-validation
+boundary. An encoding failure does not represent an empty text sample; it must be handled before
+the resulting identifiers enter a dataset.
 
 ## Unicode Tables And Tokenizer Reproducibility
 
@@ -856,7 +857,7 @@ First prepare the example corpus, then run the CUDA trainer with both tokenizer 
 # text-model training command.
 python3 scripts/datasets/download_example_data.py --tiny-shakespeare
 
-lake -R -K cuda=true exe torchlean text_gpt2 --device cuda \
+scripts/lake.sh -R -Kcuda=true exe torchlean text_gpt2 --device cuda \
   --data-file data/real/text/tiny_shakespeare.txt \
   --bpe-vocab data/real/gpt2/vocab.json \
   --bpe-merges data/real/gpt2/merges.txt \
@@ -869,7 +870,7 @@ loading progress, a first shifted token window, and before/after loss. Both BPE 
 together. Omitting both selects the runner's byte-token path instead.
 
 This runner is CUDA-only. It does not load OpenAI or Hugging Face model weights. Its BPE mode trains
-a randomly initialized TorchLean Transformer with batch size two, a one-token context, and a local
+a randomly initialized TorchLean Transformer with batch size two, a four-token context, and a local
 projection of at most 512 observed GPT-2 ids; ids outside that retained set map to the local
 fallback id. It exercises real file parsing, tokenization, shifted-window construction, training,
 and decode plumbing, but it is neither GPT-2-small nor evidence of checkpoint-level tokenizer
@@ -972,7 +973,7 @@ For a `Data.batch`, each item already contains a fixed-size tensor minibatch. Ke
 `TrainOptions.samplesPerStep := 1` to perform one vectorized device pass per update. A larger value
 accumulates gradients across several tensor minibatches. On CUDA, generic accumulation currently
 synchronizes the parameter pack for the host optimizer update, so one typed batch item per update is
-the fast path for large batches.
+the path that avoids that host accumulation step.
 
 # Partial Batches And Fixed Shapes
 
@@ -1025,7 +1026,7 @@ The empty dataset is a valid batching result, but a positive-step training reque
 For example, a batch larger than this 25-row CSV cannot silently report a trained model:
 
 ```terminal +output
-$ lake exe torchlean data_csv --batch 30 --steps 3 --seed 2026
+$ scripts/lake.sh exe torchlean data_csv --batch 30 --steps 3 --seed 2026
 ...
 error: Trainer.train: no training samples; check the dataset and batch size (including drop_last)
 ```
@@ -1170,9 +1171,9 @@ conceptually separate choices and may be configured independently in a larger ex
 check repeatability in your build, run the same command twice, then change the seed:
 
 ```terminal
-lake exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026
-lake exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026
-lake exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 7
+scripts/lake.sh exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026
+scripts/lake.sh exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 2026
+scripts/lake.sh exe torchlean data_csv --device cpu --batch 5 --steps 5 --seed 7
 ```
 
 The third command changes both initialization and sample order. A difference in the final loss
@@ -1202,7 +1203,7 @@ Generate the small deterministic dataset once, then run the maintained loader-an
 # Generate the small regression files before invoking the
 # example that reads their CSV rows.
 python3 NN/Examples/Data/generate_small_data.py
-lake exe torchlean data_csv \
+scripts/lake.sh exe torchlean data_csv \
   --device cpu --batch 5 --steps 5 --seed 2026
 ```
 

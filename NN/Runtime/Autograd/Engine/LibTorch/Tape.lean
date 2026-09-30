@@ -21,7 +21,6 @@ Notes:
 module
 
 public import NN.Runtime.Autograd.Engine.LibTorch.Buffer
-import Mathlib.Tactic.Bound.Init
 public import NN.Spec.Core.Shape
 
 /-!
@@ -331,10 +330,8 @@ def addGradAll (t : Tape) (grads : Array AnyBuffer) (id : Nat) (g : AnyBuffer) :
     | some n => pure n
     | none => throw "autograd: invalid parent id during backward"
   if node.requiresGrad = false then
-    let existing ← match grads[id]? with
-      | some e => pure e
-      | none => throw "autograd: internal error (gradient array out of bounds)"
     if hid : id < grads.size then
+      let existing := grads[id]
       let existing' : AnyBuffer :=
         { existing with buf := Buffer.releaseThen g.buf existing.buf }
       pure (grads.set id existing' (h := hid))
@@ -351,31 +348,25 @@ def addGradAll (t : Tape) (grads : Array AnyBuffer) (id : Nat) (g : AnyBuffer) :
       throw
         s!"autograd: native gradient contribution size mismatch \
            (parent id={id}, parent name={node.name}, shape elements={expected}, got={gSize.toNat})"
-    let existing ← match grads[id]? with
-      | some e => pure e
-      | none => throw "autograd: internal error (gradient array out of bounds)"
-    if decide (existing.s = node.value.s) then
-      let existing' : AnyBuffer := { s := node.value.s, buf := existing.buf }
-      let existingSize := Buffer.size existing'.buf
-      let expected := Spec.Shape.size node.value.s
-      let expectedU32 ← match AnyBuffer.numelU32 node.value.s with
-        | .ok expectedU32 => pure expectedU32
-        | .error _ => throw "autograd: tensor too large for CUDA gradient accumulation"
-      if existingSize != expectedU32 then
-        throw
-          s!"autograd: native accumulated gradient size mismatch \
-             (parent id={id}, parent name={node.name}, shape elements={expected}, \
-             got={existingSize.toNat})"
-      let summedRaw ← AnyBuffer.add existing' g'
-      let summed : AnyBuffer :=
-        { s := summedRaw.s
-          buf := Buffer.releaseThen existing'.buf <| Buffer.releaseThen g'.buf summedRaw.buf }
-      if hid : id < grads.size then
+    if hid : id < grads.size then
+      let existing := grads[id]
+      if decide (existing.s = node.value.s) then
+        let existing' : AnyBuffer := { s := node.value.s, buf := existing.buf }
+        let existingSize := Buffer.size existing'.buf
+        if existingSize != expectedU32 then
+          throw
+            s!"autograd: native accumulated gradient size mismatch \
+               (parent id={id}, parent name={node.name}, shape elements={expected}, \
+               got={existingSize.toNat})"
+        let summedRaw ← AnyBuffer.add existing' g'
+        let summed : AnyBuffer :=
+          { s := summedRaw.s
+            buf := Buffer.releaseThen existing'.buf <| Buffer.releaseThen g'.buf summedRaw.buf }
         pure (grads.set id summed (h := hid))
       else
-        throw "autograd: internal error (gradient array out of bounds)"
+        throw "autograd: gradient array has wrong shape for node"
     else
-      throw "autograd: gradient array has wrong shape for node"
+      throw "autograd: internal error (gradient array out of bounds)"
   else
     throw "autograd: gradient contribution has wrong shape for parent"
 

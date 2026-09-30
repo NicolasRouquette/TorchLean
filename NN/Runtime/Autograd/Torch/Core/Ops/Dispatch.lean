@@ -72,6 +72,19 @@ def execute {α : Type} [TorchLean.Storage α] {sh : Shape} (s : EagerSession α
   let result ← s.executeSelected op (#[cpuHandler] ++ cudaHandlers)
   pure { result with identity? := some (← s.currentRefIdentity) }
 
+/--
+Dispatch two recording actions that return node ids.
+
+Both actions remain delayed until `execute` validates the references and selects a handler,
+including any scalar transfers performed by the CUDA action.
+-/
+def executeRecorded {α : Type} [TorchLean.Storage α] {sh : Shape} (s : EagerSession α)
+    (op : NN.Backend.BackendOp) (refs : Array (Option RefIdentity))
+    (cpu cuda : IO Nat) : IO (TensorRef α sh) :=
+  execute s op refs
+    (do pure { id := ← cpu })
+    (do pure (some { id := ← cuda }))
+
 end EagerSession
 
 end Internal

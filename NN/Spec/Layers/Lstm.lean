@@ -31,7 +31,8 @@ TorchLean provides a small LSTM specification that is:
 
 Many libraries expose two matrices per gate (`W_ih` and `W_hh`) and add them.
 In this spec we use a single matrix applied to a concatenated vector `[x_t; h_{t-1}]`.
-It's the same computation, just packaged to reuse TorchLean's tensor building blocks.
+These are the same equations over exact arithmetic. The concatenated matrix-vector products fix
+their own reduction order, which can round differently from separate input and hidden products.
 -/
 
 @[expose] public section
@@ -242,7 +243,7 @@ def lstmCellBackwardSpec {inputSize hiddenSize : Nat}
   let concat := concatAxisSpec .scalar input prevState.hidden
 
   let tanhC := tanhSpec state.cell
-  let tanhCDeriv := subSpec (Tensor.full (.dim hiddenSize .scalar) 1) (mulSpec tanhC tanhC)
+  let tanhCDeriv := Activation.tanhOutputDerivSpec tanhC
 
   -- h = o ⊙ tanh(c)
   let dO := mulSpec gradHidden tanhC
@@ -259,10 +260,7 @@ def lstmCellBackwardSpec {inputSize hiddenSize : Nat}
   let dFPre := mulSpec dF (Activation.sigmoidOutputDerivSpec forgetGate)
   let dIPre := mulSpec dI (Activation.sigmoidOutputDerivSpec inputGate)
   let dOPre := mulSpec dO (Activation.sigmoidOutputDerivSpec outputGate)
-  let dGPre :=
-    let tanhDeriv :=
-      subSpec (Tensor.full (.dim hiddenSize .scalar) 1) (mulSpec candidate candidate)
-    mulSpec dG tanhDeriv
+  let dGPre := mulSpec dG (Activation.tanhOutputDerivSpec candidate)
 
   let dWf := outerProductSpec dFPre concat
   let dbf := dFPre

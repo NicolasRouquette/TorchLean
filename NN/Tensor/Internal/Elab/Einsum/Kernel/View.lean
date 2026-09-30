@@ -46,8 +46,7 @@ def compileInputViewRead
       let certifiedInputIndexBound ←
         mkAppM ``Fin.isLt #[certifiedInputIndex]
       let inputIndexBound ←
-        indexBoundFromValueEquality logicalSize hInputIndexValue
-          certifiedInputIndexBound
+        mkAppM ``lt_of_eq_of_lt #[hInputIndexValue, certifiedInputIndexBound]
       let inputIndex ←
         mkAppOptM ``Fin.mk #[
           some logicalSize, some inputIndexValue, some inputIndexBound]

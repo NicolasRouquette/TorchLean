@@ -25,7 +25,7 @@ pass.
 ## Implementation status
 
 There is no dedicated `nn.models` builder; the API composes `nn.linear` and `nn.relu` directly.
-The relating theorem is `mlp_interp_eq_spec_mlp_forward` in
+The relating theorem is `mlp_interp` in
 `NN/GraphSpec/Models/MlpSpecEquivalence.lean`, which shows the typed-graph interpretation of the
 MLP equals this spec's forward pass; `NN/Proofs/Models/Mlp.lean` and
 `NN/Tests/Runtime/Floats/TorchLeanSpecMlpEquivCheck.lean` exercise it further.
@@ -90,7 +90,6 @@ def mlpBackward
   -- Forward intermediates
   let z1 := Spec.linearSpec (α:=α) l1 x
   let a1 := Activation.reluSpec z1
-  let _y := Spec.linearSpec (α:=α) l2 a1
 
   -- Layer 2 grads
   let dW2 := Spec.linearWeightsDerivSpec (α:=α) a1 dLdy

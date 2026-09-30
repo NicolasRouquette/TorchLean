@@ -33,7 +33,9 @@ that arithmetic before asking what a learned denoiser can do.
 I use explicit inputs in the latent-model examples for the same reason: we can calculate a KL
 term or a codebook loss by hand, then compare it with the definition and its printed value.
 The Lean blocks are elaborated when this guide is built; their output blocks record Lean's
-evaluations and type checks. Command-line and PyTorch transcripts are identified separately.
+evaluations and type checks. Command-line and PyTorch transcripts are recorded examples from
+earlier runs; they are not executed by the guide build and may differ with the data, version, or
+backend.
 
 # Implementation Layers
 
@@ -468,8 +470,8 @@ multiplies the unguarded estimate by $`s/(s+\varepsilon)`. The relative shrinkag
 $`\varepsilon/(s+\varepsilon)`, approximately $`\varepsilon/s` when $`\varepsilon` is small
 compared with $`s`. In this perfect-denoiser run, the four factors accumulate multiplicatively.
 Adding their first-order shrinkages predicts a relative drift near $`5.9\times10^{-6}`, or an
-absolute error near $`3.0\times10^{-6}` at $`x_0=0.5`. The binary64 replay below compares the
-unguarded and guarded recurrences:
+absolute error near $`3.0\times10^{-6}` at $`x_0=0.5`. The recorded binary64 replay below compares
+the unguarded and guarded recurrences:
 
 ```
 no guard           : ['0.500000', '-0.250000', '0.000000']
@@ -622,7 +624,7 @@ Prepare CIFAR and run one CPU update:
 # Prepare the arrays consumed by this one-update CPU run.
 python3 scripts/datasets/download_example_data.py --cifar10
 
-lake exe torchlean diffusion --device cpu \
+scripts/lake.sh exe torchlean diffusion --device cpu \
   --dataset cifar10 --n-total 1 \
   --steps 1 --hidden-c 2 --T 2 \
   --log /tmp/diffusion-trainlog.json
@@ -648,7 +650,8 @@ diffusion: ok
 ```
 
 Four of those lines end in `...` where the per-layer state shapes were trimmed to fit this page;
-they are the same shapes the `stateShapes` evaluation printed above. Everything else is verbatim.
+they are the same shapes the `stateShapes` evaluation printed above. The remaining lines
+preserve that recorded run.
 
 The banner connects the model configuration to this run. The input is `[1, 4, 4, 4]` and the
 output is
@@ -698,7 +701,7 @@ A short CUDA run that writes all four:
 ```terminal
 # Save all four image stages so a longer run can be
 # inspected beyond its scalar loss.
-lake -R -K cuda=true exe torchlean diffusion --device cuda \
+scripts/lake.sh -R -K cuda=true exe torchlean diffusion --device cuda \
   --dataset cifar10 --n-total 8 \
   --steps 20 --hidden-c 4 --T 20 \
   --reference-ppm /tmp/reference.ppm \
@@ -746,7 +749,7 @@ trains this backbone on flattened CIFAR features, so the numbers below come from
 ```terminal
 # Train on four selected examples and retain the loss trace
 # as JSON.
-lake exe torchlean autoencoder --device cpu \
+scripts/lake.sh exe torchlean autoencoder --device cpu \
   --steps 2 --n-total 4 --log /tmp/autoencoder-trainlog.json
 ```
 
@@ -1302,8 +1305,8 @@ count        = 12 of 48
 
 Twelve of forty-eight coordinates, four per channel, offset by sixteen because each channel is a
 $`4\times4` plane. The runnable `mae` command uses exactly these indices to build its loss weights,
-giving each hidden coordinate weight $`1/12` and every visible coordinate weight zero, so the two
-uses of the mask cannot drift apart.
+giving each hidden coordinate weight $`1/12` and every visible coordinate weight zero, so this
+command derives its masking and scoring support from one policy.
 
 `ssl.BlockMAE.sample` pairs the masked input with a target drawn from the original image:
 
@@ -1337,7 +1340,7 @@ reproduce the published encoder's omission of masked patches.
 ```terminal
 # Run one reconstruction update with the command’s default
 # masking configuration.
-lake exe torchlean mae --device cpu --steps 1 --n-total 1 --log false
+scripts/lake.sh exe torchlean mae --device cpu --steps 1 --n-total 1 --log false
 ```
 
 ```terminal +output

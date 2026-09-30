@@ -79,8 +79,7 @@ instance : Repr CheckedNodeRange where
   reprPrec r _ := repr r.toNodeRange
 
 /-- Check a dynamic graph value against the declared shape and interval of one certificate row. -/
-def dvalWithinRange (range : CheckedNodeRange) (value : Spec.SomeTensor (Binary 8 23)) :
-  Bool :=
+def dvalWithinRange (range : CheckedNodeRange) (value : Spec.SomeTensor (Binary 8 23)) : Bool :=
   if h : value.shape = range.outShape then
     tensorWithinRange range.enclosure (h ▸ value.tensor)
   else
@@ -182,20 +181,19 @@ def sameNodeRange (checked : CheckedNodeRange) (raw : NodeRange) : Bool :=
     decide (checked.rule = raw.rule) &&
     sameIntervalBits checked.enclosure raw.enclosure
 
-/-- Read a previously checked parent enclosure. Graph well-formedness guarantees that successful
-lookups refer only to earlier rows; the explicit error still protects this API when called alone. -/
-def parentRange (ranges : Array CheckedNodeRange) (nodeId : Nat) :
-    Except String (Interval (Binary 8 23)) :=
-  match ranges[nodeId]? with
-  | some range => pure range.enclosure
-  | none => throw s!"numerical certificate: missing range for parent node {nodeId}"
-
-/-- Read the complete checked row for a parent node. -/
+/-- Read the complete checked row for a parent node. Graph well-formedness guarantees that
+successful lookups refer only to earlier rows; the explicit error still protects this API when
+called alone. -/
 def parentNodeRange (ranges : Array CheckedNodeRange) (nodeId : Nat) :
     Except String CheckedNodeRange :=
   match ranges[nodeId]? with
   | some range => pure range
   | none => throw s!"numerical certificate: missing range for parent node {nodeId}"
+
+/-- Read a previously checked parent enclosure. -/
+def parentRange (ranges : Array CheckedNodeRange) (nodeId : Nat) :
+    Except String (Interval (Binary 8 23)) :=
+  (·.enclosure) <$> parentNodeRange ranges nodeId
 
 /-- Outward-rounded left-fold range for a sum of `count` values from one enclosure. The initial
 point interval at positive zero matches `Tensor.sumSpec`. -/
@@ -401,6 +399,15 @@ def arityError (contractName : String) (node : Node) (expected : String) : Strin
   s!"numerical contract {contractName}: node {node.id} ({node.kind.describe}) " ++
     s!"expected {expected}, got {node.parents.size} parent(s)"
 
+/-- Shared transfer for one-parent operations whose output keeps the parent enclosure. -/
+def preserveTransfer (contractName : String) (context : NumericalRangeContext) (node : Node) :
+    Except String RangeTransferResult :=
+  match node.parents with
+  | #[parent] => do
+      let enclosure <- parentRange context.ranges parent
+      pure (.preserve parent, enclosure)
+  | _ => throw (arityError contractName node "one parent")
+
 /-- Shared source-node contract. The source interval remains an explicit certificate assumption. -/
 def sourceContract : GraphRangeContract where
   key := .source
@@ -413,23 +420,13 @@ def sourceContract : GraphRangeContract where
 def structuralContract : GraphRangeContract where
   key := .structural
   name := "structural identity"
-  derive := fun context node =>
-    match node.parents with
-    | #[parent] => do
-        let enclosure <- parentRange context.ranges parent
-        pure (.preserve parent, enclosure)
-    | _ => throw (arityError "structural identity" node "one parent")
+  derive := preserveTransfer "structural identity"
 
 /-- Reusable contract constructor for value-preserving graph operations. -/
 def preserveContract (op : BackendOp) : GraphRangeContract where
   key := .backend op
   name := s!"{op.name} value preservation"
-  derive := fun context node =>
-    match node.parents with
-    | #[parent] => do
-        let enclosure <- parentRange context.ranges parent
-        pure (.preserve parent, enclosure)
-    | _ => throw (arityError op.name node "one parent")
+  derive := preserveTransfer op.name
 
 /-- Reusable contract constructor for pointwise binary interval operations. -/
 def binaryContract (op : BackendOp) (rule : Nat -> Nat -> RangeRule)
@@ -453,17 +450,11 @@ def hullContract (op : BackendOp) : GraphRangeContract where
     let enclosure <- hullParents context.ranges node.parents
     pure (.hull node.parents, enclosure)
 
-
 /-- Max pooling without padding selects existing values and therefore preserves the input hull. -/
 def maxPoolContract : GraphRangeContract where
   key := .maxPool
   name := "max-pool value preservation"
-  derive := fun context node =>
-    match node.parents with
-    | #[parent] => do
-        let enclosure <- parentRange context.ranges parent
-        pure (.preserve parent, enclosure)
-    | _ => throw (arityError "max pool" node "one parent")
+  derive := preserveTransfer "max pool"
 
 /-- Padded max pooling may additionally select the padding value zero. -/
 def maxPoolPadContract : GraphRangeContract where

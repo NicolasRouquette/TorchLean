@@ -43,8 +43,8 @@ public import NN.Proofs.Autograd.Tape.Ops.Embedding.GatherRows
 public import NN.Proofs.Autograd.Tape.Ops.Norm.BatchNorm
 public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNorm
 public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNormBounds
-public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNormSecondBounds
 public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNormRuntime
+public import NN.Proofs.Autograd.Tape.Ops.Norm.LayerNormSecondBounds
 public import NN.Proofs.Autograd.Training.StepAlgebra
 public import NN.Proofs.Backend.Attention
 public import NN.Proofs.Backend.Grouping
@@ -53,19 +53,19 @@ public import NN.Proofs.Gradients.Activation
 public import NN.Proofs.Gradients.Linear
 public import NN.Proofs.Models
 public import NN.Proofs.Probability
-public import NN.Proofs.RuntimeApprox
+public import NN.Proofs.RL.Algorithms.DQN
 public import NN.Proofs.RL.Boundary
-public import NN.Proofs.RL.Gymnasium
 public import NN.Proofs.RL.Core
-public import NN.Proofs.RL.Replay
 public import NN.Proofs.RL.Environment
 public import NN.Proofs.RL.Envs.GridWorld
-public import NN.Proofs.RL.Algorithms.DQN
+public import NN.Proofs.RL.FiniteStochasticMDP
+public import NN.Proofs.RL.Floats.CheckedRuntime
+public import NN.Proofs.RL.Floats.IEEE32Exec
+public import NN.Proofs.RL.Gymnasium
 public import NN.Proofs.RL.MDP
 public import NN.Proofs.RL.MarkovMDP
-public import NN.Proofs.RL.FiniteStochasticMDP
-public import NN.Proofs.RL.Floats.IEEE32Exec
-public import NN.Proofs.RL.Floats.CheckedRuntime
+public import NN.Proofs.RL.Replay
+public import NN.Proofs.RuntimeApprox
 public import NN.Proofs.Tensor
 public import NN.Proofs.Verification
 

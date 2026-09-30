@@ -5,6 +5,7 @@ Authors: TorchLean contributors
 -/
 module
 
+public import Mathlib.Basic.Logic.Basic
 public import NN.Tensor.Internal.Laws.PackIndex
 public import NN.Tensor.Internal.Elab.Einsum.Kernel.Index
 public meta import NN.Tensor.Internal.Elab.Native.Pull -- shake: keep
@@ -163,8 +164,7 @@ private def compileNativePackLeaf
       mkExpectedTypeHint hDirectInputBound
         (← mkLT directIndex literalInputSize)
   let hLiteralInputBound ←
-    indexBoundFromValueEquality literalInputSize
-      hCompiledIndexValue hDirectInputBound
+    mkAppM ``lt_of_eq_of_lt #[hCompiledIndexValue, hDirectInputBound]
   let hInputSize ←
     certifyGeneratedInvariant
       "that a native pack component has its checked flat size"
@@ -303,10 +303,14 @@ private partial def compileNativePackDispatch
         mkAppM ``dite #[condition, leftFunction, rightFunction]
       let expectedOutput ←
         mkAppM ``Storage.push #[buffer, expectedValue]
+      let hBranches ←
+        mkAppM ``And.intro #[hLeftFunction, hRightFunction]
+      let branchRule ←
+        mkAppOptM ``dite_eq_iff' #[
+          some (← inferType expectedOutput), some condition, none,
+          some expectedOutput, some leftFunction, some rightFunction]
       let hValue ←
-        mkAppM ``dite_eq_of_branch_eq #[
-          condition, leftFunction, rightFunction, expectedOutput,
-          hLeftFunction, hRightFunction]
+        mkAppM ``Iff.mpr #[branchRule, hBranches]
       return (value, hValue)
 
 /- Compile one concrete pack plan to a native output loop. -/
@@ -449,11 +453,7 @@ def compileNativePack?
     (compilerChecked checked inputFamily : Expr)
     (checkedValue : Check.CheckedPack) :
     TermElabM (Option Expr) := do
-  match ←
-      observing?
-        (compileNativePackCore? compilerChecked checked inputFamily
-          checkedValue) with
-  | some result => return result
-  | none => return none
+  return (← observing?
+    (compileNativePackCore? compilerChecked checked inputFamily checkedValue)).join
 
 end TorchLean.Tensor.Internal.Elab.Impl

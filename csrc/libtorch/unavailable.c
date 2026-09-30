@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// Backend linked when TorchLean is built without LibTorch (the default `lake build`).
+// Backend linked without LibTorch (the default `scripts/lake.sh build`).
 //
 // Every Lean extern of the GPU buffer ABI resolves here so the default build links, but no buffer
 // can ever be created: `torchlean_cuda_runtime_status` reports 0, CUDA sessions are rejected
@@ -11,7 +11,7 @@
 // `-K cuda=true` to link `csrc/libtorch` instead.
 
 #define TORCHLEAN_UNAVAILABLE_MESSAGE \
-  "TorchLean was built without LibTorch; rebuild with `lake -R -K cuda=true build`"
+  "TorchLean was built without LibTorch; rebuild with `scripts/lake.sh -R -K cuda=true build`"
 
 static lean_obj_res unavailable_io(void) {
   return lean_io_result_mk_error(
@@ -38,7 +38,10 @@ LEAN_EXPORT uint32_t torchlean_runtime_collect_allocator(uint32_t token) {
 
 // Settings read as off and memory statistics read as zero, so reports work in either build.
 LEAN_EXPORT lean_obj_res torchlean_libtorch_get_setting(uint32_t setting) {
-  (void)setting;
+  if (setting > 8u) {
+    return lean_io_result_mk_error(
+        lean_mk_io_user_error(lean_mk_string("LibTorch: unknown runtime setting")));
+  }
   return lean_io_result_mk_ok(lean_box_uint32(0u));
 }
 
@@ -153,12 +156,8 @@ UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_rfft1d_packed,
     b_lean_obj_arg XObj, uint32_t batch, uint32_t n)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_irfft1d_packed,
     b_lean_obj_arg SpecObj, uint32_t batch, uint32_t n)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_spectral_conv1d_rfft_fwd,
-    b_lean_obj_arg XObj, b_lean_obj_arg WReObj, b_lean_obj_arg WImObj, uint32_t grid,
-    uint32_t width, uint32_t modes)
-UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_spectral_conv1d_rfft_bwd,
-    b_lean_obj_arg XObj, b_lean_obj_arg WReObj, b_lean_obj_arg WImObj, b_lean_obj_arg DYObj,
-    uint32_t grid, uint32_t width, uint32_t modes)
+UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_irfft1d_packed_unnormalized,
+    b_lean_obj_arg SpecObj, uint32_t batch, uint32_t n)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_selective_scan_diag_fwd,
     b_lean_obj_arg AObj, b_lean_obj_arg BObj, b_lean_obj_arg XObj, b_lean_obj_arg H0Obj,
     uint32_t seqLen, uint32_t stateDim)
@@ -171,11 +170,6 @@ UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_selective_scan_diag_var_fwd,
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_selective_scan_diag_var_bwd,
     b_lean_obj_arg AObj, b_lean_obj_arg BObj, b_lean_obj_arg XObj, b_lean_obj_arg H0Obj,
     b_lean_obj_arg OutObj, b_lean_obj_arg DYObj, uint32_t seqLen, uint32_t stateDim)
-UNAVAILABLE(lean_obj_res, torchlean_libtorch_attention_fwd,
-    b_lean_obj_arg QObj, b_lean_obj_arg KObj, b_lean_obj_arg VObj, b_lean_obj_arg MaskObj,
-    uint32_t hasMask, uint32_t batch, uint32_t n, uint32_t d, double scaleHost)
-UNAVAILABLE(lean_obj_res, torchlean_libtorch_attention_bwd,
-    b_lean_obj_arg OutObj, b_lean_obj_arg DOutObj)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_scatter_add,
     b_lean_obj_arg XObj, b_lean_obj_arg ValuesObj, uint32_t n, b_lean_obj_arg IdxObj, uint32_t k)
 UNAVAILABLE(lean_obj_res, torchlean_cuda_buffer_broadcast_to,

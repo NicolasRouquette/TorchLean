@@ -9,7 +9,7 @@ module
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Core
 
 /-!
-# CUDA Tape Operations: Matrix, FFT, and Loss Nodes
+# CUDA Tape Operations: Matrix and Loss Nodes
 -/
 
 @[expose] public section
@@ -61,57 +61,6 @@ def matmulFlattened {batch m n p : Nat} (t : Tape) (aId bId : Nat) : Result (Tap
       let dA := Buffer.bmmRightTranspose dLdy b b32 m32 p32 n32
       let dB := Buffer.bmmLeftTranspose a dLdy b32 n32 m32 p32
       (dA, dB))
-
-end Internal
-
-namespace Internal
-
-/--
-Real-FFT spectral convolution used by the CUDA FNO1D path.
-
-Shapes:
-- `x : (grid, width)`,
-- `wRe, wIm : (modes, width, width)`,
-- output `y : (grid, width)`.
-
-The low-level buffer primitive owns the numerical contract and VJP:
-`rfft(x)` is unnormalized, the inverse is normalized, and the backward kernels include the
-half-spectrum adjoint factors for real FFTs. This tape node records those three parent
-dependencies and checks the runtime shapes before calling the native kernels.
--/
-@[inline] def spectralConv1dRfft {grid width modes : Nat}
-    (t : Tape) (xId wReId wImId : Nat) : Result (Tape × Nat) := do
-  if grid = 0 then
-    throw "autograd: spectralConv1dRfft: grid must be positive"
-  if width = 0 then
-    throw "autograd: spectralConv1dRfft: width must be positive"
-  if modes > grid / 2 + 1 then
-    throw "autograd: spectralConv1dRfft: modes exceeds rfft frequency count"
-  let grid32 ← AnyBuffer.natToU32Checked grid
-  let width32 ← AnyBuffer.natToU32Checked width
-  let modes32 ← AnyBuffer.natToU32Checked modes
-  let xShape : Shape := .dim grid (.dim width .scalar)
-  let wShape : Shape := .dim modes (.dim width (.dim width .scalar))
-  let x ← requireValue (t := t) xId xShape
-  let wRe ← requireValue (t := t) wReId wShape
-  let wIm ← requireValue (t := t) wImId wShape
-  let y := Buffer.spectralConv1dRfftFwd x wRe wIm grid32 width32 modes32
-  let node : Node :=
-    { name := some "spectralConv1dRfft"
-      value := { s := xShape, buf := y }
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad) ||
-        (t.getNode? wReId).any (·.requiresGrad) ||
-        (t.getNode? wImId).any (·.requiresGrad)
-      parents := #[xId, wReId, wImId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny xShape
-        let (dx, dWRe, dWIm) :=
-          Buffer.spectralConv1dRfftBwd x wRe wIm dLdy.buf grid32 width32 modes32
-        pure #[
-            (xId, { s := xShape, buf := dx })
-          , (wReId, { s := wShape, buf := dWRe })
-          , (wImId, { s := wShape, buf := dWIm }) ] }
-  pure (t.addNode node)
 
 end Internal
 

@@ -94,7 +94,7 @@ def checkUpdatedState
     (updated : nn.State (ExecFloat.Binary 15 112) (nn.stateShapes trainer.model)) : IO Unit := do
   let weight : Tensor (ExecFloat.Binary 15 112) [1, 1] := updated.get ⟨0, by decide⟩
   let bias : Tensor (ExecFloat.Binary 15 112) [1] := updated.get ⟨1, by decide⟩
-  expectValue "typed weight update" (Tensor.get2 weight 0 0) ((1 - inputGap - stateGap) / 2)
+  expectValue "typed weight update" weight[0][0] ((1 - inputGap - stateGap) / 2)
   expectValue "typed bias update" bias[0] ((1 + stateGap) / 2)
 
 def checkUpdatedPrediction {source : TorchLean.Trainer [1] [1]}
@@ -285,7 +285,7 @@ def checkManualModules : IO Unit := do
       (encodeState (← lookup.state) == encodeState indexedState)
     let prediction : Tensor (ExecFloat.Binary 15 112) [1, 1] ← lookup.forward [1]
     expectValue "indexed module reads supplied typed parameters"
-      (Tensor.get2 prediction 0 0) (1 + stateGap)
+      prediction[0][0] (1 + stateGap)
 
 /-- Configured conversion preserves the exact binary64 source before destination rounding. -/
 def checkConfiguredConversion : IO Unit := do

@@ -26,23 +26,13 @@ The e-graph normalizes proof terms; executable tensors continue to use the
 native `Array` lowerings.
 -/
 
-/--
-Bound a quotient when the available product bound lists the quotient bound
-before the divisor.
--/
-private theorem Nat.div_lt_of_lt_mul_comm {value divisor bound : Nat}
-    (h : value < bound * divisor) :
-    value / divisor < bound := by
-  apply Nat.div_lt_of_lt_mul
-  simpa only [Nat.mul_comm] using h
-
 /-- Bound one decoded digit after identifying the finite index size. -/
 private theorem Fin.div_lt_of_size_eq_mul_bound
     {size divisor bound : Nat} (index : Fin size)
     (hSize : size = bound * divisor) :
     index.val / divisor < bound := by
   subst size
-  exact Nat.div_lt_of_lt_mul_comm index.isLt
+  exact Nat.div_lt_of_lt_mul (by simpa only [Nat.mul_comm] using index.isLt)
 
 public meta section
 

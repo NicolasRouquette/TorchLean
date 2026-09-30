@@ -29,7 +29,7 @@ namespace NN.Verification.Cert.FiniteArtifact
 open _root_.Spec TorchLean TorchLean.Tensor
 open FloatLib.Floats (ExecFloat)
 open NN.MLTheory.CROWN NN.MLTheory.CROWN.Graph
-open NN.Verification.CROWNQuery
+open NN.Verification.Cert.CROWNQuery
 open NN.Verification.Cert.NodeReplay
 open scoped Spec.RationalAlgebraic
 
@@ -79,12 +79,6 @@ def Chain.bounds {n m : Nat} : Chain n m → Bounds n m
   | .input b => b
   | .linear _ _ b => b
   | .relu _ _ b => b
-
-/-- Number of covered nodes, including the input. -/
-def Chain.length {n m : Nat} : Chain n m → Nat
-  | .input _ => 1
-  | .linear parent _ _ => parent.length + 1
-  | .relu parent _ _ => parent.length + 1
 
 /-- Check every supplied node entry against a transfer from its already checked parent. -/
 def Chain.check {n m : Nat} (chain : Chain n m) (input : Box ℚ [n]) : Bool :=
@@ -231,9 +225,7 @@ def decode (g : Graph) (ps : ParamStore (ExecFloat.Binary 8 23))
 def Decoded.check (decoded : Decoded) : Bool :=
   ((decide (0 < decoded.graph.inputDim ∧ 0 < decoded.graph.outputDim ∧
     0 < decoded.numConstraints) &&
-  (List.finRange decoded.graph.inputDim).all
-    (fun i => decide (decoded.graph.input.lo.getScalar i ≤
-      decoded.graph.input.hi.getScalar i))) &&
+  boxOrdered decoded.graph.input) &&
   decoded.artifact.chain.check decoded.graph.input) &&
   checkUpper decoded.strict
     (decoded.artifact.chain.bounds.linear

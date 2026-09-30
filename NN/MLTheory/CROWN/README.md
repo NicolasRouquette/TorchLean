@@ -24,12 +24,12 @@ and Lyapunov/controller experiments.
    `alphaBetaCrown_transfer_sound` as short dispatches over `Alpha/` and `AlphaBeta/`; its
    `EndToEnd.lean` discharges their `IBPEnclosesVals` hypothesis from the IBP theorem
    (`ibp_encloses_vals_of_cert_local_ok`) and states the composed corollaries
-   `alphaCrown_cert_encloses_semantics`, `alphaBetaCrown_cert_encloses_semantics'`, and
+   `alphaCrown_cert_encloses_semantics`, `alphaBetaCrown_cert_encloses_semantics`, and
    `alphaCrown_cert_encloses_evalGraphRec`. `GraphRunibpEndToEnd.lean` connects the proof-side
-   IBP pass to the engine's executable `runIBP` (`runIBP_eq_runIBP?`, `runIBP_encloses_evalGraphRec`)
-   and `GraphRuntimeBridge.lean` proves per-node agreement between the runtime evaluator and the
-   semantics (`evalNode_bridge`), then composes it over a whole topologically ordered graph
-   (`denoteAll_semLocalOK`).
+   IBP pass to the engine's executable `runIBP` (`runIBP_eq_runIBP?`,
+   `runIBP_encloses_evalGraphRec`) and `GraphRuntimeBridge.lean` proves per-node agreement between
+   the runtime evaluator and the semantics (`evalNode_bridge`), then composes it over a whole
+   topologically ordered graph (`denoteAll_semLocalOK`).
    `AlphaReLULowerBound.lean` is the shared scalar lower-bound theorem used by both alpha-CROWN and
    alpha/beta-CROWN proofs.
 7. `Runtime/Ops.lean`: the canonical executable ReLU relaxation definitions used by both the graph
@@ -152,7 +152,8 @@ the stored scale and positive epsilon. `Graph/Proofs/LayerNormDerivativeEnclosur
 the actual directed row calculation encloses the first and mixed derivatives of the real
 normalization. It requires enclosed upstream values and derivatives, the scalar operation laws,
 and exact interpretations of the literals two through four (zero and one are laws of
-`LawfulBoundOps`); a corollary specializes to real endpoints. A full graph derivative-pass induction remains separate.
+`LawfulBoundOps`); a corollary specializes to real endpoints. A full graph derivative-pass
+induction remains separate.
 For values, `Proofs/LayerNormEnclosure.lean` proves the directed row sequence encloses
 `Spec.layerNorm` under the endpoint and nonlinear operation laws, with zero and one interpreted
 exactly. This includes the actual directed sum and count used to compute a mean.
@@ -297,12 +298,13 @@ bound so a successful refinement does not widen it. Invalid boxes or incompatibl
 are rejected before they can become graph output certificates.
 
 The artifact checker accepts the same option:
-`NN.Verification.IBPCert.check g ps outId path (refinement := some (inputId, splitBudget))`.
+`NN.Verification.Cert.IBPCert.check g ps outId path (refinement := some (inputId, splitBudget))`.
 Its default performs a single pass. A split budget is an explicit runtime/precision
 tradeoff, rather than a hidden cost added to every verification request.
 
-In `NN.MLTheory.CROWN.Proofs.GraphRefinement`, `Graph.Refinement.splitAt_covers` proves that every real input in a parent box belongs to at least
-one child. The enclosure procedure still needs sound transfer rules: subdivision does not prove
+In `NN.MLTheory.CROWN.Proofs.GraphRefinement`, `Graph.Refinement.splitAt_covers` proves that
+every real input in a parent box belongs to at least one child. The enclosure procedure still
+needs sound transfer rules: subdivision does not prove
 universal soundness of rounded LayerNorm or other backend operations. The maintained tests cover
 containment, actual tightening, Float/Float32/IEEE32Exec, multiple inputs, failed branches, invalid
 endpoints, and the artifact-checker option.

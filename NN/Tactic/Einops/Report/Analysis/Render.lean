@@ -422,22 +422,40 @@ def renderApplication (expression : Expr) : MetaM String := do
         "one direct output fill per component through the certified packed \
           coordinate map"
         "Lowering.unpackTensor_correct" "Semantics.denoteUnpack"
-  else
+  else if expression.isAppOfArity ``Check.checkParseShape 2 then
+    if let some report ← concreteParseShapeReport arguments[0]! arguments[1]! then
+      return report
+    let result ← reportWhnf expression
+    let succeeded := result.isAppOfArity ``Except.ok 3
+    let rejected := result.isAppOfArity ``Except.error 3
+    let operation :=
+      if succeeded then "parse_shape (symbolic metadata check)"
+      else if rejected then "parse_shape (rejected metadata check)"
+      else "parse_shape (unverified metadata check)"
     let shapeType ← inferredType arguments[1]!
     let checkerResultType ← inferredType expression
-    return (← concreteParseShapeReport arguments[0]! arguments[1]!).getD <|
-      String.intercalate "\n" <|
-        ["parse_shape (symbolic metadata check)"] ++
+    let obligations ←
+      if succeeded then
+        pure <| reportSection "Discharged obligations"
+          ["The checker reduces to success; its correctness theorems \
+              certify grammar, rank, ellipsis, literal, unit-axis, and \
+              unique-name requirements.",
+           "Returned dimension expressions remain symbolic in the local context."]
+      else if rejected then
+        pure <| reportSection "Check status"
+          [s!"The checker rejects this input: {← ppExpr result.getAppArgs[2]!}"]
+      else
+        pure <| reportSection "Check status"
+          ["The checker result remains symbolic. Success has not been established.",
+           "Correctness theorems require a proof that checking returns `Except.ok`."]
+    return String.intercalate "\n" <|
+        [operation] ++
           typeCheckSection [
             ("Structural shape metadata", shapeType),
             ("Checker result", checkerResultType),
             ("Rep scalar type",
               "arbitrary and erased before this metadata check")] ++
-          reportSection "Discharged obligations"
-            ["A generated kernel proof certifies grammar, rank, ellipsis, \
-                literal, unit-axis, and unique-name requirements.",
-             "Actual dimension expressions remain symbolic in the local \
-                context."] ++
+          obligations ++
           reportSection "Shape-derived work estimate"
             ["Rep scalar reads: 0.",
              "Rep output buffers: 0.",
@@ -445,6 +463,8 @@ def renderApplication (expression : Expr) : MetaM String := do
           reportSection "Correctness"
             ["Successful checking yields ordered, duplicate-free bindings \
                 whose lengths agree with their physical dimensions."]
+  else
+    return "Unsupported einops application"
 
 
 end Report

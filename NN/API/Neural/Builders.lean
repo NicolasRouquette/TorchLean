@@ -159,11 +159,9 @@ Layer constructors use this when a value-level configuration check is needed to 
 shape-indexed model. Normal model validation rejects the placeholder before state allocation or
 execution, so callers receive the same error path as every other invalid layer.
 
-Why a placeholder instead of an `Except`? A `Sequential σ τ` is indexed by its shapes, so a
-constructor that has already committed to `σ` and `τ` cannot back out and return an error value
-without changing every caller's type. PyTorch has the same problem and solves it by raising at
-construction time; we cannot raise inside a pure definition, so we return a model that is
-guaranteed to fail `validate` with `message` before it ever touches storage.
+Keeping this failure in `validate` lets pure constructors retain their `Sequential σ τ` interface
+and compose with valid layers. The placeholder's forward body only supplies the required result
+type; it does not give a meaning to the invalid configuration.
 -/
 def invalidConfiguration (input output : Spec.Shape) (kind message : String) :
     Sequential input output :=

@@ -514,20 +514,8 @@ def ofList {α : Type u} [Storage α] (values : List α) :
       (Coord.linearize (s := []) PUnit.unit).isLt
     simp only [Shape.size_nil, Nat.one_mul] at hStep
     omega
-  have hData := Storage.toArray_ofFn values.get
-  have hBound :
-      (Coord.linearize (s := [values.length]) (index, PUnit.unit)).val <
-        storage.size (Storage.ofFn values.get) := by
-    simpa only [Storage.size_ofFn, hLinear] using index.isLt
-  have hArrayBound :
-      (Coord.linearize (s := [values.length]) (index, PUnit.unit)).val <
-        (storage.toArray (Storage.ofFn values.get)).size := by
-    simpa only [hData, Array.size_ofFn, hLinear] using index.isLt
-  have hGet := storage.toArray_get
-    (Storage.ofFn values.get)
-    (Coord.linearize (s := [values.length]) (index, PUnit.unit)).val
-    hBound hArrayBound
-  simpa only [hData, Array.getElem_ofFn, hLinear] using hGet.symm
+  simp only [hLinear]
+  exact Storage.get_ofFn values.get index _
 
 /-- Observing a list-built tensor returns the original values in row-major order. -/
 @[simp] theorem data_ofList {α : Type u} [storage : Storage α]

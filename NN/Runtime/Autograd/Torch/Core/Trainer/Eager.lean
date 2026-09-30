@@ -120,9 +120,9 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
   -- The callback reads the loss before the update only when the caller needs it.
   let nativeStep {result : Type} (optimizer : NativeOptimizer α)
       (readOutput : IO (Tensor α []) → IO result) :
-      Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO result)) :=
+      Curried.Function α inputShapes (Curried.Function δ dataInputShapes (IO result)) :=
     Curried.curry (α := α) (ss := inputShapes)
-      (β := Curried.Fn δ dataInputShapes (IO result)) fun inputs =>
+      (β := Curried.Function δ dataInputShapes (IO result)) fun inputs =>
         Curried.curry (α := δ) (ss := dataInputShapes) (β := IO result) fun dataInputs => do
           checkOptimizerPath .native
           try
@@ -183,10 +183,10 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
       finally
         finishRecording
   let lossFn :
-      Curried.Fn α inputShapes
-        (Curried.Fn δ dataInputShapes (IO (Tensor α []))) :=
+      Curried.Function α inputShapes
+        (Curried.Function δ dataInputShapes (IO (Tensor α []))) :=
     Curried.curry (α := α) (ss := inputShapes)
-      (β := Curried.Fn δ dataInputShapes (IO (Tensor α []))) (fun inputs =>
+      (β := Curried.Function δ dataInputShapes (IO (Tensor α []))) (fun inputs =>
         Curried.curry (α := δ) (ss := dataInputShapes)
           (β := IO (Tensor α [])) (fun dataInputs => do
             try
@@ -195,10 +195,10 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
             finally
               finishRecording))
   let diff :
-      Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes
+      Curried.Function α inputShapes (Curried.Function δ dataInputShapes
         (IO (Tensor α [] × TorchLean.TensorPack α paramShapes))) :=
     Curried.curry (α := α) (ss := inputShapes)
-      (β := Curried.Fn δ dataInputShapes
+      (β := Curried.Function δ dataInputShapes
         (IO (Tensor α [] × TorchLean.TensorPack α paramShapes))) (fun inputs =>
         Curried.curry (α := δ) (ss := dataInputShapes)
           (β := IO (Tensor α [] × TorchLean.TensorPack α paramShapes)) (fun dataInputs => do
@@ -211,10 +211,11 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
             finally
               finishRecording))
   let grad :
-      Curried.Fn α inputShapes
-        (Curried.Fn δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes))) :=
+      Curried.Function α inputShapes
+        (Curried.Function δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes))) :=
     Curried.curry (α := α) (ss := inputShapes)
-      (β := Curried.Fn δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes))) (fun inputs =>
+      (β := Curried.Function δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes)))
+      (fun inputs =>
         Curried.curry (α := δ) (ss := dataInputShapes)
           (β := IO (TorchLean.TensorPack α paramShapes)) (fun dataInputs => do
             try
@@ -223,29 +224,29 @@ def Internal.eagerScalarTrainer {α δ : Type} [TorchLean.Storage α] [TorchLean
             finally
               finishRecording))
   let stepWithLoss (learningRate : α) :
-      Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO (Tensor α []))) :=
+      Curried.Function α inputShapes (Curried.Function δ dataInputShapes (IO (Tensor α []))) :=
     if options.usesCuda then nativeStep (.sgd learningRate) id
     else
       Curried.curry (α := α) (ss := inputShapes)
-        (β := Curried.Fn δ dataInputShapes (IO (Tensor α []))) fun inputs =>
+        (β := Curried.Function δ dataInputShapes (IO (Tensor α []))) fun inputs =>
           Curried.curry (α := δ) (ss := dataInputShapes) (β := IO (Tensor α []))
             fun dataInputs => do
               let diffForData := Curried.uncurry (α := α) (ss := inputShapes)
-                (β := Curried.Fn δ dataInputShapes
+                (β := Curried.Function δ dataInputShapes
                   (IO (Tensor α [] × TorchLean.TensorPack α paramShapes))) diff inputs
               let (lossValue, gradients) ← Curried.uncurry (α := δ) (ss := dataInputShapes)
                 (β := IO (Tensor α [] × TorchLean.TensorPack α paramShapes)) diffForData dataInputs
               ParamList.sgdStep (α := α) (ss := paramShapes) parameters learningRate gradients
               pure lossValue
   let step (learningRate : α) :
-      Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit)) :=
+      Curried.Function α inputShapes (Curried.Function δ dataInputShapes (IO Unit)) :=
     if options.usesCuda then nativeStep (.sgd learningRate) (fun _ => pure ())
     else
       Curried.curry (α := α) (ss := inputShapes)
-        (β := Curried.Fn δ dataInputShapes (IO Unit)) fun inputs =>
+        (β := Curried.Function δ dataInputShapes (IO Unit)) fun inputs =>
           Curried.curry (α := δ) (ss := dataInputShapes) (β := IO Unit) fun dataInputs => do
             let gradForData := Curried.uncurry (α := α) (ss := inputShapes)
-              (β := Curried.Fn δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes)))
+              (β := Curried.Function δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes)))
               grad inputs
             let gradients ← Curried.uncurry (α := δ) (ss := dataInputShapes)
               (β := IO (TorchLean.TensorPack α paramShapes)) gradForData dataInputs

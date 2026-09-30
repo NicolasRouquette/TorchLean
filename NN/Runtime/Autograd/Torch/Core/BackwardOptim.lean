@@ -277,30 +277,25 @@ def sgdStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
       else
         throw <| IO.userError "torch: internal grad shape mismatch during CUDA SGD"
 
-/-- Apply Adam using an already-computed sparse CUDA gradient map. -/
-def adamStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
-    (s : EagerSession α)
+/-- Run the shared Adam update after each entry point has converted and validated its options.
+
+The decay coefficient stays delayed until the kernel call: AdamW evaluates `-(lr * weightDecay)`
+for each parameter after the moment corrections, while Adam passes the literal zero coefficient.
+-/
+def applyCudaAdamUpdate {α : Type} [TorchLean.Storage α]
+    (s : EagerSession α) (operation : String)
     (configRef : IO.Ref (Option CudaAdamConfig)) (stateRef : IO.Ref CudaAdamState)
-    (lr beta1 beta2 epsilon : α)
+    (config : CudaAdamConfig) (lrF : Float) (decayStep : Unit → Float)
     (grads : CudaGradMap) : IO Unit := do
-  if Config.device s.options != .cuda then
-    throw <| IO.userError "torch: adamStepAllCudaMap called on non-CUDA eager session"
-  let lrF ← TensorTransfer.toFloat (α := α) lr
-  let beta1F ← TensorTransfer.toFloat (α := α) beta1
-  let beta2F ← TensorTransfer.toFloat (α := α) beta2
-  let epsF ← TensorTransfer.toFloat (α := α) epsilon
-  checkCudaLearningRate "CUDA Adam" lrF
-  let config : CudaAdamConfig :=
-    { kind := .adam, beta1 := beta1F, beta2 := beta2F, epsilon := epsF, weightDecay := 0.0 }
-  match config.validate with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
+  let beta1F := config.beta1
+  let beta2F := config.beta2
+  let epsF := config.epsilon
   let oneMinusBeta1 := 1.0 - beta1F
   let oneMinusBeta2 := 1.0 - beta2F
   let t0 ← s.cudaTape.get
   let params ← s.paramsByLeaf.get
   let mut state ← stateRef.get
-  checkCudaOptimizerInputs "CUDA Adam" t0 params grads (some state)
+  checkCudaOptimizerInputs operation t0 params grads (some state)
   let groups ← parameterGroups s
   checkSharedCudaAdamState groups state
   let currentValues ← groups.mapM ParameterGroup.currentCudaValue
@@ -325,7 +320,7 @@ def adamStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
         let (updated, m', v') := Runtime.Autograd.LibTorch.Buffer.adamStep
           pBuf gAny.buf st.m st.v
           beta1F oneMinusBeta1 beta2F oneMinusBeta2
-          mHatScale vHatScale epsF 0.0 (-lrF)
+          mHatScale vHatScale epsF (decayStep ()) (-lrF)
         let updatedDev : Runtime.Autograd.LibTorch.AnyBuffer :=
           { s := p.s, buf := updated }
         p.setCuda updatedDev
@@ -333,7 +328,7 @@ def adamStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
         releaseCudaBuffer st.v
         pure ({ m := m', v := v', t := t' } : CudaAdamParamState)
       else
-        throw <| IO.userError "torch: internal grad shape mismatch during CUDA Adam"
+        throw <| IO.userError s!"torch: internal grad shape mismatch during {operation}"
     state := state.insert id nextState
   for (id, st) in state.toList do
     if params.contains id then
@@ -343,6 +338,24 @@ def adamStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
       releaseCudaBuffer st.v
       state := state.erase id
   stateRef.set state
+
+/-- Apply Adam using an already-computed sparse CUDA gradient map. -/
+def adamStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
+    (s : EagerSession α)
+    (configRef : IO.Ref (Option CudaAdamConfig)) (stateRef : IO.Ref CudaAdamState)
+    (lr beta1 beta2 epsilon : α)
+    (grads : CudaGradMap) : IO Unit := do
+  if Config.device s.options != .cuda then
+    throw <| IO.userError "torch: adamStepAllCudaMap called on non-CUDA eager session"
+  let lrF ← TensorTransfer.toFloat (α := α) lr
+  let beta1F ← TensorTransfer.toFloat (α := α) beta1
+  let beta2F ← TensorTransfer.toFloat (α := α) beta2
+  let epsF ← TensorTransfer.toFloat (α := α) epsilon
+  checkCudaLearningRate "CUDA Adam" lrF
+  let config : CudaAdamConfig :=
+    { kind := .adam, beta1 := beta1F, beta2 := beta2F, epsilon := epsF, weightDecay := 0.0 }
+  okOrThrow config.validate
+  applyCudaAdamUpdate s "CUDA Adam" configRef stateRef config lrF (fun _ => 0.0) grads
 
 /--
 Apply AdamW from a sparse CUDA gradient map.
@@ -365,57 +378,9 @@ def adamWStepAllCudaMap {α : Type} [TorchLean.Storage α] [TensorTransfer α]
   checkCudaLearningRate "CUDA AdamW" lrF
   let config : CudaAdamConfig :=
     { kind := .adamW, beta1 := beta1F, beta2 := beta2F, epsilon := epsF, weightDecay := wdF }
-  match config.validate with
-  | .ok () => pure ()
-  | .error message => throw <| IO.userError message
-  let oneMinusBeta1 := 1.0 - beta1F
-  let oneMinusBeta2 := 1.0 - beta2F
-  let t0 ← s.cudaTape.get
-  let params ← s.paramsByLeaf.get
-  let mut state ← stateRef.get
-  checkCudaOptimizerInputs "CUDA AdamW" t0 params grads (some state)
-  let groups ← parameterGroups s
-  checkSharedCudaAdamState groups state
-  let currentValues ← groups.mapM ParameterGroup.currentCudaValue
-  ensureCudaAdamConfig configRef config
-  for (group, currentValue) in groups.zip currentValues do
-    let id := group.id
-    let p := group.parameter
-    let nextState ← withCudaGroupGradient group grads fun gAny => do
-      if _hs : gAny.s = p.s then
-        let pBuf := currentValue.buf
-        let n := Runtime.Autograd.LibTorch.Buffer.size pBuf
-        let st :=
-          match state.get? id with
-          | some st => st
-          | none =>
-              { m := Runtime.Autograd.LibTorch.Buffer.zeros n
-                v := Runtime.Autograd.LibTorch.Buffer.zeros n
-                t := 0 }
-        let t' := st.t + 1
-        let mHatScale := 1.0 / (1.0 - Float.pow beta1F (Float.ofNat t'))
-        let vHatScale := 1.0 / (1.0 - Float.pow beta2F (Float.ofNat t'))
-        let (updated, m', v') := Runtime.Autograd.LibTorch.Buffer.adamStep
-          pBuf gAny.buf st.m st.v
-          beta1F oneMinusBeta1 beta2F oneMinusBeta2
-          mHatScale vHatScale epsF (-(lrF * wdF)) (-lrF)
-        let updatedDev : Runtime.Autograd.LibTorch.AnyBuffer :=
-          { s := p.s, buf := updated }
-        p.setCuda updatedDev
-        releaseCudaBuffer st.m
-        releaseCudaBuffer st.v
-        pure ({ m := m', v := v', t := t' } : CudaAdamParamState)
-      else
-        throw <| IO.userError "torch: internal grad shape mismatch during CUDA AdamW"
-    state := state.insert id nextState
-  for (id, st) in state.toList do
-    if params.contains id then
-      pure ()
-    else
-      releaseCudaBuffer st.m
-      releaseCudaBuffer st.v
-      state := state.erase id
-  stateRef.set state
+  okOrThrow config.validate
+  applyCudaAdamUpdate s "CUDA AdamW" configRef stateRef config lrF
+    (fun _ => -(lrF * wdF)) grads
 
 end EagerSession
 

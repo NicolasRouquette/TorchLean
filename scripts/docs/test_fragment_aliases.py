@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from check_site_links import check_site
-from polish_verso_guide import add_fragment_aliases
+from polish_verso_guide import add_fragment_aliases, rewrite_repository_links
 
 
 class FragmentAliasTests(unittest.TestCase):
@@ -103,6 +104,28 @@ class FragmentAliasTests(unittest.TestCase):
             add_fragment_aliases(self.root)
             self.assertEqual(outside.read_text(), "<html><body>Outside</body></html>")
         self.assertNotIn("tl-anchor-alias", page.read_text())
+
+    def test_repository_links_preserve_declaration_and_source_line_targets(self) -> None:
+        repo = self.root / "repo"
+        api = repo / "home_page/docs/NN/Tensor.html"
+        api.parent.mkdir(parents=True)
+        api.write_text('<html><body><span id="Tensor.map"></span></body></html>')
+        guide = repo / "home_page/blueprint"
+        guide.mkdir()
+        page = guide / "index.html"
+        page.write_text(
+            '<a href="../../NN/Tensor.lean#Tensor.map">Declaration</a>'
+            '<a href="../../NN/Tensor.lean#L12-L15">Source lines</a>'
+        )
+        with patch("polish_verso_guide.__file__", str(repo / "scripts/docs/polish.py")):
+            rewrite_repository_links(guide)
+        text = page.read_text()
+        self.assertIn('href="../docs/NN/Tensor.html#Tensor.map"', text)
+        self.assertIn(
+            'href="https://github.com/lean-dojo/TorchLean/blob/main/NN/Tensor.lean#L12-L15"',
+            text,
+        )
+        self.assertEqual(check_site(repo / "home_page"), [])
 
 
 if __name__ == "__main__":

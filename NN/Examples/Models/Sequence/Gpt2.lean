@@ -265,7 +265,7 @@ Interactive prompt loop for the in-memory Float model.
 Each line is appended to the current byte context, decoded through the trained local model, and then
 kept as context for the next prompt unless the user clears it.
 -/
-partial def interactiveLoopFloat
+partial def interactiveLoop
     (predict : Predictor)
     (options : Options) :
     IO Unit := do
@@ -317,10 +317,10 @@ def trainAndDecode (runtime : Runtime.Config) (corpus : String)
   trainer.printSummary
 
   /-
-  The GPT-2 command trains on a bounded, prompt-aware window table.  That makes the training
-  schedule explicit and reproducible, and it lets the public trainer own checkpointing and optimizer
-  state.  The example stays focused on text windows, decoding, and generation instead of runtime
-  module bookkeeping.
+  The GPT-2 command trains on a bounded table of evenly spaced corpus windows. That makes the
+  training schedule explicit and reproducible, and it lets the public trainer own checkpointing and
+  optimizer state. The example stays focused on text windows, decoding, and generation instead of
+  runtime module bookkeeping.
   -/
   let trained ← trainer.train
     (Data.fromStream samples)
@@ -347,7 +347,7 @@ def trainAndDecode (runtime : Runtime.Config) (corpus : String)
   IO.println s!"  repetition_penalty={options.generation.repeatPenalty} repeat_window={
     options.generation.repeatWindow}"
   if options.interactive then
-    interactiveLoopFloat trained.predict options
+    interactiveLoop trained.predict options
   let cudaMemorySampleEvery :=
     Trainer.Memory.cadence runtime options.training.steps options.training.cudaMemorySampleEvery
   text.Log.writeGeneration

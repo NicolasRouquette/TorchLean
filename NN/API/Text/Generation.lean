@@ -128,13 +128,10 @@ namespace Internal
 /--
 Apply a repetition penalty by subtracting
 $\mathrm{repeatPenalty}\,\mathrm{count}(\mathrm{token})$ for tokens
-appearing in `recent`.
+appearing in `recentTokens`.
 
-This is a local sampling heuristic; it is not the same as the presence or frequency penalties used
-by hosted APIs, but it gives examples a deterministic way to discourage immediate repetition.
-
-Internal on purpose: `chooseNextToken` applies it for you, and calling it out of order (after the
-softmax rather than on the logits) would silently change the sampling distribution.
+`chooseNextToken` validates the penalty and applies it to the logits before greedy selection or
+temperature scaling.
 -/
 def penalizeRepeats
     {vocabularySize recentCount : Nat}
@@ -153,12 +150,7 @@ def penalizeRepeats
 
 end Internal
 
-/--
-True for byte tokens that a terminal can print: the printable ASCII range plus newline.
-
-Named with the `is` prefix that Lean core uses for `Char.isAlpha` and friends, so that reading
-`if isPrintableAscii token` at a call site tells you a `Bool` comes back.
--/
+/-- True for byte tokens in the printable ASCII range, plus newline. -/
 def isPrintableAscii (token : Nat) : Bool :=
   token = 10 || (32 ≤ token && token ≤ 126)
 

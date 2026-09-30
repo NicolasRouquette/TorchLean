@@ -59,7 +59,7 @@ theorem affineEvalOnBox_encloses
       lower, upper] using h
   have hs := sum_encloses lower upper
     (fun j => value (Spec.get2 aff.A i j) * x j) ht
-  simp only [AffineVec.evalOnBox, Tensor.getScalar_dim]
+  simp only [AffineVec.evalOnBox, IBP.linear, Box.point, Tensor.getScalar_dim]
   exact ⟨(LawfulBoundOps.addDown_le _ _).trans (add_le_add hs.1 le_rfl),
     (add_le_add hs.2 le_rfl).trans (LawfulBoundOps.le_addUp _ _)⟩
 
@@ -75,7 +75,7 @@ theorem value_relu (a : α) : value (Activation.Math.reluSpec a) = max (value a)
 theorem rowEncloses_iff {d : Nat} {lo hi : Tensor α [d]} {f : Nat → ℝ} :
     RowEncloses { dim := d, lo := lo, hi := hi } d f ↔
       ∀ i : Fin d, value (lo.getScalar i) ≤ f i.val ∧ f i.val ≤ value (hi.getScalar i) := by
-  simp only [RowEncloses, read_fin, true_and]
+  simp only [RowEncloses, Spec.getAtOrZero_eq_getScalar, true_and]
 
 /-- Interval addition encloses the sum of enclosed coordinates. -/
 theorem boxAdd_encloses {x y : FlatBox α} {n : Nat} {f g : Nat → ℝ}
@@ -161,7 +161,7 @@ theorem boxUnaryEnclosure?_encloses [NonlinearBoundOps α]
   subst hdx
   rw [rowEncloses_iff] at hx
   unfold boxUnaryEnclosure? at hbox
-  cases hb : traverseFin fun i => enclose (lx.getScalar i) (ux.getScalar i) with
+  cases hb : Tensor.Internal.sequenceFinM fun i => enclose (lx.getScalar i) (ux.getScalar i) with
   | none => simp only [hb, Option.bind_eq_bind, Option.bind_none, reduceCtorEq] at hbox
   | some bounds =>
       simp only [hb, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
@@ -169,7 +169,7 @@ theorem boxUnaryEnclosure?_encloses [NonlinearBoundOps α]
       subst hbox
       rw [rowEncloses_iff]
       intro i
-      have hi := traverseFin_eq_some_iff.mp hb i
+      have hi := Tensor.Internal.sequenceFinM_get_of_eq_some hb i
       simpa only [getScalar_ofFn] using hF hi (hx i).1 (hx i).2
 
 /-- Reciprocal bounds are the division law with numerator `1`. -/

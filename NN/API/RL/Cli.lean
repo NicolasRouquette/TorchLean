@@ -44,7 +44,7 @@ namespace Options
 /-- Help text for RL commands, with optional environment-specific artifact flags. -/
 def usage (exeName : String) (artifactOptions : Array String := #[]) : String :=
   String.intercalate "\n" <| (#[
-    s!"Usage: lake exe torchlean {exeName} [options]",
+    s!"Usage: scripts/lake.sh exe torchlean {exeName} [options]",
     "",
     "Training and evaluation:",
     "  --updates N         training update iterations",

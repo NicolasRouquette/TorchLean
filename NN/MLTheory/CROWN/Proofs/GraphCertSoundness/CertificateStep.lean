@@ -6,8 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import Mathlib.Analysis.SpecialFunctions.Trigonometric.Arctan
-import Mathlib.Tactic.Measurability.Init
 public import NN.MLTheory.CROWN.BoundOps.Lawful
 public import NN.MLTheory.CROWN.Graph.Engine.Base
 
@@ -43,7 +41,7 @@ whenever parents are missing.
 
 /-- Safe lookup of the interval box recorded for node id `pid`, `none` when out of range. -/
 def getBox? (cert : Array (Option (FlatBox ℝ))) (pid : Nat) : Option (FlatBox ℝ) :=
-  if _h : pid < cert.size then cert[pid]! else none
+  (cert[pid]?).join
 
 /--
 Safe per-node IBP step for the checker semantics.

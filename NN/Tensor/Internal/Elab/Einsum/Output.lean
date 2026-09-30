@@ -47,11 +47,11 @@ Compile the contraction into one arbitrary-rank output loop nest.
 
 Every output axis follows the same recursive lowering. Concrete portable
 lengths use native counters; symbolic and oversized lengths use `Fin.foldl`.
-Small concrete contractions evaluate one output at a time. A concrete final
-axis uses four lanes from eight contraction terms when fewer than eight
-output positions are available, and otherwise uses eight lanes when the live
-read family is modest. Multi-axis tiled contractions flatten into one native
-loop from 32 terms for four lanes and 128 terms for eight lanes. Untiled
+Small concrete contractions evaluate one output at a time. With more than
+eight contraction terms, a concrete final axis may use four lanes, or eight
+lanes when enough output positions are available and the live read family is
+modest. `einsumOutputTileWidth?` selects the width. Multi-axis tiled contractions
+flatten into one native loop from 32 terms for four lanes and 128 terms for eight lanes. Untiled
 scalar contractions retain the nested arbitrary-rank fold. Each lane keeps
 the scalar reduction order, and both concrete widths advance one contraction
 coordinate per recursive step so their callbacks inline consistently. When

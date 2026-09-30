@@ -111,7 +111,7 @@ theorem addInterval_sound
   rcases hx with ⟨hxlo, hxhi⟩
   rcases hy with ⟨hylo, hyhi⟩
   dsimp [InInterval, addInterval]
-  constructor <;> linarith
+  exact ⟨add_le_add hxlo hylo, add_le_add hxhi hyhi⟩
 
 /--
 Soundness of nonnegative interval multiplication.
@@ -132,19 +132,7 @@ theorem mulNonnegInterval_sound
   have hy_nonneg : 0 ≤ y := le_trans hJ hylo
   have hIhi_nonneg : 0 ≤ I.hi := le_trans hx_nonneg hxhi
   dsimp [InInterval, mulNonnegInterval]
-  constructor
-  ·
-    have h1 : I.lo * J.lo ≤ x * J.lo :=
-      mul_le_mul_of_nonneg_right hxlo hJ
-    have h2 : x * J.lo ≤ x * y :=
-      mul_le_mul_of_nonneg_left hylo hx_nonneg
-    exact le_trans h1 h2
-  ·
-    have h1 : x * y ≤ I.hi * y :=
-      mul_le_mul_of_nonneg_right hxhi hy_nonneg
-    have h2 : I.hi * y ≤ I.hi * J.hi :=
-      mul_le_mul_of_nonneg_left hyhi hIhi_nonneg
-    exact le_trans h1 h2
+  exact ⟨mul_le_mul hxlo hylo hJ hx_nonneg, mul_le_mul hxhi hyhi hy_nonneg hIhi_nonneg⟩
 
 /--
 Soundness of perspective-style interval division.
@@ -171,11 +159,7 @@ theorem divNonnegByPosInterval_sound
   have hnum_hi_nonneg : 0 ≤ num.hi := le_trans hx_nonneg hxhi
   have hz_pos : 0 < z := lt_of_lt_of_le hdenPos hzlo
   dsimp [InInterval, divNonnegByPosInterval]
-  constructor
-  ·
-    exact div_le_div₀ hx_nonneg hxlo hz_pos hzhi
-  ·
-    exact div_le_div₀ hnum_hi_nonneg hxhi hdenPos hzlo
+  exact ⟨div_le_div₀ hx_nonneg hxlo hz_pos hzhi, div_le_div₀ hnum_hi_nonneg hxhi hdenPos hzlo⟩
 
 /--
 Pinhole x-coordinate interval from uncertain intrinsics and normalized coordinate.
@@ -256,38 +240,33 @@ abbrev CameraP (α : Type) [TorchLean.Storage α] := TorchLean.Tensor α [3, 4]
 /-- A 2D box `[xmin, ymin, xmax, ymax]`. -/
 abbrev Box2D (α : Type) [TorchLean.Storage α] := TorchLean.Tensor α [4]
 
-/-- Matrix scalar accessor for tensor-shaped matrices. -/
-def matGet {α : Type} [TorchLean.Storage α] {rows cols : Nat}
-    (x : TorchLean.Tensor α [rows, cols]) (i : Fin rows) (j : Fin cols) : α :=
-  TorchLean.Tensor.item (Spec.get (Spec.get x i) j)
-
 /-- Extract the `i`-th supplied 3D point as a `[3]` tensor. -/
 def corner {α : Type} [TorchLean.Storage α] {pointCount : Nat}
     (corners : TorchLean.Tensor α [pointCount, 3]) (i : Fin pointCount) : Point3 α :=
-  TorchLean.Tensor.dim (fun j => TorchLean.Tensor.scalar (matGet corners i j))
+  TorchLean.Tensor.dim (fun j => TorchLean.Tensor.scalar (Spec.get2 corners i j))
 
 /-- Raw homogeneous camera coordinate `P[row] · [X,Y,Z,1]`. -/
 def cameraCoord {α : Type} [TorchLean.Storage α] [OfNat α 1] [Add α] [Mul α]
     (P : CameraP α) (x : Point3 α) (row : Fin 3) : α :=
-  matGet P row ⟨0, by decide⟩ * TorchLean.Tensor.getScalar x ⟨0, by decide⟩ +
-  matGet P row ⟨1, by decide⟩ * TorchLean.Tensor.getScalar x ⟨1, by decide⟩ +
-  matGet P row ⟨2, by decide⟩ * TorchLean.Tensor.getScalar x ⟨2, by decide⟩ +
-  matGet P row ⟨3, by decide⟩ * (1 : α)
+  Spec.get2 P row 0 * TorchLean.Tensor.getScalar x 0 +
+  Spec.get2 P row 1 * TorchLean.Tensor.getScalar x 1 +
+  Spec.get2 P row 2 * TorchLean.Tensor.getScalar x 2 +
+  Spec.get2 P row 3 * (1 : α)
 
 /-- Positive-depth denominator used by pinhole projection. -/
 def projectZ {α : Type} [TorchLean.Storage α] [OfNat α 1] [Add α] [Mul α]
     (P : CameraP α) (x : Point3 α) : α :=
-  cameraCoord P x ⟨2, by decide⟩
+  cameraCoord P x 2
 
 /-- Projected x/pixel coordinate. Meaningful when `projectZ P x ≠ 0`. -/
 def projectX {α : Type} [TorchLean.Storage α] [OfNat α 1] [Add α] [Mul α] [Div α]
     (P : CameraP α) (x : Point3 α) : α :=
-  cameraCoord P x ⟨0, by decide⟩ / projectZ P x
+  cameraCoord P x 0 / projectZ P x
 
 /-- Projected y/pixel coordinate. Meaningful when `projectZ P x ≠ 0`. -/
 def projectY {α : Type} [TorchLean.Storage α] [OfNat α 1] [Add α] [Mul α] [Div α]
     (P : CameraP α) (x : Point3 α) : α :=
-  cameraCoord P x ⟨1, by decide⟩ / projectZ P x
+  cameraCoord P x 1 / projectZ P x
 
 /-- A compact exported 3D-box/camera certificate. -/
 structure BoxCameraCert (α : Type) [TorchLean.Storage α] where
@@ -308,16 +287,19 @@ structure BoxCameraCert (α : Type) [TorchLean.Storage α] where
 
 /-- Left edge `xmin` of the claimed 2D bounding box. -/
 def xmin {α : Type} [TorchLean.Storage α] (cert : BoxCameraCert α) : α :=
-  TorchLean.Tensor.getScalar cert.bbox ⟨0, by decide⟩
+  TorchLean.Tensor.getScalar cert.bbox 0
+
 /-- Top edge `ymin` of the claimed 2D bounding box. -/
 def ymin {α : Type} [TorchLean.Storage α] (cert : BoxCameraCert α) : α :=
-  TorchLean.Tensor.getScalar cert.bbox ⟨1, by decide⟩
+  TorchLean.Tensor.getScalar cert.bbox 1
+
 /-- Right edge `xmax` of the claimed 2D bounding box. -/
 def xmax {α : Type} [TorchLean.Storage α] (cert : BoxCameraCert α) : α :=
-  TorchLean.Tensor.getScalar cert.bbox ⟨2, by decide⟩
+  TorchLean.Tensor.getScalar cert.bbox 2
+
 /-- Bottom edge `ymax` of the claimed 2D bounding box. -/
 def ymax {α : Type} [TorchLean.Storage α] (cert : BoxCameraCert α) : α :=
-  TorchLean.Tensor.getScalar cert.bbox ⟨3, by decide⟩
+  TorchLean.Tensor.getScalar cert.bbox 3
 
 /-- The pixel interval is contained in the claimed 2D box. -/
 def PixelIntervalInsideBBox {α : Type} [TorchLean.Storage α] [LE α]
@@ -337,13 +319,7 @@ theorem pixel_inside_bbox_of_interval_inside
     xmin cert ≤ px ∧ px ≤ xmax cert ∧ ymin cert ≤ py ∧ py ≤ ymax cert := by
   rcases hinside with ⟨hxlo, hxhi, hylo, hyhi⟩
   rcases hpix with ⟨⟨hpxlo, hpxhi⟩, ⟨hpylo, hpyhi⟩⟩
-  constructor
-  · exact le_trans hxlo hpxlo
-  constructor
-  · exact le_trans hpxhi hxhi
-  constructor
-  · exact le_trans hylo hpylo
-  · exact le_trans hpyhi hyhi
+  exact ⟨hxlo.trans hpxlo, hpxhi.trans hxhi, hylo.trans hpylo, hpyhi.trans hyhi⟩
 
 /--
 Pinhole-intrinsics interval-to-bbox theorem for nonnegative normalized coordinates.
@@ -583,13 +559,7 @@ theorem bbox_encloses_perturbed_of_margin
   intro i
   rcases hmargin i with ⟨hxlo, hxhi, hylo, hyhi⟩
   rcases hperturb i with ⟨hpxlo, hpxhi, hpylo, hpyhi⟩
-  constructor
-  · linarith
-  constructor
-  · linarith
-  constructor
-  · linarith
-  · linarith
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> linarith
 
 /--
 The checked 3D box statement exposed by the certificate workflow.

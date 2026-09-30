@@ -29,16 +29,16 @@ needs an equality of encodings instead. These models keep that distinction expli
 
 | Purpose | Scalar API | TorchLean adapter |
 | --- | --- | --- |
-| Rounded reals and error bounds | `Flocq.NF` | `FP32/` |
+| Rounded reals and error bounds | `Flocq.NF` | `FP32.lean` |
 | Configurable encoded formats | `ExecFloat.Binary` | Direct FloatLib API |
-| Computed real rounding | Flocq calculation theorems | `FP32.round_eq_computed` |
+| Computed real rounding | `round_nearestEven_computed` | Direct FloatLib API |
 | Intervals | FloatLib interval models | `Interval/`, external Arb adapter |
 | Affine quantization | FloatLib rounding policies | `NN/Spec/Quantization.lean` |
 | Native Lean float expressions | FloatLib `IEEE754.Native` proofs | Direct upstream imports |
 
 Here `Flocq` is `FloatLib.Floats.Formats.Flocq`, and `ExecFloat` is
-`FloatLib.Floats.ExecFloat`. `FP32/Core.lean` supplies the specialization,
-`FP32/Error.lean` its error corollaries, and `FP32/Sterbenz.lean` exact-subtraction results.
+`FloatLib.Floats.ExecFloat`. `FP32.lean` supplies the rounded-real specialization.
+Consumers use FloatLib's generic rounding-error and exact-subtraction theorems directly.
 The interval APIs are `FloatLib.Floats.Interval` and `BinaryInterchange.Model.Interval`.
 
 Format widths and exponent bounds come from FloatLib's `FloatFormat` descriptors, including
@@ -87,7 +87,7 @@ also imports `NN.Core.Numeric` for native scalar instances, including direct bin
 
 `IEEEExec/Bridge/Finite.lean` transfers FloatLib's arithmetic refinement to configured binary32.
 Its add and multiply theorems have the original result-finiteness premise and conclude that the
-encoded real value equals one `fp32Round` of the exact operation. Subnormal cases do not acquire
+encoded real value equals one `Model.roundAt FloatFormat.binary32` of the exact operation. Subnormal cases do not acquire
 a global relative-error assumption.
 
 Native proofs import FloatLib's native bridge directly. The CUDA contract reads native bits through
@@ -150,7 +150,7 @@ gives the half-ulp enclosure of a rounded real. `NN.Spec.Quantization` lifts Flo
 quantizers independently of tensor layout.
 
 `NN.Floats` imports the Arb interface, but importing it does not run an oracle. Actual requests
-cross the Python/Arb/FLINT process boundary. `Interval/IEEEExec32ArbTrans.lean` is a separate
+cross the Python/Arb/FLINT process boundary. `Interval/Arb.lean` is a separate
 adapter for those external enclosures; parsing an oracle result is not a Lean proof of it.
 
 The worked tensor example remains in `NN/Examples/DeepDives/Floats/EffectiveRounding.lean`.

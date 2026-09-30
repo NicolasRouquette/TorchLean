@@ -373,7 +373,7 @@ def adam {α : Type} [TorchLean.Storage α] [Context α]
             Internal.firstStateValue
               learningRate (fun state => state.learningRate) st
           let stepWithData := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-            (β := Torch.Curried.Fn _ _ (IO Unit))
+            (β := Torch.Curried.Function _ _ (IO Unit))
             (step currentLearningRate beta1 beta2 epsilon) xs
           Torch.Curried.uncurry (β := IO Unit) stepWithData dataInputs
           pure (some st)
@@ -385,7 +385,7 @@ def adam {α : Type} [TorchLean.Storage α] [Context α]
             Internal.firstStateValue
               learningRate (fun state => state.learningRate) st
           let stepWithData := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-            (β := Torch.Curried.Fn _ _ (IO (Tensor α (Shape.ofList []))))
+            (β := Torch.Curried.Function _ _ (IO (Tensor α (Shape.ofList []))))
             (step currentLearningRate beta1 beta2 epsilon) xs
           let loss ← Torch.Curried.uncurry
             (β := IO (Tensor α (Shape.ofList []))) stepWithData dataInputs
@@ -425,7 +425,7 @@ def adamw {α : Type} [TorchLean.Storage α] [Context α]
             Internal.firstStateValue
               learningRate (fun state => state.learningRate) st
           let stepWithData := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-            (β := Torch.Curried.Fn _ _ (IO Unit))
+            (β := Torch.Curried.Function _ _ (IO Unit))
             (step currentLearningRate weightDecay beta1 beta2 epsilon) xs
           Torch.Curried.uncurry (β := IO Unit) stepWithData dataInputs
           pure (some st)
@@ -437,7 +437,7 @@ def adamw {α : Type} [TorchLean.Storage α] [Context α]
             Internal.firstStateValue
               learningRate (fun state => state.learningRate) st
           let stepWithData := Torch.Curried.uncurry (α := α) (ss := _inputShapes)
-            (β := Torch.Curried.Fn _ _ (IO (Tensor α (Shape.ofList []))))
+            (β := Torch.Curried.Function _ _ (IO (Tensor α (Shape.ofList []))))
             (step currentLearningRate weightDecay beta1 beta2 epsilon) xs
           let loss ← Torch.Curried.uncurry
             (β := IO (Tensor α (Shape.ofList []))) stepWithData dataInputs

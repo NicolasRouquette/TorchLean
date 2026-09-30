@@ -9,14 +9,13 @@ module
 public import FloatLib.Floats.Formats.BinaryInterchange.Configured
 public import FloatLib.Floats.Formats.IEEE754.Native
 public import FloatLib.Numerics.Enclosure.Rational.Runtime
-public import FloatLib.Floats.Interval.RealBounds
 
 /-!
 # Comparison helpers for executable interval examples
 
 This module contains small, reusable baselines for numerical-audit examples:
 
-- `Float32Interval.IntervalF32`: a deliberately naive runtime-`Float32` interval model;
+- `Interval Float32`: a deliberately naive runtime-`Float32` interval model;
 - FloatLib's `RationalInterval`: exact rational endpoints for small reference checks;
 - conversions from finite `Binary 8 23` / runtime `Float32` endpoints into rational
 intervals.
@@ -30,45 +29,33 @@ make examples and regression tests easier to read.
 open FloatLib.Floats (ExecFloat)
 open FloatLib.Floats.ExecFloat (Binary)
 open FloatLib.Numerics (Interval)
-open FloatLib.Floats.Formats.BinaryInterchange (Model FloatFormat)
+open FloatLib.Floats.Formats.BinaryInterchange
 open FloatLib.Numerics (RationalInterval)
 
 
 namespace TorchLean.Floats.Interval.Comparison
 
 
-/-- Pretty-print an executable binary32 interval, including endpoint bits. -/
-def showInterval32 (I : Interval (Binary 8 23)) : String :=
+/-- Display configured endpoints through binary64, retaining their full original bit encodings. -/
+def showConfiguredInterval {fmt : FloatFormat} {plan : Configured.StoragePlan fmt}
+    {code : Type} [ExecFloat.ModelCodec plan (Model fmt) code]
+    (I : Interval (ExecFloat (Configured.Family fmt code plan))) : String :=
   let lo := ExecFloat.Binary.toFloat <| ExecFloat.Binary.ofModel <|
-    Model.cast FloatFormat.binary32 FloatFormat.binary64 (ExecFloat.Binary.toModel I.lo)
+    Model.cast fmt FloatFormat.binary64 (ExecFloat.Binary.toModel I.lo)
   let hi := ExecFloat.Binary.toFloat <| ExecFloat.Binary.ofModel <|
-    Model.cast FloatFormat.binary32 FloatFormat.binary64 (ExecFloat.Binary.toModel I.hi)
-  s!"[{lo} (bits={ExecFloat.Binary.toBits32 I.lo}), " ++
-    s!"{hi} (bits={ExecFloat.Binary.toBits32 I.hi})]"
+    Model.cast fmt FloatFormat.binary64 (ExecFloat.Binary.toModel I.hi)
+  s!"[{lo} (bits={ExecFloat.Binary.toNatBits I.lo}), " ++
+    s!"{hi} (bits={ExecFloat.Binary.toNatBits I.hi})]"
 
-/-- Pretty-print a runtime `Float32`, including its raw IEEE-754 bit pattern. -/
-def showFloat32 (x : Float32) : String :=
-  s!"{x.toString} (bits={x.toBits})"
+/-- Pretty-print a scalar together with its raw encoding. -/
+def showValue {α β : Type} [ToString α] [ToString β] (bits : α → β) (x : α) : String :=
+  s!"{x} (bits={bits x})"
 
-namespace Float32Interval
+/-- Pretty-print endpoints using a scalar renderer. -/
+def showInterval {α : Type} (render : α → String) (I : Interval α) : String :=
+  s!"[{render I.lo}, {render I.hi}]"
 
-/--
-Closed interval with runtime `Float32` endpoints.
-
-This baseline uses ordinary runtime `Float32` arithmetic and provides no outward-rounding
-guarantee. Examples compare it with FloatLib's proved directed interval arithmetic.
--/
-structure IntervalF32 where
-  /-- Lower endpoint. -/
-  lo : Float32
-  /-- Upper endpoint. -/
-  hi : Float32
-  deriving Repr
-
-namespace IntervalF32
-
-/-- Degenerate runtime-`Float32` interval `[x, x]`. -/
-@[inline] def point (x : Float32) : IntervalF32 := ⟨x, x⟩
+namespace Naive
 
 /-- `+0.0f` by IEEE-754 binary32 bits. -/
 @[inline] def posZero : Float32 := Float32.ofBits 0
@@ -82,24 +69,24 @@ namespace IntervalF32
 /-- `-∞` by IEEE-754 binary32 bits. -/
 @[inline] def negInf : Float32 := Float32.ofBits (0xff800000 : UInt32)
 
-/-- Minimum of four runtime `Float32` values using Lean's runtime order. -/
-def minOfFour (a b c d : Float32) : Float32 :=
+/-- Minimum of four values, preserving the pairwise comparison order. -/
+def minOfFour {α : Type} [Min α] (a b c d : α) : α :=
   min (min a b) (min c d)
 
-/-- Maximum of four runtime `Float32` values using Lean's runtime order. -/
-def maxOfFour (a b c d : Float32) : Float32 :=
+/-- Maximum of four values, preserving the pairwise comparison order. -/
+def maxOfFour {α : Type} [Max α] (a b c d : α) : α :=
   max (max a b) (max c d)
 
 /-- Naive endpoint addition; no directed rounding. -/
-@[inline] def add (A B : IntervalF32) : IntervalF32 :=
+@[inline] def add {α : Type} [Add α] (A B : Interval α) : Interval α :=
   ⟨A.lo + B.lo, A.hi + B.hi⟩
 
 /-- Naive endpoint subtraction; no directed rounding. -/
-@[inline] def sub (A B : IntervalF32) : IntervalF32 :=
+@[inline] def sub {α : Type} [Sub α] (A B : Interval α) : Interval α :=
   ⟨A.lo - B.hi, A.hi - B.lo⟩
 
-/-- Classical four-corner multiplication using runtime `Float32`; no directed rounding. -/
-def mul (A B : IntervalF32) : IntervalF32 :=
+/-- Classical four-corner multiplication in the endpoint carrier; no directed rounding. -/
+def mul {α : Type} [Mul α] [Min α] [Max α] (A B : Interval α) : Interval α :=
   let p00 := A.lo * B.lo
   let p01 := A.lo * B.hi
   let p10 := A.hi * B.lo
@@ -107,15 +94,11 @@ def mul (A B : IntervalF32) : IntervalF32 :=
   ⟨minOfFour p00 p01 p10 p11, maxOfFour p00 p01 p10 p11⟩
 
 /-- Conservative fallback interval `[-∞, +∞]`. -/
-@[inline] def whole : IntervalF32 := ⟨negInf, posInf⟩
-
-/-- Boolean comparison wrapper; NaN comparisons evaluate to `false`. -/
-@[inline] def leB (x y : Float32) : Bool :=
-  decide (x ≤ y)
+@[inline] def whole : Interval Float32 := ⟨negInf, posInf⟩
 
 /-- Return `true` iff the interval contains zero, including signed-zero endpoints. -/
-def containsZero (I : IntervalF32) : Bool :=
-  leB I.lo posZero && leB negZero I.hi
+def containsZero (I : Interval Float32) : Bool :=
+  decide (I.lo ≤ posZero) && decide (negZero ≤ I.hi)
 
 /--
 Naive four-corner division when the denominator does not contain zero.
@@ -123,7 +106,7 @@ Naive four-corner division when the denominator does not contain zero.
 If the denominator straddles zero, return `whole`, mirroring the shape of
 `Binary.Interval.div` but without directed rounding.
 -/
-def div (A B : IntervalF32) : IntervalF32 :=
+def div (A B : Interval Float32) : Interval Float32 :=
   if containsZero B then
     whole
   else
@@ -133,13 +116,7 @@ def div (A B : IntervalF32) : IntervalF32 :=
     let p11 := A.hi / B.hi
     ⟨minOfFour p00 p01 p10 p11, maxOfFour p00 p01 p10 p11⟩
 
-end IntervalF32
-
-end Float32Interval
-
-/-- Pretty-print a naive runtime-`Float32` interval. -/
-def showIntervalF32 (I : Float32Interval.IntervalF32) : String :=
-  s!"[{showFloat32 I.lo}, {showFloat32 I.hi}]"
+end Naive
 
 namespace Rational
 
@@ -162,37 +139,19 @@ def format (I : RationalInterval) : String :=
 
 end Rational
 
-/-- Exact rational bounds for a finite binary32 interval; `none` for NaN/Inf. -/
-def interval32ToRat? (I : Interval (Binary 8 23)) : Option RationalInterval :=
-  (I.decode? ExecFloat.Binary.toRat?).map fun J => ⟨J.lo, J.hi⟩
-
-/-- Exact rational value of a finite runtime `Float32`; `none` for NaN/Inf. -/
-def float32ToRat? (x : Float32) : Option Rat :=
-  ExecFloat.Binary.toRat? (ExecFloat.Binary.ofBits32 x.toBits)
-
-/-- Exact rational endpoint interval for a finite runtime-`Float32` interval. -/
-def intervalF32ToRat? (I : Float32Interval.IntervalF32) : Option RationalInterval :=
-  ((⟨I.lo, I.hi⟩ : Interval Float32).decode? float32ToRat?).map fun J => ⟨J.lo, J.hi⟩
+/-- Decode rational endpoints, preserving the decoder's special-value policy on failure. -/
+def intervalToRat? {α : Type} (decode : α → Option Rat) (I : Interval α) :
+    Option RationalInterval :=
+  (I.decode? decode).map fun J => ⟨J.lo, J.hi⟩
 
 /--
-Endpoint-evaluate a unary function over a `Binary 8 23` interval.
+Endpoint-evaluate a unary function, using the carrier's minimum and maximum.
 
 This is not a sound transcendental interval rule in general; it is a comparison
 baseline for examples.
 -/
-def intervalUnaryEndpoints (f : Binary 8 23 → (Binary 8 23)) (lo hi :
-  Binary 8 23) : Interval (Binary 8 23) :=
-  let a := f lo
-  let b := f hi
-  ⟨min a b, max a b⟩
-
-/--
-Endpoint-evaluate a unary function over a runtime-`Float32` interval.
-
-This is the naive runtime baseline paired with `intervalUnaryEndpoints`.
--/
-def intervalUnaryEndpointsF32 (f : Float32 → Float32) (lo hi : Float32) :
-    Float32Interval.IntervalF32 :=
+def intervalUnaryEndpoints {α : Type} [Min α] [Max α] (f : α → α) (lo hi : α) :
+    Interval α :=
   let a := f lo
   let b := f hi
   ⟨min a b, max a b⟩

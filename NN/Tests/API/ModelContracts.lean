@@ -736,10 +736,7 @@ def run : IO Unit := do
   checkLstmReferenceStack
   checkHigherDerivatives
   checkInvalidAutograd
-  let meanVitSummary ←
-    match nn.summary meanVit with
-    | .ok summary => pure summary
-    | .error message => throw <| IO.userError message
+  let meanVitSummary ← IO.ofExcept (nn.summary meanVit)
   expect "ViT encoder exposes its patch conversion under the ViT namespace"
     (meanVitSummary.layers.any fun layer => layer.kind == "ViT.PatchesToTokens")
   expect "ViT encoder ends with LayerNorm"
@@ -988,7 +985,7 @@ def run : IO Unit := do
     nn.TypedGraphModel.forward fullGraph (nn.initialState fullDropout) input
   let fullValues := Tensor.to fullOutput (Array Float)
   expect "p = 1 training dropout returns finite zeros"
-    (fullValues.all fun value => value.isFinite && value == 0.0)
+    (fullValues.size == 3 && fullValues.all fun value => value.isFinite && value == 0.0)
 
   let zeroGraph ← nn.lowerToTypedGraph (α := Float) zeroDropout (mode := .train)
   let zeroOutput :=
@@ -1045,7 +1042,8 @@ def run : IO Unit := do
   let oddRopeInputValues := Tensor.to oddRopeInput (Array Float)
   let oddRopeOutputValues := Tensor.to oddRopeOutput (Array Float)
   expect "odd-width RoPE preserves each final unpaired coordinate"
-    (oddRopeOutputValues[2]? == oddRopeInputValues[2]? &&
+    (oddRopeInputValues.size == 6 && oddRopeOutputValues.size == 6 &&
+      oddRopeOutputValues[2]? == oddRopeInputValues[2]? &&
       oddRopeOutputValues[5]? == oddRopeInputValues[5]?)
 
   IO.println "  public model contracts: passed"

@@ -410,15 +410,17 @@ inside the bound. Since the only nonlinearity in this network is a ReLU, the aff
 discarded at node `9` and everything after it is the interval answer again.
 
 Replacing an affine form with its enclosing interval can lose tightness; the validity of that
-interval still depends on the arithmetic and enclosure hypotheses. Tighter bounds in this library
-come from two places, neither of them a floating-point CROWN slope computed
-on the fly. The real-valued relaxation is available as a theorem, and
-{ref "motivation"}[the motivation chapter] proves the smallest instance of it by hand. Sharper
-executable bounds arrive as certificates from an outside search, which Lean then checks; that is
-the arrangement {ref "certificates"}[the certificates chapter] uses for α,β-CROWN leaves
-({Informal.citep betacrown2021}[]). Graphs with products or softmax do use the relaxations above,
-because `mulElem` and two-argument `matmul` have McCormick transfers, so the agreement seen here is
-a fact about ReLU networks rather than about the pass.
+interval still depends on the arithmetic and enclosure hypotheses. The real-valued ReLU relaxation
+is available as a theorem, and {ref "motivation"}[the motivation chapter] proves the smallest
+instance of it by hand. Executable `mulElem` and two-argument `matmul` transfers use McCormick
+relaxations, while supported softmax nodes fall back to IBP enclosures. The agreement displayed
+here therefore describes this particular network and input box, not every graph accepted by the
+pass.
+
+External verifiers can also propose sharper bounds. Their artifacts need separate checks:
+{ref "certificates"}[the certificates chapter] distinguishes recomputing an enclosure from checking
+an α,β-CROWN leaf artifact's consistency ({Informal.citep betacrown2021}[]). Accepting the latter
+does not by itself prove the proposed numerical bound.
 
 Reading an interval also requires a property to compare it with. Suppose we wanted to establish
 that the output stays below zero throughout this input box. The displayed upper endpoint,
@@ -768,7 +770,7 @@ function in the library, and its type lists the same ingredients:
 ```leanOutput ovDenote (whitespace := lax)
 @NN.IR.Graph.denote : {α : Type} →
   [inst : Storage α] →
-    [inst_1 : Context α] → NN.IR.Graph → NN.IR.Payload α →
+    [Context α] → NN.IR.Graph → NN.IR.Payload α →
       Spec.SomeTensor α → ℕ → Except String (Spec.SomeTensor α)
 ```
 

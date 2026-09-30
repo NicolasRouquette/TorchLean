@@ -20,8 +20,6 @@ ensuring that the compiled contiguous-buffer path returns the expected values.
 
 open FloatLib.Floats (ExecFloat)
 open FloatLib.Floats.ExecFloat (Binary)
-open FloatLib.Floats.ExecFloat.Binary (ofModel toModel)
-open FloatLib.Floats.Formats.BinaryInterchange (Model FloatFormat)
 
 namespace NN.Tests.Tensor.Operations
 
@@ -381,16 +379,13 @@ def checkPackedTransposes : IO Unit := do
       #[1.0, 4.0, 2.0, 5.0, 3.0, 6.0])
 
 def checkReferenceTranspose : IO Unit := do
-  let ieee32Matrix : Tensor (Binary 8 23) [2, 3] :=
-    Tensor.generateFlat [2, 3] fun index =>
-      (ofModel (Model.cast .binary64 .binary32 (toModel (Binary.ofFloat (Float.ofNat (index + 1)))))
-        : Binary 8 23)
-  let ieee32Transpose : Tensor (Binary 8 23) [3, 2] :=
-    rearrange ieee32Matrix "row column -> column row"
-  expect "IEEE32 reference rearrange remains correct"
-    ((ieee32Transpose.to (Array (Binary 8 23))).map
-      ((fun x => Binary.toFloat (ofModel (Model.cast .binary32 .binary64 (toModel x)))) ·) ==
-        #[1.0, 4.0, 2.0, 5.0, 3.0, 6.0])
+  let reference : Tensor (Binary 8 23) [2, 3] :=
+    [[1, 2, 3], [4, 5, 6]]
+  let transposed : Tensor (Binary 8 23) [3, 2] :=
+    rearrange reference "row column -> column row"
+  expect "configured binary transpose preserves interchange words"
+    ((transposed.to (Array (Binary 8 23))).map Binary.toNatBits ==
+      #[0x3f800000, 0x40800000, 0x40000000, 0x40a00000, 0x40400000, 0x40c00000])
 
 def checkBoxedTransposes : IO Unit := do
   let rationalMatrix : Tensor Rat [2, 3] :=

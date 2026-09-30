@@ -120,15 +120,7 @@ variable {α : Type} [TorchLean.Storage α] [Context α] [BoundOps α]
 /-- Evaluate a flattened affine form on a flattened input box after checking the input dimension. -/
 def evalOnFlatBox (aff : FlatAffine α) (xB : FlatBox α) (hIn : xB.dim = aff.inDim) :
     Box α (.dim aff.outDim .scalar) :=
-  AffineVec.evalOnBox (α := α) aff.aff (xB.getScalarBox hIn)
-
-/-- Evaluate and view the output at a checked vector dimension. -/
-def evalOnFlatBoxAsDim (aff : FlatAffine α) (xB : FlatBox α)
-    (hIn : xB.dim = aff.inDim) {m : Nat} (hOut : aff.outDim = m) :
-    Box α (.dim m .scalar) :=
-  let out := aff.evalOnFlatBox xB hIn
-  { lo := Tensor.castShape out.lo (congrArg (fun extent => Shape.dim extent .scalar) hOut)
-    hi := Tensor.castShape out.hi (congrArg (fun extent => Shape.dim extent .scalar) hOut) }
+  aff.aff.evalOnFlatBox xB hIn
 
 end FlatAffine
 
@@ -144,11 +136,8 @@ endpoint. This is the common CROWN workflow shape.
 -/
 def evalOnFlatBox (bounds : FlatAffineBounds α) (xB : FlatBox α)
     (hIn : xB.dim = bounds.inDim) : Box α (.dim bounds.outDim .scalar) :=
-  let xBox := xB.getScalarBox hIn
-  let loB := AffineVec.evalOnBox (α := α) bounds.loAff xBox
-  let hiB := AffineVec.evalOnBox (α := α) bounds.hiAff xBox
-  { lo := loB.lo
-    hi := hiB.hi }
+  { lo := (bounds.loAff.evalOnFlatBox xB hIn).lo
+    hi := (bounds.hiAff.evalOnFlatBox xB hIn).hi }
 
 /-- Evaluate lower/upper affine bounds and view the output at a checked vector dimension. -/
 def evalOnFlatBoxAsDim (bounds : FlatAffineBounds α) (xB : FlatBox α)

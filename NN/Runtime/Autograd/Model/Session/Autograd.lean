@@ -57,18 +57,15 @@ changes.
 def applyGradHook {α : Type} [TorchLean.Storage α]
     (grads : Array (Spec.SomeTensor α))
     (hook : Nat → Spec.SomeTensor α → IO (Spec.SomeTensor α)) :
-    IO (Array (Spec.SomeTensor α)) := do
-  let mut out : Array (Spec.SomeTensor α) := #[]
-  for i in List.finRange grads.size do
-    let g := grads[i]
-    let g' ← hook i.1 g
+    IO (Array (Spec.SomeTensor α)) :=
+  grads.mapIdxM fun i g => do
+    let g' ← hook i g
     if h : g'.shape = g.shape then
-      out := out.push ⟨g.shape, g'.cast h⟩
+      pure ⟨g.shape, g'.cast h⟩
     else
       throw <| IO.userError <|
-        s!"torchlean: grad hook changed shape at id={i.1} (expected {Shape.pretty g.shape}, got "
+        s!"torchlean: grad hook changed shape at id={i} (expected {Shape.pretty g.shape}, got "
           ++ s!"{Shape.pretty g'.shape})"
-  pure out
 
 end Internal
 

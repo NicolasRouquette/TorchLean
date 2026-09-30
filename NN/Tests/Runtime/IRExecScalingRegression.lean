@@ -23,11 +23,6 @@ open Runtime.Autograd.IRExec
 
 namespace Tests.IRExecScalingRegression
 
-private def unwrap {α : Type} (result : Except String α) : IO α :=
-  match result with
-  | .ok value => pure value
-  | .error error => throw <| IO.userError error
-
 private def checkValues (label : String) (actual expected : Array (Spec.SomeTensor Float)) :
     IO Unit := do
   unless actual.size == expected.size do
@@ -55,8 +50,8 @@ private def checkForward {shape : Shape} (label : String) (graph : NN.IR.Graph)
 
 private def checkGraph {shape : Shape} (label : String) (graph : NN.IR.Graph)
     (payload : NN.IR.Payload Float) (x : Tensor Float shape) : IO Unit := do
-  let expected ← unwrap <| graph.denoteAll payload (Spec.SomeTensor.ofTensor x)
-  let exec ← unwrap <| lowerToForwardGraph graph payload
+  let expected ← Runtime.Autograd.okOrThrow <| graph.denoteAll payload (Spec.SomeTensor.ofTensor x)
+  let exec ← Runtime.Autograd.okOrThrow <| lowerToForwardGraph graph payload
   checkForward label graph exec x expected
 
 private def mixedGraph : NN.IR.Graph :=
@@ -79,14 +74,16 @@ private def mixedGraph : NN.IR.Graph :=
 
 private def checkPrefix (x : Tensor Float [4]) : IO Unit := do
   let prefixGraph : NN.IR.Graph := { nodes := mixedGraph.nodes.extract 0 4 }
-  let exec ← unwrap <| lowerToForwardGraph (α := Float) prefixGraph {}
-  let state ← unwrap <| Internal.buildFrom mixedGraph {} exec.inShape 4 ⟨exec.ss, exec.body⟩
+  let exec ← Runtime.Autograd.okOrThrow <| lowerToForwardGraph (α := Float) prefixGraph {}
+  let state ← Runtime.Autograd.okOrThrow <|
+    Internal.buildFrom mixedGraph {} exec.inShape 4 ⟨exec.ss, exec.body⟩
   let extended : ForwardGraph Float :=
     { inShape := exec.inShape, ss := state.1, body := state.2 }
-  let expected ← unwrap <| mixedGraph.denoteAll {} (Spec.SomeTensor.ofTensor x)
+  let expected ← Runtime.Autograd.okOrThrow <|
+    mixedGraph.denoteAll {} (Spec.SomeTensor.ofTensor x)
   checkForward "nonempty prefix" mixedGraph extended x expected
   -- Starting beyond the graph must preserve even a heterogeneous existing prefix.
-  let unchanged ← unwrap <|
+  let unchanged ← Runtime.Autograd.okOrThrow <|
     Internal.buildFrom mixedGraph {} extended.inShape (mixedGraph.nodes.size + 3)
       ⟨extended.ss, extended.body⟩
   checkForward "finished prefix" mixedGraph

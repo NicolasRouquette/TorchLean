@@ -138,11 +138,13 @@ def run : IO Unit := do
   let belowQuarter := ofBits32 0x3E7FFFFF
   let quarter := ofBits32 0x3E800000
   let aboveQuarter := ofBits32 0x3E800001
-  unless ExecFloat.compare (tanh belowQuarter) (tanh quarter) != some .gt &&
-      ExecFloat.compare (tanh quarter) (tanh aboveQuarter) != some .gt do
+  unless (ExecFloat.compare (tanh belowQuarter) (tanh quarter)).any (· != .gt) &&
+      (ExecFloat.compare (tanh quarter) (tanh aboveQuarter)).any (· != .gt) do
     throw <| IO.userError "IEEE32 tanh is not monotone across its positive branch boundary"
-  unless ExecFloat.compare (tanh (Neg.neg aboveQuarter)) (tanh (Neg.neg quarter)) != some .gt &&
-      ExecFloat.compare (tanh (Neg.neg quarter)) (tanh (Neg.neg belowQuarter)) != some .gt do
+  unless (ExecFloat.compare (tanh (Neg.neg aboveQuarter)) (tanh (Neg.neg quarter))).any
+      (· != .gt) &&
+      (ExecFloat.compare (tanh (Neg.neg quarter)) (tanh (Neg.neg belowQuarter))).any
+        (· != .gt) do
     throw <| IO.userError "IEEE32 tanh is not monotone across its negative branch boundary"
 
   let quietNaN := (Binary.canonicalNaN : Binary 8 23)

@@ -59,7 +59,7 @@ Linearly spaced points including endpoints.
 
 PyTorch analogue: `torch.linspace`.
 -/
-def linspace {α : Type} [TorchLean.Storage α] [Context α]
+def linspace {α : Type} [TorchLean.Storage α] [NatCast α] [Add α] [Sub α] [Mul α] [Div α]
     (lower upper : α) (count : Nat) :
     Tensor α [count] :=
   match count with
@@ -74,7 +74,7 @@ def linspace {α : Type} [TorchLean.Storage α] [Context α]
         Tensor.full [] (lower + t * (upper - lower)))
 
 /-- Square grid over `[lower, upper] x [lower, upper]`. -/
-def squareGrid {α : Type} [TorchLean.Storage α] [Context α]
+def squareGrid {α : Type} [TorchLean.Storage α] [NatCast α] [Add α] [Sub α] [Mul α] [Div α]
     (lower upper : α) (count : Nat) :
     Tensor α [count * count, 2] :=
   let axis := linspace lower upper count

@@ -89,9 +89,9 @@ namespace Parameter
 ### Constructors
 -/
 /--
-Create a `ParamEntry` from a typed tensor.
+Create a `Parameter` from a typed tensor.
 
-This is mostly a convenience for assembling a `ParamTable` from known-shaped tensors.
+This is mostly a convenience for assembling a `ParameterTable` from known-shaped tensors.
 -/
 def create {α : Type} [TorchLean.Storage α] {s : Shape}
     (id : Nat) (t : Tensor α s) (name : Option String := none) :
@@ -103,10 +103,6 @@ end Parameter
 namespace ParameterTable
 
 variable {α : Type} [TorchLean.Storage α]
-
-/-- Array of ids for membership checks. -/
-def ids (parameters : ParameterTable α) : Array Nat :=
-  parameters.map (·.id)
 
 /-- Find a parameter entry by id. -/
 def find? (parameters : ParameterTable α) (id : Nat) : Option (Parameter α) :=
@@ -120,15 +116,9 @@ def get {α : Type} [TorchLean.Storage α] {s : Shape}
       exact .error (tagError tag s!"missing param id {id}")
   | some parameter =>
       if h : parameter.value.shape = s then
-        exact .ok (Tensor.castShape parameter.value.tensor h)
+        exact .ok (parameter.value.cast h)
       else
         exact .error (tagError tag s!"param shape mismatch for id {id}")
-
-/-- Replace a parameter entry value by id. -/
-def set (parameters : ParameterTable α) (id : Nat)
-    (value : Spec.SomeTensor α) : ParameterTable α :=
-  parameters.map
-    (fun parameter => if parameter.id = id then { parameter with value := value } else parameter)
 
 /--
 Build the set of parameter identifiers, rejecting duplicate ids.
@@ -368,7 +358,7 @@ structure OptimizerState (α : Type) [TorchLean.Storage α] [Context α] where
 A pure state snapshot for saving/restoring optimizer state.
 
 PyTorch analogy: this is the data carried by `optimizer.state_dict()` (modulo naming/layout).
-We use association lists instead of `HashMap` so the result is deterministic and easy to serialize.
+We store the buffers as an array of key-value pairs for serialization.
 -/
 structure OptimizerSnapshot (α : Type) [TorchLean.Storage α] [Context α] where
   /-- Optimizer algorithm used to interpret the stored buffers. -/
@@ -438,10 +428,6 @@ For AdamW the integration step delegates to the canonical optimizer's decoupled 
 def addWeightDecay (parameters gradients : Tensor α s) (weightDecay : α) : Tensor α s :=
   addSpec gradients (scaleSpec parameters weightDecay)
 
-/-- Zero buffer used when a parameter has no stored state yet (PyTorch initialises lazily). -/
-def zeroBuffer (s : Shape) : Tensor α s :=
-  Tensor.full s (0 : α)
-
 /-- Plain SGD: `p - lr * (g + wd * p)`. Stateless. -/
 def sgd (group : ParameterGroup α) (parameters gradient : Tensor α s) : Tensor α s :=
   let gradientWithDecay := addWeightDecay parameters gradient group.weightDecay
@@ -468,7 +454,7 @@ def momentum (group : ParameterGroup α) (buffers : Option (ParameterBuffers α 
   let state : Optim.MomentumSGD.State α s :=
     { learningRate := group.learningRate
       momentum := group.momentum
-      momentumBuffer := previousBuffer?.getD (zeroBuffer s) }
+      momentumBuffer := previousBuffer?.getD (Tensor.full s (0 : α)) }
   let result :=
     Optim.MomentumSGD.update (α := α) (s := s) state parameters bufferGradient
   let nextParameters :=
@@ -484,7 +470,7 @@ def momentum (group : ParameterGroup α) (buffers : Option (ParameterBuffers α 
 def squaredGradientBuffer (buffers : Option (ParameterBuffers α s)) : Tensor α s :=
   match buffers with
   | some (.squaredGradient accumulator) => accumulator
-  | _ => zeroBuffer s
+  | _ => Tensor.full s (0 : α)
 
 /-- AdaGrad with coupled weight decay. -/
 def adagrad (group : ParameterGroup α) (buffers : Option (ParameterBuffers α s))
@@ -513,7 +499,7 @@ def rmsprop (group : ParameterGroup α) (buffers : Option (ParameterBuffers α s
 def adamBuffers (buffers : Option (ParameterBuffers α s)) : Nat × Tensor α s × Tensor α s :=
   match buffers with
   | some (.adam stepCount firstMoment secondMoment) => (stepCount, firstMoment, secondMoment)
-  | _ => (0, zeroBuffer s, zeroBuffer s)
+  | _ => (0, Tensor.full s (0 : α), Tensor.full s (0 : α))
 
 /--
 Read powers for the parameter's moment counter, reconstructing them after a counter change.
@@ -584,7 +570,7 @@ def adadelta (group : ParameterGroup α) (buffers : Option (ParameterBuffers α 
     match buffers with
     | some (.adadelta squaredGradientAverage squaredUpdateAverage) =>
         (squaredGradientAverage, squaredUpdateAverage)
-    | _ => (zeroBuffer s, zeroBuffer s)
+    | _ => (Tensor.full s (0 : α), Tensor.full s (0 : α))
   let gradientWithDecay := addWeightDecay parameters gradient group.weightDecay
   let state : Optim.Adadelta.State α s :=
     { learningRate := group.learningRate
@@ -622,7 +608,7 @@ def updateParameter (algorithm : OptimizerAlgorithm) (id : Nat) (group : Paramet
 /-- Shape-check a gradient delivered as a shape-erased tensor against its parameter. -/
 def castGradient (id : Nat) (gradient : Spec.SomeTensor α) (s : Shape) : Result (Tensor α s) :=
   if h : gradient.shape = s then
-    pure (Tensor.castShape gradient.tensor h)
+    pure (gradient.cast h)
   else
     throw (tagError "optim" s!"gradient shape mismatch for id {id}")
 

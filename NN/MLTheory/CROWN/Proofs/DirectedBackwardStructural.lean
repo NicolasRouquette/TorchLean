@@ -110,9 +110,9 @@ theorem broadcast_encloses {n : Nat} (lo hi : Tensor α [1]) (a : ℝ)
       n (fun _ => a) := by
   refine ⟨rfl, ?_⟩
   intro i
-  simp only [read_fin, Tensor.getScalar_full]
-  rw [show getAtOrZero lo [0] = lo.getScalar 0 from read_fin lo 0,
-    show getAtOrZero hi [0] = hi.getScalar 0 from read_fin hi 0]
+  simp only [Spec.getAtOrZero_eq_getScalar, Tensor.getScalar_full]
+  rw [show getAtOrZero lo [0] = lo.getScalar 0 from Spec.getAtOrZero_eq_getScalar lo 0,
+    show getAtOrZero hi [0] = hi.getScalar 0 from Spec.getAtOrZero_eq_getScalar hi 0]
   exact ha
 
 /-- A coefficient gathered along a coordinate map encloses the same gathered real vector. -/
@@ -126,7 +126,8 @@ theorem gather_encloses {m n : Nat} (lo hi : Tensor α [m]) (a : Nat → ℝ)
       n (extendFin (fun i => a (index i).val)) := by
   refine ⟨rfl, ?_⟩
   intro i
-  simpa only [read_fin, Tensor.getScalar_ofFn, extendFin_val] using ha.2 (index i)
+  simpa only [Spec.getAtOrZero_eq_getScalar, Tensor.getScalar_ofFn, extendFin_val] using
+    ha.2 (index i)
 
 /-- A bijective coordinate change preserves an exact real objective. -/
 theorem dot_permutation {n : Nat} (perm : Fin n → Fin n) (hperm : Function.Bijective perm)

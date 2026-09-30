@@ -19,6 +19,7 @@ TORCHLEAN_BINARY_EXPORT(div, at::div(a, b))
 TORCHLEAN_BINARY_EXPORT(add, at::add(a, b))
 TORCHLEAN_BINARY_EXPORT(sub, at::sub(a, b))
 TORCHLEAN_BINARY_EXPORT(mul, at::mul(a, b))
+TORCHLEAN_BINARY_EXPORT(mask, at::where(at::ne(b, 0.0f), a, 0.0f))
 
 TORCHLEAN_UNARY_SCALAR_EXPORT(scale, at::mul(x, scalar))
 TORCHLEAN_BINARY_SCALAR_EXPORT(axpy, axpy(a, b, scalar))

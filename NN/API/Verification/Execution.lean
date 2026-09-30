@@ -41,6 +41,21 @@ def readBounds {α : Type} [TorchLean.Storage α] [Context α]
     { size := box.dim, lower, upper }
 
 /--
+Enclose the requested binary64 ball before converting its endpoints to the runtime scalar.
+
+Rounding the center and radius separately can shrink the region, especially when subtraction
+cancels most of the center. The directed conversion requires a faithful `roundForValidation`
+hook, supplied by both arithmetic backends used by ordinary trained results.
+-/
+def inputBoxFromFloat {α : Type} [TorchLean.Storage α] [Context α]
+    [Runtime.FromFloat α] {σ : Shape}
+    (center : Tensor Float σ) (radius : Float) : NN.MLTheory.CROWN.FlatBox α :=
+  let box := NN.Verification.Builtin.lInfBall center radius
+  { dim := box.dim
+    lo := Tensor.map (Runtime.ofFloatDirected (α := α) false) box.lo
+    hi := Tensor.map (Runtime.ofFloatDirected (α := α) true) box.hi }
+
+/--
 Build the verification closure retained by an ordinary trained result.
 
 The closure captures the completed parameter snapshot, so subsequent updates to the training
@@ -76,9 +91,7 @@ def forState {σ τ : Shape} {α : Type}
         (TorchLean.nn.forward trainer.model (α := α))
         (nn.State.Internal.toTensorPack modelState)
 
-    let center := Tensor.map (Runtime.ofFloat (α := α)) centerFloat
-    let regionRadius := Runtime.ofFloat (α := α) radius
-    let inputBox := NN.Verification.Builtin.lInfBall center regionRadius
+    let inputBox := inputBoxFromFloat (α := α) centerFloat radius
     let parameters := lowered.seedInputBox inputBox
     let outputBox ←
     match algorithm with

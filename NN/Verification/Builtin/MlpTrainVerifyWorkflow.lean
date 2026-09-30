@@ -40,7 +40,6 @@ namespace NN.Verification.Builtin.MlpTrainVerifyWorkflow
 
 open Spec TorchLean
 open TorchLean.Tensor
-open TorchLean
 
 /-- Input dimension for the workflow model. -/
 abbrev inDim : Nat := 2
@@ -55,7 +54,7 @@ abbrev xShape : List Nat := [inDim]
 abbrev yShape : List Nat := [outDim]
 
 /-- Linearly separable two-dimensional training inputs. -/
-def XFloat : TorchLean.Tensor Float (8 :: xShape) :=
+def trainingInputs : TorchLean.Tensor Float (8 :: xShape) :=
   [[2.0, 0.0],
    [1.5, 0.5],
    [1.5, -0.5],
@@ -66,7 +65,7 @@ def XFloat : TorchLean.Tensor Float (8 :: xShape) :=
    [-1.0, 0.0]]
 
 /-- One-hot labels: positive first coordinate is class zero, negative is class one. -/
-def YFloat : TorchLean.Tensor Float (8 :: yShape) :=
+def trainingLabels : TorchLean.Tensor Float (8 :: yShape) :=
   [[1.0, 0.0],
    [1.0, 0.0],
    [1.0, 0.0],
@@ -96,7 +95,7 @@ was actually trained.
 -/
 def runOnce {α : Type} [TorchLean.Storage α] [Context α] [ToString α]
     [Runtime.FromFloat α] (options : Runtime.Config) : IO Unit := do
-  let dataset := Data.fromTensors XFloat YFloat
+  let dataset := Data.fromTensors trainingInputs trainingLabels
   let trainer := Trainer.new model <|
     Trainer.RunConfig.forObjective
       (Trainer.RunConfig.fromRuntime options { optimizer := optim.sgd { learningRate := 0.1 } })

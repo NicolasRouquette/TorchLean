@@ -5,8 +5,8 @@ Authors: TorchLean Team
 
 Device-agnostic real-data example:
   python3 scripts/datasets/download_example_data.py --auto-mpg
-  lake exe torchlean mlp --device cpu
-  lake -R -K cuda=true exe torchlean mlp --device cuda
+  scripts/lake.sh exe torchlean mlp --device cpu
+  scripts/lake.sh -Kcuda=true exe torchlean mlp --device cuda
 -/
 
 module
@@ -26,7 +26,7 @@ Prepare the CSV once:
 
 ```bash
 python3 scripts/datasets/download_example_data.py --auto-mpg
-lake exe torchlean mlp --device cpu --steps 1
+scripts/lake.sh exe torchlean mlp --device cpu --steps 1
 ```
 
 The downloader writes normalized columns `x1..x7,y`. If you want to try your own tabular regression

@@ -21,7 +21,7 @@ scripts/lake.sh -R -K cuda=true build
 Run a small CUDA example:
 
 ```bash
-scripts/lake.sh -R -K cuda=true exe torchlean mlp --device cuda --steps 100
+scripts/lake.sh -R -K cuda=true exe torchlean mlp --device cuda --execution eager --steps 100
 ```
 
 Run the maintained numerical and native-boundary suite:
@@ -39,9 +39,13 @@ scripts/checks/cuda_sanitize_tests.sh --all-tools
 ## What CUDA Covers
 
 The adapter calls ATen for elementwise arithmetic, reductions, matrix products, convolutions,
-pooling, shape operations, attention, and FFTs. LibTorch dispatches those calls to implementations
-available for the device and request. Model examples select this path with `--device cuda`.
-These operations compute values and local gradients without recording a LibTorch autograd graph.
+pooling, shape operations, and FFTs. Lean composes attention from matrix products and softmax,
+including its explicit local VJP, and spectral layers from FFT, frequency mixing, and inverse FFT.
+The tape owns their saved buffers. LibTorch supplies the numerical primitives without recording
+an autograd graph. Model examples select this path with `--device cuda`.
+
+Attention materializes full score and probability matrices, so its memory use is quadratic in
+sequence length. It does not select a fused attention implementation.
 
 ## Determinism
 

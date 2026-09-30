@@ -153,7 +153,7 @@ open BoundOps
   | .log => do
     let p ← unaryParent? node.parents
     let input ← get p
-    let lo := getDimScalarFn (α := α) input.lo
+    let lo := Tensor.unstack (α := α) input.lo
     if (List.finRange input.dim).all (fun i => decide (0 < Tensor.item (lo i))) then
       boxUnaryEnclosure? NonlinearBoundOps.logBounds input
     else none

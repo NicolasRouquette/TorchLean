@@ -133,7 +133,7 @@ def inv (s : Shape) : PrimOp [s] s :=
   { name := "inv"
     specFwd := fun {_α} _storage _ctx xs =>
       match xs with
-      | .cons input .nil => TorchLean.Tensor.mapSpec (fun value => 1 / value) input
+      | .cons input .nil => TorchLean.Tensor.invSpec input
     program := fun {α} _ _ =>
       fun {m} _ _ => fun input =>
         Runtime.Autograd.Model.inv (m := m) (α := α) input }

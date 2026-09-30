@@ -253,9 +253,7 @@ PyTorch analogy: warmup logic commonly implemented in training scripts (and in s
   helpers).
 -/
 def LinearWarmup.current (scheduler : LinearWarmup α) : α :=
-  if scheduler.warmupSteps = 0 then
-    scheduler.initialLearningRate
-  else if scheduler.currentStep < scheduler.warmupSteps then
+  if scheduler.currentStep < scheduler.warmupSteps then
     let factor := Internal.ratioNat scheduler.currentStep scheduler.warmupSteps
     Internal.linearInterpolation
       scheduler.startingLearningRate scheduler.initialLearningRate factor
@@ -315,20 +313,14 @@ def WarmupCosine.current (scheduler : WarmupCosine α) : α :=
   else if scheduler.currentStep >= scheduler.totalSteps then
     0
   else if scheduler.currentStep < scheduler.warmupSteps then
-    if scheduler.warmupSteps = 0 then
-      scheduler.initialLearningRate
-    else
-      scheduler.initialLearningRate *
-        Internal.ratioNat scheduler.currentStep scheduler.warmupSteps
+    scheduler.initialLearningRate *
+      Internal.ratioNat scheduler.currentStep scheduler.warmupSteps
   else
     let remainingSteps := scheduler.totalSteps - scheduler.warmupSteps
-    if remainingSteps = 0 then
-      scheduler.initialLearningRate
-    else
-      let currentRemaining := scheduler.currentStep - scheduler.warmupSteps
-      let progress := Internal.ratioNat currentRemaining remainingSteps
-      let cosineFactor := (1 + cos ((pi : α) * progress)) / (1 + 1)
-      scheduler.initialLearningRate * cosineFactor
+    let currentRemaining := scheduler.currentStep - scheduler.warmupSteps
+    let progress := Internal.ratioNat currentRemaining remainingSteps
+    let cosineFactor := (1 + cos ((pi : α) * progress)) / (1 + 1)
+    scheduler.initialLearningRate * cosineFactor
 
 /--
 Advance the warmup+cosine scheduler by one step.
@@ -448,8 +440,9 @@ def Cyclic.create (baseLearningRate : α) (maximumLearningRate : α) (stepSize :
 /--
 A specialized cyclic schedule with fixed amplitude.
 
-This is essentially `Cyclic` in `"triangular"` mode, but we provide it as a separate type
-so callers don't have to thread mode strings around.
+The descending phase computes `(cycleStep - stepSize) / stepSize` with natural-number subtraction.
+`Cyclic` instead computes `cycleStep / stepSize - 1` in the scalar type, so rounded scalar
+arithmetic can distinguish the two schedules.
 -/
 structure TriangularCycle (α : Type) where
   /-- Minimum learning rate within the cycle. -/

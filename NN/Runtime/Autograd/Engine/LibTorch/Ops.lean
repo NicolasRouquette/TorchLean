@@ -8,11 +8,12 @@ module
 
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Attention
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.ConvPool
-public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Core
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Elementwise
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Fourier
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Indexing
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Linear
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.NormSoftmax
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops.SelectiveScan
 public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Shape
 
 /-!

@@ -98,7 +98,7 @@ theorem initial_represents
     (houtput : output < size) (obj : FlatTensor α) (hdim : obj.n = dims output) :
     SweepInvariant dims v input size size
       (dot (dims output) (fun i => value (getAtOrZero obj.v [i])) (v output))
-      { coeffs := (Array.replicate size none).set! output (some (pointCoeffBox obj))
+      { coeffs := (Array.replicate size none).set! output (some (FlatBox.ofTensor obj.v))
         cstLo := 0, cstHi := 0 } := by
   right
   refine ⟨by simp, _, 0, initial_encloses dims size output obj hdim, ?_⟩
@@ -131,7 +131,8 @@ theorem inputAffines_row_encloses
   subst adim
   exact inputAffines_encloses xlo xhi alo ahi lo hi
     (fun i => x i.val) (fun i => a i.val) c
-    (by simpa only [read_fin] using hx) (by simpa only [read_fin] using ha) hc hresult
+    (by simpa only [Spec.getAtOrZero_eq_getScalar] using hx)
+    (by simpa only [Spec.getAtOrZero_eq_getScalar] using ha) hc hresult
 
 /-- The default zero input row encloses any coefficient represented by an absent array entry. -/
 theorem inputRow_encloses
@@ -151,7 +152,8 @@ theorem inputRow_encloses
       simp only [he, Option.getD_none] at hf ⊢
       refine ⟨rfl, ?_⟩
       intro i
-      simp only [read_fin, Tensor.getScalar_full, LawfulBoundOps.toReal_zero (α := α), hf i,
+      simp only [Spec.getAtOrZero_eq_getScalar, Tensor.getScalar_full,
+        LawfulBoundOps.toReal_zero (α := α), hf i,
         le_refl, and_self]
   | some box =>
       simpa only [he, Option.getD_some] using hf

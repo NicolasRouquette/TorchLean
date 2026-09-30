@@ -6,9 +6,12 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Runtime.Autograd.Engine.LibTorch.Ops.Elementwise
 public import NN.Runtime.Autograd.Model.Optim
 public import NN.Runtime.Autograd.Torch.Core.BackwardOptim
+public import NN.Runtime.Autograd.Torch.TypedGraphSession.Autograd
 public import NN.Runtime.Autograd.Torch.Core.Trainer.CheckpointSchema
+public import NN.Runtime.Autograd.Torch.Core.Trainer.GraphOps
 public import NN.Tensor.Internal.Elab.TensorLiteral
 
 /-!
@@ -382,8 +385,94 @@ def checkCudaCheckpoint : IO Unit := IO.FS.withTempDir fun directory => do
     releaseCudaAdamState (← state.get)
     releaseCudaAdamState (← restoredState.get)
 
+/-- Typed SGD follows eager recording-order addition, current storage, and validation atomicity. -/
+def checkTypedGraphSgd : IO Unit := do
+  let typed ← TypedGraphSession.new (α := Float)
+  let eager ← EagerSession.new (α := Float)
+  let p ← scalar 1.0
+  let reference ← scalar 1.0
+  let independent ← scalar 1.0
+  let independentReference ← scalar 1.0
+  let _ ← eager.use { reference with requiresGrad := false }
+  let _ ← eager.use reference
+  let _ ← eager.use { reference with name := some "alias" }
+  let _ ← eager.use reference
+  let _ ← eager.use independentReference
+  let _ ← typed.use { p with requiresGrad := false }
+  let first ← typed.use p
+  let _ ← typed.use { p with name := some "alias" }
+  let _ ← typed.use p
+  let _ ← typed.use independent
+  let gradients := #[0.0, 1.0e16, -1.0e16, 3.0, 2.0].map fun value =>
+    Spec.SomeTensor.ofTensor (Tensor.scalar value)
+  rejects "typed validates missing later gradient before mutation" <|
+    typed.sgdStepAll 1.0 (gradients.extract 0 4)
+  check "missing gradient did not change typed storage" ((← bits p) == (1.0 : Float).toBits)
+  let malformed := gradients.set! 4 (Spec.SomeTensor.ofTensor ([2.0] : Tensor Float [1]))
+  rejects "typed validates later gradient shape before mutation" <| typed.sgdStepAll 1.0 malformed
+  check "bad gradient shape did not change typed storage" ((← bits p) == (1.0 : Float).toBits)
+  setParamHostValue p (Tensor.scalar 5.0)
+  setParamHostValue reference (Tensor.scalar 5.0)
+  typed.sgdStepAll 1.0 gradients
+  eager.sgdStepAll 1.0 gradients
+  check "typed sums aliases in recording order before one update"
+    ((← bits p) == (2.0 : Float).toBits)
+  check "typed and eager shared update agree bitwise" ((← bits p) == (← bits reference))
+  check "equal values in independent storage remain independent"
+    ((← bits independent) == (← bits independentReference) &&
+      (← bits independent) == (-1.0 : Float).toBits)
+  check "typed update preserves the recorded snapshot"
+    ((← typed.getValue first).item.toBits == (1.0 : Float).toBits)
+  typed.resetTape
+  check "typed reset drops storage descriptors" ((← typed.parameterStorageByLeaf.get).isEmpty)
+
+/-- One observer preserves ordered writes, including repeated storage ids and empty state. -/
+def checkBufferWriteOrder : IO Unit := do
+  let trace ← IO.mkRef (#[] : Array Nat)
+  let some register := Ops.updateBuffers?
+      (m := Runtime.Autograd.TypedGraph.GraphM.M Float []) (α := Float)
+    | throw <| IO.userError "graph buffer observer unavailable"
+  let refs : RefList Runtime.Autograd.TypedGraph.GraphM.Var [[], [], []] :=
+    .cons ⟨4⟩ (.cons ⟨2⟩ (.cons ⟨4⟩ .nil))
+  let (_, state) ← IO.ofExcept <| Runtime.Autograd.TypedGraph.GraphM.run do
+    register refs (⟨8⟩ : Runtime.Autograd.TypedGraph.GraphM.Var []) fun _ _ => do
+      trace.modify (·.push 99)
+      pure (.cons (Tensor.scalar 10.0)
+        (.cons (Tensor.scalar 20.0) (.cons (Tensor.scalar 30.0) .nil)))
+    register .nil (⟨9⟩ : Runtime.Autograd.TypedGraph.GraphM.Var []) fun _ _ => pure .nil
+  let getState {s : Spec.Shape} (id : Nat) : IO (Tensor Float s) := do
+    trace.modify (·.push id)
+    pure (Tensor.full s 0.0)
+  let getValue {s : Spec.Shape} (id : Nat) : IO (Tensor Float s) := do
+    trace.modify (·.push id)
+    pure (Tensor.full s 0.0)
+  check "two observers retain registration order" (state.bufferUpdates.size == 2)
+  let some observer := state.bufferUpdates[0]?
+    | throw <| IO.userError "missing buffer observer"
+  let writes ← observer getState getValue
+  check "buffer states read left-to-right before input and callback"
+    ((← trace.get) == #[4, 2, 4, 8, 99])
+  check "one observer retains repeated ids and write order"
+    (writes.map (·.1) == #[4, 2, 4])
+  check "write values retain their corresponding ids"
+    (writes.map (fun (_, value) => Tensor.to value.tensor (Array Float)) ==
+      #[#[10.0], #[20.0], #[30.0]])
+  let some emptyObserver := state.bufferUpdates[1]?
+    | throw <| IO.userError "missing empty buffer observer"
+  check "empty state produces no writes" (← emptyObserver getState getValue).isEmpty
+  check "empty state still observes its input" ((← trace.get) == #[4, 2, 4, 8, 99, 9])
+  trace.set #[]
+  rejects "state-read failure stops before input and callback" <| discard <|
+    observer (fun {_} id => do
+      trace.modify (·.push id)
+      if id == 2 then throw <| IO.userError "state failure"
+      pure (Tensor.full _ 0.0)) getValue
+  check "failed state read stops in reference order" ((← trace.get) == #[4, 2])
+
 def runCpu : IO Unit := do
+  checkBufferWriteOrder
   checkStorage
+  checkTypedGraphSgd
   checkRegistrations
   checkSnapshots .cpu
   checkGradientValidation
@@ -393,8 +482,25 @@ def runCpu : IO Unit := do
   checkOptimizer fun _ => Runtime.Autograd.Model.Optim.adamw 0.1 0.05 0.8 0.9 1e-8
   IO.println "PARAMETER_ALIAS_CPU_PASSED"
 
+/-- Native division retains the eager successive-division VJP at binary32 extremes. -/
+def checkCudaDivisionSchedule : IO Unit := do
+  for (a, b) in [(1.0e30, 1.0e20), (1.0e-30, 1.0e-25)] do
+    let session ← EagerSession.new (α := Float) (options := { device := .cuda })
+    let x ← session.input (Tensor.scalar a) (requiresGrad := true)
+    let y ← session.input (Tensor.scalar b) (requiresGrad := true)
+    let quotientId ← session.recordCuda fun tape => keepTapeOnError tape <|
+      Runtime.Autograd.LibTorch.Tape.div (s := []) tape x.id y.id
+    let quotient : TensorRef Float [] := { id := quotientId }
+    let gradients ← session.backwardScalarDenseAll quotient
+    let db ← EagerSession.grad gradients y
+    let expected := (-((a.toFloat32 / b.toFloat32) / b.toFloat32)).toFloat
+    check "native denominator VJP stays finite and follows successive division"
+      (expected.isFinite && expected < 0 && db.item.toBits == expected.toBits)
+    session.resetTape
+
 def runCuda : IO Unit := do
   Runtime.Autograd.LibTorch.Buffer.requireNativeRuntime
+  checkCudaDivisionSchedule
   checkSnapshots .cuda
   checkCudaRetie
   checkCudaOptimizer

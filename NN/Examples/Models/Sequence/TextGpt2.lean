@@ -391,9 +391,9 @@ def printBpePredictionProbe
   IO.println s!"  prompt={text.escape prompt}"
 
 /--
-Greedy BPE generation by repeatedly feeding the last `contextLength` tokens and appending the
-final-position argmax. This is a deterministic sampling path for inspecting the trained next-token
-model.
+Greedy BPE generation using up to the last `contextLength` tokens. The next-token logits come from
+the current context position, before any right padding, and unassigned local vocabulary slots are
+excluded from selection.
 -/
 def generateBpeGreedy
     (tok : text.GPT2BPE.Tokenizer)

@@ -19,8 +19,6 @@ an arbitrary concat axis after concatenating along the leading axis.
 
 public section
 
-set_option autoImplicit false
-
 namespace NN.MLTheory.CROWN.Graph
 
 open NN.IR.OpContracts
@@ -174,6 +172,15 @@ private theorem inversePerm_eq_of_inverse (perm : Array Nat) (inverse : Nat → 
   funext axis out
   cases table[axis]! <;> rfl
 
+/-- The axis indices of a rank split at a selected axis into the preceding and following axes. -/
+theorem range_split_axis (axis trailing : Nat) :
+    List.range (axis + 1 + trailing) =
+      List.range axis ++ axis :: List.range' (axis + 1) trailing := by
+  rw [List.range_eq_range']
+  have h := List.range'_append_1 (s := 0) (m := axis) (n := trailing + 1)
+  simpa [List.range'_succ, ← List.range_eq_range', Nat.add_assoc,
+    Nat.add_comm, Nat.add_left_comm] using h.symm
+
 /-- Inverting a front-axis rotation restores the original order of the preceding axes. -/
 theorem inversePerm_front (axis trailing : Nat) :
     inversePerm (axis :: (List.range axis ++ List.range' (axis + 1) trailing)).toArray =
@@ -200,11 +207,7 @@ theorem inversePerm_front (axis trailing : Nat) :
         have hne : value ≠ axis := by omega
         simp [inverse, hlo, hne]
       _ = _ := List.map_id _
-  have hrange : List.range (axis + 1 + trailing) =
-      List.range axis ++ axis :: List.range' (axis + 1) trailing := by
-    have h := List.range'_append_1 (s := 0) (m := axis) (n := trailing + 1)
-    simpa [List.range'_succ, ← List.range_eq_range', Nat.add_assoc,
-      Nat.add_comm, Nat.add_left_comm] using h.symm
+  have hrange := range_split_axis axis trailing
   have hmap : perm.toList.map inverse = List.range perm.size := by
     simp only [perm, List.map_cons, List.map_append,
       hzero, hlow, hhigh]

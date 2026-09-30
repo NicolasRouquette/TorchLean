@@ -74,6 +74,19 @@ def softmaxMargin {α : Type} [TorchLean.Storage α] [Context α] [BoundOps α]
   let hi1 := _root_.TorchLean.Tensor.getScalar hi ⟨1, by decide⟩
   BoundOps.subDown lo0 hi1
 
+/-- Print the softmax probability bounds of a verifier box under `tag`, together with the directed
+margin `p₀ - p₁`. Fails when the box does not have the softmax output dimension. -/
+def printSoftmaxBox {α : Type} [TorchLean.Storage α] [_root_.Context α] [ToString α]
+    [BoundOps α] (tag : String) (box : FlatBox α) : IO Unit := do
+  if hDim : box.dim = softmaxOutDim then
+    let loY : TorchLean.Tensor α softmaxYShape := box.loAsDim hDim
+    let hiY : TorchLean.Tensor α softmaxYShape := box.hiAsDim hDim
+    IO.println s!"[{tag}] p lo = {pretty loY}"
+    IO.println s!"[{tag}] p hi = {pretty hiY}"
+    IO.println s!"[{tag}] margin(p0 - p1) = {softmaxMargin (α := α) loY hiY}"
+  else
+    throw <| IO.userError s!"[{tag}] unexpected output dim {box.dim} (expected {softmaxOutDim})"
+
 /--
 Run the softmax workflow under a chosen scalar backend `α`.
 
@@ -112,29 +125,11 @@ def runSoftmax {α : Type} [TorchLean.Storage α] [_root_.Context α] [ToString 
   -- IBP
   let ibp := lowered.runIBP ps
   let outB ← lowered.outputBoxOrThrow ibp
-  if hDim : outB.dim = softmaxOutDim then
-    let loY : TorchLean.Tensor α softmaxYShape := by
-      simpa [softmaxYShape] using outB.loAsDim hDim
-    let hiY : TorchLean.Tensor α softmaxYShape := by
-      simpa [softmaxYShape] using outB.hiAsDim hDim
-    IO.println s!"[IBP] p lo = {pretty loY}"
-    IO.println s!"[IBP] p hi = {pretty hiY}"
-    IO.println s!"[IBP] margin(p0 - p1) = {softmaxMargin (α := α) loY hiY}"
-  else
-    throw <| IO.userError s!"[IBP] unexpected output dim {outB.dim} (expected {softmaxOutDim})"
+  printSoftmaxBox "IBP" outB
 
   -- CROWN output bounds.
   let outC ← lowered.outputBoxCROWNOrThrow ps xB
-  if hOut : outC.dim = softmaxOutDim then
-    let loY : TorchLean.Tensor α softmaxYShape := by
-      simpa [softmaxYShape] using outC.loAsDim hOut
-    let hiY : TorchLean.Tensor α softmaxYShape := by
-      simpa [softmaxYShape] using outC.hiAsDim hOut
-    IO.println s!"[CROWN] p lo = {pretty loY}"
-    IO.println s!"[CROWN] p hi = {pretty hiY}"
-    IO.println s!"[CROWN] margin(p0 - p1) = {softmaxMargin (α := α) loY hiY}"
-  else
-    throw <| IO.userError s!"[CROWN] unexpected output dim {outC.dim} (expected {softmaxOutDim})"
+  printSoftmaxBox "CROWN" outC
 
   -- Backward/dual CROWN for the margin objective: p0 - p1.
   let objV : TorchLean.Tensor α [softmaxOutDim] :=

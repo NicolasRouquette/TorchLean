@@ -117,7 +117,7 @@ structure EagerSession (α : Type) [Storage α] where
   tape : IO.Ref (Runtime.Autograd.Tape α)
   /-- CUDA eager tape used when `Config.device options = .cuda`. -/
   cudaTape : IO.Ref (Runtime.Autograd.LibTorch.Tape)
-  /-- Map from tape leaf ids to trainable parameter objects. -/
+  /-- Map from tape leaf ids to parameter objects, including frozen snapshot owners. -/
   paramsByLeaf : IO.Ref (Std.HashMap Nat (AnyParam α))
   /-- Storage identities for this recording's parameter leaves; no tensor snapshots are cached. -/
   parameterStorageByLeaf : IO.Ref (Std.HashMap Nat (ParameterStorage α))

@@ -5,8 +5,8 @@ Authors: TorchLean Team
 
 Device-agnostic real-data example:
   python3 scripts/datasets/download_example_data.py --auto-mpg
-  lake exe torchlean kan --device cpu --steps 20
-  lake -R -K cuda=true exe torchlean kan --device cuda --steps 20
+  scripts/lake.sh exe torchlean kan --device cpu --steps 20
+  scripts/lake.sh -Kcuda=true exe torchlean kan --device cuda --steps 20
 -/
 
 module

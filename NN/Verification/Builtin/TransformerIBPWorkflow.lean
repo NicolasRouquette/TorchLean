@@ -31,12 +31,10 @@ Run:
 
 @[expose] public section
 
-
 namespace NN.Verification.Builtin.TransformerIBPWorkflow
 
 open _root_.Spec _root_.TorchLean
 open _root_.TorchLean.Tensor
-open _root_.TorchLean
 
 open NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN

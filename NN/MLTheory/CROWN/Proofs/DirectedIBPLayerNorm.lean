@@ -39,8 +39,7 @@ theorem layerNormMatrixDims_properties {s : Shape} {axis rows width : Nat}
   cases ha : OpContracts.checkAxisValid axis s with
   | error message => simp [ha, Bind.bind, Except.bind] at hok
   | ok result =>
-      simp only [ha, Bind.bind, Except.bind, OpContracts.checkPositive,
-        ← List.prod_eq_foldl] at hok
+      simp only [ha, Bind.bind, Except.bind, OpContracts.checkPositive] at hok
       split at hok
       · contradiction
       · rename_i hwidth
@@ -124,7 +123,7 @@ theorem normalizationAffine?_defaultLayerNormParams (s : Shape) (axis width : Na
   | isFalse h => exact (h rfl).elim
   | isTrue h =>
       simp [normalizationAffine?, defaultLayerNormParams, NN.IR.Graph.resolveLayerNormAffine,
-        hdec, hsize, defaultNormalizationAffine, normalization_reshapeSpec_full, Except.toOption,
+        hdec, hsize, defaultNormalizationAffine, Spec.reshapeSpec_full, Except.toOption,
         Pure.pure, Except.pure]
 
 /-- The actual real matrix LayerNorm, with every affine parameter and epsilon interpreted
@@ -132,7 +131,7 @@ from its stored scalar. Empty leading batches retain the IR's empty-tensor conve
 def layerNormRealValue (rows width : Nat) (f : Nat → ℝ)
     (affine : NN.IR.Graph.LayerNormAffine α width) (hwidth : 0 < width) :
     Tensor ℝ [rows, width] :=
-  NN.IR.Graph.layerNormMatrixValue rows width (tensorOfFlatValues [rows, width] f)
+  NN.IR.Graph.layerNormMatrixValue rows width (realTensor [rows, width] f)
     (Tensor.ofFn fun j => value (affine.gamma.getScalar j))
     (Tensor.ofFn fun j => value (affine.beta.getScalar j))
     (value affine.epsilon) hwidth
@@ -216,12 +215,12 @@ theorem ibpLayerNormPayloadBox?_encloses {s : Shape} {axis : Nat}
         simpa only [← hmatrix] using hx
       have hrow := LayerNormDirected.directedLayerNormRow?_encloses hm hw
         _ _ affine.gamma affine.beta affine.epsilon
-        (tensorOfFlatValues [rows, width] f) i
+        (realTensor [rows, width] f) i
         (fun k => by
           simpa only [Tensor.getScalar_eq_apply, Tensor.unstack,
             TorchLean.Tensor.Internal.Rep.unstack_apply, Spec.get2_eq_apply] using
             rowEncloses_unflatten hxmatrix (i, k, PUnit.unit))
-        (traverseFin_eq_some_iff.mp hbounds i) j
+        (Tensor.Internal.sequenceFinM_get_of_eq_some hbounds i) j
       simpa only [layerNormRealValue, NN.IR.Graph.layerNormMatrixValue, dite_eq_left hm,
         Tensor.dim, TorchLean.Tensor.Internal.Rep.stack_apply, Tensor.getScalar_eq_apply,
         Spec.get2_eq_apply] using hrow

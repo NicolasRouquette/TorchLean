@@ -83,10 +83,9 @@ theorem linear_layer_lipschitz_bound {inDim outDim : ℕ}
 
 /-- ReLU is 1-Lipschitz in the L2 distance, so activations never amplify an input perturbation. -/
 theorem relu_activation_lipschitz {n : ℕ} (x y : Tensor ℝ [n]) :
-    Proofs.tensorL2Dist (Activation.reluSpec x) (Activation.reluSpec y) ≤ Proofs.tensorL2Dist
-      x y := by
-  -- This follows directly from the existing relu_lipschitz_general theorem
-  exact Proofs.relu_lipschitz_general x y
+    Proofs.tensorL2Dist (Activation.reluSpec x) (Activation.reluSpec y) ≤
+      Proofs.tensorL2Dist x y :=
+  Proofs.relu_lipschitz_general x y
 
 /-- A two-layer ReLU MLP is Lipschitz in L2, with the product of the two Frobenius constants.
 
@@ -113,7 +112,7 @@ theorem mlp_lipschitz_frobenius {inDim hidDim outDim : ℕ}
     _ = _ := by ring
 
 /--
-Repackage `mlp_lipschitz_frobenius` as a robustness-spec `isLipschitzContinuous` fact with a
+Repackage `mlp_lipschitz_frobenius` as a robustness-spec `IsLipschitzContinuous` fact with a
 positive constant. The nonzero-weight hypotheses only make the Frobenius product positive.
 
 This is the form expected by the certified-robustness lemmas in
@@ -125,7 +124,7 @@ theorem mlp_is_lipschitz_continuous_l2 {inDim hidDim outDim : ℕ}
     (h1_nonzero : l1.weights ≠ Tensor.full _ (0 : ℝ))
     (h2_nonzero : l2.weights ≠ Tensor.full _ (0 : ℝ)) :
     ∃ L : ℝ, L > 0 ∧
-      NN.MLTheory.Robustness.Spec.isLipschitzContinuous
+      NN.MLTheory.Robustness.Spec.IsLipschitzContinuous
         (f := fun x => Examples.mlpForward l1 l2 x)
         (norm₁ := Proofs.tensorL2Norm)
         (norm₂ := Proofs.tensorL2Norm)
@@ -137,9 +136,3 @@ theorem mlp_is_lipschitz_continuous_l2 {inDim hidDim outDim : ℕ}
     mlp_lipschitz_frobenius l1 l2 x y
 
 end NN.MLTheory.Proofs
-/-!
-Robustness statements for MLPs (ML theory layer).
-
-This file collects robustness definitions and theorems specialized to multi-layer perceptrons,
-used as a bridge between learning-theory specifications and concrete model classes.
--/

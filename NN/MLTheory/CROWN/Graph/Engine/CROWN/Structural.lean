@@ -77,7 +77,10 @@ def concatFlatAffineBounds? (layout : ConcatLayout) (bounds : Array (FlatAffineB
 
 namespace Internal
 
-/-- Matmul affine propagation using McCormick-style product planes. -/
+/-- Matmul affine propagation using McCormick-style product planes.
+
+Uses ordinary scalar arithmetic; callers must only invoke it when
+`BoundOps.supportsExactAffineReassociation` holds (see `propagateCROWNNode`). -/
 def propagateMatmulBounds
   (sA sB : Shape) (Bx By : FlatBox α)
   (aB bB : FlatAffineBounds α) :
@@ -227,7 +230,10 @@ def propagateMatmulBounds
 end Internal
 
 /-- Propagate affine bounds through componentwise multiplication using per-coordinate product
-planes. -/
+planes.
+
+Uses ordinary scalar arithmetic; callers must only invoke it when
+`BoundOps.supportsExactAffineReassociation` holds (see `propagateCROWNNode`). -/
 def propagateMulElemBounds
   (Bx By : FlatBox α)
   (xB yB : FlatAffineBounds α)
@@ -238,106 +244,82 @@ def propagateMulElemBounds
     if hin : xB.inDim = yB.inDim then
       let n := Bx.dim
       let hyo : yB.outDim = n := Eq.trans houtY (Eq.symm hdim)
-      let hBy : By.dim = n := by simpa [n] using (Eq.symm hdim)
+      let hBy : By.dim = n := hdim.symm
       let ByLo : Tensor α [n] := castDimScalar (α:=α) (n:=By.dim) (n':=n) hBy By.lo
       let ByHi : Tensor α [n] := castDimScalar (α:=α) (n:=By.dim) (n':=n) hBy By.hi
 
       let xLo : AffineVec α xB.inDim n :=
-        castAffineOut (α:=α) (n:=xB.inDim) (m:=xB.outDim) (m':=n) (by simpa [n] using houtX)
-          xB.loAff
+        castAffineOut (α:=α) (n:=xB.inDim) (m:=xB.outDim) (m':=n) houtX xB.loAff
       let xHi : AffineVec α xB.inDim n :=
-        castAffineOut (α:=α) (n:=xB.inDim) (m:=xB.outDim) (m':=n) (by simpa [n] using houtX)
-          xB.hiAff
+        castAffineOut (α:=α) (n:=xB.inDim) (m:=xB.outDim) (m':=n) houtX xB.hiAff
       let yLo0 : AffineVec α yB.inDim n :=
         castAffineOut (α:=α) (n:=yB.inDim) (m:=yB.outDim) (m':=n) hyo yB.loAff
       let yHi0 : AffineVec α yB.inDim n :=
         castAffineOut (α:=α) (n:=yB.inDim) (m:=yB.outDim) (m':=n) hyo yB.hiAff
-        let yLo : AffineVec α xB.inDim n :=
-          castAffineIn (α:=α) (n:=yB.inDim) (n':=xB.inDim) (m:=n) hin.symm yLo0
-        let yHi : AffineVec α xB.inDim n :=
-          castAffineIn (α:=α) (n:=yB.inDim) (n':=xB.inDim) (m:=n) hin.symm yHi0
+      let yLo : AffineVec α xB.inDim n :=
+        castAffineIn (α:=α) (n:=yB.inDim) (n':=xB.inDim) (m:=n) hin.symm yLo0
+      let yHi : AffineVec α xB.inDim n :=
+        castAffineIn (α:=α) (n:=yB.inDim) (n':=xB.inDim) (m:=n) hin.symm yHi0
 
-        -- Helper to split a scalar coefficient into (pos, neg).
-        let split (a : α) : α × α := if a > 0 then (a, 0) else (0,
-          a)
+      -- Split a coefficient into its positive and negative parts; each part selects a parent bound.
+      let split (a : α) : α × α := if a > 0 then (a, 0) else (0, a)
 
-        -- Build row-wise A/c for upper and lower using a single selected McCormick plane per
-        -- component.
-        let A_hi : Tensor α [n, xB.inDim] :=
-          Tensor.matrix fun i j =>
-            let lx := Tensor.getScalar Bx.lo i
-            let ux := Tensor.getScalar Bx.hi i
-            let ly := Tensor.getScalar ByLo i
-            let uy := Tensor.getScalar ByHi i
-            -- Choose the tighter upper plane at the interval center.
-            let cx := (lx + ux) * (1 / 2)
-            let cy := (ly + uy) * (1 / 2)
-            let u1 := ux * cy + ly * cx - ux * ly
-            let u2 := lx * cy + uy * cx - lx * uy
-            let aX := if u1 < u2 then ly else uy
-            let aY := if u1 < u2 then ux else lx
-            let (aXpos, aXneg) := split aX
-            let (aYpos, aYneg) := split aY
-            aXpos * Spec.get2 xHi.A i j + aXneg * Spec.get2 xLo.A i j +
-              aYpos * Spec.get2 yHi.A i j + aYneg * Spec.get2 yLo.A i j
-        let c_hi : Tensor α [n] :=
-          Tensor.ofFn fun i =>
-            let lx := Tensor.getScalar Bx.lo i
-            let ux := Tensor.getScalar Bx.hi i
-            let ly := Tensor.getScalar ByLo i
-            let uy := Tensor.getScalar ByHi i
-            let cx := (lx + ux) * (1 / 2)
-            let cy := (ly + uy) * (1 / 2)
-            let u1 := ux * cy + ly * cx - ux * ly
-            let u2 := lx * cy + uy * cx - lx * uy
-            let aX := if u1 < u2 then ly else uy
-            let aY := if u1 < u2 then ux else lx
-            let off := if u1 < u2 then (-(ux * ly)) else (-(lx * uy))
-            let (aXpos, aXneg) := split aX
-            let (aYpos, aYneg) := split aY
-            aXpos * Tensor.getScalar xHi.c i + aXneg * Tensor.getScalar xLo.c i +
-              aYpos * Tensor.getScalar yHi.c i + aYneg * Tensor.getScalar yLo.c i + off
-        let A_lo : Tensor α [n, xB.inDim] :=
-          Tensor.matrix fun i j =>
-            let lx := Tensor.getScalar Bx.lo i
-            let ux := Tensor.getScalar Bx.hi i
-            let ly := Tensor.getScalar ByLo i
-            let uy := Tensor.getScalar ByHi i
-            -- Choose the tighter lower plane at the interval center.
-            let cx := (lx + ux) * (1 / 2)
-            let cy := (ly + uy) * (1 / 2)
-            let l1 := ux * cy + uy * cx - ux * uy
-            let l2 := lx * cy + ly * cx - lx * ly
-            let aX := if l1 > l2 then uy else ly
-            let aY := if l1 > l2 then ux else lx
-            let (aXpos, aXneg) := split aX
-            let (aYpos, aYneg) := split aY
-            -- Negative coefficients select the upper affine input bound.
-            aXpos * Spec.get2 xLo.A i j + aXneg * Spec.get2 xHi.A i j +
-              aYpos * Spec.get2 yLo.A i j + aYneg * Spec.get2 yHi.A i j
-        let c_lo : Tensor α [n] :=
-          Tensor.ofFn fun i =>
-            let lx := Tensor.getScalar Bx.lo i
-            let ux := Tensor.getScalar Bx.hi i
-            let ly := Tensor.getScalar ByLo i
-            let uy := Tensor.getScalar ByHi i
-            let cx := (lx + ux) * (1 / 2)
-            let cy := (ly + uy) * (1 / 2)
-            let l1 := ux * cy + uy * cx - ux * uy
-            let l2 := lx * cy + ly * cx - lx * ly
-            let aX := if l1 > l2 then uy else ly
-            let aY := if l1 > l2 then ux else lx
-            let off := if l1 > l2 then (-(ux * uy)) else (-(lx * ly))
-            let (aXpos, aXneg) := split aX
-            let (aYpos, aYneg) := split aY
-            aXpos * Tensor.getScalar xLo.c i + aXneg * Tensor.getScalar xHi.c i +
-              aYpos * Tensor.getScalar yLo.c i + aYneg * Tensor.getScalar yHi.c i + off
+      -- One McCormick plane `(aX, aY, offset)` per component, chosen at the interval midpoint.
+      let upperPlane (i : Fin n) : α × α × α :=
+        let lx := Tensor.getScalar Bx.lo i
+        let ux := Tensor.getScalar Bx.hi i
+        let ly := Tensor.getScalar ByLo i
+        let uy := Tensor.getScalar ByHi i
+        let cx := (lx + ux) * (1 / 2)
+        let cy := (ly + uy) * (1 / 2)
+        let u1 := ux * cy + ly * cx - ux * ly
+        let u2 := lx * cy + uy * cx - lx * uy
+        if u1 < u2 then (ly, ux, -(ux * ly)) else (uy, lx, -(lx * uy))
+      let lowerPlane (i : Fin n) : α × α × α :=
+        let lx := Tensor.getScalar Bx.lo i
+        let ux := Tensor.getScalar Bx.hi i
+        let ly := Tensor.getScalar ByLo i
+        let uy := Tensor.getScalar ByHi i
+        let cx := (lx + ux) * (1 / 2)
+        let cy := (ly + uy) * (1 / 2)
+        let l1 := ux * cy + uy * cx - ux * uy
+        let l2 := lx * cy + ly * cx - lx * ly
+        if l1 > l2 then (uy, ux, -(ux * uy)) else (ly, lx, -(lx * ly))
+      let A_hi : Tensor α [n, xB.inDim] :=
+        Tensor.matrix fun i j =>
+          let (aX, aY, _) := upperPlane i
+          let (aXpos, aXneg) := split aX
+          let (aYpos, aYneg) := split aY
+          aXpos * Spec.get2 xHi.A i j + aXneg * Spec.get2 xLo.A i j +
+            aYpos * Spec.get2 yHi.A i j + aYneg * Spec.get2 yLo.A i j
+      let c_hi : Tensor α [n] :=
+        Tensor.ofFn fun i =>
+          let (aX, aY, off) := upperPlane i
+          let (aXpos, aXneg) := split aX
+          let (aYpos, aYneg) := split aY
+          aXpos * Tensor.getScalar xHi.c i + aXneg * Tensor.getScalar xLo.c i +
+            aYpos * Tensor.getScalar yHi.c i + aYneg * Tensor.getScalar yLo.c i + off
+      let A_lo : Tensor α [n, xB.inDim] :=
+        Tensor.matrix fun i j =>
+          let (aX, aY, _) := lowerPlane i
+          let (aXpos, aXneg) := split aX
+          let (aYpos, aYneg) := split aY
+          -- Negative coefficients select the upper affine input bound.
+          aXpos * Spec.get2 xLo.A i j + aXneg * Spec.get2 xHi.A i j +
+            aYpos * Spec.get2 yLo.A i j + aYneg * Spec.get2 yHi.A i j
+      let c_lo : Tensor α [n] :=
+        Tensor.ofFn fun i =>
+          let (aX, aY, off) := lowerPlane i
+          let (aXpos, aXneg) := split aX
+          let (aYpos, aYneg) := split aY
+          aXpos * Tensor.getScalar xLo.c i + aXneg * Tensor.getScalar xHi.c i +
+            aYpos * Tensor.getScalar yLo.c i + aYneg * Tensor.getScalar yHi.c i + off
 
-        some
-          { inDim := xB.inDim
-            outDim := n
-            loAff := { A := A_lo, c := c_lo }
-            hiAff := { A := A_hi, c := c_hi } }
+      some
+        { inDim := xB.inDim
+          outDim := n
+          loAff := { A := A_lo, c := c_lo }
+          hiAff := { A := A_hi, c := c_hi } }
     else
       none
   else

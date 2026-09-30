@@ -66,7 +66,7 @@ The learning theory material is organized around five concrete objects:
   Lean gives typed datasets, `replaceAt`, `removeAt`, learning maps, and loss change bounds.
 - *Dynamical stability*: trajectories stay bounded or converge under stated hypotheses; Lean names
   Lyapunov, ISS, BIBO, incremental, practical, and finite time predicates.
-- *Ridge regression case study*: a one-dimensional strongly regularized ERM theorem, with a real
+- *Ridge regression case study*: a one-dimensional regularized ERM theorem, with a real
   stability theorem plus a FloatLib binary32 execution bridge.
 
 These objects do not share one proof method. Differential privacy is an inequality between
@@ -199,10 +199,9 @@ result is the relaxed privacy proof.
 @differentialPrivacy_postprocess : ∀ {α β γ : Type}
   {Adj : α → α → Prop} [inst : MeasurableSpace β]
   [inst_1 : MeasurableSpace γ] {M : Mechanism α β}
-  {ε : ℝ} {δ : ENNReal} {f : β → γ}
-  (hf : Measurable f),
-  DifferentialPrivacy Adj M ε δ →
-    DifferentialPrivacy Adj (postprocess M f hf) ε δ
+  {ε : ℝ} {δ : ENNReal} {f : β → γ},
+  Measurable f → DifferentialPrivacy Adj M ε δ →
+    DifferentialPrivacy Adj (postprocess M f) ε δ
 ```
 
 Here `f` is a fixed measurable function of the released output. It may, for example, convert a
@@ -520,7 +519,7 @@ first step turns a Lipschitz bound into an output-perturbation bound:
   {f : Tensor ℝ s₁ → Tensor ℝ s₂}
   {norm₁ norm₂ : {s : Shape} → Tensor ℝ s → ℝ} {L : ℝ},
   0 ≤ L →
-    isLipschitzContinuous f (fun {s} => norm₁)
+    IsLipschitzContinuous f (fun {s} => norm₁)
         (fun {s} => norm₂) L →
       ∀ (x₀ : Tensor ℝ s₁) (ε : ℝ),
         IsAdversariallyRobust f (fun {s} => norm₁)
@@ -528,7 +527,7 @@ first step turns a Lipschitz bound into an output-perturbation bound:
 ```
 
 Read the conclusion: the output radius is $`L\varepsilon`, with no hypothesis on $`\varepsilon`
-beyond what `isLipschitzContinuous` already gives. For an input satisfying the ball premise,
+beyond what `IsLipschitzContinuous` already gives. For an input satisfying the ball premise,
 multiply its distance bound by the nonnegative Lipschitz constant. This bounds output drift;
 preserving a label also requires a margin between logits.
 
@@ -559,7 +558,7 @@ gives the classical margin-over-Lipschitz certificate:
   ∀ {s₁ : Shape} {n : ℕ} {f : Tensor ℝ s₁ → Tensor ℝ [n]}
   {normIn : {s : Shape} → Tensor ℝ s → ℝ} {L : ℝ},
   0 ≤ L →
-    isLipschitzContinuous f (fun {s} => normIn)
+    IsLipschitzContinuous f (fun {s} => normIn)
         (fun {s} => tensorLinfNorm) L →
       ∀ {x₀ : Tensor ℝ s₁} {ε m : ℝ} {c : Fin n},
         0 ≤ ε →
@@ -614,7 +613,7 @@ example : IsCertifiedRobust (α := ℝ)
     (norm := tensorLinfNorm (α := ℝ))
     marginLogits 0.4 := by
   have hLip :
-      isLipschitzContinuous (α := ℝ)
+      IsLipschitzContinuous (α := ℝ)
         (fun y : Tensor ℝ [2] => y)
         (tensorLinfNorm (α := ℝ))
         (tensorLinfNorm (α := ℝ)) 1 := by
@@ -672,7 +671,7 @@ The same machinery composes to a network, in
   l1.weights ≠ Tensor.full [hidDim, inDim] 0 →
     l2.weights ≠ Tensor.full [outDim, hidDim] 0 →
       ∃ L > 0,
-        isLipschitzContinuous
+        IsLipschitzContinuous
             (fun x => Examples.mlpForward l1 l2 x)
             (fun {s} => Proofs.tensorL2Norm)
           (fun {s} => Proofs.tensorL2Norm) L
@@ -718,7 +717,7 @@ lake exe verify -- margin-report
 
 ```terminal +output
 [margin report] examples=360
-[margin report] nominal_ok=349
+[margin report] nominal_ok=349 (requires 'pred' in examples)
 [margin report] positive_margin=318
 ```
 
@@ -775,8 +774,8 @@ def dataset3Dropped : Dataset 2 Nat :=
 ```
 
 Replace-one keeps the size and changes coordinate `1`. Remove-one drops that coordinate and lands in
-a smaller type, `Dataset 2`, which is why the leave-one-out definitions in the file are stated at
-`n + 1` and produce results at `n`.
+a smaller type, `Dataset 2`, which is why `removeAt` is stated at `n + 1` and produces a dataset
+at `n`.
 
 The replacement index has type `Fin 3`, so it must carry a proof that it is less than three.
 An out-of-range index fails during elaboration:
@@ -806,7 +805,7 @@ example (S : Dataset 3 Nat) :
     Dataset.get (removeAt (n := 2) S ⟨1, by decide⟩)
         ⟨1, by decide⟩
       = Dataset.get S ⟨2, by decide⟩ := by
-  simp [Fin.succAbove]
+  exact get_removeAt S ⟨1, by decide⟩ ⟨1, by decide⟩
 ```
 
 Dropping coordinate `1` makes the old coordinate `2` the new coordinate `1`, and `Fin.succAbove` is
@@ -822,7 +821,9 @@ example :
         (fun _ z => z) 0
         (Dataset.ofFn (fun i => (i.val : ℝ)))
       = 1 := by
-  norm_num [empiricalError, Fin.sum_univ_three]
+  simp only [empiricalError, Fin.sum_univ_three,
+    Dataset.get_ofFn]
+  norm_num
 ```
 
 The loss here ignores the hypothesis and returns the example itself, the dataset is $`(0,1,2)`, and
@@ -838,10 +839,8 @@ The stability predicate itself:
 ```
 
 ```leanOutput stabDef (whitespace := lax)
-@UniformStableReplace : {Z H : Type} →
-  {n : ℕ} →
-    [DecidableEq (Fin n)] →
-      LearningMap n Z H → Stability.Loss H Z → ℝ → Prop
+@UniformStableReplace : {Z H : Type} → {n : ℕ} →
+  LearningMap n Z H → Loss H Z → ℝ → Prop
 ```
 
 which unfolds to the standard uniform stability inequality
@@ -858,8 +857,8 @@ The test point `z` and replacement example `z'` play different roles. The learne
 test point to change at the same time would mix sensitivity of the learner with variation of the
 loss across examples. Uniformity means the bound holds for every such `z`, including one that
 never appeared in training. No sampling distribution is needed for this pointwise definition.
-The `DecidableEq (Fin n)` instance supports selecting the replaced coordinate; it is an
-implementation requirement for replacement, not a statistical assumption.
+Finite indices have decidable equality, so replacement can select the coordinate without an
+additional hypothesis in `UniformStableReplace`.
 
 # Ridge Regression Stability
 
@@ -940,6 +939,7 @@ At $`X=Y=\lambda=1` and $`N=16`, the formula gives $`16/16=1`, and `norm_num` ch
 instantiation. This is below the generic loss-range bound of $`4` discussed next.
 
 At $`N=2`, the same formula would give $`8`, a weak bound in that regime. The same file proves
+as a private lemma
 $`|\hat w x-y|\le Y(\lambda+X^2)/\lambda`, which is $`2` here, so the squared loss never exceeds
 $`4` and any two losses differ by at most $`4`. Since $`\beta=16/N` at these constants,
 the theorem improves that loss-range bound once $`N>4`. The bound is valid at each sample size,
@@ -1001,7 +1001,7 @@ print(w.item(), w.view(torch.int32).item())
 The bit patterns are identical: `1066751317` is `0x3F955555` on both sides. Every
 intermediate here, $`14`, $`10`, $`12`, is exactly representable in binary32, so the only rounding
 in the whole computation is the final division, and both implementations round it to nearest with
-ties to even as IEEE 754 requires {Informal.citep goldberg1991}[]. A computation with inexact
+ties to even {Informal.citep goldberg1991}[]. A computation with inexact
 intermediates would agree only if the two implementations also agreed on association and on
 intermediate precision, which is exactly the kind of thing our executable model is meant to let us
 check rather than assume {Informal.citep flocq2011}[].
@@ -1012,20 +1012,20 @@ What the executable side proves is narrower than the agreement suggests:
 -- This bridge uses a finite evaluation of the
 -- expression-tree ridge estimator.
 open IEEE32Exec.RidgeIEEEBridge in
-#check @ridgeFit1D_execExpr_toReal_eq_fp32Spec_of_finiteEval
+#check @ridgeFit_toReal_eq_spec_of_finiteEval
 ```
 
 ```leanOutput ridgeBridge (whitespace := lax)
-@ridgeFit1D_execExpr_toReal_eq_fp32Spec_of_finiteEval : ∀ {n : ℕ}
+@ridgeFit_toReal_eq_spec_of_finiteEval : ∀ {n : ℕ}
   (lam :
     ExecFloat.Binary 8 23 FloatLib.Floats.Formats.BinaryInterchange.FloatFormat.Encoding.ieee
       (FloatLib.Floats.Formats.BinaryInterchange.FloatFormat.Encoding.ieee.defaultBias 8)
-      IEEE32Exec.ExampleIEEE32._proof_1 IEEE32Exec.ExampleIEEE32._proof_2
-        IEEE32Exec.ExampleIEEE32._proof_3
-      IEEE32Exec.ExampleIEEE32._proof_4)
-  (S : Dataset (n + 1) IEEE32Exec.ExampleIEEE32) {d : FloatLib.Numerics.Dyadic},
+      IEEE32Exec.Example._proof_1 IEEE32Exec.Example._proof_2
+        IEEE32Exec.Example._proof_3
+      IEEE32Exec.Example._proof_4)
+  (S : Dataset (n + 1) IEEE32Exec.Example) {d : FloatLib.Numerics.Dyadic},
   Floats.IEEE754.IEEE32Exec.FiniteEval (fun x => 0) (ridgeExpr lam S) d →
-    (ridgeFit1DExecExpr lam S).toModel.toReal = ridgeFit1DFp32Spec lam S
+    (ridgeFit1DExecExpr lam S).toModel.toReal = ridgeFitSpec lam S
 ```
 
 This theorem concerns `ridgeFit1DExecExpr`, whose expression tree has its own association. The
@@ -1065,7 +1065,9 @@ Read these predicate names with their actual hypotheses. `IsInputToStateStable` 
 an inequality with supplied comparison functions but does not impose the usual class-K/class-KL
 conditions, and its input bound uses indices strictly before the current time. The real
 `stabilityMargin` uses a supremum; without nonemptiness and boundedness assumptions it need not
-represent an attained or usable radius.
+represent an attained or usable radius. `IsBiboStable` is a fixed-bound implication: input norm
+at most `bound` implies output norm at most that same bound; it does not quantify over separate
+input and output bounds.
 
 This vocabulary is here because neural-network learning theory is not limited to static supervised
 learning: recurrent models, samplers, controllers, RL policies interacting with state, and learned
@@ -1130,7 +1132,9 @@ Except.ok { isLyapunovStable := false,
 The convergence rate is $`0.693147\approx\ln 2`, which is exactly $`-\ln(d_1/d_0)` for a contraction
 factor of $`1/2`, so the estimator recovers the rate of the system it was given. And
 `isLyapunovStable` is `false`, for a system that is Lyapunov stable, asymptotically stable, and
-globally exponentially stable.
+globally exponentially stable. The reported `stabilityMargin` is the largest passing candidate
+from the fixed list `0.01, 0.05, 0.1, 0.2`; here `0.2` is the search cap, not a maximal
+invariant radius.
 
 The `false` comes from the test's fixed tolerance. `analyzeStability` uses
 fixed thresholds: tolerance $`0.1` for the Lyapunov test, $`0.01` for the asymptotic test,
@@ -1217,10 +1221,10 @@ The gaps in this layer are specific enough to name:
 
 - *Privacy*: no accountant, no calibration theorem for the Laplace or Gaussian mechanism, no
   composition theorem, and therefore no path from these definitions to a DP-SGD claim.
-- *Robustness constants*: the proved Lipschitz bound is the Frobenius one, and the MLP result
-  returns an existential rather than a formula, so using the explicit Frobenius layer bound directly
-  can produce a concrete mathematical radius.
-  The existential MLP theorem alone does not expose its witness formula.
+- *Robustness constants*: `mlp_lipschitz_frobenius` exposes the product of the two layerwise
+  Frobenius norms. This supplies an explicit upper bound for a radius calculation, but a sharper
+  spectral bound would need another theorem. The companion existential MLP theorem alone does
+  not expose its witness formula.
 - *Stability*: the only proved bound is for the closed-form one-dimensional ridge estimator. An
   iterative solver, a minibatch trainer, or an early-stopped run needs its own argument, and the
   generalization consequence of stability is not formalized here at all.

@@ -39,7 +39,7 @@ def flatten (modules : Array CapsuleModule) : Array KernelCapsule :=
 /-- First repeated module name, if the registry contains two contributions with the same name. -/
 def firstDuplicateModuleName? (modules : Array CapsuleModule) : Option String :=
   modules.findSome? fun module =>
-    if 1 < (modules.filter fun candidate => candidate.name == module.name).size then
+    if 1 < modules.countP (fun candidate => candidate.name == module.name) then
       some module.name
     else
       none
@@ -47,7 +47,7 @@ def firstDuplicateModuleName? (modules : Array CapsuleModule) : Option String :=
 /-- First repeated capsule identity after flattening, if one exists. -/
 def firstDuplicateCapsuleName? (capsules : Array KernelCapsule) : Option String :=
   capsules.findSome? fun capsule =>
-    if 1 < (capsules.filter capsule.sameIdentity).size then
+    if 1 < capsules.countP capsule.sameIdentity then
       some capsule.name
     else
       none

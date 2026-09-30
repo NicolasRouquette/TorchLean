@@ -5,6 +5,8 @@ Authors: TorchLean contributors
 -/
 module
 
+public import Mathlib.Algebra.BigOperators.Ring.List
+public import Mathlib.Algebra.GroupWithZero.Nat
 public import Mathlib.Data.Fintype.Prod
 public import Mathlib.Logic.Equiv.Fin.Basic
 
@@ -45,9 +47,8 @@ abbrev Shape := List Nat
 namespace Shape
 
 /-- The number of scalar entries in a shape. The empty product is one. -/
-def size : Shape → Nat
-  | [] => 1
-  | n :: s => n * size s
+def size (s : Shape) : Nat :=
+  s.prod
 
 /-- The number of axes in a shape. -/
 def rank (s : Shape) : Nat :=
@@ -67,25 +68,15 @@ def rank (s : Shape) : Nat :=
   simp [rank]
 
 /-- Shape size is the ordinary product of its dimension list. -/
-theorem size_eq_prod (s : Shape) : size s = s.prod := by
-  induction s with
-  | nil => rfl
-  | cons dimension shape ih =>
-      simp only [size_cons, List.prod_cons, ih]
+theorem size_eq_prod (s : Shape) : size s = s.prod := rfl
 
 /-- Concatenating shapes multiplies their numbers of entries. -/
-@[simp] theorem size_append (s t : Shape) : size (s ++ t) = size s * size t := by
-  induction s with
-  | nil => simp
-  | cons n s ih => simp [ih, Nat.mul_assoc]
+@[simp] theorem size_append (s t : Shape) : size (s ++ t) = size s * size t :=
+  List.prod_append
 
 /-- A shape has no entries exactly when one of its axes has length zero. -/
 theorem size_eq_zero_iff {s : Shape} : size s = 0 ↔ 0 ∈ s := by
-  induction s with
-  | nil => simp
-  | cons n s ih =>
-      rw [size_cons, List.mem_cons, Nat.mul_eq_zero, ih]
-      exact or_congr eq_comm Iff.rfl
+  simpa only [size] using (List.prod_eq_zero_iff (l := s))
 
 end Shape
 

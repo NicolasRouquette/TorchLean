@@ -30,7 +30,8 @@ $$
 
 where:
 - `evalRuntime` evaluates the AST using the executable IEEE-754 kernel `ExecFloat.Binary 8 23`, and
-- `evalSpec` evaluates the AST in `ℝ`, rounding after every operation using `fp32Round`.
+- `evalSpec` evaluates the AST in `ℝ`, rounding after every operation using `Model.roundAt
+FloatFormat.binary32`.
 
 This mirrors the standard mathematical model of float32 evaluation: compute the real operation, then
 round-to-float32 at each node, provided we stay on the finite path (no NaNs/Infs, no division by
@@ -93,12 +94,13 @@ def evalRuntime (env : Nat → (ExecFloat.Binary 8 23)) : Expr → (ExecFloat.Bi
 def evalSpec (env : Nat → ℝ) : Expr → ℝ
   | .var i => env i
   | .const x => (toModel x).toReal
-  | .add a b => fp32Round (evalSpec env a + evalSpec env b)
-  | .sub a b => fp32Round (evalSpec env a - evalSpec env b)
-  | .mul a b => fp32Round (evalSpec env a * evalSpec env b)
-  | .div a b => fp32Round (evalSpec env a / evalSpec env b)
-  | .fma a b c => fp32Round (evalSpec env a * evalSpec env b + evalSpec env c)
-  | .sqrt a => fp32Round (Real.sqrt (evalSpec env a))
+  | .add a b => Model.roundAt FloatFormat.binary32 (evalSpec env a + evalSpec env b)
+  | .sub a b => Model.roundAt FloatFormat.binary32 (evalSpec env a - evalSpec env b)
+  | .mul a b => Model.roundAt FloatFormat.binary32 (evalSpec env a * evalSpec env b)
+  | .div a b => Model.roundAt FloatFormat.binary32 (evalSpec env a / evalSpec env b)
+  | .fma a b c => Model.roundAt FloatFormat.binary32
+    (evalSpec env a * evalSpec env b + evalSpec env c)
+  | .sqrt a => Model.roundAt FloatFormat.binary32 (Real.sqrt (evalSpec env a))
 
 /-!
 ## "Finite evaluation" witnesses (finite at every intermediate node)
@@ -158,7 +160,8 @@ inductive FiniteEval (env : Nat → (ExecFloat.Binary 8 23)) : Expr → FloatLib
 namespace FiniteEval
 
 /-- Extract the decoded dyadic of the runtime evaluation from a `FiniteEval` witness. -/
-theorem toDyadic? {env : Nat → (ExecFloat.Binary 8 23)} {e : Expr} {d : FloatLib.Numerics.Dyadic} :
+theorem toDyadic?_eq_some {env : Nat → (ExecFloat.Binary 8 23)} {e : Expr}
+    {d : FloatLib.Numerics.Dyadic} :
     FiniteEval env e d → (toModel (evalRuntime env e)).toDyadic? = some d := by
   intro h
   cases h with
@@ -197,7 +200,6 @@ theorem toReal_evalRuntime_eq_evalSpec (env : Nat → (ExecFloat.Binary 8 23)) :
     ∀ {e : Expr} {d : FloatLib.Numerics.Dyadic}, FiniteEval env e d →
       (toModel (evalRuntime env e)).toReal = evalSpec (fun i => (toModel (env i)).toReal) e := by
   intro e d h
-  let envS : Nat → ℝ := fun i => (toModel (env i)).toReal
   induction h with
   | var i d h =>
       simp [evalRuntime, evalSpec]
@@ -210,24 +212,26 @@ theorem toReal_evalRuntime_eq_evalSpec (env : Nat → (ExecFloat.Binary 8 23)) :
       have hfin : isFinite (ExecFloat.add xa xb) = true :=
         isFinite_eq_true_of_toDyadic?_some (x := ExecFloat.add xa xb) (d := dout) hout
       have href :
-          (toModel (ExecFloat.add xa xb)).toReal = fp32Round ((toModel xa).toReal +
+          (toModel (ExecFloat.add xa xb)).toReal = Model.roundAt FloatFormat.binary32
+            ((toModel xa).toReal +
             (toModel xb).toReal) :=
-        IEEE32Exec.toReal_add_eq_fp32Round_of_isFinite hfin
-      simpa [envS, xa, xb, evalRuntime, evalSpec, iha, ihb] using href
+        IEEE32Exec.toReal_add_eq_round_of_isFinite hfin
+      simpa [xa, xb, evalRuntime, evalSpec, iha, ihb] using href
   | sub ha hb hout iha ihb =>
       rename_i a b da db dout
       let xa := evalRuntime env a
       let xb := evalRuntime env b
-      have hxa : (toModel xa).toDyadic? = some da := FiniteEval.toDyadic? ha
-      have hxb : (toModel xb).toDyadic? = some db := FiniteEval.toDyadic? hb
+      have hxa : (toModel xa).toDyadic? = some da := FiniteEval.toDyadic?_eq_some ha
+      have hxb : (toModel xb).toDyadic? = some db := FiniteEval.toDyadic?_eq_some hb
       have hfin : isFinite (ExecFloat.sub xa xb) = true :=
         isFinite_eq_true_of_toDyadic?_some (x := ExecFloat.sub xa xb) (d := dout) hout
       have href :
-          (toModel (ExecFloat.sub xa xb)).toReal = fp32Round ((toModel xa).toReal -
+          (toModel (ExecFloat.sub xa xb)).toReal = Model.roundAt FloatFormat.binary32
+            ((toModel xa).toReal -
             (toModel xb).toReal) :=
-        IEEE32Exec.toReal_sub_eq_fp32Round_of_isFinite
+        IEEE32Exec.toReal_sub_eq_round_of_isFinite
           (isFinite_eq_true_of_toDyadic?_some hxa) (isFinite_eq_true_of_toDyadic?_some hxb) hfin
-      simpa [envS, xa, xb, evalRuntime, evalSpec, iha, ihb] using href
+      simpa [xa, xb, evalRuntime, evalSpec, iha, ihb] using href
   | mul ha hb hout iha ihb =>
       rename_i a b da db dout
       let xa := evalRuntime env a
@@ -235,32 +239,28 @@ theorem toReal_evalRuntime_eq_evalSpec (env : Nat → (ExecFloat.Binary 8 23)) :
       have hfin : isFinite (ExecFloat.mul xa xb) = true :=
         isFinite_eq_true_of_toDyadic?_some (x := ExecFloat.mul xa xb) (d := dout) hout
       have href :
-          (toModel (ExecFloat.mul xa xb)).toReal = fp32Round ((toModel xa).toReal *
+          (toModel (ExecFloat.mul xa xb)).toReal = Model.roundAt FloatFormat.binary32
+            ((toModel xa).toReal *
             (toModel xb).toReal) :=
-        IEEE32Exec.toReal_mul_eq_fp32Round_of_isFinite hfin
-      simpa [envS, xa, xb, evalRuntime, evalSpec, iha, ihb] using href
+        IEEE32Exec.toReal_mul_eq_round_of_isFinite hfin
+      simpa [xa, xb, evalRuntime, evalSpec, iha, ihb] using href
   | div ha hb hden hout iha ihb =>
       rename_i a b da db dout
       let xa := evalRuntime env a
       let xb := evalRuntime env b
-      have hxa : (toModel xa).toDyadic? = some da := FiniteEval.toDyadic? ha
-      have hxb : (toModel xb).toDyadic? = some db := FiniteEval.toDyadic? hb
       have hfin : isFinite (ExecFloat.div xa xb) = true :=
         isFinite_eq_true_of_toDyadic?_some (x := ExecFloat.div xa xb) (d := dout) hout
       have href :
-          (toModel (ExecFloat.div xa xb)).toReal = fp32Round ((toModel xa).toReal /
+          (toModel (ExecFloat.div xa xb)).toReal = Model.roundAt FloatFormat.binary32
+            ((toModel xa).toReal /
             (toModel xb).toReal) :=
-        IEEE32Exec.toReal_div_eq_fp32Round (x := xa) (y := xb) (dx := da) (dy := db) hxa hxb hden
-          hfin
-      simpa [envS, xa, xb, evalRuntime, evalSpec, iha, ihb] using href
+        IEEE32Exec.toReal_div_eq_round_of_isFinite xa xb hfin
+      simpa [xa, xb, evalRuntime, evalSpec, iha, ihb] using href
   | fma ha hb hc hout iha ihb ihc =>
       rename_i a b c da db dc dout
       let xa := evalRuntime env a
       let xb := evalRuntime env b
       let xc := evalRuntime env c
-      have hxa : (toModel xa).toDyadic? = some da := FiniteEval.toDyadic? ha
-      have hxb : (toModel xb).toDyadic? = some db := FiniteEval.toDyadic? hb
-      have hxc : (toModel xc).toDyadic? = some dc := FiniteEval.toDyadic? hc
       have hfin :
           isFinite
             ((ExecFloat.Binary.fmaWithRounding (rounding := .nearestEven)) xa xb xc) = true :=
@@ -270,23 +270,22 @@ theorem toReal_evalRuntime_eq_evalSpec (env : Nat → (ExecFloat.Binary 8 23)) :
       have href :
           (toModel ((ExecFloat.Binary.fmaWithRounding (rounding := .nearestEven))
             xa xb xc)).toReal =
-              fp32Round ((toModel xa).toReal * (toModel xb).toReal + (toModel xc).toReal) :=
-        IEEE32Exec.toReal_fma_eq_fp32Round (x := xa) (y := xb) (z := xc) (dx := da) (dy := db)
-          (dz := dc) hxa hxb hxc hfin
-      simpa [envS, xa, xb, xc, evalRuntime, evalSpec, iha, ihb, ihc] using href
+              Model.roundAt FloatFormat.binary32
+                ((toModel xa).toReal * (toModel xb).toReal + (toModel xc).toReal) :=
+        IEEE32Exec.toReal_fma_eq_round_of_isFinite xa xb xc hfin
+      simpa [xa, xb, xc, evalRuntime, evalSpec, iha, ihb, ihc] using href
   | sqrt ha hout iha =>
       rename_i a da dout
       let xa := evalRuntime env a
-      have hxa : (toModel xa).toDyadic? = some da := FiniteEval.toDyadic? ha
       have hfin :
           isFinite ((ExecFloat.Binary.sqrtWithRounding (rounding := .nearestEven)) xa) = true :=
         isFinite_eq_true_of_toDyadic?_some
           (x := (ExecFloat.Binary.sqrtWithRounding (rounding := .nearestEven)) xa) (d := dout) hout
       have href :
           (toModel ((ExecFloat.Binary.sqrtWithRounding (rounding := .nearestEven)) xa)).toReal =
-            fp32Round (Real.sqrt ((toModel xa).toReal)) :=
-        IEEE32Exec.toReal_sqrt_eq_fp32Round (x := xa) (dx := da) hxa hfin
-      simpa [envS, xa, evalRuntime, evalSpec, iha] using href
+            Model.roundAt FloatFormat.binary32 (Real.sqrt ((toModel xa).toReal)) :=
+        IEEE32Exec.toReal_sqrt_eq_round_of_isFinite xa hfin
+      simpa [xa, evalRuntime, evalSpec, iha] using href
 
 end
 

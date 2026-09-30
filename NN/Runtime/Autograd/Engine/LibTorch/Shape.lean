@@ -34,10 +34,6 @@ namespace Broadcast
 
 /-! ### `axisMap` generation -/
 
-/-- Shift every nonzero entry of a partial axis map up by one, making room for a leading axis. -/
-def shiftInputAxes (m : Array Nat) : Array Nat :=
-  m.map (fun v => if v == 0 then 0 else v + 1)
-
 /-- Generate the CUDA `axisMap` for right-aligned broadcasting.
 
 The proof establishes compatibility, but the map itself is determined solely by the two ranks:
@@ -46,11 +42,13 @@ def axisMap {s₁ s₂ : Shape} (_cb : Shape.CanBroadcastTo s₁ s₂) : Array N
   Array.replicate (Shape.rank s₂ - Shape.rank s₁) 0 ++
     (Array.range (Shape.rank s₁)).map (fun i => i + 1)
 
-/-- CUDA axis map that restores the axis removed by `shapeAfterSum`. -/
-def afterSumAxisMap : (s : Shape) → (axis : Nat) → Array Nat
-  | .scalar, _ => #[]
-  | .dim _ inner, 0 => #[0] ++ (Array.range (Shape.rank inner)).map (fun i => i + 1)
-  | .dim _ inner, Nat.succ axis => #[1] ++ shiftInputAxes (afterSumAxisMap inner axis)
+/-- CUDA axis map that restores the axis removed by `shapeAfterSum`.
+
+An out-of-range axis leaves the map unchanged, matching `shapeAfterSum`. Constructing each entry
+once avoids repeatedly copying and shifting the suffix while descending through the shape. -/
+def afterSumAxisMap (s : Shape) (axis : Nat) : Array Nat :=
+  Array.ofFn fun i : Fin (Shape.rank s) =>
+    if i.val < axis then i.val + 1 else if i.val = axis then 0 else i.val
 
 /-- CUDA metadata for `TorchLean.Tensor.broadcastAfterSum`. -/
 def afterSumArgs (s : Shape) (axis : Nat) : Array Nat × Array Nat × Array Nat :=

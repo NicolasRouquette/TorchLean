@@ -428,6 +428,11 @@ main :not(pre) > code:not(.math):not(.bp_math) {
   word-break: break-word;
 }
 
+/* Lean declaration tooltips are attached outside main. */
+.tippy-box[data-theme~="lean"] .hover-info code {
+  overflow-wrap: anywhere;
+}
+
 main code.math,
 main code.bp_math {
   border: 0;
@@ -1535,8 +1540,9 @@ def rewrite_repository_links(root: Path) -> None:
             return match.group(0)
 
         api_href = api_href_for(normalized)
-        if api_href is not None:
-            return f'href={quote}{api_href}{quote}'
+        # Source line anchors belong to GitHub; declaration anchors belong to DocGen.
+        if api_href is not None and not re.fullmatch(r"L\d+(?:-L\d+)?", frag):
+            return f'href={quote}{api_href}{sep}{frag}{quote}'
 
         local_target = repo_root / normalized
         if local_target.is_dir() or normalized.endswith("/"):
@@ -1765,10 +1771,12 @@ def main() -> int:
         raise SystemExit(f"missing generated stylesheet: {css_path}")
 
     css = css_path.read_text()
-    marker = "/* TorchLean guide polish"
-    idx = css.find(marker)
-    if idx != -1:
-        css = css[:idx].rstrip()
+    # The terminal rules precede the older shell marker. Strip from the first
+    # polish block so repeated runs also replace those rules.
+    markers = ("/* Shell input and recorded transcripts", "/* TorchLean guide polish")
+    starts = [idx for marker in markers if (idx := css.find(marker)) != -1]
+    if starts:
+        css = css[:min(starts)].rstrip()
     css_path.write_text(css.rstrip() + TORCHLEAN_CSS)
     write_js(args.guide)
     repair_generated_table_css(args.guide)

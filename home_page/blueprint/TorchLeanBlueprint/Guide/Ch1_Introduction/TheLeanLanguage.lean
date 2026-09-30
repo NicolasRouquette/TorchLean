@@ -34,10 +34,11 @@ Create a file named `Primer.lean` at the TorchLean repository root and run it:
 ```terminal
 # Check the saved primer file in the repository environment.
 cd TorchLean
-lake env lean Primer.lean
+scripts/lake.sh env lean Primer.lean
 ```
 
-`lake env` runs the command in the project's environment, including the search paths for its Lean
+`scripts/lake.sh env` runs the command in the project's environment, including the search paths
+for its Lean
 libraries. The checkout pins its toolchain in `lean-toolchain`. Use this command from the repository
 root so that `NN.API` resolves against the project and its dependencies.
 
@@ -58,7 +59,8 @@ prints exactly one line:
 [0.250000, -0.750000]
 ```
 
-Repository Lake targets enable warnings-as-errors. A direct `lake env lean Primer.lean` invocation
+Repository Lake targets enable warnings-as-errors. A direct `scripts/lake.sh env lean
+Primer.lean` invocation
 sets the search environment but does not automatically apply every target-specific compiler option;
 inspect any warnings as well as errors.
 
@@ -781,8 +783,9 @@ def Affine.forward (p : Affine) (x : Float) : Float :=
 ```
 
 `deriving Repr` asks Lean to generate the printing code, which is why `#eval` on an `Affine` value
-would show its fields. Note that `Affine.forward` is called as `p.forward x` as well: any function
-whose first explicit argument has type `Affine` can be written with dot notation, and TorchLean's
+would show its fields. Note that `Affine.forward` is called as `p.forward x` as well: functions
+in the `Affine` namespace can use dot notation to supply the appropriate
+`Affine` argument, and TorchLean's
 whole session and trainer API is built on that convention.
 
 The same record syntax lets us configure a trainer:
@@ -1034,7 +1037,8 @@ needed by a pure specification must be supplied as an argument, where it can als
 statement of a theorem.
 
 In an executable module, an entry point such as `main : List String → IO UInt32` receives the
-command-line arguments and performs the run, which is how `lake exe torchlean` reaches the examples.
+command-line arguments and performs the run, which is how `scripts/lake.sh exe torchlean`
+reaches the examples.
 
 # Immutability And Storage Reuse
 
@@ -1046,8 +1050,8 @@ index calculation, and reference-counting overhead still depend on the operation
 can update uniquely referenced objects in place, as described in
 *Counting Immutable Beans* {Informal.citep immutablebeans2019}[]. The following loops expose two
 ownership patterns by repeatedly updating entry zero. The first keeps no
-reference to the previous value, so its tensor is uniquely owned; the second holds `original` alive
-across every update, so it is not:
+reference to the previous value, permitting reuse when the buffer is uniquely owned; the second
+holds `original` alive across updates and must preserve its contents:
 
 ```lean (name := langReuse)
 -- Compare replacing the current tensor with retaining an

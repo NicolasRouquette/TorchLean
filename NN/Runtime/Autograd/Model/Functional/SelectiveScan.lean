@@ -47,7 +47,7 @@ def variableReference {state : Nat} :
       let bTail ← slice 1 count (by omega) b
       let xTail ← slice 1 count (by omega) x
       let tail ← variableReference aTail bTail xTail next
-      let head ← reshape (s₂ := [1, state]) next (by simp [Shape.eraseAxis, Shape.size])
+      let head ← reshape (s₂ := [1, state]) next (by simp [Shape.size])
       let result ← concat head tail
       pure (by simpa [Nat.one_add] using result)
 

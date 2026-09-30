@@ -167,8 +167,8 @@ def compileParallelEinsumOutput?
                   pure (nativeLoop, referenceLoop, hNativeReference)
         let hCoordinateChunk ←
           mkAppM ``coordinateFoldl_push_outerRange_eq_array_ofFn #[
-            outerLength, startExpr, countExpr, innerShapeExpr, hRange,
-            reference]
+            outerLength, startExpr, countExpr, innerShapeExpr, capacityExpr,
+            hRange, reference]
         let hCoordinateChunkType ←
           withTransparency .reducible <| whnf (← inferType hCoordinateChunk)
         let some (_, observedCoordinateFold, _) := hCoordinateChunkType.eq?

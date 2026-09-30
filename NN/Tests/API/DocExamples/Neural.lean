@@ -215,7 +215,7 @@ namespace PrintSummary
 def model : nn.Sequential [2] [1] :=
   nn.build 0 nn.Sequential![nn.linear 2 8, nn.relu, nn.linear 8 1]
 
--- Prints one row per layer with its kind, shapes, and parameter count, then the totals. The
+-- Prints the totals, then one row per layer with its kind, shapes, and parameter count. The
 -- counterpart of `print(model)` plus `torchinfo.summary`.
 def main : IO Unit := nn.printSummary model
 

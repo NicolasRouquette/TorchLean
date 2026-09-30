@@ -106,25 +106,17 @@ theorem contains_getAtOrZero {dims : List Nat}
     · simpa only [ite_eq_left hi] using (hc index).2
     · simp only [ite_eq_right hi, le_refl]
 
-private theorem foldl_le_of_step {ι : Type} (indices : List ι)
-    {lower upper : ℝ → ι → ℝ}
-    (step : ∀ a b index, a ≤ b → lower a index ≤ upper b index)
-    {a b : ℝ} (initial : a ≤ b) :
-    indices.foldl lower a ≤ indices.foldl upper b := by
-  induction indices generalizing a b with
-  | nil => exact initial
-  | cons index indices ih => exact ih (step a b index initial)
-
-private theorem foldlIndices_le_of_step (dims : List Nat)
-    {lower upper : ℝ → List Nat → ℝ}
-    (step : ∀ a b indices, a ≤ b → lower a indices ≤ upper b indices)
-    {a b : ℝ} (initial : a ≤ b) :
-    foldlIndices dims a lower ≤ foldlIndices dims b upper := by
-  induction dims generalizing lower upper a b with
+/-- The spatial iterator preserves a binary relation independently of rank and empty extents. -/
+theorem foldlIndices_rel {A B : Type} (relation : A → B → Prop) (dims : List Nat)
+    {left : A → List Nat → A} {right : B → List Nat → B}
+    (step : ∀ a b i, relation a b → relation (left a i) (right b i))
+    {a : A} {b : B} (initial : relation a b) :
+    relation (foldlIndices dims a left) (foldlIndices dims b right) := by
+  induction dims generalizing left right a b with
   | nil => exact step a b [] initial
   | cons n dims ih =>
-      apply foldl_le_of_step (List.finRange n) _ initial
-      intro lo hi head h
+      apply List.foldl_rel initial
+      intro head _ a b h
       exact ih (fun a b tail hab => step a b (head.val :: tail) hab) h
 
 private theorem mul_endpoints_enclose {lo hi value weight : ℝ}
@@ -172,9 +164,9 @@ theorem ibpConv_contains_groupedConv_real (leading : Shape)
         BoundOps.addDown, BoundOps.addUp, BoundOps.mulDown, BoundOps.mulUp]
       constructor
       · apply add_le_add_left
-        apply foldl_le_of_step _ _ le_rfl
-        intro lo exactValue localChannel hacc
-        apply foldlIndices_le_of_step _ _ hacc
+        apply List.foldl_rel le_rfl
+        intro localChannel _ lo exactValue hacc
+        apply foldlIndices_rel (· ≤ ·) _ _ hacc
         intro lo exactValue kernelIndex hacc
         cases hindex : mkDilatedInputIdx? outIndex.toList kernelIndex
             stride.data.toList dilation.data.toList padding.data.toList with
@@ -189,9 +181,9 @@ theorem ibpConv_contains_groupedConv_real (leading : Shape)
                   ((outChannel.val / (outC / groups)) * (inC / groups) +
                     localChannel.val) :: kernelIndex)) hx.1 hx.2).1
       · apply add_le_add_left
-        apply foldl_le_of_step _ _ le_rfl
-        intro exactValue hi localChannel hacc
-        apply foldlIndices_le_of_step _ _ hacc
+        apply List.foldl_rel le_rfl
+        intro localChannel _ exactValue hi hacc
+        apply foldlIndices_rel (· ≤ ·) _ _ hacc
         intro exactValue hi kernelIndex hacc
         cases hindex : mkDilatedInputIdx? outIndex.toList kernelIndex
             stride.data.toList dilation.data.toList padding.data.toList with

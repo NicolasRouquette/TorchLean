@@ -81,10 +81,12 @@ For a leaf, the semantic claim is that a margin bound holds at every point of it
 a quantified statement about a fixed network, even though a finite artifact may carry evidence for
 it. Checking only the exported endpoints and margins does not establish that statement.
 
-TorchLean's leaf format currently checks a narrower set of facts: dimensions, containment, witness
-indices, and comparisons among exported numbers. It can detect inconsistent fields. A consistently
-misapplied sign or axis convention can still pass, because the artifact has no network or transfer
-rules against which to check that convention.
+TorchLean's leaf format currently checks a narrower set of facts: dimensions, containment, root
+coverage, witness indices, and comparisons among exported numbers. It can detect inconsistent
+fields.
+A consistently misapplied sign or axis convention can still pass, because the artifact has no
+network
+or transfer rules against which to check that convention.
 
 The phrase *checked by Lean* covers everything from parsing a JSON file to replaying every bound
 computation and deriving a theorem. TorchLean's leaf checker sits near the parsing end. The
@@ -128,7 +130,7 @@ python3 scripts/verification/abcrown/export_leaf_artifact.py \
   --check
 ```
 
-The `--check` option runs `lake exe verify -- abcrown-leaf` on the file it just wrote.
+The `--check` option runs `scripts/lake.sh exe verify -- abcrown-leaf` on the file it just wrote.
 The exported artifact is
 
 ```
@@ -201,7 +203,8 @@ python3 scripts/verification/abcrown/export_leaf_artifact.py \
 ```
 
 The export fails before writing the requested artifact. This format represents leaves with
-positive witnesses; a domain without one cannot be encoded as verified. For a root-region claim,
+positive witnesses; a domain without one cannot be encoded in this positive-witness format. For a
+root-region claim,
 such a failure cannot be repaired by simply dropping that domain. Its region still needs coverage
 and a valid bound.
 
@@ -270,16 +273,15 @@ python3 scripts/verification/abcrown/export_leaf_artifact.py \
   --root-lo=-2,-2 --root-hi=2,2 --check
 ```
 
-The leaves cover $`[-1,1]^2`. The declared property region is $`[-2,2]^2`. The checker accepts, and
-it is right to: every check it advertises still holds. It never claimed the leaves *cover* the
-root. Coverage is a union condition over all leaves, the current checker does not compute the union
-of the listed boxes, and the schema does not
-record the producer's search tree.
+The leaves cover $`[-1,1]^2`. The declared property region is $`[-2,2]^2`. Every leaf passes
+containment, but the current checker rejects the artifact because the leaves do not cover the
+root. Coverage is a union condition over all leaves. The checker uses the supplied endpoints
+to check that condition without requiring the producer's search tree.
 
-An accepted `abcrown-leaf` artifact establishes that *each listed leaf is a well-formed sub-box
-of the declared root, and each carries a witness that passes its own arithmetic test.* Whether the
-listed leaves exhaust the property region is a claim the producer makes in prose, and the checker
-does not see it.
+An accepted `abcrown-leaf` artifact passes checks that *each listed leaf is a well-formed sub-box
+of the declared root, the leaves cover that root, and each carries a witness that passes its own
+arithmetic test.* The lower bounds themselves remain the producer's claims: coverage does not
+establish their validity for the network.
 
 The wide-root example separates two questions that often get compressed into “the boxes look
 right.” Each leaf is a valid subdomain of the declared root. But a point such as `(1.5, 0.0)`
@@ -315,9 +317,10 @@ python3 scripts/verification/abcrown/export_leaf_artifact.py \
   --out /tmp/torchlean-hole.json --check
 ```
 
-Both leaves pass, yet neither covers a point whose first coordinate lies strictly between `0.0`
-and `0.5`. We can check acceptance and the missing coverage side by side, using the same two
-predicates the leaf checker uses:
+Both leaves pass the local containment and witness checks, yet neither covers a point whose first
+coordinate lies strictly between `0.0` and `0.5`. The CLI's separate coverage check rejects this
+artifact. We can inspect why local checks alone are insufficient using the same two
+local predicates the leaf checker uses:
 
 ```lean (name := tsCoverage)
 /-- One entry of the artifact's `leaves` array, carrying
@@ -361,15 +364,17 @@ def inBox (lo hi p : TorchLean.Tensor Float [2]) : Bool :=
 (true, false)
 ```
 
-Both leaves pass both checks, and `(0.25, 0.0)` is inside the root and inside no leaf. The checker
-has checked containment and the witness comparisons, but the artifact contains no partition
-evidence. Passing these local checks leaves the property on $`[-1,1]^2` unresolved, even
-if we grant the claimed bound on each leaf.
+Both leaves pass both local checks, and `(0.25, 0.0)` is inside the root and inside no leaf.
+The displayed experiment stops before the CLI's coverage check. It shows why passing the local
+checks alone leaves the property on $`[-1,1]^2` unresolved, even if we grant the claimed bound on
+each leaf.
 
 Root coverage requires a separate union-of-boxes check or evidence of a complete partition.
-Split-tree data could supply that evidence directly. With only finite endpoints, coverage can also
-be decided geometrically, but in several dimensions sorting by a single coordinate is insufficient.
-The current leaf checker performs neither form of coverage check.
+The current `leavesCoverRoot` implementation collects sorted distinct endpoints on each axis
+and checks the resulting closed grid cells. Every cell must lie in at least one leaf. Axes
+on which every leaf spans the root need no subdivision. The check refuses a grid exceeding
+one million cells, so a large artifact can require another representation or checking strategy.
+In several dimensions, sorting by a single coordinate would be insufficient.
 
 ## Interval Coverage Checking
 
@@ -450,9 +455,10 @@ Finite floating-point endpoints represent exact dyadic coordinates. An exact uni
 therefore detect a real gap between two endpoints even if it is only one ULP wide; that width
 depends
 on the endpoints' magnitude and is not uniformly $`2^{-24}`. Such a gap cannot be dismissed in a
-universal robustness claim. Recording split coordinates and values in a tree would give the checker
-a direct partition witness and avoid reconstructing the union geometrically. Neither form of
-coverage evidence is checked by the current leaf workflow.
+universal robustness claim. Recording split coordinates and values in a tree could instead give
+the checker a direct partition witness and avoid reconstructing the union geometrically. The
+current leaf
+workflow uses the endpoint grid; it does not consume such a tree.
 
 # Artifact Rejection Tests
 
@@ -464,21 +470,21 @@ Push a leaf coordinate outside the root, `hi[1] = 2.0`, and save the copy as
 `/tmp/torchlean-escaped.json`:
 
 ```terminal
-lake exe verify -- abcrown-leaf /tmp/torchlean-escaped.json
+scripts/lake.sh exe verify -- abcrown-leaf /tmp/torchlean-escaped.json
 ```
 
 Leave the arithmetic alone and inflate only the bookkeeping field, `witness_margin = 5.0` where the
 real margin is `1.0`. Save this copy as `/tmp/torchlean-margin.json`:
 
 ```terminal
-lake exe verify -- abcrown-leaf /tmp/torchlean-margin.json
+scripts/lake.sh exe verify -- abcrown-leaf /tmp/torchlean-margin.json
 ```
 
 Point the witness past the end of the bound vector, `witness_idx = 3` in a one-element `lb`.
 Save this copy as `/tmp/torchlean-idx.json`:
 
 ```terminal
-lake exe verify -- abcrown-leaf /tmp/torchlean-idx.json
+scripts/lake.sh exe verify -- abcrown-leaf /tmp/torchlean-idx.json
 ```
 
 The diagnostics distinguish containment, prune, and margin failures. An out-of-range index also
@@ -534,13 +540,13 @@ part.
 Run the all-in-Lean workflow with its default settings:
 
 ```terminal
-lake exe verify -- twostage-torchlean-cegis-van
+scripts/lake.sh exe verify -- twostage-torchlean-cegis-van
 ```
 
 The hybrid runner re-exports its stage-one weights when asked:
 
 ```terminal
-lake exe verify -- twostage-hybrid-van-stage2 --stage1
+scripts/lake.sh exe verify -- twostage-hybrid-van-stage2 --stage1
 ```
 
 Completing either workflow does not by itself establish the requested Lyapunov conditions.
@@ -827,12 +833,15 @@ semantic proof obligations described below.
 The leaf workflow checks that exported data satisfy its structural contract. Its current limits
 are concrete:
 
-- *No coverage.* Leaves need not exhaust the root, as the wide-root example above shows.
+- *Bounded coverage checking.* The endpoint-grid check rejects missing regions, as in the
+  wide-root and hole examples above. It refuses grids with more than one million cells.
 - *No replay.* The lower bounds are read, not recomputed against the network.
 - *No soundness lemma for the predicates.* `boxWithin`, `refutesThreshold`, and
   `refutesThresholdAt` in {src "NN/Verification/Util/Tensor.lean"}[`Util/Tensor.lean`] are `Bool`
   functions with no theorem tying them to a `Prop`-level statement about box inclusion or margin
-  refutation. They compute the right comparisons, and the {ref "certificates"}[certificate chapter]
+  refutation. The endpoint-grid coverage check likewise has no theorem connecting acceptance to
+  set-theoretic coverage. The local predicates compute the stated comparisons, and the
+  {ref "certificates"}[certificate chapter]
   evaluates them on both sides of every boundary, but a reader who wants a proof rather than a test
   will not find one yet.
 

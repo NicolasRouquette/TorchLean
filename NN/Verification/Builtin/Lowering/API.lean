@@ -57,12 +57,6 @@ def LoweredIR.seedInputBox {α : Type} [TorchLean.Storage α] [Context α]
     NN.MLTheory.CROWN.Graph.ParamStore α :=
   lowered.ps.seedInputBox lowered.inputId xB
 
-/-- Flatten a shaped center/radius pair into the verifier input-box representation. -/
-def lInfBox {α : Type} [TorchLean.Storage α] [Context α]
-    [NN.MLTheory.CROWN.BoundOps α] {s : Shape}
-    (center radius : Tensor α s) : NN.MLTheory.CROWN.FlatBox α :=
-  NN.MLTheory.CROWN.FlatBox.lInfBox (α := α) center radius
-
 /-- Uniform $\ell^\infty$ box around a shaped TorchLean input tensor. -/
 def lInfBall {α : Type} [TorchLean.Storage α] [Context α]
     [NN.MLTheory.CROWN.BoundOps α] {s : Shape}
@@ -126,18 +120,6 @@ def LoweredIR.outputBoxOrThrow {α : Type} [TorchLean.Storage α] [Context α]
   match lowered.outputBox? boxes with
   | .ok outB => pure outB
   | .error msg => throw <| IO.userError msg
-
-/-- Read the verifier output affine form from a forward affine result array. -/
-def LoweredIR.outputAffine? {α : Type} [TorchLean.Storage α] [Context α]
-    (lowered : LoweredIR α)
-    (affs : Array (Option (NN.MLTheory.CROWN.Graph.FlatAffine α))) :
-    Except String (NN.MLTheory.CROWN.Graph.FlatAffine α) := do
-  match affs[lowered.outputId]? with
-  | some (some outAff) => pure outAff
-  | some none => throw s!"verification output affine missing at node {lowered.outputId}"
-  | none =>
-      throw (s!"verification output node {lowered.outputId} is out of bounds " ++
-        s!"for {affs.size} affine entries")
 
 /--
 Compute CROWN output bounds on a selected input box. Exact-reassociation backends use a forward

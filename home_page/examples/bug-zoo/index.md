@@ -67,7 +67,7 @@ the supported IR fragment preserves node denotations in a Lean reference evaluat
 excludes raw logarithm nodes; external compiler and native-kernel conformance remain separate obligations.
 
 The final geometry case starts from tensors exported by a detector. Lean recomputes camera
-projection and positive depth, then checks that the reported two-dimensional box encloses every
+projection and positive depth, then checks that the reported two-dimensional box, expanded by its explicit tolerance, encloses every
 projected corner. The detector remains an external producer; the enclosure claim does not.
 
 ## Run the Examples
@@ -116,7 +116,7 @@ The source files and the contracts they expose are listed below.
 | `ShapeAndBroadcast.lean` | Missing axes and silent broadcasts | Dimension changes are explicit terms with shape evidence. |
 | `CompilerBoundary.lean` | Optimized graphs silently changing semantics | Successful supported IR lowering preserves reference node denotations, assuming no raw logarithm nodes. |
 | `FloatBoundary.lean` | Real-valued reasoning applied to Float32 runs | FloatLib proves native round trips, finite-input add/sub agreement, and total square-root agreement through native export; configured division has a separate software-model refinement. |
-| `Geometry3DProjection.lean` | Camera convention, depth, layout, and projection-box errors | The checker recomputes projection, positive depth, and 2D box enclosure. |
+| `Geometry3DProjection.lean` | Camera convention, depth, layout, and projection-box errors | The checker recomputes projection, positive depth, and 2D box enclosure up to the declared tolerance. |
 
 ## Two Checked Statements
 

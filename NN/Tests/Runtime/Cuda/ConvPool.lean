@@ -583,15 +583,6 @@ def expectCudaResultError {α : Type} (label : String) : Except String α → IO
   | .error _ => pure ()
   | .ok _ => throw <| IO.userError s!"{label}: expected rejection"
 
-/-- Require a pooling operation with invalid geometry to produce the specified empty shape. -/
-def expectCudaEmptyOutput (label : String) (expectedShape : Shape)
-    (result : Except String (Runtime.Autograd.LibTorch.Tape × Nat)) : IO Unit := do
-  let (tape, id) ← Utils.okOrThrow result
-  let output ← Utils.okOrThrow <|
-    Runtime.Autograd.LibTorch.Tape.requireValue tape id expectedShape
-  unless Runtime.Autograd.LibTorch.Buffer.size output = 0 do
-    throw <| IO.userError s!"{label}: expected an empty native buffer"
-
 /-- Check the stable smooth-max formula at scales where $\beta x$ overflows FP32. -/
 def runSmoothMaxPoolStabilityCase (beta expectedSign : Float)
     (expectedDx : Tensor Float [1, 1, 2]) : IO Unit := do
@@ -814,10 +805,52 @@ def runZeroStrideChecks : IO Unit := do
       (d := 2) (C := 1) (inSpatial := inSpatial) (kernel := kernel)
       (stride := zeroStride) (padding := noPadding) inputId)
 
+/--
+Distinct channels, strided windows and nonuniform cotangents expose channel/axis permutations.
+-/
+def Internal.runStridedChannels : IO Unit := do
+  let spatial : Tensor Nat [1] := [4]
+  let window : Tensor Nat [1] := [2]
+  let stride : Tensor Nat [1] := [2]
+  let padding : Tensor Nat [1] := [0]
+  let x : Tensor Float [2, 4] := [[1.0, -2.0, 3.0, 4.0], [0.5, 2.0, -1.0, 3.0]]
+  let k : Tensor Float [2, 2, 2] :=
+    [[[0.5, -1.0], [2.0, 0.25]], [[-0.5, 0.75], [1.0, -2.0]]]
+  let b : Tensor Float [2] := [0.25, -0.5]
+  let seed : Tensor Float [2, 2] := [[1.0, -2.0], [0.5, 3.0]]
+  let (cpu1, ck) := Tape.empty.leaf k
+  let (cpu2, cb) := cpu1.leaf b
+  let (cpu3, cx) := cpu2.leaf x
+  let (cpu, cy) ← Utils.okOrThrow <| Tape.conv (t := cpu3)
+    (inC := 2) (outC := 2) (kernel := window) (stride := stride)
+    (padding := padding) (inSpatial := spatial) ck cb cx
+  let cpuGradients ← Utils.okOrThrow <|
+    Tape.backwardDenseAll cpu cy (Spec.SomeTensor.ofTensor seed)
+  let (gpu1, gk) := Runtime.Autograd.LibTorch.Tape.empty.leaf (Utils.tensorToAnyBuffer k)
+  let (gpu2, gb) := gpu1.leaf (Utils.tensorToAnyBuffer b)
+  let (gpu3, gx) := gpu2.leaf (Utils.tensorToAnyBuffer x)
+  let (gpu, gy) ← Utils.okOrThrow <| Runtime.Autograd.LibTorch.Tape.conv (t := gpu3)
+    (inC := 2) (outC := 2) (kernel := window) (stride := stride)
+    (padding := padding) (inSpatial := spatial) gk gb gx
+  let gpuGradients ← Utils.okOrThrow <|
+    Runtime.Autograd.LibTorch.Tape.backwardDenseAll gpu gy (Utils.tensorToAnyBuffer seed)
+  Utils.assertTensorApprox "strided multichannel conv output"
+    (← Utils.cudaValue (s := [2, 2]) gpu gy) (← Utils.cpuValue cpu cy) (tol := 5e-3)
+  Utils.assertTensorApprox "strided multichannel conv dKernel"
+    (← Utils.cudaGrad (s := [2, 2, 2]) gpuGradients gk)
+    (← Utils.cpuGrad cpuGradients ck) (tol := 5e-3)
+  Utils.assertTensorApprox "strided multichannel conv dBias"
+    (← Utils.cudaGrad (s := [2]) gpuGradients gb)
+    (← Utils.cpuGrad cpuGradients cb) (tol := 5e-3)
+  Utils.assertTensorApprox "strided multichannel conv dInput"
+    (← Utils.cudaGrad (s := [2, 4]) gpuGradients gx)
+    (← Utils.cpuGrad cpuGradients cx) (tol := 5e-3)
+
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: convolution + pooling ==="
   runConv
   runConv3
+  Internal.runStridedChannels
   runMaxPool
   runMaxPoolPadNegative
   runMaxPool3

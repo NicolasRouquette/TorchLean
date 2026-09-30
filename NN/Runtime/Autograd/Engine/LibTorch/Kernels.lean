@@ -8,7 +8,7 @@ LibTorch FFI: additional ATen operations over `LibTorch.Buffer` (float32).
 Notes:
 - `LibTorch.Buffer` is an opaque contiguous float32 buffer in CUDA device memory.
 - These operations keep their shape APIs explicit: dimensions are passed as `UInt32`.
-- Build with `lake -R -K cuda=true build` and a LibTorch SDK; the default build links failing
+- Build with `scripts/lake.sh -Kcuda=true build` and a LibTorch SDK; the default build links failing
   placeholders for these symbols.
 - TorchLean owns the differentiation tape. The LibTorch bridge disables graph recording and
   calls ATen forward/backward operators directly.
@@ -22,9 +22,9 @@ public import NN.Runtime.Autograd.Engine.LibTorch.Trusted
 # CUDA Buffer Kernels FFI
 
 Foreign-function declarations for ATen operations on TorchLean's float32
-`LibTorch.Buffer`: reductions,
-indexing, matmul/BMM, attention, broadcast/view helpers, and related tensor operations. The
-declarations here are the Lean side of the LibTorch CUDA trust boundary documented in
+`LibTorch.Buffer`: reductions, indexing, matmul/BMM, normalization, Fourier transforms, scans,
+and broadcast/view helpers. Lean composes attention from these primitives in `Ops.Attention`.
+The declarations here are the Lean side of the LibTorch CUDA trust boundary documented in
 `docs/TRUST_BOUNDARIES.md`.
 -/
 
@@ -185,35 +185,14 @@ the CPU reference.
 opaque irfft1dPacked (spec : @& Buffer) (batch n : UInt32) : Buffer
 
 /--
-Real-FFT spectral convolution for one FNO1D block.
+Unnormalized inverse real FFT with the same packed layout and endpoint handling as `irfft1dPacked`.
 
-Input:
-- `x`: length `grid*width`, row-major shape `(grid, width)`;
-- `wRe`, `wIm`: length `modes*width*width`, row-major shape `(modes, width, width)`.
-
-Semantics:
-1. apply an unnormalized real FFT along the grid axis for each input channel,
-2. keep frequency bins `0 ≤ k < modes`,
-3. multiply each retained complex vector by `wRe[k] + i*wIm[k]`,
-4. zero all other bins,
-5. apply the normalized inverse real FFT.
-
-LibTorch evaluates the FFTs and spectral products in CUDA float32.
-`spectralConv1dRfftBwd` evaluates the three VJP components together.
+This numerical primitive omits the `1/n` factor inside the transform. Lean uses it for the real
+FFT adjoint, avoiding both overflow from scaling the spectrum by `n` beforehand and underflow
+from normalizing a tiny result before scaling it back up.
 -/
-@[never_extract, extern "torchlean_cuda_buffer_spectral_conv1d_rfft_fwd"]
-opaque spectralConv1dRfftFwd
-    (x wRe wIm : @& Buffer) (grid width modes : UInt32) : Buffer
-
-/--
-Return `(∂L/∂x, ∂L/∂wRe, ∂L/∂wIm)` for `spectralConv1dRfftFwd`.
-
-The three gradients share the input and cotangent FFTs. All spectral workspace is released before
-returning; the caller owns the three result buffers.
--/
-@[never_extract, extern "torchlean_cuda_buffer_spectral_conv1d_rfft_bwd"]
-opaque spectralConv1dRfftBwd
-    (x wRe wIm dY : @& Buffer) (grid width modes : UInt32) : Buffer × Buffer × Buffer
+@[never_extract, extern "torchlean_cuda_buffer_irfft1d_packed_unnormalized"]
+opaque irfft1dPackedUnnormalized (spec : @& Buffer) (batch n : UInt32) : Buffer
 
 /--
 Diagonal selective-scan forward kernel for state-space models.
@@ -270,30 +249,6 @@ The native kernel walks time backwards independently for each state channel.
 @[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_var_bwd"]
 opaque selectiveScanDiagVarBwd (A B X h0 out dY : @& Buffer) (seqLen state : UInt32) :
     Buffer × Buffer × Buffer × Buffer
-
-/--
-LibTorch scaled dot-product attention over split heads, without a LibTorch autograd graph.
-
-`Q`, `K`, and `V` have shape `(batch, n, d)`, with sample and head axes folded into `batch`.
-The optional `(batch, n, n)` mask encodes allowed entries as `1.0` and blocked entries as `0.0`.
-Fully blocked rows produce zero output and contribute zero input gradients. Dropout is zero.
-
-The result has shape `(batch, n, d)`. Its native context retains the selected ATen provider,
-forward inputs, scale, and backward auxiliaries until this buffer is released. Backend selection
-depends on the installed SDK, dtype, shapes, mask, and enabled ATen providers.
-Invalid requests return errors. Scale must be finite and within the float32 range.
--/
-@[never_extract, extern "torchlean_libtorch_attention_fwd"]
-opaque libTorchAttentionFwd
-    (Q K V mask : @& Buffer) (hasMask batch n d : UInt32) (scale : Float) : Except String Buffer
-
-/--
-Paired ATen VJP `(dQ, dK, dV)` using the original `libTorchAttentionFwd` output's saved context.
-Keep that buffer alive and the ATen deterministic policy unchanged until backward completes.
-TorchLean owns the global tape; this call neither records a graph nor recomputes the forward.
--/
-@[never_extract, extern "torchlean_libtorch_attention_bwd"]
-opaque libTorchAttentionBwd (out dOut : @& Buffer) : Except String (Buffer × Buffer × Buffer)
 
 /--
 Scatter-add into a 1D vector using host indices.

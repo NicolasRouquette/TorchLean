@@ -51,7 +51,7 @@ theorem runDirectedBackwardObjective_encloses
         affineValue upper (fun i => v ctx.inputId i.val) := by
   let z := dot (dims output) (fun i => value (getAtOrZero obj.v [i])) (v output)
   let initial : DirectedBackwardState α :=
-    { coeffs := (Array.replicate g.nodes.size none).set! output (some (pointCoeffBox obj))
+    { coeffs := (Array.replicate g.nodes.size none).set! output (some (FlatBox.ofTensor obj.v))
       cstLo := 0, cstHi := 0 }
   let final := (List.finRange g.nodes.size).reverse.foldl
     (fun state i => directedBackwardNode g.nodes ps ibp ctx state i.val) initial

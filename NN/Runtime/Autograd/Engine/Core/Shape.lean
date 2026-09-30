@@ -12,8 +12,8 @@ public import NN.Runtime.Autograd.Engine.Core.Base
 /-!
 Shape-changing eager-engine operations.
 
-This module implements reshape, transpose, broadcast, slice, gather/scatter, and related view-style
-nodes while preserving the graph metadata needed by autograd.
+This module records flatten, reshape, adjacent-axis transpose, broadcast, and axis-reduction nodes
+while preserving the graph metadata needed by autograd.
 -/
 
 @[expose] public section

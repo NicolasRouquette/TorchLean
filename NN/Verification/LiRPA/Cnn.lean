@@ -37,8 +37,8 @@ namespace NN.Verification.LiRPA.Cnn
 
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.Graph
-open _root_.Spec _root_.TorchLean
-open _root_.TorchLean.Tensor
+open Spec TorchLean
+open TorchLean.Tensor
 
 /--
 Small fixed graph:
@@ -91,12 +91,13 @@ def seedParamsFloat : ParamStore Float :=
     Tensor.generate [outC, inC, kH, kW] fun
       | [_, _, i, j] => Float.ofNat (1 + i + j)
       | _ => 0.0
+  -- `ConvSpec` indexes the kernel by the runtime spatial-shape tensor, so the literal kernel is
+  -- transported along the shape equation instead of being rebuilt by `simpa`.
   let kernel :
-      Tensor Float (Shape.ofList (outC :: inC :: Tensor.to kernelShape (List Nat))) := by
-    have hKernelShape : Tensor.to kernelShape (List Nat) = [kH, kW] := by
-      change Tensor.to (Tensor.from #[kH, kW]) (List Nat) = [kH, kW]
-      exact Tensor.to_list_from_array #[kH, kW]
-    simpa [hKernelShape] using kernelValues
+      Tensor Float (Shape.ofList (outC :: inC :: Tensor.to kernelShape (List Nat))) :=
+    Tensor.castShape kernelValues (by
+      change [outC, inC, kH, kW] = outC :: inC :: Tensor.to (Tensor.from #[kH, kW]) (List Nat)
+      rw [Tensor.to_list_from_array])
   let bias : Tensor Float [outC] := Tensor.generate [outC] fun _ => 0.0
   let conv : Spec.ConvSpec 2 inC outC kernelShape strides paddings Float :=
     { kernel := kernel, bias := bias }
@@ -108,7 +109,7 @@ def seedParamsFloat : ParamStore Float :=
     NN.MLTheory.CROWN.convLinearMatrix (α := Float)
       (inSpatial := inputSpatial) conv (Tensor.full [2] 1) paddings 1 .scalar
   let convBias : Tensor Float [nConv] :=
-    NN.MLTheory.CROWN.convBiasBroadcast (α := Float) (outSpatial := outSpatial) conv.bias
+    NN.MLTheory.CROWN.convBiasBroadcast (α := Float) (outSpatial := outSpatial) conv.bias .scalar
   -- Linear head 4→2
   let headWeight : Tensor Float [2, nConv] :=
     Tensor.generate [2, nConv] fun
@@ -145,6 +146,6 @@ This is wired into `lake exe verify -- lirpa-cnn [path]`.
 def verifyCert (path : String) : IO Unit := do
   let g := buildGraph
   let ps := seedParamsFloat
-  NN.Verification.IBPCert.checkOrThrow g ps (outId := 3) path
+  NN.Verification.Cert.IBPCert.checkOrThrow g ps (outId := 3) path
 
 end NN.Verification.LiRPA.Cnn

@@ -113,8 +113,26 @@ def runReduceMaxAxisEmptyReducedDim : IO Unit := do
   assertFloatArrayAllZero "reduce_max_by_row rows=3 cols=0"
     (Runtime.Autograd.LibTorch.Buffer.toFloatArray outByRow) 3
 
+/-- Reduction-axis maps depend on rank, including the helper's total out-of-range behavior. -/
+def Internal.checkAfterSumAxisMap : IO Unit := do
+  let cases : Array (Shape × Nat × Array Nat) := #[
+    (.scalar, 0, #[]),
+    (.scalar, 4, #[]),
+    ([2, 3, 4], 0, #[0, 1, 2]),
+    ([2, 3, 4], 1, #[1, 0, 2]),
+    ([2, 3, 4], 2, #[1, 2, 0]),
+    ([2, 3, 4], 3, #[1, 2, 3]),
+    ([2, 3, 4], 8, #[1, 2, 3]),
+    ([2, 0, 4], 1, #[1, 0, 2])]
+  for (s, axis, expected) in cases do
+    let actual := LibTorch.Broadcast.afterSumAxisMap s axis
+    unless actual == expected do
+      throw <| IO.userError
+        s!"afterSumAxisMap axis {axis}: expected {expected}, got {actual}"
+
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: views/broadcast/reduce ==="
+  Internal.checkAfterSumAxisMap
 
   -- reshape
   IO.println "== reshape =="

@@ -6,9 +6,6 @@ Authors: TorchLean Team
 
 module
 
-public import Mathlib.Analysis.SpecialFunctions.Pow.NNReal
-public import Mathlib.Data.Sym.Sym2.Init
-import Mathlib.Tactic.NormNum.GCD
 public import NN.Proofs.Tensor.Basic.BoundsNorms
 public import NN.Proofs.Autograd.Tape.Algebra.Soundness
 
@@ -46,8 +43,6 @@ open TorchLean TorchLean.Tensor
 noncomputable section
 
 namespace TensorPack
-
-variable {ss : List Shape}
 
 /--
 Dot product over contexts: sum of per-entry tensor dot products.
@@ -238,7 +233,6 @@ theorem backprop_correct {ss : List Shape} (g : Graph Γ ss) :
   exact Algebra.Graph.backprop_correct g.toAlgebra x dx () seed
 
 end Graph
-
 
 end
 end Autograd

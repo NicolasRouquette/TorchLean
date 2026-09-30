@@ -39,8 +39,8 @@ residual block remain architecture terms that graph passes, exporters, and proof
 Run:
 
 ```bash
-lake exe torchlean graphspec --execution eager
-lake exe torchlean graphspec --execution typed-graph
+scripts/lake.sh exe torchlean graphspec --execution eager
+scripts/lake.sh exe torchlean graphspec --execution typed-graph
 ```
 
 You can also pass the standard TorchLean runtime flags such as `--arithmetic ieee`,
@@ -64,7 +64,7 @@ def usage : String :=
     [ "TorchLean GraphSpec tutorial"
     , ""
     , "Usage:"
-    , "  lake exe torchlean graphspec [options]"
+    , "  scripts/lake.sh exe torchlean graphspec [options]"
     , ""
     , "Options:"
     , "  --arithmetic native|ieee"
@@ -142,37 +142,20 @@ def dataset : Trainer.Dataset [2] [1] :=
 
 /-- Run the compact MLP lowering/training path. -/
 def runMlpTrainingPath (args : List String) : IO Unit := do
-  let inputWidth : Nat := 2
-  let hiddenWidth : Nat := 3
-  let outputWidth : Nat := 1
-
-  let input : Shape := [inputWidth]
-  let output : Shape := [outputWidth]
-
-  -- GraphSpec is the source architecture. This exact graph also has pure semantics and an
-  -- executable program view; here we ask for the additional `nn.Sequential` training view.
-  let graph :=
-    NN.GraphSpec.Models.mlp
-      (inputWidth := inputWidth) (hiddenWidth := hiddenWidth) (outputWidth := outputWidth)
-
-  match NN.GraphSpec.ToSequential.toSeq (σ := input) (τ := output) graph with
-  | .error msg =>
-      throw <| IO.userError s!"GraphSpec.ToSequential.toSeq failed: {msg}"
-  | .ok seqR =>
-      let network : nn.Sequential [inputWidth] [outputWidth] := by
-        -- `nn.Sequential` is the public API name for the same runtime `Seq` type.
-        simpa using seqR
-      let runConfig ← TorchLean.CLI.Trainer.parseCommandLine exeName
-        (CLI.dropDashDash args)
-        { optimizer := optim.sgd { learningRate := 0.1 } }
-      let trainer :=
-        Trainer.new network <|
-        Trainer.RunConfig.forObjective runConfig .mse
-      trainer.printSummary
-      let trained ←
-        trainer.train dataset { steps := 3, logTitle := "GraphSpec tutorial" }
-      IO.println "forward: GraphSpec MLP lowered to TorchLean and executed"
-      trained.printSummary
+  -- Lower the same architecture term shown above; its parameter ABI stays visible in `mlp`.
+  match NN.GraphSpec.ToSequential.toSeq (σ := [2]) (τ := [1]) mlp with
+  | .error message => CLI.orThrow "GraphSpec.ToSequential.toSeq failed" (.error message)
+  | .ok network =>
+    let runConfig ← TorchLean.CLI.Trainer.parseCommandLine exeName
+      (CLI.dropDashDash args)
+      { optimizer := optim.sgd { learningRate := 0.1 } }
+    let trainer :=
+      Trainer.new network <|
+      Trainer.RunConfig.forObjective runConfig .mse
+    trainer.printSummary
+    let trained ← trainer.train dataset { steps := 3, logTitle := "GraphSpec tutorial" }
+    IO.println "forward: GraphSpec MLP lowered to TorchLean and executed"
+    trained.printSummary
 
 /--
 Entry point: print the operation catalogue, then lower a GraphSpec MLP and train it for a few steps.

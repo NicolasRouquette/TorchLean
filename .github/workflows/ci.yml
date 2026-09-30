@@ -100,7 +100,9 @@ jobs:
           PY
 
       - name: Test leaf artifact exporter
-        run: python3 -B -m unittest discover -s scripts/verification/abcrown -p 'test_*.py'
+        run: |
+          python3 -B -m unittest discover -s scripts/verification/abcrown -p 'test_*.py'
+          python3 -B -m unittest discover -s scripts/verification/robustness -p 'test_*.py'
 
       - name: Test LiRPA certificate regions
         run: python3 -B -m unittest discover -s scripts/verification/lirpa -p 'test_*.py'
@@ -136,6 +138,12 @@ jobs:
         run: |
           python3 -m pip install -r scripts/checks/requirements-interop.txt
           python3 scripts/checks/check_interop_dependencies.py
+
+      - name: Test dataset conversion and PINN training
+        if: needs.changes.outputs.lean == 'true'
+        run: |
+          python3 -B -m unittest discover -s scripts/datasets -p 'test_*.py'
+          python3 -B -m unittest discover -s scripts/verification/pinn -p 'test_*.py'
 
       - name: Identify native build configuration
         if: needs.changes.outputs.lean == 'true'

@@ -48,6 +48,11 @@ def propagateCROWNNode
   else
     let node := nodes[id]!
     let getB (pid : Nat) := (bounds[pid]!)
+    -- Constant affine bounds from the node's own IBP box, used where no affine rule applies.
+    let ibpFallback : Array (Option (FlatAffineBounds α)) :=
+      match ibp[id]! with
+      | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
+      | none => bounds
     match node.kind with
     | .input =>
       match (ibp[id]?).join with
@@ -66,7 +71,8 @@ def propagateCROWNNode
         -- Exact constant bounds.
         bounds.set! id (some (boundsConst (α:=α) ctx.inputDim v.n v.v v.v))
       | none => bounds
-    | .detach =>
+    | .detach | .reshape _ _ | .flatten _ =>
+      -- The flattened representation preserves order; these nodes are the identity on it.
       match node.parents with
       | #[p1] =>
         match getB p1 with
@@ -76,11 +82,7 @@ def propagateCROWNNode
     | .randUniform _ | .bernoulliMask _ | .abs | .sqrt | .maxElem | .minElem | .sin |
       .cos | .hardMaskedSoftmax _
     | .maxPool .. | .avgPool ..
-    | .broadcastTo .. | .reduceSum .. | .reduceMean .. =>
-      -- Conservative fallback: use IBP box as a constant affine bound (A = 0).
-      match ibp[id]! with
-      | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-      | none => bounds
+    | .broadcastTo .. | .reduceSum .. | .reduceMean .. => ibpFallback
     | .add =>
       match node.parents with
       | #[p1, p2] =>
@@ -149,11 +151,7 @@ def propagateCROWNNode
                 aBox bBox aAff bAff with
           | some out =>
             bounds.set! id (some out)
-          | none =>
-            match ibp[id]! with
-            | some Bout => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim Bout.dim Bout.lo
-              Bout.hi))
-            | none => bounds
+          | none => ibpFallback
         | _, _, _, _ => bounds
       | #[p1] =>
         match getB p1, ps.matmulW[id]? with
@@ -168,18 +166,12 @@ def propagateCROWNNode
     | .relu =>
       -- Computing the crossing-zero ReLU slope involves division. Until an affine-rounding
       -- capability supplies directed coefficients, retain the checked IBP enclosure.
-      match ibp[id]! with
-      | some B => bounds.set! id (some (boundsConst (α := α) ctx.inputDim B.dim B.lo B.hi))
-      | none => bounds
+      ibpFallback
     | .exp | .log | .inv | .sigmoid | .tanh | .softplus | .safeLog =>
       -- Executable nonlinear bounds come from the directed IBP pass. Turning that box into a
       -- constant affine form is less precise than an analytic relaxation, but it does not recompute
-      -- transcendental values with unqualified host arithmetic. Ideal-real relaxation formulas
-      -- remain available as standalone helpers in `CROWN.Activations`.
-      match ibp[id]! with
-      | some Bout =>
-        bounds.set! id (some (boundsConst (α:=α) ctx.inputDim Bout.dim Bout.lo Bout.hi))
-      | none => bounds
+      -- transcendental values with unqualified host arithmetic.
+      ibpFallback
     | .mulElem =>
       match node.parents with
       | #[p1, p2] =>
@@ -189,11 +181,7 @@ def propagateCROWNNode
             if hyo : yB.outDim = By.dim then
               match propagateMulElemBounds (α:=α) Bx By xB yB hxo hyo with
               | some out => bounds.set! id (some out)
-              | none =>
-                match ibp[id]! with
-                | some Bout =>
-                  bounds.set! id (some (boundsConst (α:=α) ctx.inputDim Bout.dim Bout.lo Bout.hi))
-                | none => bounds
+              | none => ibpFallback
             else bounds
           else bounds
         | _, _, _, _ => bounds
@@ -212,21 +200,6 @@ def propagateCROWNNode
             { A := Spec.matMulSpec onesRow xin.hiAff.A
               c := Spec.matVecMulSpec onesRow xin.hiAff.c }
           bounds.set! id (some { inDim := xin.inDim, outDim := 1, loAff := loAff, hiAff := hiAff })
-        | none => bounds
-      | _ => bounds
-    | .reshape _ _ =>
-      -- Flattened representation preserves order; treat as identity.
-      match node.parents with
-      | #[p1] =>
-        match getB p1 with
-        | some xin => bounds.set! id (some xin)
-        | none => bounds
-      | _ => bounds
-    | .flatten _ =>
-      match node.parents with
-      | #[p1] =>
-        match getB p1 with
-        | some xin => bounds.set! id (some xin)
         | none => bounds
       | _ => bounds
     | .concat axis =>
@@ -264,24 +237,12 @@ def propagateCROWNNode
             | none => bounds
         | none => bounds
       | _ => bounds
-    | .layernorm _ =>
+    | .layernorm _ | .softmax _ =>
       if !crownNodeSemanticsSupported (α := α) nodes ps id then
         bounds
       else
-        match ibp[id]! with
-        | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-        | none => bounds
-    | .softmax _ =>
-      if !crownNodeSemanticsSupported (α := α) nodes ps id then
-        bounds
-      else
-        match ibp[id]! with
-        | some B => bounds.set! id (some (boundsConst (α:=α) ctx.inputDim B.dim B.lo B.hi))
-        | none => bounds
-    | .mseLoss =>
-      match ibp[id]! with
-      | some B => bounds.set! id (some (boundsConst (α := α) ctx.inputDim B.dim B.lo B.hi))
-      | none => bounds
+        ibpFallback
+    | .mseLoss => ibpFallback
     | .conv configuration =>
       if !crownNodeSemanticsSupported (α := α) nodes ps id then
         bounds

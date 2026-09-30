@@ -86,7 +86,6 @@ theorem matmulContract_derive_requires_fixedLeft
     | exact requireFixedLeftReduction_of_bind_ok hderive
     | (change Except.error _ = .ok _ at hderive; cases hderive)
 
-
 /-- A successful whole-tensor sum transfer must have passed the fixed-left policy guard. -/
 theorem sumContract_derive_requires_fixedLeft
     {context : NumericalRangeContext} {node : Node} {result : RangeTransferResult}
@@ -99,7 +98,6 @@ theorem sumContract_derive_requires_fixedLeft
     | exact requireFixedLeftReduction_of_bind_ok hderive
     | (change Except.error _ = .ok _ at hderive; cases hderive)
 
-
 /-- A successful mean-squared-error transfer must have passed the fixed-left policy guard. -/
 theorem mseContract_derive_requires_fixedLeft
     {context : NumericalRangeContext} {node : Node} {result : RangeTransferResult}
@@ -111,7 +109,6 @@ theorem mseContract_derive_requires_fixedLeft
     first
     | exact requireFixedLeftReduction_of_bind_ok hderive
     | (change Except.error _ = .ok _ at hderive; cases hderive)
-
 
 /-- A successful average-pooling transfer must have passed the fixed-left policy guard. -/
 theorem averagePoolContract_derive_requires_fixedLeft (padded : Bool)
@@ -126,7 +123,6 @@ theorem averagePoolContract_derive_requires_fixedLeft (padded : Bool)
     | exact requireFixedLeftReduction_of_bind_ok hderive
     | (change Except.error _ = .ok _ at hderive; cases hderive)
 
-
 /-- A successful axis sum or mean transfer must have passed the fixed-left policy guard. -/
 theorem axisReductionContract_derive_requires_fixedLeft (mean : Bool)
     {context : NumericalRangeContext} {node : Node} {result : RangeTransferResult}
@@ -140,7 +136,6 @@ theorem axisReductionContract_derive_requires_fixedLeft (mean : Bool)
     | exact requireFixedLeftReduction_of_bind_ok hderive
     | (change Except.error _ = .ok _ at hderive; cases hderive)
 
-
 /-- A successful LayerNorm transfer must have passed the fixed-left policy guard. -/
 theorem layerNormContract_derive_requires_fixedLeft
     {context : NumericalRangeContext} {node : Node} {result : RangeTransferResult}
@@ -153,7 +148,6 @@ theorem layerNormContract_derive_requires_fixedLeft
     first
     | exact requireFixedLeftReduction_of_bind_ok hderive
     | (change Except.error _ = .ok _ at hderive; cases hderive)
-
 
 /-- The matrix-product range consumer inherits the selected capsule's accepted fixed-left policy. -/
 theorem matmulContract_derive_selected_capsule

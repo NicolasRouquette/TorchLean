@@ -43,10 +43,6 @@ theorem exactPayload_linear (ps : ParamStore (ExecFloat.Binary 8 23)) (id : Nat)
       some ⟨p.m, p.n, realTensor weights, realTensor bias⟩ := by
   simp [exactPayload, hp, hw, hb]
 
-/-- Every decoded program contains its input node. -/
-theorem Program.length_pos {n m : Nat} (program : Program n m) : 0 < program.length := by
-  cases program <;> simp [Program.length]
-
 /-- Successful decoding supplies the ordinary IR evaluator's structural guard. -/
 theorem decodeGraph_wellFormed (g : Graph) (ps : ParamStore (ExecFloat.Binary 8 23))
     (decoded : DecodedGraph) (h : decodeGraph g ps = some decoded) :

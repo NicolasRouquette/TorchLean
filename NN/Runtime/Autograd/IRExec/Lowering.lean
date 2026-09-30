@@ -19,7 +19,7 @@ public import NN.Runtime.Autograd.IRExec.Lowering.ShapeArray
 /-!
 # IR Node Lowering
 
-The canonical checked lowering loop and exhaustive operation-family dispatch from IR nodes to
+The canonical checked lowering loop and exhaustive operation dispatch from IR nodes to
 executable SSA nodes.
 -/
 
@@ -40,7 +40,7 @@ open Proofs (Idx getIdx)
 namespace Internal
 
 /--
-Exhaustive operation-family dispatch, shared by the logical and array lowering loops.
+Exhaustive operation dispatch, shared by the logical and array lowering loops.
 
 The two compiler attributes keep the context index erased across this boundary. `nospecialize`
 prevents copies with unused runtime shape parameters. `inline_if_reduce` permits inlining only
@@ -52,48 +52,48 @@ materializing a chronological shape prefix.
     {Γ : List Shape}
     (lowering : NodeLoweringContext α Γ) : NodeLoweringResult lowering :=
   match lowering.node.kind with
-  | .input => lowerBasic lowering (.input)
-  | .const s => lowerBasic lowering (.const s)
-  | .detach => lowerBasic lowering (.detach)
-  | .randUniform seed => lowerBasic lowering (.randUniform seed)
-  | .bernoulliMask seed => lowerBasic lowering (.bernoulliMask seed)
-  | .add => lowerElementwise lowering (.add)
-  | .sub => lowerElementwise lowering (.sub)
-  | .mulElem => lowerElementwise lowering (.mulElem)
-  | .abs => lowerElementwise lowering (.abs)
-  | .sqrt => lowerElementwise lowering (.sqrt)
-  | .inv => lowerElementwise lowering (.inv)
-  | .maxElem => lowerElementwise lowering (.maxElem)
-  | .minElem => lowerElementwise lowering (.minElem)
-  | .relu => lowerElementwise lowering (.relu)
-  | .tanh => lowerElementwise lowering (.tanh)
-  | .sigmoid => lowerElementwise lowering (.sigmoid)
-  | .softplus => lowerElementwise lowering (.softplus)
-  | .safeLog => lowerElementwise lowering (.safeLog)
-  | .exp => lowerElementwise lowering (.exp)
-  | .log => lowerElementwise lowering (.log)
-  | .sin => lowerElementwise lowering (.sin)
-  | .cos => lowerElementwise lowering (.cos)
-  | .softmax axis => lowerElementwise lowering (.softmax axis)
-  | .hardMaskedSoftmax mask => lowerElementwise lowering (.hardMaskedSoftmax mask)
-  | .broadcastTo s₁ s₂ => lowerReduction lowering (.broadcastTo s₁ s₂)
-  | .reduceSum axis => lowerReduction lowering (.reduceSum axis)
-  | .reduceMean axis => lowerReduction lowering (.reduceMean axis)
-  | .sum => lowerReduction lowering (.sum)
-  | .mseLoss => lowerReduction lowering (.mseLoss)
-  | .matmul => lowerLinearAlgebra lowering (.matmul)
-  | .linear => lowerLinearAlgebra lowering (.linear)
-  | .maxPool config => lowerConvolutionNormalization lowering (.maxPool config)
-  | .avgPool config => lowerConvolutionNormalization lowering (.avgPool config)
-  | .conv config => lowerConvolutionNormalization lowering (.conv config)
+  | .input => lowerInput lowering
+  | .const s => lowerConst lowering s
+  | .detach => lowerDetach lowering
+  | .randUniform seed => lowerRandUniform lowering seed
+  | .bernoulliMask seed => lowerBernoulliMask lowering seed
+  | .add => lowerAdd lowering
+  | .sub => lowerSub lowering
+  | .mulElem => lowerMulElem lowering
+  | .abs => lowerAbs lowering
+  | .sqrt => lowerSqrt lowering
+  | .inv => lowerInv lowering
+  | .maxElem => lowerMaxElem lowering
+  | .minElem => lowerMinElem lowering
+  | .relu => lowerRelu lowering
+  | .tanh => lowerTanh lowering
+  | .sigmoid => lowerSigmoid lowering
+  | .softplus => lowerSoftplus lowering
+  | .safeLog => lowerSafeLog lowering
+  | .exp => lowerExp lowering
+  | .log => lowerLog lowering
+  | .sin => lowerSin lowering
+  | .cos => lowerCos lowering
+  | .softmax axis => lowerSoftmax lowering axis
+  | .hardMaskedSoftmax mask => lowerHardMaskedSoftmax lowering mask
+  | .broadcastTo s₁ s₂ => lowerBroadcastTo lowering s₁ s₂
+  | .reduceSum axis => lowerReduceSum lowering axis
+  | .reduceMean axis => lowerReduceMean lowering axis
+  | .sum => lowerSum lowering
+  | .mseLoss => lowerMseLoss lowering
+  | .matmul => lowerMatmul lowering
+  | .linear => lowerLinear lowering
+  | .maxPool config => lowerMaxPool lowering config
+  | .avgPool config => lowerAvgPool lowering config
+  | .conv config => lowerConv lowering config
   | .batchNormEval channelAxis channels =>
-      lowerConvolutionNormalization lowering (.batchNormEval channelAxis channels)
-  | .layernorm axis => lowerConvolutionNormalization lowering (.layernorm axis)
-  | .permute perm => lowerShape lowering (.permute perm)
-  | .reshape inS outS => lowerShape lowering (.reshape inS outS)
-  | .flatten s => lowerShape lowering (.flatten s)
-  | .concat axis => lowerShape lowering (.concat axis)
-  | .transpose axis₁ axis₂ => lowerShape lowering (.transpose axis₁ axis₂)
+      lowerBatchNormEval lowering channelAxis channels
+  | .layernorm axis => lowerLayernorm lowering axis
+  | .permute perm => lowerPermute lowering perm
+  | .reshape inS outS => lowerReshape lowering inS outS
+  | .flatten s => lowerFlatten lowering s
+  | .concat axis => lowerConcat lowering axis
+  | .transpose axis₁ axis₂ => lowerTranspose lowering axis₁ axis₂
 
 /--
 Lower the IR graph starting at node index `i`, extending the current SSA `State`.

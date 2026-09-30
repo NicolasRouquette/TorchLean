@@ -13,7 +13,10 @@ right compiler for you: Lean 4.34.0. Mathlib uses the matching release. FloatLib
 `lakefile.lean`, with the exact revision recorded in `lake-manifest.json`. Run
 `scripts/lake.sh update floatlib` to adopt newer FloatLib changes, then rebuild and test TorchLean.
 
-## A Five-Minute CPU Install
+## CPU Installation
+
+The build wrapper requires Bash and Python 3. Install the compiler tools described for your
+platform below before building.
 
 First install [Elan](https://github.com/leanprover/elan), the Lean toolchain manager. On Linux or
 macOS:
@@ -28,25 +31,29 @@ TorchLean:
 ```bash
 git clone https://github.com/lean-dojo/TorchLean.git
 cd TorchLean
-lake exe cache get
-lake build
+scripts/lake.sh exe cache get
+scripts/lake.sh build
 ```
 
 The cache command downloads compatible prebuilt Lean dependencies when they are available. It is
-safe to omit; `lake build` will compile anything that is missing.
+safe to omit; `scripts/lake.sh build` will compile anything that is missing.
+
+Use `scripts/lake.sh` for commands in this checkout. It keeps CPU and CUDA artifacts in separate
+cache directories and holds a checkout lock while Lake runs. If you previously built with raw
+Lake and `.lake/build` is a real directory, move it aside once before using the wrapper.
 
 Run a small model to check the executable path:
 
 ```bash
-lake exe torchlean quickstart_mlp --device cpu --steps 10
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 10
 ```
 
 If those commands succeed, TorchLean is installed. You can inspect the available examples and
 verification commands with:
 
 ```bash
-lake exe torchlean --help
-lake exe verify --help
+scripts/lake.sh exe torchlean --help
+scripts/lake.sh exe verify --help
 ```
 
 That CPU build is the common starting point on every platform. From there, TorchLean can link
@@ -73,14 +80,14 @@ LibTorch autograd recording disabled. The CPU build remains independent of LibTo
 
 ### CPU
 
-You need Git, `curl`, and a C/C++ compiler. On Ubuntu or Debian:
+You need Git, `curl`, Bash, Python 3, and a C/C++ compiler. On Ubuntu or Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl build-essential
+sudo apt install -y git curl bash python3 build-essential
 ```
 
-Then follow the five-minute install above. The default build uses the portable CPU runtime. It also
+Then follow the CPU installation steps above. The default build uses the portable CPU runtime. It also
 builds harmless CUDA stub archives so that CPU-only machines can compile the complete Lean project;
 the stubs do not pretend that a GPU is present.
 
@@ -110,20 +117,20 @@ Build and run the CUDA configuration, pointing to the extracted SDK:
 
 ```bash
 export TORCHLEAN_LIBTORCH_HOME=/absolute/path/to/libtorch
-lake -R -K cuda=true build
-lake -R -K cuda=true exe torchlean quickstart_mlp \
+scripts/lake.sh -Kcuda=true build
+scripts/lake.sh -Kcuda=true exe torchlean quickstart_mlp \
   --device cuda --steps 10 --show-backend
 ```
 
-The two CUDA choices happen at different times. `-K cuda=true` tells Lake to compile the C++
+The two CUDA choices happen at different times. `-Kcuda=true` tells Lake to compile the C++
 adapters and link LibTorch. `--device cuda` asks the executable to use it. A CPU-linked executable
 rejects `--device cuda` instead of silently moving the run back to the CPU.
 
-Use `-R` whenever you switch between CPU and CUDA configurations; it forces Lake to recompute the
-build description. The CUDA regression suite is:
+The wrapper selects the CUDA build cache and passes `-R` to Lake automatically, recomputing the
+build description when you switch configurations. The CUDA regression suite is:
 
 ```bash
-lake -R -K cuda=true exe nn_tests_suite
+TORCHLEAN_REQUIRE_CUDA=1 scripts/lake.sh -Kcuda=true exe nn_tests_suite
 ```
 
 The [CUDA guide]({{ '/cuda/' | relative_url }}) covers deterministic reductions, parity checks,
@@ -134,30 +141,32 @@ compiles C++ adapters; the SDK supplies GPU kernels and their supported architec
 also pass the SDK path directly to Lake:
 
 ```bash
-lake -R -K cuda=true \
-  -K libtorch_home=/absolute/path/to/libtorch build
-lake -R -K cuda=true \
-  -K libtorch_home=/absolute/path/to/libtorch exe libtorch_sdpa_test
+scripts/lake.sh -Kcuda=true \
+  -Klibtorch_home=/absolute/path/to/libtorch build
+scripts/lake.sh -Kcuda=true \
+  -Klibtorch_home=/absolute/path/to/libtorch exe libtorch_sdpa_test
 ```
 
-The maintained CUDA profile uses paired ATen attention forward and backward operations. ATen
-selects an eligible implementation for the inputs and configured policy; TorchLean's tape keeps
-the saved forward state needed by that implementation's backward operation. The
+The maintained CUDA profile uses attention composed in Lean from matrix products, masking,
+softmax, and an explicit local VJP. LibTorch supplies the numerical primitives; TorchLean's tape
+owns Q/K/V and the saved probabilities. The full score matrices require quadratic memory in
+sequence length. The
 [backend chapter]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/' | relative_url }})
 explains its per-operation selection and backward boundary.
 
 ## macOS
 
-Install Apple's command-line developer tools, then Elan and TorchLean:
+Install Apple's command-line developer tools and ensure Python 3 is available, then install Elan
+and TorchLean:
 
 ```bash
 xcode-select --install
 curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
 git clone https://github.com/lean-dojo/TorchLean.git
 cd TorchLean
-lake exe cache get
-lake build
-lake exe torchlean quickstart_mlp --device cpu --steps 10
+scripts/lake.sh exe cache get
+scripts/lake.sh build
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 10
 ```
 
 The CPU path works on Intel and Apple silicon. Modern macOS has no NVIDIA CUDA execution path.
@@ -191,13 +200,6 @@ powershell -ExecutionPolicy Bypass -f elan-init.ps1
 del elan-init.ps1
 ```
 
-The intended native CPU commands are:
-
-```powershell
-lake exe cache get
-lake build
-```
-
 The remaining work is platform engineering: the native libraries must be compiled with a compatible
 Windows C/C++ toolchain; CUDA and LibTorch must be discovered as `.lib` and DLL artifacts; Linux
 linker options such as `-Wl,-rpath` must be replaced; and the GPU runtime must be tested
@@ -213,7 +215,7 @@ Add TorchLean to the downstream project's `lakefile.lean`:
 require TorchLean from git "https://github.com/lean-dojo/TorchLean.git" @ "main"
 ```
 
-Then update and build:
+Then update and build from the downstream project's root using its own Lake configuration:
 
 ```bash
 lake update
@@ -278,11 +280,11 @@ operation, provider, and device before running it. Unavailable providers fail at
 of quietly changing the request. `--show-backend` prints each selected capsule the first time a
 session uses it.
 
-`checked_cuda` selects LibTorch operations, including paired attention forward and backward.
-Its `backend-vjp` label describes who evaluates the local gradient operation. TorchLean still
-records the node, invokes that operation during backward, and accumulates its returned gradients.
-A profile can explicitly prefer TorchLean's composed attention for comparison; that expression
-uses ATen matrix products and TorchLean's hard-mask convention through the same native bridge.
+`checked_cuda` selects LibTorch numerical operations. Attention retains the capsule name
+`libtorch.direct_attention` and reports `torchlean-tape`: Lean composes its local VJP and manages
+the saved buffers. Capsules labelled `backend-vjp` instead call a native routine for their local
+reverse rule. TorchLean traverses the tape and accumulates gradients in both cases. Attention has
+one CUDA implementation; there is no separate fused-attention provider to select.
 
 Read [Inside the Backend Planner]({{ '/blueprint/Runtime___-Autograd___-and-Interop/Inside-The-Backend-Planner/' | relative_url }})
 for capsules, provider preference, VJP ownership, assurance policies, and backend reports. Read
@@ -294,14 +296,16 @@ for native CUDA dispatch, boundary checks, determinism, and the current operatio
 These commands cover the normal CPU installation:
 
 ```bash
-lake build
-lake lint
-lake exe nn_tests_suite
-lake exe torchlean --help
-lake exe verify --help
+scripts/lake.sh build
+scripts/lake.sh lint
+scripts/lake.sh exe nn_tests_suite
+scripts/lake.sh exe torchlean --help
+scripts/lake.sh exe verify --help
 ```
 
-For CUDA, rebuild and run the suite with `-R -K cuda=true`.
+For CUDA, rebuild with `scripts/lake.sh -Kcuda=true build`, then run the suite with
+`TORCHLEAN_REQUIRE_CUDA=1 scripts/lake.sh -Kcuda=true exe nn_tests_suite`. The environment
+variable makes an unavailable CUDA runtime a failure instead of allowing CUDA tests to skip.
 
 For a complete account of Lean axioms, executable checkers, CUDA and FFI code, external artifact
 producers, and floating-point assumptions, read

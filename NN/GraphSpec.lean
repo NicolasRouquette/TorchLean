@@ -39,43 +39,9 @@ It gives you:
 - the optional lowering to `Runtime.Autograd.Model.Layers.Seq` when primitives provide `toLayerM?`,
 - and the model/primitive bridge theorems that connect GraphSpec syntax to Spec references.
 
+Sequential `Chain` pipelines can be lowered to the canonical `NN.GraphSpec.DAG.Model` via
+`NN.GraphSpec.LowerToDAG.Chain.toDAGTerm` and
+`NN.GraphSpec.LowerToDAG.Chain.toDAGModelZeroInit`.
+
 Umbrella re-export; the implementation lives in the imported modules.
 -/
-
-@[expose] public section
-
-
-namespace NN
-namespace GraphSpec
-
-/-!
-## Unified model type
-
-GraphSpec's canonical “runnable + spec” representation is `DAG.Model`.
-
-Sequential `Chain` pipelines can be lowered to DAG via `LowerToDAG.Chain.toDAGTerm` and
-`LowerToDAG.Chain.toDAGModelZeroInit`, so users can author simple pipelines and still end up
-in the same general model representation.
--/
-
-@[inherit_doc DAG.Model]
-abbrev Model := DAG.Model
-
-namespace Model
-
-@[inherit_doc DAG.Model.specFwd]
-abbrev specFwd {ps ins : List Spec.Shape} {τ : Spec.Shape} (m : Model ps ins τ)
-    {α : Type 0} [TorchLean.Storage α] [Context α] :
-    TorchLean.TensorPack α ps → TorchLean.TensorPack α ins → TorchLean.Tensor α τ :=
-  DAG.Model.specFwd (ps := ps) (ins := ins) (τ := τ) m
-
-@[inherit_doc DAG.Model.toProgram]
-abbrev toProgram {ps ins : List Spec.Shape} {τ : Spec.Shape} (m : Model ps ins τ)
-    {α : Type 0} [TorchLean.Storage α] [Context α] :
-    Runtime.Autograd.Model.Program α (ps ++ ins) τ :=
-  DAG.Model.toProgram (ps := ps) (ins := ins) (τ := τ) m
-
-end Model
-
-end GraphSpec
-end NN

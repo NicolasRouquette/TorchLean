@@ -6,7 +6,7 @@ Authors: TorchLean Team
 
 module
 
-public import NN.Runtime.Autograd.IRExec.Correctness.SemanticEquivalenceCommon
+public import NN.Runtime.Autograd.IRExec.Correctness.Common
 
 /-!
 # Normalization
@@ -206,19 +206,11 @@ theorem buildFrom_denoteAllFrom_layernorm
                                     (target := n.outShape) a hNumel.symm)) <$> e)
                             hLN
 
-                      have hStep :
-                          denoteAllState (α := α) inShape st1 x =
-                            vals0.push
-                              (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
-                        simpa [vals0, st1, nodeData, ctx] using
-                          (denoteAllState_snoc (α := α) (inShape := inShape) (ss := ss)
-                            (τ := n.outShape) (gd := gd) (nodeData := nodeData) (x := x))
-
                       have hTail := ih st1 hRec
-                      exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
-                        (i := i) (x := x) (hi := hi) (τ := n.outShape)
-                        (nodeData := nodeData) (st1 := st1) (st' := st')
-                        (ctx := ctx) (vals0 := vals0) (input := input) hTail hEval hStep
+                      exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
+                        (payload := payload)
+                        (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
+                        (τ := n.outShape) (nodeData := nodeData) hTail hEval
                 · exact False.elim <|
                     throw_bind_ne_ok (by simpa [hp, hParams, view2d, hNumel, hEmb] using
                       hBuild)
@@ -361,20 +353,11 @@ theorem buildFrom_denoteAllFrom_batchNormEval
                                   simp [NN.IR.Graph.evalAt, NN.IR.Graph.evalNode, hN, hk, hp,
                                     hGet, hBatch, hResult, hNorm]
                                   rfl
-                                have hStep :
-                                    denoteAllState (α := α) inShape st1 x =
-                                      vals0.push (Spec.SomeTensor.mk (α := α) n.outShape
-                                        (nodeData.eval ctx)) := by
-                                  simpa [vals0, st1, nodeData, ctx] using
-                                    (denoteAllState_snoc (α := α) (inShape := inShape)
-                                      (ss := ss) (τ := n.outShape) (gd := gd)
-                                      (nodeData := nodeData) (x := x))
                                 have hTail := ih st1 hRec
-                                exact buildFrom_denoteAllFrom_finish (α := α) (g := g)
-                                  (payload := payload) (i := i) (x := x) (hi := hi)
-                                  (τ := n.outShape) (nodeData := nodeData) (st1 := st1)
-                                  (st' := st') (ctx := ctx) (vals0 := vals0) (input := input)
-                                  hTail hEval hStep
+                                exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g)
+                                  (payload := payload)
+                                  (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
+                                  (τ := n.outShape) (nodeData := nodeData) hTail hEval
                               · simp [hp, hParent, expectedIn, hIdx, hInfer, hCfg, hChannels,
                                   dims, leading, spatial, payloadShape, hDecision, hOut] at hBuild
                                 exact False.elim <| throw_bind_ne_ok (h := hBuild)

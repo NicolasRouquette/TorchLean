@@ -22,8 +22,6 @@ namespace NN.MLTheory.CROWN.Graph
 
 open Spec
 
-attribute [local simp] Bind.bind Pure.pure Except.bind Except.pure
-
 theorem swapAdjacentAxes_perm (axes : List Nat) (depth : Nat) :
     (Shape.swapAdjacentAxes axes depth).Perm axes := by
   induction depth generalizing axes with

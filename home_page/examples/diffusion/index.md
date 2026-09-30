@@ -7,14 +7,17 @@ and a saved image artifact. The model, sampler, and specification-level diffusio
 all Lean code.
 
 <div class="media-slab">
-  <img src="{{ '/assets/media/examples/diffusion_imagenette64_real_vs_generated_plot.png' | relative_url }}" alt="Real, noisy, and generated diffusion images"/>
+  <img src="{{ '/assets/media/examples/diffusion_imagenette64_real_vs_generated_plot.png' | relative_url }}" alt="Real Imagenette image, diffusion-generated sample, and diffusion reconstruction"/>
 </div>
 
 ## Run It First
 
-For a short runtime check, use the CUDA path with a tiny model:
+Prepare the CIFAR-10 arrays, then use a tiny model for a short CUDA run. The CUDA commands require
+a compatible LibTorch SDK and GPU, as described in the
+[installation guide]({{ '/installation/' | relative_url }}):
 
 ```bash
+python3 scripts/datasets/download_example_data.py --cifar10
 lake -R -K cuda=true exe torchlean diffusion --device cuda --dataset cifar10 --n-total 1 --steps 1 --hidden-c 1 --T 2
 ```
 
@@ -30,8 +33,8 @@ lake -R -K cuda=true exe torchlean diffusion --device cuda \
   --sample-ppm data/examples/diffusion_sample.ppm
 ```
 
-The command is small enough to run locally, but it still exercises the full path: data conversion,
-typed tensors, runtime model, sampler, and saved artifacts.
+This run exercises data conversion, typed tensors, the runtime model, the sampler, and saved
+artifacts. Its memory use and duration depend on the selected model and hardware.
 
 ## Data: Where Images Come From
 
@@ -126,8 +129,7 @@ neural network and then uses the public data API to build training samples.
 Two choices matter in the example:
 
 1. The epsilon predictor is a residual CNN that preserves resolution
-   (`nn.models.Diffusion.NoisePredictor.residual`). The training, sampling, and visualization
-   path stays easy to run on a local checkout.
+   (`nn.models.Diffusion.NoisePredictor.residual`).
 2. Time is fed to the model as an extra channel: when the data has $c$ channels, the input has
    $c+1$ channels. The last channel is the normalized timestep broadcast across spatial positions.
 

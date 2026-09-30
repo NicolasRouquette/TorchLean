@@ -43,29 +43,25 @@ def linear {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Inhabited �
   (b : TensorRef α [outDim])
   (x : TensorRef α [inDim]) : IO (TensorRef α [outDim]) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.linear (t := t0)
+    s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.linear (t := t0)
       (inDim := inDim) (outDim := outDim) w.id b.id x.id
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.linear (t := t0) (outDim := outDim) (inDim := inDim)
         w.id b.id x.id
-    pure (some { id := id })
-  execute (α := α) s .linear #[w.identity?, b.identity?, x.identity?] cpu cuda
+  executeRecorded (α := α) s .linear #[w.identity?, b.identity?, x.identity?] cpu cuda
 
 /-- Mean-squared-error loss returning a scalar. PyTorch: `torch.nn.functional.mse_loss`. -/
 def mseLoss {α : Type} [TorchLean.Storage α] [TensorTransfer α] (s : EagerSession α)
   [Inhabited α] [Add α] [Sub α] [Mul α] [Div α] [Zero α] [One α] [NatCast α]
   {sh : Shape} (yhat target : TensorRef α sh) : IO (TensorRef α Shape.scalar) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <|
+    s.recordCpu fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.Tape.mseLoss (t := t0) (s := sh) yhat.id target.id
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.mseLoss (t := t0) (s := sh) yhat.id target.id
-    pure (some { id := id })
-  execute (α := α) s .mseLoss #[yhat.identity?, target.identity?] cpu cuda
+  executeRecorded (α := α) s .mseLoss #[yhat.identity?, target.identity?] cpu cuda
 
 /-- Layer normalization over embedding dimension. PyTorch: `nn.LayerNorm` / `functional.layer_norm`.
   -/
@@ -78,18 +74,16 @@ def layerNorm {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context 
   (beta : TensorRef α [embedDim])
   (epsilon : α := TorchLean.normalizationEpsilon) : IO (TensorRef α [seqLen, embedDim]) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.layerNorm (t := t0)
+    s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.layerNorm (t := t0)
       (seqLen := seqLen) (embedDim := embedDim) (h_seq_pos := h_seq_pos)
       (h_embed_pos := h_embed_pos) x.id gamma.id beta.id (epsilon := epsilon)
-    pure { id := id }
   let cuda := do
     let epsilonFloat ← TensorTransfer.toFloat (α := α) epsilon
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.layerNorm (t := t0)
       (seqLen := seqLen) (embedDim := embedDim) (h_seq_pos := h_seq_pos)
       (h_embed_pos := h_embed_pos) x.id gamma.id beta.id (epsilon := epsilonFloat)
-    pure (some { id := id })
-  execute (α := α) s .layerNorm #[x.identity?, gamma.identity?, beta.identity?] cpu cuda
+  executeRecorded (α := α) s .layerNorm #[x.identity?, gamma.identity?, beta.identity?] cpu cuda
 
 /-- Batch normalization over every spatial axis of a channel-first tensor. -/
 def batchNorm {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α]
@@ -103,19 +97,17 @@ def batchNorm {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context 
   (epsilon : α := TorchLean.normalizationEpsilon) :
   IO (TensorRef α (.dim channels sSpatial)) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.batchNorm (t := t0)
+    s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.batchNorm (t := t0)
       (channels := channels) (sSpatial := sSpatial) hWellFormed
       x.id gamma.id beta.id (epsilon := epsilon)
-    pure { id := id }
-  let cuda : IO (Option (TensorRef α (.dim channels sSpatial))) :=
+  let cuda : IO Nat :=
     do
       let epsilonFloat ← TensorTransfer.toFloat (α := α) epsilon
-      let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+      s.recordCuda fun t0 => keepTapeOnError t0 <|
         Runtime.Autograd.LibTorch.Tape.batchNorm (t := t0)
         (channels := channels) (spatial := sSpatial) hWellFormed x.id gamma.id beta.id
         (epsilon := epsilonFloat)
-      pure (some { id := id })
-  execute (α := α) s .batchNorm #[x.identity?, gamma.identity?, beta.identity?] cpu cuda
+  executeRecorded (α := α) s .batchNorm #[x.identity?, gamma.identity?, beta.identity?] cpu cuda
 
 /-- CPU attention for one sequence, recorded on TorchLean's reference tape. -/
 def attentionCpu {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α]

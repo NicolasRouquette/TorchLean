@@ -39,20 +39,12 @@ Elementwise logistic sigmoid activation.
  Reference: https://pytorch.org/docs/stable/generated/torch.sigmoid.html
  -/
 @[inline] def sigmoid {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.sigmoidSpec (α:=α) x
-  let node : Node α :=
-    { name := some "sigmoid"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dsig := Activation.sigmoidDerivSpec (α := α) x
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dsig dLdy))]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "sigmoid" xId
+    (forward := fun x => Activation.sigmoidSpec (α := α) x)
+    (backward := fun x dLdy =>
+      let dsig := Activation.sigmoidDerivSpec (α := α) x
+      mulSpec dsig dLdy)
 
 /--
  Elementwise hyperbolic tangent activation.
@@ -64,20 +56,12 @@ Elementwise logistic sigmoid activation.
  Reference: https://pytorch.org/docs/stable/generated/torch.tanh.html
  -/
 @[inline] def tanh {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.tanhSpec (α:=α) x
-  let node : Node α :=
-    { name := some "tanh"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dtanh := Activation.tanhDerivSpec (α := α) x
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dtanh dLdy))]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "tanh" xId
+    (forward := fun x => Activation.tanhSpec (α := α) x)
+    (backward := fun x dLdy =>
+      let dtanh := Activation.tanhDerivSpec (α := α) x
+      mulSpec dtanh dLdy)
 
 /--
 Elementwise tanh-approximate GELU.
@@ -87,20 +71,12 @@ The tape records GELU as one semantic operation. Its backward closure uses the d
 without changing this tape-level rule.
 -/
 @[inline] def gelu {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α := α) (t := t) (s := s) xId
-  let y := Activation.geluSpec (α := α) x
-  let node : Node α :=
-    { name := some "gelu"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dgelu := Activation.geluDerivSpec (α := α) x
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dgelu dLdy))]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "gelu" xId
+    (forward := fun x => Activation.geluSpec (α := α) x)
+    (backward := fun x dLdy =>
+      let dgelu := Activation.geluDerivSpec (α := α) x
+      mulSpec dgelu dLdy)
 
 /--
  Softmax along the last axis (recursing over outer dimensions).
@@ -112,20 +88,11 @@ without changing this tape-level rule.
  Reference: https://pytorch.org/docs/stable/generated/torch.softmax.html
  -/
 @[inline] def softmaxLast {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.Internal.softmaxInnermostSpec (α := α) x
-  let node : Node α :=
-    { name := some "softmax"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dx := Activation.Internal.softmaxInnermostBackwardSpec (α := α) (s := s) x dLdy
-        pure #[(xId, Spec.SomeTensor.ofTensor dx)]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "softmax" xId
+    (forward := fun x => Activation.Internal.softmaxInnermostSpec (α := α) x)
+    (backward := fun x dLdy =>
+      Activation.Internal.softmaxInnermostBackwardSpec (α := α) (s := s) x dLdy)
 
 /--
 Stable log-softmax along the last axis.
@@ -160,20 +127,12 @@ Unlike `log (softmax x)`, this uses the max-shifted
  Reference: https://pytorch.org/docs/stable/generated/torch.nn.functional.softplus.html
  -/
 @[inline] def softplus {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.softplusSpec (α:=α) x
-  let node : Node α :=
-    { name := some "softplus"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dsoft := Activation.softplusDerivSpec (α := α) x
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dsoft dLdy))]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "softplus" xId
+    (forward := fun x => Activation.softplusSpec (α := α) x)
+    (backward := fun x dLdy =>
+      let dsoft := Activation.softplusDerivSpec (α := α) x
+      mulSpec dsoft dLdy)
 
 /--
  Elementwise exponential.
@@ -184,19 +143,10 @@ Unlike `log (softmax x)`, this uses the max-shifted
  Reference: https://pytorch.org/docs/stable/generated/torch.exp.html
  -/
 @[inline] def exp {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := expSpec (α:=α) x
-  let node : Node α :=
-    { name := some "exp"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec (expSpec (α := α) x) dLdy))]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "exp" xId
+    (forward := fun x => expSpec (α := α) x)
+    (backward := fun x dLdy => mulSpec (expSpec (α := α) x) dLdy)
 
 /--
  Elementwise natural logarithm.
@@ -237,23 +187,14 @@ Unlike `log (softmax x)`, this uses the max-shifted
  Reference: https://pytorch.org/docs/stable/generated/torch.reciprocal.html
  -/
 @[inline] def inv {α : Type} [TorchLean.Storage α] [Context α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := invSpec (α := α) x
-  let node : Node α :=
-    { name := some "inv"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        -- d/dx (x⁻¹) = -(x⁻¹)²
-        let invx := invSpec (α := α) x
-        let invx2 := mulSpec invx invx
-        let dx := scaleSpec (α := α) (s := s) (mulSpec dLdy invx2) (-1 : α)
-        pure #[(xId, Spec.SomeTensor.ofTensor dx)]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "inv" xId
+    (forward := fun x => invSpec (α := α) x)
+    (backward := fun x dLdy =>
+      -- d/dx (x⁻¹) = -(x⁻¹)²
+      let invx := invSpec (α := α) x
+      let invx2 := mulSpec invx invx
+      scaleSpec (α := α) (s := s) (mulSpec dLdy invx2) (-1 : α))
 
 /--
  Elementwise `log(softplus(x) + ε)`.
@@ -268,20 +209,12 @@ Unlike `log (softmax x)`, this uses the max-shifted
  -/
 @[inline] def safeLog {α : Type} [TorchLean.Storage α] [Context α]
   {s : Shape} (t : Tape α) (xId : Nat) (ε : α := Context.defaultEpsilon) :
-    Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y := Activation.safeLogSpec (α:=α) x ε
-  let node : Node α :=
-    { name := some "safe_log"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        let dlog := Activation.safeLogDerivSpec (α := α) x ε
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec dlog dLdy))]
-    }
-  pure (t.addNode node)
+    Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s) "safe_log" xId
+    (forward := fun x => Activation.safeLogSpec (α := α) x ε)
+    (backward := fun x dLdy =>
+      let dlog := Activation.safeLogDerivSpec (α := α) x ε
+      mulSpec dlog dLdy)
 
 /--
  Reduce-sum over all entries, producing a scalar node.
@@ -293,19 +226,10 @@ Unlike `log (softmax x)`, this uses the max-shifted
  Reference: https://pytorch.org/docs/stable/generated/torch.sum.html
  -/
 @[inline] def sum {α : Type} [TorchLean.Storage α] [Add α] [Zero α]
-  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) := do
-  let x ← requireValue (α:=α) (t:=t) (s:=s) xId
-  let y : Tensor α .scalar := Tensor.scalar (sumSpec (α:=α) x)
-  let node : Node α :=
-    { name := some "sum"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := Shape.scalar) dLdyAny
-        pure #[(xId, Spec.SomeTensor.ofTensor (replicate (α := α) (shape := s) dLdy))]
-    }
-  pure (t.addNode node)
+  {s : Shape} (t : Tape α) (xId : Nat) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := .scalar) "sum" xId
+    (forward := fun x => Tensor.scalar (sumSpec (α := α) x))
+    (backward := fun _x dLdy => replicate (α := α) (shape := s) dLdy)
 
 /--
  Tape node for MSE loss with `"mean"` reduction.

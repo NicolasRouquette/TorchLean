@@ -121,8 +121,12 @@ Use `nn.State Binary128 (nn.stateShapes model)` and `nn.lowerToTypedGraph model 
 to keep that scalar through parameters, activations, and derivatives on the typed CPU path. The
 [tensor guide]({{ '/blueprint/Building-Models/Tensors-That-Remember-Their-Shapes/' | relative_url }})
 works through an affine model with exact output and derivative checks. The supervised trainer
-above still has `Float` dataset, reporting, and checkpoint boundaries. Custom precision runs on the
-typed CPU path. The eager CUDA runtime uses LibTorch binary32 buffers; its separate
+above uses `Float` datasets and reports. To retain the chosen scalar through a supervised session,
+use `trainer.openTyped (α := Binary128)`: samples, predictions, losses, reports, and model-state
+checkpoints keep that type. Typed sessions run on CPU, reject custom backend profiles, and do not
+provide `Result.verify`. Seeded initialization and optimizer/scheduler settings still begin with
+`Float` values; supply typed initial state when those initial values need extra precision.
+The eager CUDA runtime uses LibTorch binary32 buffers; its separate
 matrix-multiplication interface also supports binary64.
 
 For an explicit training loop, take the parameter gradients returned by

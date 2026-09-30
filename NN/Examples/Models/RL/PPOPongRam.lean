@@ -196,10 +196,8 @@ def makeKwargs : Array (String × Lean.Json) :=
 /--
 What Lean insists on before it will believe anything the Python environment sends.
 
-Every observation and reward must be finite, and RAM bytes must lie in `[0, 255]`. That last check
-is
-not about the emulator, which cannot produce anything else; it is about the protocol and the adapter
-between them, where a byte-order or dtype mistake would show up as out-of-range values.
+Every observation and reward must be finite, and RAM bytes must lie in `[0, 255]`. The range
+check guards against protocol and adapter mistakes such as incorrect byte order or dtype.
 -/
 def contract : rl.boundary.Contract observation actionCount :=
   { checkObsFinite := true
@@ -237,7 +235,7 @@ def checkEnvOnly : IO Unit := do
 -/
 
 def main (args : List String) : IO UInt32 := do
-  if args.contains "--help" || args.contains "-h" then
+  if CLI.hasHelp args then
     IO.println usage
     return 0
   if args.contains "--check-env-only" then

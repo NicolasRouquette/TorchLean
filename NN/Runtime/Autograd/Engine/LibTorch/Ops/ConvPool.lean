@@ -32,6 +32,18 @@ namespace Tape
 
 /-! ## Convolution and pooling -/
 
+/-- Shared rank, kernel, and stride checks, in the order required by every native spatial op. -/
+@[inline] def Internal.validateSpatialGeometry {d : Nat} (opName : String)
+    (kernel stride : TorchLean.Tensor Nat [d]) : Result Unit := do
+  if d = 0 then
+    throw s!"autograd: cuda: {opName}: d=0 is not supported"
+  if d > 3 then
+    throw s!"autograd: cuda: {opName}: spatial rank must be at most 3"
+  if !decide (∀ i : Fin d, kernel.getScalar i ≠ 0) then
+    throw s!"autograd: cuda: {opName}: kernel_size must be > 0"
+  if !decide (∀ i : Fin d, stride.getScalar i ≠ 0) then
+    throw s!"autograd: cuda: {opName}: stride must be > 0"
+
 /-- One-, two-, or three-dimensional convolution through LibTorch. -/
 @[inline] def conv
   {d inC outC : Nat}
@@ -39,14 +51,7 @@ namespace Tape
   {inSpatial : TorchLean.Tensor Nat [d]}
   (t : Tape) (kernelId biasId inputId : Nat) :
   Result (Tape × Nat) := do
-  if d = 0 then
-    throw "autograd: cuda: conv: d=0 is not supported"
-  if d > 3 then
-    throw "autograd: cuda: conv: spatial rank must be at most 3"
-  if !decide (∀ i : Fin d, kernel.getScalar i ≠ 0) then
-    throw "autograd: cuda: conv: kernel_size must be > 0"
-  if !decide (∀ i : Fin d, stride.getScalar i ≠ 0) then
-    throw "autograd: cuda: conv: stride must be > 0"
+  Internal.validateSpatialGeometry "conv" kernel stride
 
   let inC32 ← AnyBuffer.natToU32Checked inC
   let outC32 ← AnyBuffer.natToU32Checked outC
@@ -109,14 +114,7 @@ namespace Tape
   {inSpatial : TorchLean.Tensor Nat [d]}
   (t : Tape) (kernelId biasId inputId : Nat) :
   Result (Tape × Nat) := do
-  if d = 0 then
-    throw "autograd: cuda: conv_transpose: d=0 is not supported"
-  if d > 3 then
-    throw "autograd: cuda: conv_transpose: spatial rank must be at most 3"
-  if !decide (∀ i : Fin d, kernel.getScalar i ≠ 0) then
-    throw "autograd: cuda: conv_transpose: kernel_size must be > 0"
-  if !decide (∀ i : Fin d, stride.getScalar i ≠ 0) then
-    throw "autograd: cuda: conv_transpose: stride must be > 0"
+  Internal.validateSpatialGeometry "conv_transpose" kernel stride
 
   let inC32 ← AnyBuffer.natToU32Checked inC
   let outC32 ← AnyBuffer.natToU32Checked outC
@@ -137,9 +135,7 @@ namespace Tape
   let inputShape : Shape :=
     Shape.ofList (inC :: inSpatial.to (List Nat))
   let outSpatial : TorchLean.Tensor Nat [d] :=
-    TorchLean.Tensor.ofFn (fun a =>
-      Spec.convTransposeOutDim
-        (inSpatial.getScalar a) (kernel.getScalar a) (stride.getScalar a) (padding.getScalar a))
+    Spec.convTransposeOutSpatial inSpatial kernel stride padding
   let _ ← AnyBuffer.numelU32 (Shape.ofList (outSpatial.to (List Nat)))
   let outShape : Shape :=
     Shape.ofList (outC :: outSpatial.to (List Nat))
@@ -179,14 +175,7 @@ namespace Tape
 @[inline] def maxPool
     {d C : Nat} {inSpatial kernel stride padding : TorchLean.Tensor Nat [d]}
     (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  if d = 0 then
-    throw "autograd: cuda: max_pool: d=0 is not supported"
-  if d > 3 then
-    throw "autograd: cuda: max_pool: spatial rank must be at most 3"
-  if !decide (∀ i : Fin d, kernel.getScalar i ≠ 0) then
-    throw "autograd: cuda: max_pool: kernel_size must be > 0"
-  if !decide (∀ i : Fin d, stride.getScalar i ≠ 0) then
-    throw "autograd: cuda: max_pool: stride must be > 0"
+  Internal.validateSpatialGeometry "max_pool" kernel stride
 
   let inC32 ← AnyBuffer.natToU32Checked C
   let inSpatialArr : Array Nat := Array.ofFn (fun i : Fin d => inSpatial.getScalar i)
@@ -239,14 +228,7 @@ to zero or overflow a finite one to infinity.
   let beta32 := Float.toFloat32 beta
   if !beta32.isFinite || beta32 == (0.0 : Float32) then
     throw "autograd: cuda: smooth_max_pool: beta must be finite and nonzero"
-  if d = 0 then
-    throw "autograd: cuda: smooth_max_pool: d=0 is not supported"
-  if d > 3 then
-    throw "autograd: cuda: smooth_max_pool: spatial rank must be at most 3"
-  if !decide (∀ i : Fin d, kernel.getScalar i ≠ 0) then
-    throw "autograd: cuda: smooth_max_pool: kernel_size must be > 0"
-  if !decide (∀ i : Fin d, stride.getScalar i ≠ 0) then
-    throw "autograd: cuda: smooth_max_pool: stride must be > 0"
+  Internal.validateSpatialGeometry "smooth_max_pool" kernel stride
 
   let inC32 ← AnyBuffer.natToU32Checked C
   let inSpatialArr : Array Nat := Array.ofFn (fun i : Fin d => inSpatial.getScalar i)
@@ -294,14 +276,7 @@ to zero or overflow a finite one to infinity.
 @[inline] def avgPool
     {d C : Nat} {inSpatial kernel stride padding : TorchLean.Tensor Nat [d]}
     (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  if d = 0 then
-    throw "autograd: cuda: avg_pool: d=0 is not supported"
-  if d > 3 then
-    throw "autograd: cuda: avg_pool: spatial rank must be at most 3"
-  if !decide (∀ i : Fin d, kernel.getScalar i ≠ 0) then
-    throw "autograd: cuda: avg_pool: kernel_size must be > 0"
-  if !decide (∀ i : Fin d, stride.getScalar i ≠ 0) then
-    throw "autograd: cuda: avg_pool: stride must be > 0"
+  Internal.validateSpatialGeometry "avg_pool" kernel stride
 
   let inC32 ← AnyBuffer.natToU32Checked C
   let inSpatialArr : Array Nat := Array.ofFn (fun i : Fin d => inSpatial.getScalar i)

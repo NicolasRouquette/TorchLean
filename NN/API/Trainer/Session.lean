@@ -335,7 +335,8 @@ def «open» {σ τ : Shape} (trainer : TorchLean.Trainer σ τ)
     (scheduler : Option Scheduler.Config := none)
     (initialState? : Option (nn.State Float (nn.stateShapes trainer.model)) := none) :
     IO (Session trainer) := do
-  IO.ofExcept trainer.runtime.optimizer.validateFloat32
+  IO.ofExcept
+    (trainer.runtime.optimizer.validateFor (α := Float32) (scalarName := "binary32"))
   match scheduler with
   | some schedule =>
       IO.ofExcept <| schedule.validate (round := fun value => value.toFloat32.toFloat)

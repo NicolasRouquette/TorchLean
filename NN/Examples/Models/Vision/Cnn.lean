@@ -90,26 +90,9 @@ def model : nn.Builder (nn.Sequential input output) :=
 
 /-- Train the CIFAR CNN with the public `Trainer` surface. -/
 def train (runtime : Runtime.Config) (flags : Support.Training.Options Support.Npy.Options) :
-    IO Trainer.Report := do
-  let batches ←
-    RealData.loadCifarBatches exeName batchSize flags.data.nRows flags.data.seed
-      flags.data.xPath flags.data.yPath
-  let batches ← batches.mapM fun sample =>
-    CLI.orThrow exeName <|
-      RealData.cropCifarBatch batchSize cropHeight cropWidth sample
-  let trainer :=
-    Trainer.new model <|
-      Trainer.RunConfig.forObjective
-        (Trainer.RunConfig.fromRuntime runtime
-          { optimizer := optim.adam { learningRate := flags.training.learningRate } })
-        (.oneHotCrossEntropy 1)
-        (seed := flags.data.seed)
-  let trained ← trainer.train
-    (Data.fromSamples batches)
-    (flags.training.trainOptions
-      (logTitle := "CNN training")
-      (logNotes := RealData.trainingNotes "cifar10" batchSize flags))
-  pure trained.report
+    IO Trainer.Report :=
+  RealData.trainCifarClassifier batchSize cropHeight cropWidth exeName
+    "CNN training" model runtime flags
 
 /-- CLI entrypoint for CIFAR CNN training on the selected runtime device. -/
 def main (args : List String) : IO UInt32 :=

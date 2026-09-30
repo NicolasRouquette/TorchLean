@@ -30,37 +30,23 @@ namespace Tape
 @[inline] def select {α : Type} [TorchLean.Storage α] [Zero α]
     {s : Shape} (t : Tape α) (xId : Nat) (axis : Nat)
     [Shape.AxisInBounds axis s] (index : Fin (Shape.axisSize s axis)) :
-    Result (Tape α × Nat) := do
-  let x ← requireValue (α := α) (t := t) (s := s) xId
-  let y := Tensor.selectSpec axis x index
-  let node : Node α :=
-    { name := some s!"select(axis={axis}, index={index.val})"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s.eraseAxis axis) dLdyAny
-        let dx := Tensor.selectBackwardSpec axis index dLdy
-        pure #[(xId, Spec.SomeTensor.ofTensor dx)] }
-  pure (t.addNode node)
+    Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s.eraseAxis axis)
+    s!"select(axis={axis}, index={index.val})" xId
+    (forward := fun x => Tensor.selectSpec axis x index)
+    (backward := fun _x dLdy => Tensor.selectBackwardSpec axis index dLdy)
+
 /-- Select several bounded coordinates from any tensor axis. -/
 @[inline] def indexSelect {α : Type} [TorchLean.Storage α] [Add α] [Zero α]
     {s : Shape} (t : Tape α) (xId : Nat) (axis count : Nat)
     [Shape.AxisInBounds axis s]
-    (indices : Tensor (Fin (Shape.axisSize s axis)) [count]) : Result (Tape α × Nat) := do
-  let x ← requireValue (α := α) (t := t) (s := s) xId
-  let y := Tensor.indexSelectSpec axis x indices
-  let node : Node α :=
-    { name := some s!"index_select(axis={axis})"
-      value := Spec.SomeTensor.ofTensor y
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad (α := α) (τ := s.replaceAxis axis count) dLdyAny
-        let zero := Tensor.full s (0 : α)
-        let dx := Tensor.scatterAddSpec axis zero indices dLdy
-        pure #[(xId, Spec.SomeTensor.ofTensor dx)] }
-  pure (t.addNode node)
+    (indices : Tensor (Fin (Shape.axisSize s axis)) [count]) : Result (Tape α × Nat) :=
+  unary (α := α) (t := t) (σ := s) (τ := s.replaceAxis axis count)
+    s!"index_select(axis={axis})" xId
+    (forward := fun x => Tensor.indexSelectSpec axis x indices)
+    (backward := fun _x dLdy =>
+      let zero := Tensor.full s (0 : α)
+      Tensor.scatterAddSpec axis zero indices dLdy)
 
 /-- Add indexed source slices into any tensor axis. -/
 @[inline] def scatterAdd {α : Type} [TorchLean.Storage α] [Add α] [Zero α]

@@ -96,7 +96,7 @@ after conversion to the spec scalar. The key names are:
 
 - `tensorToSpec`: pointwise conversion from runtime tensor values to spec scalars.
 - `linfNorm`: max style tensor norm used for error statements.
-- `approxWith`: absolute tensor approximation using an explicit error tensor.
+- `approxWith`: absolute tensor approximation under a chosen norm with a scalar error budget.
 - `approxWithTol`: approximation using a tolerance object.
 - `approxTensorWithTol`: packaged tensor tolerance relation.
 - `Witness`: a small record for carrying a runtime value and its error evidence.
@@ -198,8 +198,10 @@ The tolerance determines the following real-valued budget:
 approxBound : ApproxTol → ℝ → ℝ → ℝ
 ```
 
-The proposition says every coordinate of `tensorToSpec toSpec runtime` is close to the matching
-coordinate of `spec` under `eps`. That makes the trusted boundary easy to locate. If `toSpec`
+The proposition bounds the L∞ distance by `approxBound tol ‖spec‖∞ ‖runtime‖∞`. Every coordinate
+shares that allowance: the relative component uses the whole tensor's maximum norm, rather than
+each entry's magnitude as in an elementwise tolerance comparison. That makes the trusted
+boundary easy to locate. If `toSpec`
 interprets an executable rounded-real model, the theorem is about that rounded-real model. If the
 actual deployment path is CUDA, cuBLAS, PyTorch, or a fused native kernel, a separate agreement
 statement is needed before the theorem says anything about that path.
@@ -432,7 +434,8 @@ Checking performs three independent executable validations:
 `GraphRangeRegistry` dispatches by primitive operation, not model family. The built-in transfers
 cover source and shape-only nodes, pooling, arithmetic, inverse, ReLU, absolute value, directed
 square root with a checked nonnegative domain, fixed-left reductions, matrix multiplication, MSE,
-LayerNorm, softmax, sigmoid, tanh, sine, and cosine. Exponential is currently unsupported.
+LayerNorm, softmax, sigmoid, tanh, sine, cosine, and interval-hull rules for max, min, and
+concatenation. Exponential is currently unsupported.
 An unsupported operation fails at its node id; it is not replaced by an uninformative whole
 interval.
 
@@ -527,7 +530,7 @@ ends with a two-layer MLP rather than a single isolated operator. Run it from th
 ```terminal
 # Run generation and replay for the primitive-composed MLP
 # certificate.
-lake exe torchlean numerical_certificate
+scripts/lake.sh exe torchlean numerical_certificate
 ```
 
 The model is a matrix pipeline with shapes that remain visible in the IR:
@@ -592,7 +595,7 @@ The file includes scalar and tensor approximation lemmas for common operations:
 
 - arithmetic: `approx_add_nf`, `approx_sub_nf`, `approx_mul_nf`, `approx_div_nf_of_pos_lb`;
 - unary functions: `approx_exp_nf`, `approx_tanh_nf`, `approx_abs_nf`, `approx_neg_nf`;
-- guarded operations: `safeLog`, `safeDiv`, `safe_log`;
+- guarded operations: `safeLog`, `safeDiv`, `approx_safeLogSoftplus_nf`;
 - tensor rules: `approxTensor_add_spec`, `approxTensor_mul_spec`, `approxTensor_exp_spec`,
   `approxTensor_relu_spec`;
 - graph nodes: `addNode`, `mulNode`, `expNode`, `reluNode`, `safeDivNode`, `softmaxNode`, `sumNode`.
@@ -600,8 +603,9 @@ The file includes scalar and tensor approximation lemmas for common operations:
 Several of these lemmas make the numerical analysis tradeoff visible. Division requires a positive
 lower bound on the exact denominator that survives rounding (`approx_div_nf_of_pos_lb`) or a
 guarded form (`safeDiv`). The division budget has a name, `divPosErrorBound`: the numerator error
-scaled by the effective margin, the denominator error scaled by the squared margin, and half an ULP
-of the quotient. The sigmoid, logistic, and mean bounds are built on that one definition.
+divided by the surviving margin, the denominator error times the numerator magnitude plus its
+error divided by the squared margin, and half an ULP of the quotient. The sigmoid, logistic, and
+mean bounds are built on that one definition.
 `reciprocal_sigmoid_bound_scalar_le_one` bounds the budget for the rounded sequence
 $`1/(1+\exp(-x))` by one under explicit small-error hypotheses.
 `mean_row_bound_of_exact` gives the closed form of the row-mean budget when the row count is exactly
@@ -638,7 +642,7 @@ The five real arguments are the exact denominator lower bound `η`, the input-er
 `epsx` and `epsy`, and the interpreted runtime operands `xhat` and `yhat`. The associated theorem
 requires `epsy < η`: denominator error leaves an effective separation `η - epsy` from zero.
 The budget scales the numerator error by the reciprocal of that separation and the denominator
-error by its squared reciprocal, then adds rounding of the quotient.
+error by its squared reciprocal times `abs xhat + epsx`, then adds rounding of the quotient.
 
 As the surviving separation shrinks, the bound grows. A caller can compare this explicit expression
 with a desired margin, but it is a noncomputable real-valued bound, not an executable estimator.
@@ -796,7 +800,8 @@ real denominator lower bounds, and rounded denominator margins required by
 `approxTensor_softmaxBackwardFromWeightsVecSpec` and `approxTensor_softmaxBackwardVecSpec`. The
 analytic facts `sum_softmaxVec`, `sum_softmaxJvp`, and `abs_softmaxJvp_le_two_mul` establish
 normalization, zero-sum JVP coordinates, and the dimension-independent bound
-$`\lvert\operatorname{vjp}_i\rvert\le 2G`.
+$`\lvert\operatorname{jvp}_i\rvert\le 2G`. The softmax Jacobian is symmetric, so the same formula
+also serves as the VJP.
 
 These are NF rounded-real theorems, not automatic claims about FloatLib binary32, a fused attention
 kernel, or native binary32. The numerical-certificate registry's softmax rule only derives the
@@ -1068,7 +1073,8 @@ derived scalars, and domain margins for the square root and division.
 
 The optimizer's retained state determines which relations must survive an update.
 
-SGD keeps nothing between steps, so its conclusion is a single `approxTensor` on the updated
+SGD has no momentum buffer or step counter, so its conclusion is a single `approxTensor` on the
+updated
 parameters, and its only state hypothesis is `sgdStateApprox`, which relates two learning rates.
 Momentum SGD keeps one buffer, and its conclusion becomes a conjunction: a bound for the next
 momentum buffer *and* a bound for the parameters. The next update needs the bound on the buffer
@@ -1118,7 +1124,9 @@ computed from a machine-like epsilon times a local scale bound.
 
 A graph can then carry both "how close" and "at what scale" information. The lemmas
 `approxTensorWithTol_from_scale` and `approxCtx_get_tolFromEpsScale` connect scale estimates back to
-the tolerance API used by graph theorems.
+the tolerance API used by graph theorems. These two lemmas weaken an absolute bound to the
+derived absolute-plus-relative tolerance for any scale; the second retains an unused `scaleCtx`
+hypothesis to record that the relative component describes the tensors' actual scale.
 
 This remains a separate layer because not every proof needs scale aware reasoning. Small examples
 and operator proofs written by hand are often clearer with absolute tolerances. Larger deployment
@@ -1126,11 +1134,9 @@ claims usually need scale, because one global absolute epsilon is rarely meaning
 activations and gradients.
 
 A scale bound can simplify a value-dependent error expression before it enters the next node.
-For instance, an upper bound on operand magnitudes replaces those magnitudes in a product
-estimate by quantities already known throughout a region. The resulting estimate may be looser,
-but it can be reused for every input in that region. The scale relation is the evidence that
-permits this replacement. Recording a convenient number in `BList` is insufficient unless the
-actual tensor values satisfy the accompanying bound.
+Scale propagation has its own `FwdNodeScale.scaleSound` obligation. A number recorded in `BList`
+only describes the tensor magnitudes when the accompanying scale relation holds; the tolerance
+weakening lemmas alone do not prove that relation.
 
 # FP32 And Verification Margins
 

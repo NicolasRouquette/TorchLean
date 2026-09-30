@@ -112,14 +112,12 @@ A primitive supplies a pure tensor function and an executable TorchLean program:
 namespace NN.GraphSpec.Primitive
 
 open Spec
-open Tensor
-open TorchLean.Tensor
 
 def myOp (s : Shape) : Primitive [] s s :=
   { name := "myOp"
-    specFwd := fun {α} _ctx _params x => x
-    program := fun {α} _ctx _deq =>
-      fun {m} _ _ => fun x => pure x
+    specFwd := fun {_α} _storage _ctx _params x => x
+    program := fun {_α} _storage _ctx =>
+      fun {m} _ _ => fun x => pure (f := m) x
     toLayerM? := none
     countsAsLayer := false }
 

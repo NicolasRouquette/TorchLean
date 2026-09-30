@@ -10,7 +10,7 @@ public import NN.Runtime.Autograd.Model.Layers.Core
 public import NN.Runtime.PyTorch.Export.IRPyTorch
 public import NN.Runtime.PyTorch.Import.TorchExport
 public import NN.Tests.MLTheory.Utils
-public import NN.Tests.Utils
+public import NN.Tests.Runtime.Floats.Utils
 
 /-!
 # Rank-Polymorphic Layer Operations
@@ -28,6 +28,7 @@ namespace Floats
 namespace RankPolymorphicLayerOps
 
 open Tests.Utils (assertApprox assertBoundAt)
+open Tests.Floats.Utils (assertArrayApprox)
 open NN.Tests.MLTheory.Utils (pointFlatBox)
 
 /-- Check grouped, dilated convolution with asymmetric padding. -/
@@ -67,7 +68,7 @@ def checkGroupedDilatedConvolution : IO Unit := do
       inputSpatial := inputSpatial
       kernelNonzero := hKernel
       strideNonzero := hStride
-      spec := { kernel := by simpa [kernel] using weights, bias := bias } }
+      spec := { kernel := Tensor.castShape weights (by simp [kernel]), bias := bias } }
   let config : NN.IR.ConvConfig :=
     { spatialRank := 1
       kernel := kernel
@@ -322,8 +323,8 @@ def checkImportedAffineLayerNorm : IO Unit := do
     | .error message => throw <| IO.userError message
   let expected : Array Float := #[-0.7888543819998317, 1.6832815729997477,
     -0.7888543819998317, 1.6832815729997477]
-  for (value, target) in (Tensor.to result.tensor (Array Float)).zip expected do
-    assertApprox "imported affine LayerNorm epsilon" value target (tol := 1e-6)
+  assertArrayApprox "imported affine LayerNorm epsilon"
+    (Tensor.to result.tensor (Array Float)) expected (tol := 1e-6)
 
 /-- Execute affine eval-mode BatchNorm with an explicit non-default epsilon. -/
 def checkAffineBatchNormPayload : IO Unit := do
@@ -347,8 +348,8 @@ def checkAffineBatchNormPayload : IO Unit := do
     | .ok value => pure value
     | .error message => throw <| IO.userError message
   let expected : Array Float := #[2.0690449676496976, 2.794733192202055]
-  for (value, target) in (Tensor.to result.tensor (Array Float)).zip expected do
-    assertApprox "affine BatchNorm payload epsilon" value target (tol := 1e-6)
+  assertArrayApprox "affine BatchNorm payload epsilon"
+    (Tensor.to result.tensor (Array Float)) expected (tol := 1e-6)
 
 /-- Exercise arbitrary-shape running statistics and arbitrary-leading linear derivatives. -/
 def run : IO Unit := do
@@ -365,15 +366,15 @@ def run : IO Unit := do
   let momentum : Tensor Float .scalar := Tensor.scalar 0.25
   let updated :=
     Runtime.Autograd.Model.Layers.updateRunning running batch momentum
-  for (actual, expected) in (Tensor.to updated (Array Float)).zip #[0.5, 2.5, 4.5, 6.5] do
-    assertApprox "arbitrary-shape running-stat update" actual expected (tol := 1e-6)
+  assertArrayApprox "arbitrary-shape running-stat update"
+    (Tensor.to updated (Array Float)) #[0.5, 2.5, 4.5, 6.5] (tol := 1e-6)
 
   let biased : Tensor Float [2, 2] :=
     Tensor.dim fun i => Tensor.dim fun j => Tensor.scalar ((2 * i.val + j.val + 1 : Nat) : Float)
   let corrected :=
     Runtime.Autograd.Model.Layers.unbiasedRunningVariance biased 4
-  for (actual, expected) in (Tensor.to corrected (Array Float)).zip #[4 / 3, 8 / 3, 4, 16 / 3] do
-    assertApprox "arbitrary-shape running-variance correction" actual expected (tol := 1e-6)
+  assertArrayApprox "arbitrary-shape running-variance correction"
+    (Tensor.to corrected (Array Float)) #[4 / 3, 8 / 3, 4, 16 / 3] (tol := 1e-6)
 
   let leading : Shape := .dim 2 (.dim 2 .scalar)
   let weights : Tensor Float [1, 2] :=
@@ -389,14 +390,12 @@ def run : IO Unit := do
         Tensor Float [2, 2, 1])
   let gradients :=
     Spec.linearDerivSpec (leading := leading) (by decide) weights input gradOutput
-  for (actual, expected) in
-      (Tensor.to gradients.weightGradient (Array Float)).zip #[16, 20] do
-    assertApprox "arbitrary-leading linear weight gradient" actual expected (tol := 1e-6)
-  for (actual, expected) in (Tensor.to gradients.biasGradient (Array Float)).zip #[4] do
-    assertApprox "arbitrary-leading linear bias gradient" actual expected (tol := 1e-6)
-  for (actual, expected) in
-      (Tensor.to gradients.inputGradient (Array Float)).zip #[1, 2, 1, 2, 1, 2, 1, 2] do
-    assertApprox "arbitrary-leading linear input gradient" actual expected (tol := 1e-6)
+  assertArrayApprox "arbitrary-leading linear weight gradient"
+    (Tensor.to gradients.weightGradient (Array Float)) #[16, 20] (tol := 1e-6)
+  assertArrayApprox "arbitrary-leading linear bias gradient"
+    (Tensor.to gradients.biasGradient (Array Float)) #[4] (tol := 1e-6)
+  assertArrayApprox "arbitrary-leading linear input gradient"
+    (Tensor.to gradients.inputGradient (Array Float)) #[1, 2, 1, 2, 1, 2, 1, 2] (tol := 1e-6)
 
   IO.println "rank_polymorphic_layer_ops: ok"
 

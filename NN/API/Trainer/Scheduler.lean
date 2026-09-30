@@ -44,36 +44,21 @@ inductive Config where
   | constant (learningRate : Float)
   | step (baseLearningRate : Float) (stepSize : Nat) (decayFactor : Float := 0.1)
   | exponential (baseLearningRate : Float) (decayFactor : Float)
+  /--
+  Linearly warm up to `peakLearningRate`, then follow a cosine curve down to
+  `minimumLearningRate`.
+
+  `warmupSteps` counts optimizer updates. The first update uses
+  `peakLearningRate / warmupSteps`, and the last warm-up update reaches `peakLearningRate`. Once
+  `totalSteps` updates have been scheduled, the learning rate remains at `minimumLearningRate`.
+  A warm-up longer than the run is clamped to `totalSteps`. When `totalSteps = 0`, no update belongs
+  to the schedule and `Config.rate` returns `minimumLearningRate`.
+  -/
   | warmupCosine
       (peakLearningRate minimumLearningRate : Float) (warmupSteps totalSteps : Nat)
   deriving Repr
 
-/-- Constant learning-rate schedule. -/
-def constant (learningRate : Float) : Config := .constant learningRate
-
-/-- Step decay learning-rate schedule. -/
-def step
-    (baseLearningRate : Float) (stepSize : Nat) (decayFactor : Float := 0.1) : Config :=
-  .step baseLearningRate stepSize decayFactor
-
-/-- Exponential learning-rate schedule. -/
-def exponential (baseLearningRate : Float) (decayFactor : Float) : Config :=
-  .exponential baseLearningRate decayFactor
-
-/--
-Linearly warm up to `peakLearningRate`, then follow a cosine curve down to
-`minimumLearningRate`.
-
-`warmupSteps` counts optimizer updates. The first update uses
-`peakLearningRate / warmupSteps`, and the last warm-up update reaches `peakLearningRate`. Once
-`totalSteps` updates have been scheduled, the learning rate remains at `minimumLearningRate`.
-A warm-up longer than the run is clamped to `totalSteps`. When `totalSteps = 0`, no update belongs
-to the schedule and `Config.rate` returns `minimumLearningRate`.
--/
-def warmupCosine
-    (peakLearningRate minimumLearningRate : Float)
-    (warmupSteps totalSteps : Nat) : Config :=
-  .warmupCosine peakLearningRate minimumLearningRate warmupSteps totalSteps
+export Config (constant step exponential warmupCosine)
 
 namespace Internal
 

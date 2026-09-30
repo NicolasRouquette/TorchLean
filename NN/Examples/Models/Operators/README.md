@@ -5,7 +5,8 @@ This folder contains operator learning and physics-informed neural field example
 ## Files
 
 - `ComplexRegression.lean`: fits both components of complex binary32 weights and bias using a
-  real loss, then checks a held-out complex prediction and an optional checkpoint round trip.
+  real loss, then reports a held-out complex prediction and checks an optional checkpoint round
+  trip.
 - `Fno1dBurgers.lean`: native TorchLean 1D Fourier neural operator for the viscous Burgers dataset.
   The command learns the operator `u0(x) -> u(x,T)` on a fixed grid and can export prediction CSVs
   for plotting.
@@ -66,13 +67,13 @@ burgers_meta.json
 Quick CUDA check:
 
 ```bash
-lake -R -K cuda=true exe torchlean fno1d_burgers --device cuda --steps 1
+scripts/lake.sh -Kcuda=true exe torchlean fno1d_burgers --device cuda --steps 1
 ```
 
 Longer run with a prediction artifact:
 
 ```bash
-lake -R -K cuda=true exe torchlean fno1d_burgers --device cuda \
+scripts/lake.sh -Kcuda=true exe torchlean fno1d_burgers --device cuda \
   --steps 700 --lr 0.003 \
   --plot-csv data/real/fno/predictions.csv \
   --log data/real/fno/trainlog.json

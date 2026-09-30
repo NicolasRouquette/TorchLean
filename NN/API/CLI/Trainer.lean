@@ -63,9 +63,9 @@ def parseCommandLine
 
 /-- Render a run configuration as the command-line arguments `parse` accepts. -/
 def cliArguments (run : Trainer.RunConfig) : List String :=
-  ["--arithmetic", run.arithmetic.cliName] ++
-  ["--execution", Runtime.ExecutionMode.cliName run.execution] ++
-  ["--device", run.device.cliName] ++
+  ["--arithmetic", run.arithmetic.cliName,
+    "--execution", Runtime.ExecutionMode.cliName run.execution,
+    "--device", run.device.cliName] ++
   (if run.showBackend then ["--show-backend"] else [])
 
 end TorchLean.CLI.Trainer

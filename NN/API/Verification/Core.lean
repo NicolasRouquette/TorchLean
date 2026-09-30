@@ -150,7 +150,10 @@ end Bounds
 inductive Result where
   /-- The report contains an output enclosure but no additional assertion. -/
   | bounds
-  /-- A top-label assertion with its certified lower margin. -/
+  /--
+  A top-label assertion with its computed margin and strict-positivity test.
+  The binary64 difference may overflow to infinity even when both endpoints are finite.
+  -/
   | topLabel (label : Nat) (margin : Float) (certified : Bool)
   deriving Repr
 
@@ -201,7 +204,11 @@ structure Report where
 
 namespace Report
 
-/-- Build a report from verified output bounds and named verification choices. -/
+/--
+Build a report after checking the radius and consistency of the supplied output bounds.
+
+The caller supplies the enclosure guarantee; these checks do not establish it.
+-/
 def fromBounds (radius : Float) (bounds : Bounds)
     (norm : Norm := .inf)
     (property : Property := .bounds)

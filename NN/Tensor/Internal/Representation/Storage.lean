@@ -445,6 +445,16 @@ theorem size_ofFn {α : Type u} [storage : Storage α]
     storage.size (ofFn values) = length := by
   rw [← storage.toArray_size, toArray_ofFn, Array.size_ofFn]
 
+/-- Reading a buffer built from a finite function returns the indexed value. -/
+@[simp] theorem get_ofFn {α : Type u} [storage : Storage α]
+    {length : Nat} (values : Fin length → α) (index : Fin length)
+    (hIndex : index.val < storage.size (ofFn values)) :
+    storage.get (ofFn values) index.val hIndex = values index := by
+  have hArray : index.val < (storage.toArray (ofFn values)).size := by
+    simpa only [toArray_ofFn, Array.size_ofFn] using index.isLt
+  have hGet := storage.toArray_get (ofFn values) index.val hIndex hArray
+  simpa only [toArray_ofFn, Array.getElem_ofFn] using hGet.symm
+
 /-- An `Array.ofFn` observation determines the physical buffer size. -/
 theorem size_eq_of_toArray_eq_ofFn
     {α : Type u} [storage : Storage α] {length : Nat}
@@ -930,9 +940,5 @@ attribute [irreducible]
   Storage.Internal.floatBufferGet
   Storage.Internal.floatBufferUGet
   Storage.Internal.floatBufferSet
-
-namespace Storage
-
-end Storage
 
 end TorchLean

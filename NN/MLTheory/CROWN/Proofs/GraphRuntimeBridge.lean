@@ -191,21 +191,7 @@ theorem getVal?_liftVals {rvals : Array (SomeTensor ℝ)} {p : Nat} {r : SomeTen
   rw [dite_eq_left hp', getElem!_pos (c := rvals.map fun t => some (flatOfSome t)) (i := p) hp',
     Array.getElem_map]
 
-/-- Reading a present parent through the runtime accessor succeeds with that parent. -/
-theorem getParentValue_eq_ok {rvals : Array (SomeTensor ℝ)} {i p : Nat} {n : Node}
-    {r : SomeTensor ℝ} (h : rvals[p]? = some r) :
-    NN.IR.Graph.getParentValue (α := ℝ) rvals i n p = .ok r := by
-  simp [NN.IR.Graph.getParentValue, h, Pure.pure, Except.pure]
-
-
 /-! ## Inverting successful runtime steps -/
-
-/-- A successful `Except` bind splits into a successful action and a successful continuation. -/
-private theorem bind_eq_ok {α β : Type} {x : Except String α} {f : α → Except String β} {b : β}
-    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
-  cases x with
-  | error e => simp [Bind.bind, Except.bind] at h
-  | ok a => exact ⟨a, rfl, by simpa [Bind.bind, Except.bind] using h⟩
 
 /-- A successful `pure` in `Except` determines its value. -/
 private theorem pure_eq_ok {α : Type} {a b : α} (h : (pure a : Except String α) = .ok b) :
@@ -243,8 +229,9 @@ private theorem array_mapM_option_of_except {α β γ : Type} (xs : Array α)
     | cons x entries ih =>
         intro results hread heval
         rw [List.mapM_cons] at heval
-        obtain ⟨y, hy, hcontinue⟩ := bind_eq_ok (x := f x) heval
-        obtain ⟨tail, htraverse, hresult⟩ := bind_eq_ok (x := entries.mapM f) hcontinue
+        obtain ⟨y, hy, hcontinue⟩ := (NN.IR.Graph.bind_ok_iff (x := f x)).mp heval
+        obtain ⟨tail, htraverse, hresult⟩ :=
+          (NN.IR.Graph.bind_ok_iff (x := entries.mapM f)).mp hcontinue
         have hresult := pure_eq_ok hresult
         subst results
         have hg := hread x (by simp) y hy
@@ -376,7 +363,7 @@ private theorem evalLinear_vector_ok {payload : NN.IR.Payload ℝ} {id k : Nat}
   split at h
   · cases h
   · rename_i p hp
-    obtain ⟨xT, hxT, h⟩ := bind_eq_ok h
+    obtain ⟨xT, hxT, h⟩ := NN.IR.Graph.bind_ok_iff.mp h
     obtain ⟨hs, rfl⟩ := expectShape_ok hxT
     simp only [List.dropLast, Shape.ofList, Shape.concat] at hs
     have hk : k = p.inDim := by
@@ -406,8 +393,8 @@ private theorem bridge_input
       { id := i, parents := parents, kind := .input, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨t', ht', hx'⟩ := bind_eq_ok hx
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨t', ht', hx'⟩ := NN.IR.Graph.bind_ok_iff.mp hx
   obtain ⟨hs, rfl⟩ := expectShape_ok ht'
   have hx'' := pure_eq_ok hx'
   subst hx''
@@ -430,8 +417,8 @@ private theorem bridge_const
       { id := i, parents := parents, kind := .const s, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨t', ht', hx'⟩ := bind_eq_ok hx
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨t', ht', hx'⟩ := NN.IR.Graph.bind_ok_iff.mp hx
   obtain ⟨c, hc, hpay, rfl⟩ := evalConst_ok ht'
   have hx'' := pure_eq_ok hx'
   subst hx''
@@ -453,10 +440,10 @@ private theorem bridge_detach
       { id := i, parents := parents, kind := .detach, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨p1, hp1, hv⟩ := bind_eq_ok hx
-  obtain ⟨r, hr, hv⟩ := bind_eq_ok hv
-  obtain ⟨t', ht', hx'⟩ := bind_eq_ok hv
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨p1, hp1, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hx
+  obtain ⟨r, hr, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hv
+  obtain ⟨t', ht', hx'⟩ := NN.IR.Graph.bind_ok_iff.mp hv
   obtain ⟨hs, rfl⟩ := expectShape_ok ht'
   have hx'' := pure_eq_ok hx'
   subst hx''
@@ -484,11 +471,11 @@ private theorem binary_chain_ok {i : Nat} {n : Node} {rvals : Array (SomeTensor 
       NN.IR.binaryParents? n.parents = some (p1, p2) ∧
       rvals[p1]? = some ⟨s, a⟩ ∧ rvals[p2]? = some ⟨s, b⟩ ∧
       x = ⟨s, g a b⟩ := by
-  obtain ⟨⟨p1, p2⟩, hpp, hv⟩ := bind_eq_ok h
-  obtain ⟨ra, hra, hv⟩ := bind_eq_ok hv
-  obtain ⟨a, hsa, hv⟩ := bind_eq_ok hv
-  obtain ⟨rb, hrb, hv⟩ := bind_eq_ok hv
-  obtain ⟨b, hsb, hx⟩ := bind_eq_ok hv
+  obtain ⟨⟨p1, p2⟩, hpp, hv⟩ := NN.IR.Graph.bind_ok_iff.mp h
+  obtain ⟨ra, hra, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hv
+  obtain ⟨a, hsa, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hv
+  obtain ⟨rb, hrb, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hv
+  obtain ⟨b, hsb, hx⟩ := NN.IR.Graph.bind_ok_iff.mp hv
   obtain ⟨hsa', rfl⟩ := expectShape_ok hsa
   obtain ⟨hsb', rfl⟩ := expectShape_ok hsb
   obtain ⟨sa, ta⟩ := ra
@@ -518,7 +505,7 @@ private theorem bridge_add
       { id := i, parents := parents, kind := .add, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
   obtain ⟨p1, p2, a, b, hp, hra, hrb, rfl⟩ := binary_chain_ok hx
   rw [flatOfSome_of_normalize hnorm]
   simp only at hp
@@ -538,7 +525,7 @@ private theorem bridge_sub
       { id := i, parents := parents, kind := .sub, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
   obtain ⟨p1, p2, a, b, hp, hra, hrb, rfl⟩ := binary_chain_ok hx
   rw [flatOfSome_of_normalize hnorm]
   simp only at hp
@@ -558,7 +545,7 @@ private theorem bridge_mulElem
       { id := i, parents := parents, kind := .mulElem, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
   obtain ⟨p1, p2, a, b, hp, hra, hrb, rfl⟩ := binary_chain_ok hx
   rw [flatOfSome_of_normalize hnorm]
   simp only at hp
@@ -578,10 +565,10 @@ private theorem bridge_relu
       { id := i, parents := parents, kind := .relu, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨x, hx, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨p1, hp1, hv⟩ := bind_eq_ok hx
-  obtain ⟨r, hr, hv⟩ := bind_eq_ok hv
-  obtain ⟨t', ht', hx'⟩ := bind_eq_ok hv
+  obtain ⟨x, hx, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨p1, hp1, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hx
+  obtain ⟨r, hr, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hv
+  obtain ⟨t', ht', hx'⟩ := NN.IR.Graph.bind_ok_iff.mp hv
   obtain ⟨hs, rfl⟩ := expectShape_ok ht'
   have hx'' := pure_eq_ok hx'
   subst hx''
@@ -608,9 +595,9 @@ private theorem bridge_linear
       { id := i, parents := parents, kind := .linear, outShape := outShape } = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw] at heval
-  obtain ⟨y, hy, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨p1, hp1, hv⟩ := bind_eq_ok hy
-  obtain ⟨r, hr, hy⟩ := bind_eq_ok hv
+  obtain ⟨y, hy, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨p1, hp1, hv⟩ := NN.IR.Graph.bind_ok_iff.mp hy
+  obtain ⟨r, hr, hy⟩ := NN.IR.Graph.bind_ok_iff.mp hv
   have hpar := unaryParentId_ok hp1
   simp only at hpar
   have hr' := getParentValue_ok hr
@@ -645,10 +632,10 @@ private theorem bridge_matmul
     (heval : NN.IR.Graph.evalNode payload input rvals i node = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw, hkind] at heval
-  obtain ⟨raw, hraw, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨⟨p, q⟩, hpq, hraw⟩ := bind_eq_ok hraw
-  obtain ⟨left, hleft, hraw⟩ := bind_eq_ok hraw
-  obtain ⟨right, hright, hraw⟩ := bind_eq_ok hraw
+  obtain ⟨raw, hraw, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨⟨p, q⟩, hpq, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
+  obtain ⟨left, hleft, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
+  obtain ⟨right, hright, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
   have hparents := binaryParentIds_ok hpq
   have hunary : NN.IR.unaryParent? node.parents = none := by
     unfold NN.IR.binaryParents? at hparents
@@ -661,8 +648,8 @@ private theorem bridge_matmul
       cases hraw
   | ok dims =>
       rw [hDims] at hraw
-      obtain ⟨a, ha, hraw⟩ := bind_eq_ok hraw
-      obtain ⟨b, hb, hraw⟩ := bind_eq_ok hraw
+      obtain ⟨a, ha, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
+      obtain ⟨b, hb, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
       obtain ⟨hsa, rfl⟩ := expectShape_ok ha
       obtain ⟨hsb, rfl⟩ := expectShape_ok hb
       obtain ⟨sa, a⟩ := left
@@ -700,10 +687,10 @@ private theorem bridge_conv
     (heval : NN.IR.Graph.evalNode payload input rvals i node = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw, hkind] at heval
-  obtain ⟨raw, hraw, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨p, hp, hraw⟩ := bind_eq_ok hraw
-  obtain ⟨parent, hread, hraw⟩ := bind_eq_ok hraw
-  obtain ⟨output, hconv, hraw⟩ := bind_eq_ok hraw
+  obtain ⟨raw, hraw, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨p, hp, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
+  obtain ⟨parent, hread, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
+  obtain ⟨output, hconv, hraw⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
   split at hraw
   next => cases hraw
   next =>
@@ -720,8 +707,8 @@ private theorem bridge_conv
     rw [hid] at hconv
     exact evalConvNode?_of_evalConv (hps.2.2 i) hparentShape houtputShape hconv
 
-/-! ## The bridge theorem -/
-
+/-- The `concat` node: under the parent-shape invariant the runtime layout is the checked layout,
+and the flattened parents are the checked parent values. -/
 private theorem bridge_concat
     (nodes : Array Node) (ps : ParamStore ℝ) (input : SomeTensor ℝ)
     (inputs : Std.HashMap Nat Val) (payload : NN.IR.Payload ℝ)
@@ -731,8 +718,8 @@ private theorem bridge_concat
     (heval : NN.IR.Graph.evalNode payload input rvals i node = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
   simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw, hkind] at heval
-  obtain ⟨raw, hraw, hnorm⟩ := bind_eq_ok heval
-  obtain ⟨parents, hparents, hconcat⟩ := bind_eq_ok hraw
+  obtain ⟨raw, hraw, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
+  obtain ⟨parents, hparents, hconcat⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
   obtain ⟨layout, values, hlayout, hvalues, hresult⟩ :=
     evalConcat_family_of_ok i node axis parents raw hconcat
   have hchecked : concatNodeLayout? nodes nodes[i]! axis = some layout := by
@@ -747,6 +734,8 @@ private theorem bridge_concat
   exact evalNode?_concat_flattened_family nodes ps inputs rvals i axis layout values
     (by rw [hn, hkind]) hchecked
     (by simpa only [hn, Function.comp_def, SomeTensor.ofTensor] using hflat)
+
+/-! ## The bridge theorem -/
 
 /--
 A successful runtime evaluation of a bridged node is reproduced by the proof-side semantics on the
@@ -810,44 +799,6 @@ theorem evalNode_bridge
 
 /-! ## Whole-trace composition -/
 
-/-- Optional traversal depends only on the callback values at array members. -/
-private theorem array_mapM_congr {α β : Type} {f g : α → Option β} (xs : Array α)
-    (h : ∀ x ∈ xs, f x = g x) : xs.mapM f = xs.mapM g := by
-  have hlist : ∀ ys : List α, (∀ x ∈ ys, f x = g x) → ys.mapM f = ys.mapM g := by
-    intro ys
-    induction ys with
-    | nil => intro _; rfl
-    | cons y ys ih =>
-        intro hys
-        simp only [List.mapM_cons, hys y (by simp),
-          ih fun x hx => hys x (by simp [hx])]
-  rw [Array.mapM_eq_mapM_toList, Array.mapM_eq_mapM_toList,
-    hlist xs.toList fun x hx => h x (Array.mem_toList_iff.mp hx)]
-
-/-- On bridged kinds, `evalNode?` reads the value table only at the node's parents. -/
-private theorem evalNode?_congr (nodes : Array Node) (ps : ParamStore ℝ)
-    (inputs : Std.HashMap Nat Val) (vals₁ vals₂ : Array (Option Val)) (id : Nat)
-    (hkind : Bridged (nodes[id]!).kind)
-    (h : ∀ p ∈ (nodes[id]!).parents, getVal? vals₁ p = getVal? vals₂ p) :
-    evalNode? nodes ps inputs vals₁ id = evalNode? nodes ps inputs vals₂ id := by
-  have hu : ∀ {p}, NN.IR.unaryParent? (nodes[id]!).parents = some p →
-      getVal? vals₁ p = getVal? vals₂ p :=
-    fun hp => h _ (NN.IR.mem_of_unaryParent?_eq_some hp)
-  have hb : ∀ {pq : Nat × Nat}, NN.IR.binaryParents? (nodes[id]!).parents = some pq →
-      getVal? vals₁ pq.1 = getVal? vals₂ pq.1 ∧ getVal? vals₁ pq.2 = getVal? vals₂ pq.2 :=
-    fun hp => ⟨h _ (NN.IR.fst_mem_of_binaryParents?_eq_some hp),
-      h _ (NN.IR.snd_mem_of_binaryParents?_eq_some hp)⟩
-  cases hk : (nodes[id]!).kind <;> simp only [Bridged, hk] at hkind
-  case concat axis =>
-    simp only [evalNode?, hk, array_mapM_congr (nodes[id]!).parents h]
-  all_goals
-    cases hp : NN.IR.unaryParent? (nodes[id]!).parents <;>
-    cases hq : NN.IR.binaryParents? (nodes[id]!).parents with
-    | none => simp_all [evalNode?]
-    | some pq =>
-        obtain ⟨h₁, h₂⟩ := hb hq
-        simp_all [evalNode?]
-
 /-- Every step of a successful `denoteAllFrom` run evaluates a checked node on the prefix of the
 final table. -/
 private theorem denoteAllFrom_step (graph : NN.IR.Graph) (payload : NN.IR.Payload ℝ)
@@ -863,10 +814,10 @@ private theorem denoteAllFrom_step (graph : NN.IR.Graph) (payload : NN.IR.Payloa
   have heval' := heval
   unfold NN.IR.Graph.denoteAllFrom at heval'
   rw [dite_eq_left hi] at heval'
-  obtain ⟨v, hv, hrec⟩ := bind_eq_ok heval'
+  obtain ⟨v, hv, hrec⟩ := NN.IR.Graph.bind_ok_iff.mp heval'
   rcases Nat.eq_or_lt_of_le hij with rfl | hlt
   · unfold NN.IR.Graph.evalAt at hv
-    obtain ⟨n, hn, ht⟩ := bind_eq_ok hv
+    obtain ⟨n, hn, ht⟩ := NN.IR.Graph.bind_ok_iff.mp hv
     refine ⟨vals, hsize, heval, n, v, hn, ht, ?_⟩
     subst hsize
     simpa using NN.IR.Graph.denoteAllFrom_prefix graph payload input _ (vals.push v) out hrec
@@ -921,7 +872,7 @@ theorem denoteAll_semLocalOK
     unfold getVal? at h
     rwa [dite_eq_left hid'] at h
   rw [hlhs, ← hbridge]
-  refine evalNode?_congr graph.nodes ps inputs _ _ id (hkind id hid) fun p hp => ?_
+  refine evalNode?_congr graph.nodes ps inputs _ _ id fun p hp => ?_
   have hp' : p < pre.size := hpre ▸ htopo id hid p hp
   rw [getVal?_liftVals (hprefix p hp'), getVal?_liftVals (Array.getElem?_eq_getElem hp')]
 

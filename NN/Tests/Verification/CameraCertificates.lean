@@ -17,20 +17,20 @@ versions, and malformed JSON, including an artifact with no points.
 The numerical camera is the identity pinhole projection, so expected depths and pixels are exact.
 -/
 
-@[expose] public section
+public section
 
 namespace NN.Tests.Verification.CameraCertificates
 
 open TorchLean NN.Verification.Geometry3D.Box3D
 
-def expect (label : String) (condition : Bool) : IO Unit := do
+private def expect (label : String) (condition : Bool) : IO Unit := do
   unless condition do throw <| IO.userError s!"camera certificate: {label}"
 
-def camera : CameraP Float :=
+private def camera : CameraP Float :=
   [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
 
 /-- Omitting the point count retains the ordinary eight-corner construction. -/
-def cuboid : BoxCameraCert Float :=
+private def cuboid : BoxCameraCert Float :=
   { width := 64
     height := 64
     tol := 0
@@ -45,7 +45,7 @@ example (cert : BoxCameraCert Float) (accepted : checkCert cert = true)
     (index : Fin cert.pointCount) : 0 < certProjectZ cert index :=
   (checkCert_sound accepted).corner_positive_depth index
 
-def certificateJson (points : Lean.Json) (pointCount? : Option Lean.Json := none)
+private def certificateJson (points : Lean.Json) (pointCount? : Option Lean.Json := none)
     (format : String := formatStringPoints) : Lean.Json :=
   Lean.Json.mkObj <|
     [("format", Lean.toJson format),
@@ -59,19 +59,19 @@ def certificateJson (points : Lean.Json) (pointCount? : Option Lean.Json := none
     | none => []
     | some count => [("point_count", count)]
 
-def expectRejected (label : String) (payload : Lean.Json) : IO Unit := do
+private def expectRejected (label : String) (payload : Lean.Json) : IO Unit := do
   let accepted ← try
     let _ ← parseJsonCert payload
     pure true
   catch _ => pure false
   expect label (!accepted)
 
-def diagonalPoints (count : Nat) : Array Float :=
+private def diagonalPoints (count : Nat) : Array Float :=
   (List.range count).toArray.flatMap fun index =>
     #[Float.ofNat (index + 1), Float.ofNat (index + 1), 1.0]
 
 /-- Parse `points` under `format`, then check every point and one defect in the final point. -/
-def checkCount (count : Nat) (points : Array Float) (format : String)
+private def checkCount (count : Nat) (points : Array Float) (format : String)
     (declared : Option Lean.Json) : IO Unit := do
   let cert ← parseJsonCert (certificateJson (Lean.toJson points) declared format)
   expect s!"count {count} preserved" (cert.pointCount == count)

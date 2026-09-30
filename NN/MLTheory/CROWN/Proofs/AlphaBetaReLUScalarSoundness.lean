@@ -24,7 +24,6 @@ standard CROWN (upper) and α-CROWN (lower) relaxations.
 
 @[expose] public section
 
-
 namespace NN.MLTheory.CROWN.Proofs
 
 open Spec TorchLean
@@ -34,25 +33,25 @@ open NN.MLTheory.CROWN.Cert
 
 noncomputable section
 
-private theorem phaseConsistent_inactive_of_some (l u : ℝ)
+/-- An accepted inactive phase has nonpositive upper endpoint. -/
+theorem phaseConsistent_inactive_of_some (l u : ℝ)
     (h : phaseConsistentScalar? (α := ℝ) l u ReLUPhase.inactive = some ()) :
     u ≤ 0 := by
   -- `inactive` checks `¬ (0 < u)` via the executable `if u > 0 then none else some ()`.
   unfold phaseConsistentScalar? at h
   by_cases hu : u > 0
   · simp [hu] at h
-  · have : ¬ u > 0 := hu
-    exact le_of_not_gt this
+  · exact le_of_not_gt hu
 
-private theorem phaseConsistent_active_of_some (l u : ℝ)
+/-- An accepted active phase has nonnegative lower endpoint. -/
+theorem phaseConsistent_active_of_some (l u : ℝ)
     (h : phaseConsistentScalar? (α := ℝ) l u ReLUPhase.active = some ()) :
     0 ≤ l := by
   -- `active` checks `¬ (l < 0)` via `if l < 0 then none else some ()`.
   unfold phaseConsistentScalar? at h
   by_cases hl : l < 0
   · simp [hl] at h
-  · have : ¬ l < 0 := hl
-    exact le_of_not_gt this
+  · exact le_of_not_gt hl
 
 /-- The phase-aware upper relaxation is sound for any phase the interval bounds actually admit.
 

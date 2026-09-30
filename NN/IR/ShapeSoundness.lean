@@ -130,7 +130,7 @@ local macro "peel_ok " h:ident : tactic =>
 /-! ## Decoder characterizations -/
 
 /-- A successful `expectShape` certifies the stored shape tag. -/
-theorem shape_eq_of_expectShape_ok {α : Type} [TorchLean.Storage α] [Context α]
+theorem shape_eq_of_expectShape_ok {α : Type} [TorchLean.Storage α]
     {expected : Shape} {v : Spec.SomeTensor α} {t : Tensor α expected}
     (h : expectShape (α := α) (expected := expected) v = .ok t) : v.shape = expected := by
   unfold expectShape at h
@@ -302,9 +302,11 @@ theorem evalBatchNorm_ok_shape {α : Type} [TorchLean.Storage α] [Context α]
       peel_ok h
 
 /-- Leading-axis concat produces the declared leading extent over the shared tail. -/
-theorem evalConcatLeadingAxisFold_ok_shape {α : Type} [TorchLean.Storage α] [Context α]
+theorem evalConcatLeadingAxisFold_ok_shape {α : Type} [TorchLean.Storage α]
     {i nOut : Nat} {rest : Shape} {parents : Array (Spec.SomeTensor α)} {v : Spec.SomeTensor α}
-    (h : evalConcatLeadingAxisFold i nOut rest parents = .ok v) : v.shape = .dim nOut rest := by
+    {permuted : Bool}
+    (h : evalConcatLeadingAxisFold i nOut rest parents permuted = .ok v) :
+    v.shape = .dim nOut rest := by
   simp only [evalConcatLeadingAxisFold] at h
   peel_ok h
   obtain ⟨_, _, h⟩ := h
@@ -815,6 +817,7 @@ theorem getNode_ok {g : Graph} {i : Nat} {n : Node} (h : g.getNode i = .ok n) :
     subst hn
     exact hsome
 
+omit [Context α] in
 /-- The normalized value of a node has the declared shape. -/
 theorem normalizeNodeOutput_ok_shape {i : Nat} {n : Node} {v w : Spec.SomeTensor α}
     (h : normalizeNodeOutput i n v = .ok w) : w.shape = n.outShape := by
@@ -825,6 +828,7 @@ theorem normalizeNodeOutput_ok_shape {i : Nat} {n : Node} {v w : Spec.SomeTensor
     rfl
   · peel_ok h
 
+omit [Context α] in
 /-- Normalization is the identity on a value that already has the declared shape. -/
 theorem normalizeNodeOutput_eq_ok_self {i : Nat} {n : Node} {v : Spec.SomeTensor α}
     (hv : v.shape = n.outShape) : normalizeNodeOutput i n v = .ok v := by

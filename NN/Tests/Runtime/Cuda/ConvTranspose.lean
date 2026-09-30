@@ -14,9 +14,9 @@ public import NN.Tests.Runtime.Cuda.Utils
 # CUDA Kernel Coverage: Transposed Convolution
 
 Compares CPU eager tape with CUDA eager tape for the same rank-polymorphic `conv_transpose`
-operation at spatial ranks two and three.
+operation at spatial ranks one, two and three.
 
-Both cases check forward output and gradients (including `dInput`) via `backwardDenseAll`.
+The nonempty cases check forward output and gradients (including `dInput`) via `backwardDenseAll`.
 Inputs are small so float64/float32 roundoff differences stay limited.
 -/
 
@@ -284,6 +284,18 @@ def runSaturatedOutputGeometry : IO Unit := do
   unless Runtime.Autograd.LibTorch.Buffer.size output = 0 do
     throw <| IO.userError "conv_transpose excessive padding produced a nonempty buffer"
 
+  let emptySeed := Utils.tensorToAnyBuffer (Tensor.full emptyShape (0.0 : Float))
+  let gradients ← Utils.okOrThrow <|
+    Runtime.Autograd.LibTorch.Tape.backwardDenseAll t4 outputId emptySeed
+  Utils.assertTensorApprox "empty conv_transpose dKernel"
+    (← Utils.cudaGrad (s := [1, 1, 3, 3]) gradients kernelId)
+    (Tensor.full [1, 1, 3, 3] 0.0) (tol := 0)
+  Utils.assertTensorApprox "empty conv_transpose dBias"
+    (← Utils.cudaGrad (s := [1]) gradients biasId) (Tensor.full [1] 0.0) (tol := 0)
+  Utils.assertTensorApprox "empty conv_transpose dInput"
+    (← Utils.cudaGrad (s := [1, 1, 1]) gradients inputId)
+    (Tensor.full [1, 1, 1] 0.0) (tol := 0)
+
   let inSpatial1 : TorchLean.Tensor Nat [1] := [1]
   let kernelDims1 : TorchLean.Tensor Nat [1] := [3]
   let strideDims1 : TorchLean.Tensor Nat [1] := [1]
@@ -305,10 +317,64 @@ def runSaturatedOutputGeometry : IO Unit := do
   unless Runtime.Autograd.LibTorch.Buffer.size outputNd = 0 do
     throw <| IO.userError "spatial conv_transpose excessive padding produced a nonempty buffer"
 
+  let emptyNdSeed := Utils.tensorToAnyBuffer (Tensor.full emptyNdShape (0.0 : Float))
+  let ndGradients ← Utils.okOrThrow <|
+    Runtime.Autograd.LibTorch.Tape.backwardDenseAll tn4 outputNdId emptyNdSeed
+  Utils.assertTensorApprox "empty spatial conv_transpose dKernel"
+    (← Utils.cudaGrad (s := [1, 1, 3]) ndGradients kernelNdId)
+    (Tensor.full [1, 1, 3] 0.0) (tol := 0)
+  Utils.assertTensorApprox "empty spatial conv_transpose dBias"
+    (← Utils.cudaGrad (s := [1]) ndGradients biasNdId) (Tensor.full [1] 0.0) (tol := 0)
+  Utils.assertTensorApprox "empty spatial conv_transpose dInput"
+    (← Utils.cudaGrad (s := [1, 1]) ndGradients inputNdId)
+    (Tensor.full [1, 1] 0.0) (tol := 0)
+
+/--
+Distinct channels, strided windows and nonuniform cotangents expose channel/axis permutations.
+-/
+def Internal.runStridedChannels : IO Unit := do
+  let spatial : Tensor Nat [1] := [2]
+  let window : Tensor Nat [1] := [2]
+  let stride : Tensor Nat [1] := [2]
+  let padding : Tensor Nat [1] := [0]
+  let x : Tensor Float [2, 2] := [[1.0, -2.0], [0.5, 3.0]]
+  let k : Tensor Float [2, 2, 2] :=
+    [[[0.5, -1.0], [2.0, 0.25]], [[-0.5, 0.75], [1.0, -2.0]]]
+  let b : Tensor Float [2] := [0.25, -0.5]
+  let seed : Tensor Float [2, 4] := [[1.0, -2.0, 3.0, 4.0], [0.5, 2.0, -1.0, 3.0]]
+  let (cpu1, ck) := Tape.empty.leaf k
+  let (cpu2, cb) := cpu1.leaf b
+  let (cpu3, cx) := cpu2.leaf x
+  let (cpu, cy) ← Utils.okOrThrow <| Tape.convTranspose (t := cpu3)
+    (inC := 2) (outC := 2) (kernel := window) (stride := stride)
+    (padding := padding) (inSpatial := spatial) ck cb cx
+  let cpuGradients ← Utils.okOrThrow <|
+    Tape.backwardDenseAll cpu cy (Spec.SomeTensor.ofTensor seed)
+  let (gpu1, gk) := Runtime.Autograd.LibTorch.Tape.empty.leaf (Utils.tensorToAnyBuffer k)
+  let (gpu2, gb) := gpu1.leaf (Utils.tensorToAnyBuffer b)
+  let (gpu3, gx) := gpu2.leaf (Utils.tensorToAnyBuffer x)
+  let (gpu, gy) ← Utils.okOrThrow <| Runtime.Autograd.LibTorch.Tape.convTranspose (t := gpu3)
+    (inC := 2) (outC := 2) (kernel := window) (stride := stride)
+    (padding := padding) (inSpatial := spatial) gk gb gx
+  let gpuGradients ← Utils.okOrThrow <|
+    Runtime.Autograd.LibTorch.Tape.backwardDenseAll gpu gy (Utils.tensorToAnyBuffer seed)
+  Utils.assertTensorApprox "strided multichannel transposed conv output"
+    (← Utils.cudaValue (s := [2, 4]) gpu gy) (← Utils.cpuValue cpu cy) (tol := 5e-3)
+  Utils.assertTensorApprox "strided multichannel transposed conv dKernel"
+    (← Utils.cudaGrad (s := [2, 2, 2]) gpuGradients gk)
+    (← Utils.cpuGrad cpuGradients ck) (tol := 5e-3)
+  Utils.assertTensorApprox "strided multichannel transposed conv dBias"
+    (← Utils.cudaGrad (s := [2]) gpuGradients gb)
+    (← Utils.cpuGrad cpuGradients cb) (tol := 5e-3)
+  Utils.assertTensorApprox "strided multichannel transposed conv dInput"
+    (← Utils.cudaGrad (s := [2, 2]) gpuGradients gx)
+    (← Utils.cpuGrad cpuGradients cx) (tol := 5e-3)
+
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: conv_transpose ==="
   runPlanarFixture
   runVolumetricFixture
+  Internal.runStridedChannels
   runSaturatedOutputGeometry
 
 end ConvTranspose

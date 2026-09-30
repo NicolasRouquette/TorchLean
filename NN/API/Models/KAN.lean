@@ -105,20 +105,21 @@ def layer (config : Config) (inputWidth : Nat) :
             ((do
               let zeros : Tensor α [config.gridSize, inputWidth] :=
                 Tensor.full [config.gridSize, inputWidth] (0 : α)
-              let xBasis ← Runtime.Autograd.Torch.scale (m := m) (α := α) x
+              let scaledInput ← Runtime.Autograd.Torch.scale (m := m) (α := α) x
                 ((config.inputScale : Nat) : α)
-              let out0 ← Runtime.Autograd.Torch.const (m := m) (α := α) zeros
-              let out ← (List.finRange config.gridSize).foldlM (init := out0) (fun acc k => do
-                let centerT : Tensor α [inputWidth] :=
+              let initialBasis ← Runtime.Autograd.Torch.const (m := m) (α := α) zeros
+              let basisValues ← (List.finRange config.gridSize).foldlM
+                (init := initialBasis) (fun acc k => do
+                let centerValues : Tensor α [inputWidth] :=
                   Tensor.full [inputWidth] ((k.val : Nat) : α)
-                let oneT : Tensor α [inputWidth] :=
+                let unitValues : Tensor α [inputWidth] :=
                   Tensor.full [inputWidth] (1 : α)
-                let c ← Runtime.Autograd.Torch.const (m := m) (α := α) centerT
-                let ones ← Runtime.Autograd.Torch.const (m := m) (α := α) oneT
-                let shifted ← Runtime.Autograd.Torch.sub (m := m) (α := α) xBasis c
-                let dist ← Runtime.Autograd.Torch.abs (m := m) (α := α) shifted
-                let raw ← Runtime.Autograd.Torch.sub (m := m) (α := α) ones dist
-                let basis ← Runtime.Autograd.Torch.relu (m := m) (α := α) raw
+                let center ← Runtime.Autograd.Torch.const (m := m) (α := α) centerValues
+                let ones ← Runtime.Autograd.Torch.const (m := m) (α := α) unitValues
+                let shifted ← Runtime.Autograd.Torch.sub (m := m) (α := α) scaledInput center
+                let distance ← Runtime.Autograd.Torch.abs (m := m) (α := α) shifted
+                let height ← Runtime.Autograd.Torch.sub (m := m) (α := α) ones distance
+                let basis ← Runtime.Autograd.Torch.relu (m := m) (α := α) height
                 let basisRow ← Runtime.Autograd.Torch.reshape (m := m) (α := α)
                   (s₁ := [inputWidth]) (s₂ := [1, inputWidth]) basis
                   (by simp [Spec.Shape.size])
@@ -130,7 +131,7 @@ def layer (config : Config) (inputWidth : Nat) :
               Runtime.Autograd.Torch.reshape (m := m) (α := α)
                 (s₁ := [config.gridSize, inputWidth])
                 (s₂ := [inputWidth * config.gridSize])
-                out (by
+                basisValues (by
                   simp [Spec.Shape.size, Nat.mul_comm])
             ) : m (Runtime.Autograd.Model.RefTy (m := m) (α := α)
               [inputWidth * config.gridSize]))

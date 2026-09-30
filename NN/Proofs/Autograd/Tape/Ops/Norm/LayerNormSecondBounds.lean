@@ -53,13 +53,15 @@ def normalizedMixed (X A B C : Vec (matSize m n)) (ε : ℝ)
     centered B i j * inverseFirst X A ε i +
     centered X i j * inverseMixed X A B C ε i
 
+/-- The variance differential, written in centered coordinates. -/
 theorem varD_apply_centered (X A : Vec (matSize m n)) (i : Fin m) :
     varD X i A = varianceFirst X A i := by
   simp only [varD, smul_apply, sum_apply, add_apply, centD_apply, smul_eq_mul,
     ← two_mul, ← Finset.mul_sum, varianceFirst, centered]
   ring
 
-theorem invD_apply_power {ε : ℝ} (hε : 0 < ε)
+/-- The inverse-standard-deviation differential, written in centered coordinates. -/
+theorem invD_apply_centered {ε : ℝ} (hε : 0 < ε)
     (X A : Vec (matSize m n)) (i : Fin m) :
     invD X ε i A = inverseFirst X A ε i := by
   have hs := (Real.sqrt_pos.mpr (rowVar_add_pos hε X i)).ne'
@@ -72,7 +74,7 @@ theorem nrmD_apply_centered {ε : ℝ} (hε : 0 < ε)
     (X A : Vec (matSize m n)) (i : Fin m) (j : Fin n) :
     nrmD X ε i j A =
       centered A i j * invStd X ε i + centered X i j * inverseFirst X A ε i := by
-  simp only [nrmD, add_apply, smul_apply, smul_eq_mul, invD_apply_power hε,
+  simp only [nrmD, add_apply, smul_apply, smul_eq_mul, invD_apply_centered hε,
     centD_apply, centered]
   ring
 
@@ -108,7 +110,7 @@ private theorem exists_nrmD_comp_derivative {ε : ℝ} (hε : 0 < ε)
     (Filter.Eventually.of_forall fun q => (congrFun heq q).symm)
   refine ⟨_, hout', fun v => ?_⟩
   simp only [add_apply, smul_apply, sum_apply, ContinuousLinearMap.comp_apply,
-    smul_eq_mul, nsmul_eq_mul, centD_apply, invD_apply_power hε]
+    smul_eq_mul, nsmul_eq_mul, centD_apply, invD_apply_centered hε]
   have hsum :
       (∑ k, (centered (X p) i k * centered (DA v) i k +
         centered (A p) i k * centered (DX v) i k)) =
@@ -221,6 +223,7 @@ private theorem abs_add_bound {x y a b : ℝ} (hx : |x| ≤ a) (hy : |y| ≤ b) 
     |x + y| ≤ a + b :=
   (abs_add_le _ _).trans (add_le_add hx hy)
 
+/-- Centered bounds on the input and one direction enclose the variance differential. -/
 theorem abs_varianceFirst_le (X A : Vec (matSize m n)) (i : Fin m)
     (u a : Fin n → ℝ) (hu : ∀ k, |centered X i k| ≤ u k)
     (ha : ∀ k, |centered A i k| ≤ a k) :
@@ -230,6 +233,7 @@ theorem abs_varianceFirst_le (X A : Vec (matSize m n)) (i : Fin m)
     abs_of_pos (by norm_num : (0 : ℝ) < 2)] using
     mul_le_mul_of_nonneg_left h (by norm_num : (0 : ℝ) ≤ 2)
 
+/-- Centered bounds enclose the mixed variance differential. -/
 theorem abs_varianceMixed_le (X A B C : Vec (matSize m n)) (i : Fin m)
     (u a b c : Fin n → ℝ) (hu : ∀ k, |centered X i k| ≤ u k)
     (ha : ∀ k, |centered A i k| ≤ a k) (hb : ∀ k, |centered B i k| ≤ b k)
@@ -241,6 +245,8 @@ theorem abs_varianceMixed_le (X A B C : Vec (matSize m n)) (i : Fin m)
     abs_of_pos (by norm_num : (0 : ℝ) < 2)] using
     mul_le_mul_of_nonneg_left h (by norm_num : (0 : ℝ) ≤ 2)
 
+/-- Centered bounds enclose the inverse-standard-deviation differential, using only `ε` for the
+standard deviation. -/
 theorem abs_inverseFirst_le {ε : ℝ} (hε : 0 < ε)
     (X A : Vec (matSize m n)) (i : Fin m)
     (u a : Fin n → ℝ) (hu : ∀ k, |centered X i k| ≤ u k)
@@ -253,6 +259,7 @@ theorem abs_inverseFirst_le {ε : ℝ} (hε : 0 < ε)
     (abs_mul_bound (by norm_num : |-(1 / 2 : ℝ)| ≤ (1 / 2 : ℝ)) hr)
     (abs_varianceFirst_le X A i u a hu ha)
 
+/-- Centered bounds enclose the mixed inverse-standard-deviation differential. -/
 theorem abs_inverseMixed_le {ε : ℝ} (hε : 0 < ε)
     (X A B C : Vec (matSize m n)) (i : Fin m)
     (u a b c : Fin n → ℝ) (hu : ∀ k, |centered X i k| ≤ u k)
@@ -270,11 +277,8 @@ theorem abs_inverseMixed_le {ε : ℝ} (hε : 0 < ε)
   have hsecond := abs_mul_bound
     (abs_mul_bound (by norm_num : |(1 / 2 : ℝ)| ≤ (1 / 2 : ℝ)) (hr 3))
     (abs_varianceMixed_le X A B C i u a b c hu ha hb hc)
-  simpa only [inverseMixed, inverseMixedRadius, sub_eq_add_neg, abs_neg] using
-    abs_add_bound hfirst (show |-(1 / 2 * invStd X ε i ^ 3 *
-      varianceMixed X A B C i)| ≤
-        1 / 2 * (Real.sqrt ε)⁻¹ ^ 3 * varianceMixedRadius u a b c by
-      simpa only [abs_neg] using hsecond)
+  rw [inverseMixed, inverseMixedRadius]
+  exact (abs_sub _ _).trans (add_le_add hfirst hsecond)
 
 /-- The first differential is bounded from centered data, without a derivative-bound premise. -/
 theorem abs_nrmD_le_centered {ε : ℝ} (hε : 0 < ε)

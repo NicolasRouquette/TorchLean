@@ -134,8 +134,7 @@ end dqn
 namespace policy
 export Runtime.RL.PolicyGradient
   (actionPolicy actionProbability actionLogProbability actionLogSoftmax entropyBonus
-   reinforceLoss actorLoss criticLoss actorCriticLoss
-   a2cLoss
+   reinforceLoss criticLoss actorCriticLoss
    importanceRatio categoricalKL categoricalKLFromLogits
    trpoSurrogateFromRatio klPenalizedPolicyLoss sacCategoricalActorLoss
    ppoClippedObjectiveFromRatio ppoClippedObjective ppoLoss)

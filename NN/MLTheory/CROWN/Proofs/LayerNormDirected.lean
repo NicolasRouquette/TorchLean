@@ -8,7 +8,6 @@ module
 
 public import NN.MLTheory.CROWN.Graph.Engine.Enclosure
 public import NN.MLTheory.CROWN.Extras.IntervalLemmas
-public import NN.Proofs.Tensor.Basic.Folds
 
 /-!
 # Directed LayerNorm arithmetic
@@ -28,10 +27,8 @@ addition or multiplication is exact.
 namespace NN.MLTheory.CROWN.Graph.LayerNormDirected
 
 open Spec TorchLean
-open TorchLean.Tensor
 open NN.MLTheory.CROWN
 open NN.MLTheory.CROWN.IntervalLemmas (value_min2 value_max2)
-open scoped BigOperators
 
 noncomputable section
 
@@ -53,8 +50,7 @@ theorem square_le_max {lo x hi : ℝ} (hlo : lo ≤ x) (hhi : x ≤ hi) :
 /--
 The directed square interval used by the LayerNorm variance stage encloses every input square.
 
-The zero interpretation is stated explicitly because the base directed-arithmetic class
-contains order and operation laws, but does not specify the interpretation of scalar literals.
+The `LawfulBoundOps.toReal_zero` law supplies the exact interpretation of zero.
 -/
 theorem square_encloses
     {lo hi : α} {x : ℝ} (hlo : value lo ≤ x) (hhi : x ≤ value hi) :

@@ -94,8 +94,8 @@ blocks = 1
 
 The run is enough to exercise the actual operator-learning path while keeping the tensors, modes,
 and artifacts readable. CPU execution uses the dense multidimensional real-split DFT. CUDA
-evaluates real FFTs and spectral products through LibTorch, with backward traversal owned by
-TorchLean.
+uses Lean composition of FFT, frequency mixing, and inverse FFT through LibTorch numerical
+primitives. TorchLean also composes the local reverse calculation and owns the tape's saved buffers.
 
 ## What TorchLean Owns
 
@@ -117,7 +117,7 @@ TorchLean owns the pieces that should be typed, inspectable, or connected to ver
   <a href="{{ '/blueprint/Floating-Point-and-Native-Boundaries/From-A-Tensor-Operation-To-A-GPU-Kernel/' | relative_url }}">
     <span>03</span>
     <strong>Runtime boundary</strong>
-    <em>LibTorch evaluates the FFTs, spectral products, and local gradients; TorchLean owns the differentiation tape.</em>
+    <em>Lean composes the spectral layer and its reverse calculation; LibTorch supplies numerical primitives, and TorchLean owns the tape and saved buffers.</em>
   </a>
   <a href="{{ '/examples/verification/' | relative_url }}">
     <span>04</span>

@@ -64,7 +64,7 @@ LibTorch check that native counters are zero and skip the GPU memory probes.
 - A split float32 multiply/add must return zero on the cancellation discriminator.
   A float64 multiply/add must return the **wrong** upper float32 neighbor on the
   double-rounding discriminator. These are negative controls, not accepted fallbacks.
-- All 30 arithmetic exports run under both ambient GradMode settings. An ATen
+- All 32 arithmetic exports run under both ambient GradMode settings. An ATen
   RecordFunction callback checks that operations execute
   with GradMode disabled inside the export, and that results have no `grad_fn` or
   `requires_grad`. The observer is calibrated against an ordinary graph-recording
@@ -90,7 +90,7 @@ deterministic reduction, GELU, and end-to-end Lean suites as well.
 
 ## Exact SDK source evidence
 
-The selected SDK reports
+The SDK used for the source audit below reported
 `torch 2.12.0a0+0291f960b6.nv26.04.48445190`, CUDA 13.2, C++11 ABI enabled.
 The public upstream commit `0291f960b6` has `version.txt = 2.12.0a0`.
 The executable prints its header version; retain the full SDK/build

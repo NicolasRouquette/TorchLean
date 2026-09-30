@@ -50,14 +50,10 @@ def instantiateWith {α β : Type} [TorchLean.Storage α] [TorchLean.Storage β]
   unless d.requiresGrad.size = stateShapes.length do
     throw <| IO.userError
       s!"objective: expected {stateShapes.length} requiresGrad flags, got {d.requiresGrad.size}"
-  match d.validate with
-  | .error message => throw <| IO.userError message
-  | .ok () => pure ()
+  Runtime.Autograd.okOrThrow (d.validate)
   match d.runtimeInit with
   | some plan =>
-      match plan.validate with
-      | .error message => throw <| IO.userError message
-      | .ok () => pure ()
+      Runtime.Autograd.okOrThrow (plan.validate)
   | none => pure ()
   let initState : TorchLean.TensorPack α stateShapes :=
     match initialState? with

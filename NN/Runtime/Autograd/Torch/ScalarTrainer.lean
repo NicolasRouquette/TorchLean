@@ -30,7 +30,7 @@ def loss {α δ : Type} [Storage α] [Storage δ]
     (inputs : TensorPack α inputShapes)
     (dataInputs : TensorPack δ dataInputShapes) : IO (Tensor α .scalar) :=
   let withData := Curried.uncurry (α := α) (ss := inputShapes)
-    (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar))) trainer.lossFn inputs
+    (β := Curried.Function δ dataInputShapes (IO (Tensor α .scalar))) trainer.lossFn inputs
   Curried.uncurry (α := δ) (ss := dataInputShapes)
     (β := IO (Tensor α .scalar)) withData dataInputs
 
@@ -52,13 +52,14 @@ def grad {α δ : Type} [Storage α] [Storage δ]
   | false =>
       exact
         let withData := Curried.uncurry (α := α) (ss := inputShapes)
-          (β := Curried.Fn δ dataInputShapes (IO (TensorPack α paramShapes))) trainer.gradFn inputs
+          (β := Curried.Function δ dataInputShapes (IO (TensorPack α paramShapes)))
+          trainer.gradFn inputs
         Curried.uncurry (α := δ) (ss := dataInputShapes)
           (β := IO (TensorPack α paramShapes)) withData dataInputs
   | true =>
       exact do
         let withData := Curried.uncurry (α := α) (ss := inputShapes)
-          (β := Curried.Fn δ dataInputShapes
+          (β := Curried.Function δ dataInputShapes
             (IO (Tensor α .scalar × TensorPack α paramShapes))) trainer.diffFn inputs
         let (lossValue, gradient) ← Curried.uncurry (α := δ) (ss := dataInputShapes)
           (β := IO (Tensor α .scalar × TensorPack α paramShapes)) withData dataInputs
@@ -80,12 +81,12 @@ def step {α δ : Type} [Storage α] [Storage δ]
   | false =>
       exact
         let withData := Curried.uncurry (α := α) (ss := inputShapes)
-          (β := Curried.Fn δ dataInputShapes (IO Unit)) (trainer.stepFn learningRate) inputs
+          (β := Curried.Function δ dataInputShapes (IO Unit)) (trainer.stepFn learningRate) inputs
         Curried.uncurry (α := δ) (ss := dataInputShapes) (β := IO Unit) withData dataInputs
   | true =>
       exact
         let withData := Curried.uncurry (α := α) (ss := inputShapes)
-          (β := Curried.Fn δ dataInputShapes (IO (Tensor α .scalar)))
+          (β := Curried.Function δ dataInputShapes (IO (Tensor α .scalar)))
           (trainer.stepWithLossFn learningRate) inputs
         Curried.uncurry (α := δ) (ss := dataInputShapes)
           (β := IO (Tensor α .scalar)) withData dataInputs

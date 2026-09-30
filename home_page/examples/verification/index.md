@@ -9,7 +9,7 @@ an exported certificate. In both cases, the important trail is the artifact bein
 predicate Lean recomputes.
 
 <div class="media-slab">
-  <img src="{{ '/assets/media/examples/showcase/verification-bounds.png' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
+  <img src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
 </div>
 
 ## The Question
@@ -51,7 +51,8 @@ let ps : ParamStore α := lowered.seedInputBox inputBox
 ```
 
 The pass propagates the input box
-$[\mathtt{inputCenter}-\mathtt{eps},\mathtt{inputCenter}+\mathtt{eps}]$.
+
+$$[\mathtt{inputCenter}-\mathtt{eps},\mathtt{inputCenter}+\mathtt{eps}].$$
 
 ```lean
 let ibp := lowered.runIBP ps
@@ -246,7 +247,7 @@ of an exported logit-bound report; it does not establish the provenance of those
 `vnncomp-mnistfc` exercises a compact
 VNN-COMP-style fully connected MNIST network/property pair. `camera-box3d-cert` checks a camera
 projection certificate for a supplied finite point set by recomputing its projections and the
-claimed 2D envelope. Eight cuboid corners are one choice of point set.
+claimed 2D envelope expanded by the artifact's nonnegative tolerance. Eight cuboid corners are one choice of point set.
 
 The MNIST runner labels its result `numerically_refuted`, not `safe`. It uses outward-widened host
 `Float` operations to refute the unsafe output region, but that executable result is not itself a
@@ -361,7 +362,7 @@ The native and external examples produce different kinds of evidence:
   They are regression fixtures for the checker API and examples of the finite objects Lean can
   reload.
 - $\alpha,\beta$-CROWN-style leaf artifacts carry one terminal external-verifier claim into Lean. The checker
-  validates the schema, box nesting, tensor dimensions, and witness lower-bound comparison represented in
+  validates the schema, box nesting and root coverage, tensor dimensions, and witness lower-bound comparison represented in
   that artifact.
 - VNN-COMP-style examples show how a benchmark-shaped network/property pair can enter TorchLean
   while the benchmark runner remains an external producer.

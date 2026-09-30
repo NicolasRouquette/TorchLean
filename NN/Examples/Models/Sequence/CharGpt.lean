@@ -230,7 +230,7 @@ def generate {α : Type} [Storage α] {promptLength : Nat}
 
 /-- CLI entrypoint for character-level GPT training and sampling. -/
 def main (args : List String) : IO UInt32 := do
-  if args.contains "--help" || args.contains "-h" then
+  if CLI.hasHelp args then
     IO.println usage
     return 0
   Module.Command.run
@@ -375,11 +375,16 @@ def main (args : List String) : IO UInt32 := do
           pure losses.mean
         let lossBefore ← evalLoss
         IO.println s!"  step 0: val loss={lossBefore}"
+        let watchEvery :=
+          Trainer.Memory.cadence runtime train.training.steps train.training.cudaMemorySampleEvery
+        let mut memorySample? ← Trainer.Memory.sample runtime watchEvery train.training.steps 0 none
         let mut lastEval? : Option Float := none
         for step in [0:train.training.steps] do
           let sample := trainingBatchAt step
           trainStep sample.input sample.target
           let done := step + 1
+          memorySample? ←
+            Trainer.Memory.sample runtime watchEvery train.training.steps done memorySample?
           if evalEvery != 0 && (done % evalEvery == 0 || done == train.training.steps) then
             let loss ← evalLoss
             IO.println s!"  step {done}: val loss={loss}"

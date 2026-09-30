@@ -104,7 +104,7 @@ def conv
     program := fun {α} _storage _ctx =>
       fun {m} _ _ =>
         fun k b x =>
-          _root_.Runtime.Autograd.Torch.conv (m := m) (α := α)
+          _root_.Runtime.Autograd.Torch.Ops.conv (m := m) (α := α)
             (d := d) (inC := inC) (outC := outC)
             (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := spatial)
             k b x
@@ -138,7 +138,7 @@ def conv
               throw "Conv: geometry produced an empty spatial grid"
           forward := fun _ {α} _ _ =>
             fun {m} _ _ => fun k b x =>
-              _root_.Runtime.Autograd.Torch.conv (m := m) (α := α)
+              _root_.Runtime.Autograd.Torch.Ops.conv (m := m) (α := α)
                 (d := d) (inC := inC) (outC := outC)
                 (kernel := kernel) (stride := stride) (padding := padding) (inSpatial := spatial)
                 k b x }
@@ -169,7 +169,7 @@ def maxPool
     program := fun {α} _storage _ctx =>
       fun {m} _ _ =>
         fun x =>
-          _root_.Runtime.Autograd.Torch.maxPool (m := m) (α := α)
+          _root_.Runtime.Autograd.Torch.Ops.maxPool (m := m) (α := α)
             (d := d) (C := channels) (inSpatial := spatial)
             (kernel := kernel) (stride := stride) (padding := padding)
             x
@@ -180,7 +180,7 @@ def maxPool
           requiresGrad := #[]
           forward := fun _ {α} _ _ =>
             fun {m} _ _ => fun x =>
-              _root_.Runtime.Autograd.Torch.maxPool (m := m) (α := α)
+              _root_.Runtime.Autograd.Torch.Ops.maxPool (m := m) (α := α)
                 (d := d) (C := channels) (inSpatial := spatial)
                 (kernel := kernel) (stride := stride) (padding := padding)
                 x }
@@ -229,7 +229,7 @@ def batchNorm (channels : Nat) (spatial : Shape)
     program := fun {α} _storage _ctx =>
       fun {m} _ _ =>
         fun gamma beta x =>
-          _root_.Runtime.Autograd.Torch.batchNorm (m := m) (α := α)
+          _root_.Runtime.Autograd.Torch.Ops.batchNorm (m := m) (α := α)
             (channels := channels) (sSpatial := spatial) hWellFormed x gamma beta
     toLayerM? := some (fun i =>
       let channelShape : Shape := [channels]
@@ -244,7 +244,7 @@ def batchNorm (channels : Nat) (spatial : Shape)
           requiresGrad := #[true, true]
           forward := fun _ {α} _ _ =>
             fun {m} _ _ => fun gamma beta x =>
-              _root_.Runtime.Autograd.Torch.batchNorm (m := m) (α := α)
+              _root_.Runtime.Autograd.Torch.Ops.batchNorm (m := m) (α := α)
                 (channels := channels) (sSpatial := spatial) hWellFormed x gamma beta }
       , by rfl ⟩)
     countsAsLayer := true

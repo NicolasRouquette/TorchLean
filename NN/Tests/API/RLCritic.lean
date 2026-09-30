@@ -22,6 +22,15 @@ namespace NN.Tests.API.RLCritic
 
 open TorchLean
 
+-- Already-lowered policies only read typed graphs and stored scalars.
+example {α : Type} [Storage α] (graph : nn.TypedGraphModel [] [] [] α) :
+    Tensor α [] → α :=
+  rl.ppo.criticValue graph (.id []) (.id []) nn.State.empty
+
+example {α : Type} [Storage α] (graph : nn.TypedGraphModel [] [] [] α) :
+    Tensor α [] → Tensor α [] :=
+  rl.ppo.actorPolicy graph (.id []) (.id []) nn.State.empty
+
 def expect (label : String) (condition : Bool) : IO Unit := do
   unless condition do throw <| IO.userError s!"RL critic: {label}"
 

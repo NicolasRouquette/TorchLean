@@ -46,15 +46,16 @@ theorem affineBoundsEval_encloses
   subst n
   have hinput (j : Fin bounds.inDim) :
       value (lo.getScalar j) ≤ x j.val ∧ x j.val ≤ value (hi.getScalar j) := by
-    simpa only [read_fin] using hx.2 j
+    simpa only [Spec.getAtOrZero_eq_getScalar] using hx.2 j
   refine ⟨rfl, ?_⟩
   intro i
   have hl := affineEvalOnBox_encloses bounds.loAff
     { lo := lo, hi := hi } (fun j => x j.val) hinput i
   have hu := affineEvalOnBox_encloses bounds.hiAff
     { lo := lo, hi := hi } (fun j => x j.val) hinput i
-  simpa only [read_fin, FlatAffineBounds.evalOnFlatBox, FlatBox.getScalarBox,
-    FlatBox.loAsDim, FlatBox.hiAsDim, Tensor.cast_shape_rfl] using
+  simpa only [Spec.getAtOrZero_eq_getScalar, FlatAffineBounds.evalOnFlatBox,
+    AffineVec.evalOnFlatBox,
+    FlatBox.getScalarBox, FlatBox.loAsDim, FlatBox.hiAsDim, Tensor.cast_shape_rfl] using
       And.intro (hl.1.trans (hy i).1) ((hy i).2.trans hu.2)
 
 /-- The public scalar-box evaluator encloses every point enclosed by its affine argument. -/
@@ -104,7 +105,6 @@ theorem backwardObjectiveBox_encloses
         output houtput obj hdim hb
       exact evalBackwardObjectiveBox_encloses bounds xB ctx.inputDim _ _
         (by simpa only [hs.1] using hx) hs.2.2 hresult
-
 
 /-- The rounded objective workflow, run on the boxes of `runIBP`, returns an interval containing
 its real output objective. Forward IBP, the backward sweep, and the final evaluation are all

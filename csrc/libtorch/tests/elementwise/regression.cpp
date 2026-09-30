@@ -37,6 +37,8 @@ DECLARE_UNARY(cos)
 DECLARE_UNARY(log)
 DECLARE_UNARY(inv)
 DECLARE_UNARY(relu)
+DECLARE_UNARY(sigmoid)
+DECLARE_UNARY(tanh)
 DECLARE_UNARY(gelu)
 DECLARE_UNARY(copy_and_release)
 DECLARE_UNARY(reduce_sum)
@@ -175,6 +177,21 @@ void control_getter_regressions() {
   const auto fraction = lean_unbox_float(lean_ctor_get(memory_fraction, 0));
   check(std::isfinite(fraction) && fraction >= 0.0 && fraction <= 1.0,
         "LibTorch memory fraction returned an invalid Float");
+}
+
+void external_buffer_class_regression() {
+  auto* other_class = lean_register_external_class(
+      [](void*) {}, [](void*, b_lean_obj_arg) {});
+  // A valid Lean external object can hold unrelated native data. Never read it
+  // as an at::Tensor merely because the Lean object has the external tag.
+  const Object other(lean_alloc_external(other_class, nullptr));
+  bool rejected = false;
+  try {
+    (void)torchlean_cuda_buffer_unbox(other);
+  } catch (const std::exception& error) {
+    rejected = std::string(error.what()).find("not a tensor buffer") != std::string::npos;
+  }
+  check(rejected, "foreign external object must be rejected before reading its payload");
 }
 
 // Volatile materializes each binary32 stage independently; CMake forbids contraction/fast math.
@@ -496,6 +513,8 @@ void no_autograd_regressions() {
     CHECK_UNARY(log)
     CHECK_UNARY(inv)
     CHECK_UNARY(relu)
+    CHECK_UNARY(sigmoid)
+    CHECK_UNARY(tanh)
     CHECK_UNARY(gelu)
     CHECK_UNARY(reduce_sum)
     CHECK_UNARY(reduce_mean)
@@ -524,7 +543,7 @@ void no_autograd_regressions() {
     run("adam_step", [&] { return adam(x, g, x, y, {1, 0, 1, 0, 1, 1, 0, 0, 1}); }, 3);
     const Object copied(on_device({0x3f800000}));
     run("copy_and_release", [&] { return torchlean_cuda_buffer_copy_and_release(copied); });
-    check(export_count == 30, "noAutograd export coverage changed");
+    check(export_count == 32, "noAutograd export coverage changed");
     check(!x.tensor().requires_grad() && !y.tensor().requires_grad() && !g.tensor().requires_grad(),
           "export mutated an input's requires_grad flag");
     const auto old_deterministic = get_setting(kDeterministic);
@@ -547,7 +566,7 @@ void no_autograd_regressions() {
     restore_settings();
     check(at::GradMode::is_enabled() == ambient_grad,
           "LibTorch settings changed caller GradMode");
-    std::cout << "noAutograd: 30 exports plus both reduction paths, ambient="
+    std::cout << "noAutograd: 32 exports plus both reduction paths, ambient="
               << ambient_grad << '\n';
   }
 }
@@ -637,6 +656,7 @@ int torchlean_elementwise_regressions(const char* reference_path) {
     check(std::fesetround(FE_TONEAREST) == 0, "cannot set host round-to-nearest");
     lean_initialize_runtime_module();
     std::cout << "LibTorch headers: " << TORCH_VERSION << '\n';
+    external_buffer_class_regression();
     control_getter_regressions();
     {
       at::NoGradGuard no_grad;

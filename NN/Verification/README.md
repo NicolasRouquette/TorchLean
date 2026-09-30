@@ -113,7 +113,7 @@ and their relation to the graph soundness theorems.
 ### Exact CROWN output queries
 
 Run `lake exe verify -- crown-query <query.json>`, or import `NN.Verification.Cert.CROWNQuery.Json`
-and call `NN.Verification.CROWNQuery.acceptsText`, on a document such as:
+and call `NN.Verification.Cert.CROWNQuery.acceptsText`, on a document such as:
 
 ```json
 {

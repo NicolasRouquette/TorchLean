@@ -24,10 +24,11 @@ from the binary32 node-replay transcript; β dual variables, cuts, and branch tr
 
 @[expose] public section
 
-namespace NN.Verification.CROWNQuery
+namespace NN.Verification.Cert.CROWNQuery
 
 open Lean _root_.Spec NN.Verification.Cert.RationalJson
 
+/-- Decode one `linear` or `relu` layer whose input dimension is `n`. -/
 def decodeLayer (n : Nat) (j : Json) : Except String (Σ m : Nat, Network n m) := do
   match ← (← j.getObjVal? "kind").getStr? with
   | "linear" =>
@@ -37,6 +38,7 @@ def decodeLayer (n : Nat) (j : Json) : Except String (Σ m : Nat, Network n m) :
   | "relu" => return ⟨n, .relu (← decodeVector n (← j.getObjVal? "alpha"))⟩
   | kind => throw s!"unsupported layer kind: {kind}"
 
+/-- Decode a nonempty layer list into a composed network, threading the dimensions. -/
 def decodeLayers (n : Nat) : List Json → Except String (Σ m : Nat, Network n m)
   | [] => .error "expected at least one layer"
   | j :: rest => do
@@ -62,6 +64,7 @@ def decode (j : Json) : Except String (Σ n m : Nat, Query n m) := do
   let strict ← (← query.getObjVal? "strict").getBool?
   return ⟨n, m, ⟨network, ⟨lo, hi⟩, k, inequalities, strict⟩⟩
 
+/-- Decode and check a query document; malformed documents are rejected. -/
 def acceptsJson (j : Json) : Bool :=
   match decode j with
   | .error _ => false
@@ -77,6 +80,7 @@ theorem acceptsJson_sound (j : Json) (h : acceptsJson j = true) :
       rcases decoded with ⟨n, m, q⟩
       exact ⟨n, m, q, rfl, q.check_sound (by simpa [hd] using h)⟩
 
+/-- Parse and check a query document given as text. This is the CLI verdict. -/
 def acceptsText (source : String) : Bool :=
   match Json.parse source with
   | .error _ => false
@@ -118,4 +122,4 @@ def run (args : List String) : IO Unit := do
   else
     throw <| IO.userError s!"[crown-query] {path}: not proved: {rejectionReason source}"
 
-end NN.Verification.CROWNQuery
+end NN.Verification.Cert.CROWNQuery

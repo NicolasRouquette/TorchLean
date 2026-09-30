@@ -29,19 +29,10 @@ namespace Tape
 -/
 
 /-- Reduce-sum of all entries, producing a scalar. -/
-@[inline] def sum {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) := do
-  let x ← requireValue (t := t) xId s
-  let y := Buffer.reduceSum x
-  let node : Node :=
-    { name := some "sum"
-      value := { s := Shape.scalar, buf := y }
-      requiresGrad := (t.getNode? xId).any (·.requiresGrad)
-      parents := #[xId]
-      backward := fun dLdyAny => do
-        let dLdy ← requireGrad dLdyAny Shape.scalar
-        let dx := broadcastScalarToShape dLdy.buf s
-        pure #[(xId, { s := s, buf := dx })] }
-  pure (t.addNode node)
+@[inline] def sum {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
+  unary (t := t) "sum" xId s Shape.scalar
+    (forward := Buffer.reduceSum)
+    (backward := fun _x dLdy => broadcastScalarToShape dLdy s)
 
 /-- Flatten `s` into a 1D vector of length `Spec.Shape.size s`. -/
 @[inline] def flatten {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=

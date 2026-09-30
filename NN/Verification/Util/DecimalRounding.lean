@@ -38,9 +38,11 @@ def roundDecimal (fmt : FloatFormat) (mode : IEEERoundingMode) (n : JsonNumber) 
   Model.roundRatWithRounding fmt mode (decide (n.mantissa < 0)) n.mantissa.natAbs
     (10 ^ n.exponent)
 
-/-- Round an exact JSON decimal once into binary32. -/
-def binary32 (mode : IEEERoundingMode) (n : JsonNumber) : ExecFloat.Binary 8 23 :=
-  ExecFloat.Binary.ofModel (roundDecimal FloatFormat.binary32 mode n)
+/-- Round an exact JSON decimal once into the executable format `fmt`. -/
+def binary (fmt : FloatFormat) (mode : IEEERoundingMode) (n : JsonNumber) :
+    ExecFloat.Binary fmt.expWidth fmt.fracWidth fmt.encoding fmt.exponentBias
+      fmt.expWidth_ge_two fmt.fracWidth_pos fmt.exponentBias_pos fmt.exponentBias_le_maxFinite :=
+  ExecFloat.Binary.ofModel (roundDecimal fmt mode n)
 
 /-- Round an exact JSON decimal once into host binary64. -/
 def float (mode : IEEERoundingMode) (n : JsonNumber) : Float :=
@@ -66,16 +68,22 @@ def numberMatrix? (rows cols : Nat) (j : Json) : Option (Fin rows → Fin cols �
   else
     none
 
-/-- Read a length-`n` JSON vector into binary32, rounding every entry once with `mode`. -/
-def binary32Vec? (mode : IEEERoundingMode) (n : Nat) (j : Json) :
-    Option (TorchLean.Tensor (ExecFloat.Binary 8 23) [n]) := do
+/-- Read a length-`n` JSON vector, rounding every entry once into `fmt` with `mode`. -/
+def vector? (fmt : FloatFormat) (mode : IEEERoundingMode) (n : Nat) (j : Json) :
+    Option (TorchLean.Tensor
+      (ExecFloat.Binary fmt.expWidth fmt.fracWidth fmt.encoding fmt.exponentBias
+        fmt.expWidth_ge_two fmt.fracWidth_pos fmt.exponentBias_pos fmt.exponentBias_le_maxFinite)
+      [n]) := do
   let xs ← numbers? n j
-  pure (TorchLean.Tensor.ofFn fun i => binary32 mode (xs i))
+  pure (TorchLean.Tensor.ofFn fun i => binary fmt mode (xs i))
 
-/-- Read a `rows × cols` JSON matrix into binary32, rounding every entry once with `mode`. -/
-def binary32Matrix? (mode : IEEERoundingMode) (rows cols : Nat) (j : Json) :
-    Option (TorchLean.Tensor (ExecFloat.Binary 8 23) [rows, cols]) := do
+/-- Read a `rows × cols` JSON matrix, rounding every entry once into `fmt` with `mode`. -/
+def matrix? (fmt : FloatFormat) (mode : IEEERoundingMode) (rows cols : Nat) (j : Json) :
+    Option (TorchLean.Tensor
+      (ExecFloat.Binary fmt.expWidth fmt.fracWidth fmt.encoding fmt.exponentBias
+        fmt.expWidth_ge_two fmt.fracWidth_pos fmt.exponentBias_pos fmt.exponentBias_le_maxFinite)
+      [rows, cols]) := do
   let xs ← numberMatrix? rows cols j
-  pure (TorchLean.Tensor.matrix fun i k => binary32 mode (xs i k))
+  pure (TorchLean.Tensor.matrix fun i k => binary fmt mode (xs i k))
 
 end NN.Verification.Util.DecimalRounding

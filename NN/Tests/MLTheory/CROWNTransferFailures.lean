@@ -27,8 +27,8 @@ private def require (condition : Bool) (message : String) : IO Unit :=
   unless condition do throw <| IO.userError s!"CROWN transfer: {message}"
 
 /-- An exactly representable dyadic sum must remain inside convolution's directed bounds. -/
-def checkConvolution (α : Type) [Storage α] [Context α] [BoundOps α]
-    [NonlinearBoundOps α] (small : α) (label : String) : IO Unit := do
+private def checkConvolution (α : Type) [Storage α] [Context α] [BoundOps α]
+    [NonlinearBoundOps α] [DecidableLE α] (small : α) (label : String) : IO Unit := do
   let kernel : Tensor Nat [1] := [129]
   let stride : Tensor Nat [1] := [1]
   let input : Tensor α [1, 129] :=
@@ -47,7 +47,7 @@ def checkConvolution (α : Type) [Storage α] [Context α] [BoundOps α]
       kernelNonzero := by intro i; fin_cases i; simp [kernel]
       strideNonzero := by intro i; fin_cases i; simp [stride]
       spec :=
-        { kernel := by simpa [kernel] using (Tensor.full (α := α) [1, 1, 129] 1)
+        { kernel := Tensor.castShape (Tensor.full (α := α) [1, 1, 129] 1) (by simp [kernel])
           bias := [0] } }
   let config : ConvConfig :=
     { spatialRank := 1, kernel, stride, padding := [0], dilation := [1], paddingAfter := [0]
@@ -56,18 +56,17 @@ def checkConvolution (α : Type) [Storage α] [Context α] [BoundOps α]
     { id := 0, kind := .input, parents := #[], outShape := [1, 129] },
     { id := 1, kind := .conv config, parents := #[0], outShape := [1, 1] }] }
   let ps : ParamStore α :=
-    { inputBoxes := Std.HashMap.emptyWithCapacity.insert 0
-        (FlatBox.ofTensor (Tensor.flattenSpec input))
+    { inputBoxes := Std.HashMap.emptyWithCapacity.insert 0 (Utils.pointFlatBox input)
       convCfg := Std.HashMap.emptyWithCapacity.insert 1 parameters }
   let some result := (runIBP graph ps)[1]?.join
     | throw <| IO.userError s!"CROWN transfer: {label} convolution has no bound"
   let exact := (1 : α) + 128 * small
-  require (!(decide (getAtOrZero result.lo [0] > exact)) &&
-      !(decide (exact > getAtOrZero result.hi [0])))
+  require (decide (getAtOrZero result.lo [0] ≤ exact) &&
+      decide (exact ≤ getAtOrZero result.hi [0]))
     s!"{label} convolution lost small terms"
 
 /-- A rejected LayerNorm transfer stays unresolved through every dependent branch. -/
-def checkFailedParents : IO Unit := do
+private def checkFailedParents : IO Unit := do
   let shape : Shape := [2]
   let input : Tensor Float [2] := [-1, 1]
   let parameters : LayerNormParams Float :=
@@ -99,7 +98,7 @@ def checkFailedParents : IO Unit := do
     | throw <| IO.userError "CROWN transfer: epsilon-zero reference is undefined"
   require (getAtOrZero value.tensor [] == 6) "epsilon-zero reference value changed"
   let rejected ← try
-    let _ ← NN.Verification.IBPCert.check graph ps 2 "/unused-failed-transfer.json"
+    let _ ← NN.Verification.Cert.IBPCert.check graph ps 2 "/unused-failed-transfer.json"
     pure false
   catch error => pure (error.toString.contains "no output box")
   require rejected "failed transfer reached certificate comparison"
@@ -111,7 +110,7 @@ def checkFailedParents : IO Unit := do
         "malformed nonlinear parents produced a bound"
 
 /-- A reduction must not conceal a stored matrix's inconsistent output dimension. -/
-def checkMatmulDimensions : IO Unit := do
+private def checkMatmulDimensions : IO Unit := do
   let graph : NN.IR.Graph := { nodes := #[
     { id := 0, kind := .input, parents := #[], outShape := [1] },
     { id := 1, kind := .matmul, parents := #[0], outShape := [1] },
@@ -151,7 +150,7 @@ def checkMatmulDimensions : IO Unit := do
     "valid unary matrix lost its sum"
 
 /-- Every graph input contributes its interval when affine bounds select one input variable. -/
-def checkIndependentConcat : IO Unit := do
+private def checkIndependentConcat : IO Unit := do
   let graph : NN.IR.Graph := { nodes := #[
     { id := 0, kind := .input, parents := #[], outShape := [1] },
     { id := 1, kind := .input, parents := #[], outShape := [1] },
@@ -176,7 +175,7 @@ def checkIndependentConcat : IO Unit := do
           expected ≤ getAtOrZero output.hi [index]) "independent concat lost an endpoint"
 
 /-- A grouped convolution carries both terms of an upstream square's directional derivatives. -/
-def checkConvolutionDerivatives : IO Unit := do
+private def checkConvolutionDerivatives : IO Unit := do
   let kernel : Tensor Nat [1] := [3]
   let stride : Tensor Nat [1] := [1]
   let parameters : ConvParams Float :=
@@ -185,7 +184,7 @@ def checkConvolutionDerivatives : IO Unit := do
       kernelNonzero := by intro i; fin_cases i; simp [kernel]
       strideNonzero := by intro i; fin_cases i; simp [stride]
       spec :=
-        { kernel := by simpa [kernel] using (Tensor.full (α := Float) [4, 4, 3] 1)
+        { kernel := Tensor.castShape (Tensor.full (α := Float) [4, 4, 3] 1) (by simp [kernel])
           bias := [7, 7, 7, 7] } }
   let configuration : ConvConfig :=
     { spatialRank := 1, inChannels := 4, outChannels := 4, kernel, stride

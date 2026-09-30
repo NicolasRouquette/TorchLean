@@ -382,9 +382,11 @@ Sanitizer checks the tested binaries with `memcheck`, `racecheck`, `initcheck`, 
 its results are specific to the executions it observes.
 
 Read the coverage of these commands as carefully as their results. `verify -- all` runs ten
-sections, while `verify -- list` registers twenty-three tools, so a green `all` leaves thirteen
+sections, while `verify -- list` registers twenty-four tools, so a green `all` leaves fourteen
 registered tools untouched, including every `torchlean-*` workflow and the two-stage Lyapunov
-pipelines. That is a deliberate choice about runtime, not a claim that the rest passed. The same
+pipelines and `crown-query`. The `includeInAll` fields in
+{src "NN/Verification/CLI.lean"}[the command registry] specify this scope; success is not a claim
+that the excluded tools passed. The same
 applies inside a section: `margin-report` finishes with
 
 ```terminal +output

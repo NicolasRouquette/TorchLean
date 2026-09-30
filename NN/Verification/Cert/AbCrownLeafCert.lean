@@ -49,8 +49,10 @@ Run:
 namespace NN.Verification.Cert.AbCrownLeafCert
 
 open Lean
-open Data
 open NN.Verification.Json
+open NN.Verification.Util (approxEq)
+open NN.Verification.Util.Tensor (requireVecOfArray boxWithin)
+open NN.Verification.Util.Tensor (refutesThreshold refutesThresholdAt)
 
 /-- Bundled sample alpha-beta-CROWN-style leaf artifact. -/
 def defaultArtifactPath : String :=
@@ -76,13 +78,13 @@ def leavesCoverRoot (rootLo rootHi : Array Float) (leaves : Array (Array Float �
   let mut axes : Array (Nat × Array (Float × Float)) := #[]
   let mut cells := 1
   for d in [:dim] do
-    let pts := breakpoints <| leaves.foldl (init := #[rootLo[d]!, rootHi[d]!]) fun acc leaf =>
-      (acc.push leaf.1[d]!).push leaf.2[d]!
     if leaves.all fun leaf => leaf.1[d]! == rootLo[d]! && leaf.2[d]! == rootHi[d]! then
       continue
+    let pts := breakpoints <| leaves.foldl (init := #[rootLo[d]!, rootHi[d]!]) fun acc leaf =>
+      (acc.push leaf.1[d]!).push leaf.2[d]!
     let intervals :=
       if pts.size = 1 then #[(pts[0]!, pts[0]!)]
-      else (List.range (pts.size - 1)).toArray.map fun j => (pts[j]!, pts[j + 1]!)
+      else (Array.range (pts.size - 1)).map fun j => (pts[j]!, pts[j + 1]!)
     cells := cells * intervals.size
     if cells > maxCells then
       throw s!"coverage grid exceeds {maxCells} cells; split the artifact or check it elsewhere"
@@ -122,8 +124,8 @@ def checkAbCrownLeafArtifact (path : String) : IO Unit := do
     throw <| IO.userError
       s!"root dimension mismatch: input_dim={inputDim}, endpoints={root.dim}"
 
-  let rootLo ← NN.Verification.Util.Tensor.requireVecOfArray "root.lo" inputDim root.lo
-  let rootHi ← NN.Verification.Util.Tensor.requireVecOfArray "root.hi" inputDim root.hi
+  let rootLo ← requireVecOfArray "root.lo" inputDim root.lo
+  let rootHi ← requireVecOfArray "root.hi" inputDim root.hi
 
   let leaves ← expectFieldArray topObj "leaves" "top-level"
   if leaves.isEmpty then
@@ -146,18 +148,18 @@ def checkAbCrownLeafArtifact (path : String) : IO Unit := do
         s!"leaf lower-bound/threshold length mismatch: lb={lb.size}, threshold={thr.size}"
 
     boxes := boxes.push (region.lo, region.hi)
-    let lo ← NN.Verification.Util.Tensor.requireVecOfArray "leaf.lo" inputDim region.lo
-    let hi ← NN.Verification.Util.Tensor.requireVecOfArray "leaf.hi" inputDim region.hi
+    let lo ← requireVecOfArray "leaf.lo" inputDim region.lo
+    let hi ← requireVecOfArray "leaf.hi" inputDim region.hi
     let outputDim := lb.size
-    let lb ← NN.Verification.Util.Tensor.requireVecOfArray "leaf.lb" outputDim lb
-    let thr ← NN.Verification.Util.Tensor.requireVecOfArray "leaf.threshold" outputDim thr
-    let within := NN.Verification.Util.Tensor.boxWithin rootLo rootHi lo hi
+    let lb ← requireVecOfArray "leaf.lb" outputDim lb
+    let thr ← requireVecOfArray "leaf.threshold" outputDim thr
+    let within := boxWithin rootLo rootHi lo hi
     let witnessIdx? ← optionalFieldNat? leafObj "witness_idx" "leaf"
     let witnessMargin? ← optionalFieldFiniteFloat? leafObj "witness_margin" "leaf"
     let verified :=
       match witnessIdx? with
-      | some wi => NN.Verification.Util.Tensor.refutesThresholdAt lb thr wi
-      | none => NN.Verification.Util.Tensor.refutesThreshold lb thr
+      | some wi => refutesThresholdAt lb thr wi
+      | none => refutesThreshold lb thr
     -- The margin this leaf should have reported, when it names a witness index that is in range.
     -- Keeping it as a value rather than folding it into the comparison lets the failure message
     -- quote both numbers, which is the difference between a diagnostic and a verdict.
@@ -171,7 +173,7 @@ def checkAbCrownLeafArtifact (path : String) : IO Unit := do
     let marginMatches :=
       match witnessMargin?, actualMargin? with
       | some claimedMargin, some actualMargin =>
-          NN.Verification.Util.approxEq actualMargin claimedMargin (tol := 1e-6)
+          approxEq actualMargin claimedMargin (tol := 1e-6)
       | some _, none => false
       | none, _ => true
     if within && verified && marginMatches then

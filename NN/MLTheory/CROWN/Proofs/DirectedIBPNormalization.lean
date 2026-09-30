@@ -31,7 +31,7 @@ open NN.MLTheory.CROWN.Graph.Internal
 noncomputable section
 
 /-- The four normalization operations covered by this forward-step theorem. -/
-def normalizationNodeKind : OpKind → Bool
+def ibpNormalizationSupportedKind : OpKind → Bool
   | .softmax _ | .hardMaskedSoftmax _ | .layernorm _ | .batchNormEval _ _ => true
   | _ => false
 
@@ -53,7 +53,7 @@ def NormalizationNodeEquation (nodes : Array Node) (ps : ParamStore α)
           ∃ haxis : Shape.AxisInBounds axis s,
             letI := haxis
             ∀ c : s.Coord, v id (Shape.Coord.linearize c).val =
-              Activation.softmaxSpec axis (tensorOfFlatValues s (v p)) c
+              Activation.softmaxSpec axis (realTensor s (v p)) c
   | .hardMaskedSoftmax mask =>
       ∀ p, unaryParent? node.parents = some p →
         dims p = s.size ∧ dims id = s.size ∧
@@ -61,7 +61,7 @@ def NormalizationNodeEquation (nodes : Array Node) (ps : ParamStore α)
             (HardMask.toTensor? mask).toOption = some decoded →
               ∀ hshape : mask.shape = s, ∀ c : s.Coord,
                 v id (Shape.Coord.linearize c).val =
-                  Spec.hardMaskedSoftmaxSpec (tensorOfFlatValues s (v p)) (hshape ▸ decoded) c
+                  Spec.hardMaskedSoftmaxSpec (realTensor s (v p)) (hshape ▸ decoded) c
   | .layernorm axis =>
       ∀ p, unaryParent? node.parents = some p →
         dims p = s.size ∧ dims id = s.size ∧
@@ -82,7 +82,7 @@ theorem ibpStepNodeAt?_normalization_encloses
     (hepsilon : 0 ≤ value (TorchLean.normalizationEpsilon : α))
     {nodes : Array Node} {ps : ParamStore α} {boxes ibp : Array (Option (FlatBox α))}
     {dims : Nat → Nat} {v : Nat → Nat → ℝ} {id : Nat}
-    (hfamily : normalizationNodeKind nodes[id]!.kind = true)
+    (hfamily : ibpNormalizationSupportedKind nodes[id]!.kind = true)
     (heq : NormalizationNodeEquation nodes ps dims v id)
     (hagree : ∀ p ∈ nodes[id]!.parents, (boxes[p]?).join = ibp[p]!)
     (henc : ∀ p ∈ nodes[id]!.parents, ∀ box, ibp[p]! = some box →
@@ -95,7 +95,7 @@ theorem ibpStepNodeAt?_normalization_encloses
     henc p (mem_of_unaryParent?_eq_some hp) B
       ((hagree p (mem_of_unaryParent?_eq_some hp)).symm.trans hB)
   cases hk : nodes[id]!.kind <;>
-    simp only [normalizationNodeKind, hk, Bool.false_eq_true] at hfamily
+    simp only [ibpNormalizationSupportedKind, hk, Bool.false_eq_true] at hfamily
   all_goals
     simp only [NormalizationNodeEquation, hk] at heq
     rw [ibpStepNodeAt?, hk] at hstep
@@ -111,7 +111,7 @@ theorem ibpStepNodeAt?_normalization_encloses
         have houtEq := Option.some.inj hout
         cases houtEq
         rw [hd, hdim]
-        exact ibpSoftmaxRange_encloses axis (tensorOfFlatValues _ (v p)) hv
+        exact ibpSoftmaxRange_encloses axis (realTensor _ (v p)) hv
       · contradiction
   case hardMaskedSoftmax mask =>
     obtain ⟨p, input, hp, hinput, hout⟩ := unary_lookup hstep
@@ -127,7 +127,7 @@ theorem ibpStepNodeAt?_normalization_encloses
         intro c
         rw [hv decoded hdecoded hshape c]
         exact ibpHardMaskedSoftmaxLastTensor_encloses (α := α) _ _
-          (tensorOfFlatValues _ (v p)) (hshape ▸ decoded) c
+          (realTensor _ (v p)) (hshape ▸ decoded) c
       · contradiction
     · contradiction
   case layernorm axis =>

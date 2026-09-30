@@ -16,13 +16,13 @@ public import NN.Runtime.PyTorch.Export.IRPyTorch
 Tutorial: TorchLean → IR (`NN.IR.Graph`) → emitted PyTorch code.
 
 Run:
-  `lake exe torchlean torch_ir_pytorch --arch linear > exported_model.py`
-  `lake exe torchlean torch_ir_pytorch --arch mlp > exported_model.py`
-  `lake exe torchlean torch_ir_pytorch --arch sum > exported_model.py`
-  `lake exe torchlean torch_ir_pytorch --arch autoencoder > exported_model.py`
-  `lake exe torchlean torch_ir_pytorch --arch mha > exported_model.py`
-  `lake exe torchlean torch_ir_pytorch --arch mha-mask > exported_model.py`
-  `lake exe torchlean torch_ir_pytorch --arch transformer > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch linear > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch mlp > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch sum > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch autoencoder > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch mha > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch mha-mask > exported_model.py`
+  `scripts/lake.sh exe torchlean torch_ir_pytorch --arch transformer > exported_model.py`
 Then:
   `python3 exported_model.py`
 
@@ -106,14 +106,14 @@ def usage : String :=
     [ "TorchLean → IR → PyTorch exporter"
     , ""
     , "Usage:"
-    , "  lake exe torchlean torch_ir_pytorch --arch linear > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch mlp > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch mlp --seed 123 > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch sum > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch autoencoder > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch mha > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch mha-mask > exported_model.py"
-    , "  lake exe torchlean torch_ir_pytorch --arch transformer > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch linear > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch mlp > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch mlp --seed 123 > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch sum > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch autoencoder > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch mha > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch mha-mask > exported_model.py"
+    , "  scripts/lake.sh exe torchlean torch_ir_pytorch --arch transformer > exported_model.py"
     , ""
     , "Then: python3 exported_model.py"
     ]
@@ -122,18 +122,10 @@ def usage : String :=
 
 /-- Lower a sequential model and its initial state, then write generated Python to stdout. -/
 def emitSeq {σ τ : Shape} (className : String) (model : nn.Sequential σ τ) : IO Unit := do
-  let lowered ←
-    match Verification.lowerForwardToIR model (nn.initialState model) with
-    | .error e => throw <| IO.userError e
-    | .ok c => pure c
-
-  let code ←
-    match Export.IRPyTorch.emit
-        (g := lowered.graph) (ps := lowered.ps) (inputId := lowered.inputId) (outputId :=
-          lowered.outputId)
-        (options := { className := className }) with
-    | .error e => throw <| IO.userError e
-    | .ok s => pure s
+  let lowered ← IO.ofExcept <| Verification.lowerForwardToIR model (nn.initialState model)
+  let code ← IO.ofExcept <| Export.IRPyTorch.emit
+    (g := lowered.graph) (ps := lowered.ps) (inputId := lowered.inputId)
+    (outputId := lowered.outputId) (options := { className := className })
 
   IO.println code
 
@@ -142,8 +134,7 @@ Entry point. Writes Python to stdout for redirection to a file and execution und
 -/
 def main (args : List String) : IO Unit := do
   let args := CLI.dropDashDash args
-  let help := args.contains "--help" || args.contains "-h"
-  if help then
+  if CLI.hasHelp args then
     IO.println usage
   else
     let (seed, args) ← CLI.orThrow exeName <| CLI.takeSeed args (default := 0)

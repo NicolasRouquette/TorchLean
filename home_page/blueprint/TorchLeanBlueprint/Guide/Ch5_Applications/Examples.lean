@@ -157,11 +157,9 @@ is false
 
 The second half of the message identifies the failed proposition and how it was decided.
 
-The equality is the entire safety condition: reshape does not pad, truncate, or move data, so if the
-counts agree the operation is a reinterpretation of the same buffer. Stating it as a proof
-obligation erases the size check at runtime. It prevents a mismatched element count; callers still
-need to choose the intended axis order, and native storage remains a separate implementation
-boundary.
+The equality ensures that reshape preserves the element count and linear element order. Stating
+it as a proof obligation erases the size check at runtime. Callers still need to choose the
+intended axis order; whether storage is shared or copied belongs to the implementation boundary.
 
 A PyTorch operation can report incompatible shapes at execution time. This addition example
 illustrates that timing:
@@ -187,7 +185,7 @@ The command that prints the tensors above is
 ```terminal
 # Print the standalone tensor quickstart, including its
 # explicit Float32 cast.
-lake exe torchlean quickstart_tensors
+scripts/lake.sh exe torchlean quickstart_tensors
 ```
 
 ```terminal +output
@@ -345,6 +343,10 @@ x = torch.tensor([0.5, -1.0], dtype=torch.float64)
 t = torch.tensor([0.25], dtype=torch.float64)
 loss = ((lin(x) - t) ** 2).sum()
 loss.backward()
+print("loss     :", loss.item())
+print("grad W   :", lin.weight.grad.tolist())
+print("grad b   :", lin.bias.grad.tolist())
+print("2(y - t) :", (2 * (lin(x) - t)).item())
 ```
 
 ```
@@ -381,7 +383,7 @@ Both are chain-rule computations, but they answer different application question
 ```terminal
 # Inspect Jacobian, Hessian, directional, and detached-state
 # results together.
-lake exe torchlean autograd_transforms
+scripts/lake.sh exe torchlean autograd_transforms
 ```
 
 ```terminal +output
@@ -441,7 +443,7 @@ uses a hidden layer of width eight.
 
 ```terminal
 # Keep the seed fixed for a short initial training trace.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --steps 20 --seed 2026
 ```
 
@@ -459,7 +461,7 @@ To examine a larger update budget, keep the seed and increase the step count:
 ```terminal
 # Change only the update budget to compare with the
 # twenty-step run.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --steps 200 --seed 2026
 ```
 
@@ -476,9 +478,9 @@ The quickstart is arithmetic-polymorphic, so the same code runs on the executabl
 
 ```terminal
 # Compare native and configured binary32 on the same two-update workload.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --arithmetic native --steps 2 --seed 2026
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --arithmetic ieee --steps 2 --seed 2026
 ```
 
@@ -509,7 +511,7 @@ Prepare the small CIFAR-10 fixture and run one CPU optimizer step:
 # Prepare CIFAR arrays before running the cropped-image
 # classifier.
 python3 scripts/datasets/download_example_data.py --cifar10
-lake exe torchlean cnn --device cpu --n-total 1 --steps 1 --seed 2026
+scripts/lake.sh exe torchlean cnn --device cpu --n-total 1 --steps 1 --seed 2026
 ```
 
 The starting loss can be compared with a reference value. A uniform prediction on ten classes
@@ -663,7 +665,7 @@ could change within the box and that midpoint argument would need to be reconsid
 ```terminal
 # Lower the fixed model and propagate its input box with
 # native bound arithmetic.
-lake exe verify -- torchlean-ibp
+scripts/lake.sh exe verify -- torchlean-ibp
 ```
 
 Compare the reported endpoints with the hand calculation. The workflow uses outward rounding,
@@ -697,7 +699,7 @@ implementation, select FloatLib arithmetic for the same model and box:
 ```terminal
 # Select directed reference arithmetic for the same lowered
 # model and box.
-lake exe verify -- torchlean-ibp --arithmetic ieee
+scripts/lake.sh exe verify -- torchlean-ibp --arithmetic ieee
 ```
 
 FloatLib exposes directed addition and multiplication through `ExecFloat.Binary.addWithRounding`
@@ -736,7 +738,7 @@ refinements, are listed by:
 ```terminal
 # Ask the verification dispatcher which workflows it
 # currently registers.
-lake exe verify -- list
+scripts/lake.sh exe verify -- list
 ```
 
 The dispatcher is reachable from {src "NN/Verification/CLI.lean"}[`NN/Verification/CLI.lean`].
@@ -760,7 +762,7 @@ the result:
 ```terminal
 # Compare the fixed MLP’s native and reference outputs and
 # reverse-mode gradients.
-lake exe torchlean float32_semantics
+scripts/lake.sh exe torchlean float32_semantics
 ```
 
 Over the exact reals, $`y=2.08` is the midpoint of the interval calculated above, because the same
@@ -827,7 +829,7 @@ gradient would not bound a region crossing an activation change.
 ```terminal
 # Generate certificates, replay concrete inputs, and reject
 # a tampered interval.
-lake exe torchlean numerical_certificate
+scripts/lake.sh exe torchlean numerical_certificate
 ```
 
 The command generates and replays a small scalar graph, checks that certificate validation rejects
@@ -861,8 +863,10 @@ inputs:
 ```terminal
 # Exercise external graph capture, parsing, and numerical
 # comparison on fixed probes.
-lake exe pytorch_export_check
+scripts/lake.sh exe pytorch_export_check
 ```
+
+An abridged recorded transcript of the numerical probes is:
 
 ```terminal +output
 == PyTorch nn.Module → TorchLean IR runtime check ==
@@ -875,9 +879,11 @@ generated reference code and state-dict round trip: ok
 pytorch_export_check: ok
 ```
 
-The four numerical probes cover an MLP, affine LayerNorm, and small-epsilon LayerNorm and
-BatchNorm. The generated-reference checks also exercise scalar expression emission and state-dict
-naming and orientation. These are small interoperability checks, not an exhaustive importer suite.
+These four probes cover an MLP, affine LayerNorm, and small-epsilon LayerNorm and BatchNorm.
+The current command also checks supported and rejected capture cases through both export paths,
+and numerical parity for functional and method operators. Generated-reference checks exercise
+scalar expression emission and state-dict naming and orientation. These are selected
+interoperability checks, not an exhaustive importer suite.
 
 The import path is:
 
@@ -911,7 +917,7 @@ Before changing maintained examples, build the curated umbrella:
 ```terminal
 # Elaborate the curated example targets before running their
 # entry points.
-lake build NNExamples
+scripts/lake.sh build NNExamples
 ```
 
 That checks the maintained Lean example targets. Elaboration is
@@ -920,9 +926,9 @@ not execution, so runtime behavior is checked separately:
 ```terminal
 # Execute the retained suite; the final command runs the
 # CUDA-enabled build.
-lake exe nn_tests_suite
-lake -R -K cuda=true build nn_tests_suite
-lake env .lake/build/bin/nn_tests_suite
+scripts/lake.sh exe nn_tests_suite
+scripts/lake.sh -R -K cuda=true build nn_tests_suite
+scripts/lake.sh -K cuda=true env .lake/build/bin/nn_tests_suite
 ```
 
 The maintained suite concentrates on numerical and native-boundary behavior: attention,
@@ -932,10 +938,9 @@ routine command and API refactors use temporary checks rather than a permanent a
 Optional ALE/Pong and documentation rendering require their own external environment.
 
 Runnable examples use public executable APIs such as `Tensor.qr`, `Tensor.cholesky`, `nn.linear`,
-and `Trainer.train`. `Spec.*` references remain only where an example is explicitly demonstrating a
-mathematical specification or theorem; no runtime example fabricates a result by evaluating a
-placeholder in place of the public execution path. Many `Spec` definitions are executable reference
-functions, but running them does not test the selected backend implementation.
+and `Trainer.train`. Other examples deliberately evaluate mathematical specifications or
+demonstrate theorems. Many `Spec` definitions are executable reference functions, but running
+them does not test the selected backend implementation.
 
 Command implementations keep their local configuration vocabulary short because the namespace
 already supplies the command name: `Options` for parsed flags and `Preset` for a named model

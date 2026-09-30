@@ -29,26 +29,6 @@ open Proofs.Autograd.Algebra
 open Proofs (Idx getIdx)
 
 /--
-Flatten a tensor to a 1D vector (preserving total size).
-
-PyTorch comparison: `torch.flatten(x)` (for a single tensor value).
--/
-def flatten {α : Type} {Δ : Type} [TorchLean.Storage α] [Inhabited α] [Zero α]
-  {Γ : List Shape} {s : Shape} (x : Var s) :
-  MWith α Δ Γ (Var (.dim (Spec.Shape.size s) .scalar)) := do
-  let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
-  let outS : Shape := .dim (Spec.Shape.size s) .scalar
-  let node : NodeData α Δ (Γ ++ ss) outS :=
-    NodeData.ofLocalCompact (fun lookup => lookup.read ix)
-      (forward := fun ctx _d => flattenSpec (α := α) (ctx))
-      (jvp := fun _ctx dctx _d =>
-        flattenSpec (α := α) (dctx))
-      (vjp := fun _ctx _d δ =>
-        Contributions.single (α := α) (Γ := Γ ++ ss) (s := s) ix (unflattenSpec (α := α) s δ))
-  push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := outS) g node
-
-/--
 Reshape a tensor, given a proof that the total sizes match.
 
 PyTorch comparison: `torch.reshape(x, new_shape)`.
@@ -57,7 +37,7 @@ def reshape {α : Type} {Δ : Type} [TorchLean.Storage α] [Inhabited α] [Zero 
   {Γ : List Shape} {s₁ s₂ : Shape} (x : Var s₁) (h : Spec.Shape.size s₁ = Spec.Shape.size s₂) :
     MWith α Δ Γ (Var s₂) := do
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) s₂ :=
     NodeData.ofLocalCompact (fun lookup => lookup.read ix)
       (forward := fun ctx _d =>
@@ -72,6 +52,16 @@ def reshape {α : Type} {Δ : Type} [TorchLean.Storage α] [Inhabited α] [Zero 
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s₂) g node
 
 /--
+Flatten a tensor to a 1D vector (preserving total size).
+
+PyTorch comparison: `torch.flatten(x)` (for a single tensor value).
+-/
+def flatten {α : Type} {Δ : Type} [TorchLean.Storage α] [Inhabited α] [Zero α]
+  {Γ : List Shape} {s : Shape} (x : Var s) :
+    MWith α Δ Γ (Var (.dim (Spec.Shape.size s) .scalar)) :=
+  reshape x (by simp only [Shape.size, Nat.mul_one])
+
+/--
 Swap two adjacent axes at a given nesting `depth`.
 
 This is the typed-graph primitive used to lower arbitrary permutations.
@@ -80,7 +70,7 @@ def swapAdjacentAtDepth {α : Type} {Δ : Type} [TorchLean.Storage α] [Zero α]
   {Γ : List Shape} {s : Shape} (depth : Nat) (x : Var s) :
     MWith α Δ Γ (Var (s.swapAdjacentAtDepth depth)) := do
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let outS : Shape := s.swapAdjacentAtDepth depth
   let node : NodeData α Δ (Γ ++ ss) outS :=
     NodeData.ofLocalCompact (fun lookup => lookup.read ix)
@@ -105,7 +95,7 @@ def broadcastTo {α : Type} {Δ : Type} [TorchLean.Storage α] [Inhabited α] [A
   {Γ : List Shape} {s₁ s₂ : Shape} (cb : Shape.CanBroadcastTo s₁ s₂) (x : Var s₁) :
   MWith α Δ Γ (Var s₂) := do
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) s₂ :=
     NodeData.ofLocalCompact (fun lookup => lookup.read ix)
       (forward := fun ctx _d =>
@@ -127,7 +117,7 @@ def reduceSum {α : Type} {Δ : Type} [TorchLean.Storage α] [Add α] [Zero α] 
   [_valid : Shape.HasNonemptyAxis axis s] [_wf : Shape.WellFormed s]
   (x : Var s) : MWith α Δ Γ (Var (shapeAfterSum s axis)) := do
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let outS : Shape := shapeAfterSum s axis
   let node : NodeData α Δ (Γ ++ ss) outS :=
     NodeData.ofLocalCompact (fun lookup => lookup.read ix)
@@ -152,7 +142,7 @@ def reduceMean {α : Type} {Δ : Type} [TorchLean.Storage α] [Context α]
   [valid : Shape.HasNonemptyAxis axis s] [_wf : Shape.WellFormed s]
   (x : Var s) : MWith α Δ Γ (Var (shapeAfterSum s axis)) := do
   let ⟨ss, g, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let outS : Shape := shapeAfterSum s axis
   letI : Shape.AxisInBounds axis s := valid.proof.toAxisInBounds
   let denomNat := Shape.axisSize s axis
@@ -180,7 +170,7 @@ def select {α : Type} {Δ : Type} [TorchLean.Storage α] [Zero α]
     (x : Var s) (index : Fin (Shape.axisSize s axis)) :
     MWith α Δ Γ (Var (s.eraseAxis axis)) := do
   let ⟨ss, graph, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) (s.eraseAxis axis) :=
     NodeData.ofLocalCompact (fun lookup => lookup.read ix)
       (forward := fun context _ =>
@@ -198,7 +188,7 @@ def indexSelect {α : Type} {Δ : Type} [TorchLean.Storage α] [Add α] [Zero α
     (x : Var s) (indices : Δ → Tensor (Fin (Shape.axisSize s axis)) [count]) :
     MWith α Δ Γ (Var (s.replaceAxis axis count)) := do
   let ⟨ss, graph, _⟩ ← get
-  let ix ← liftM (mkIdx (_α := α) (Γ := Γ) ss x)
+  let ix ← liftM (mkIdx (Γ := Γ) ss x)
   let node : NodeData α Δ (Γ ++ ss) (s.replaceAxis axis count) :=
     NodeData.ofLocalCompact (fun lookup => lookup.read ix)
       (forward := fun context data =>
@@ -217,8 +207,8 @@ def scatterAdd {α : Type} {Δ : Type} [TorchLean.Storage α] [Add α] [Zero α]
     (indices : Δ → Tensor (Fin (Shape.axisSize s axis)) [count]) :
     MWith α Δ Γ (Var s) := do
   let ⟨ss, graph, _⟩ ← get
-  let ibase ← liftM (mkIdx (_α := α) (Γ := Γ) ss base)
-  let isource ← liftM (mkIdx (_α := α) (Γ := Γ) ss source)
+  let ibase ← liftM (mkIdx (Γ := Γ) ss base)
+  let isource ← liftM (mkIdx (Γ := Γ) ss source)
   let node : NodeData α Δ (Γ ++ ss) s :=
     NodeData.ofLocalCompact (fun lookup => (lookup.read ibase, lookup.read isource))
       (forward := fun context data =>

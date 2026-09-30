@@ -210,44 +210,6 @@ def append {Γ left right : List Shape} :
   | .nil, rightArgs => rightArgs
   | .cons term rest, rightArgs => .cons term (append rest rightArgs)
 
-/-- Split arguments at a type-level list boundary.
-
-This is the argument-list counterpart of `TensorPack.splitAppend`.  It is useful when a model owns a
-concatenated parameter ABI but its implementation is assembled recursively from smaller models:
-each component receives exactly the terms belonging to its part of the ABI, with every tensor
-shape retained by the type checker.
--/
-def splitAppend {Γ : List Shape} : {left right : List Shape} →
-    Args Γ (left ++ right) → Args Γ left × Args Γ right
-  | .nil, _right, args => (.nil, args)
-  | .cons _shape left, right, .cons term rest =>
-      let parts := splitAppend (left := left) (right := right) rest
-      (.cons term parts.1, parts.2)
-
-/-- Splitting arguments immediately after concatenating them recovers both original lists. -/
-@[simp] theorem splitAppend_append {Γ left right : List Shape}
-    (leftArgs : Args Γ left) (rightArgs : Args Γ right) :
-    splitAppend (append leftArgs rightArgs) = (leftArgs, rightArgs) := by
-  induction left with
-  | nil => cases leftArgs; rfl
-  | cons shape left ih =>
-      cases leftArgs with
-      | cons term rest =>
-          simp only [append, splitAppend]
-          rw [ih rest]
-
-/-- Concatenating both parts of a split recovers the original typed argument list. -/
-theorem append_splitAppend {Γ left right : List Shape}
-    (args : Args Γ (left ++ right)) :
-    append (splitAppend args).1 (splitAppend args).2 = args := by
-  induction left with
-  | nil => rfl
-  | cons shape left ih =>
-      cases args with
-      | cons term rest =>
-          simp only [splitAppend, append]
-          rw [ih rest]
-
 /-- View every entry of a typed environment as a term in that same environment.
 
 The result preserves the order and shape indices of `Γ`.  Large graph definitions can therefore

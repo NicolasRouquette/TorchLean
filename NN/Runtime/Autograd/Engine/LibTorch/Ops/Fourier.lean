@@ -34,7 +34,7 @@ def realFFTAdjointWeights (batch n : UInt32) (inverse : Bool) : Buffer :=
       for frequency in [:n.toNat / 2 + 1] do
         let multiplicity := Float.ofNat (RealFFT.multiplicity n.toNat frequency)
         let weight := if inverse then multiplicity / Float.ofNat n.toNat
-          else Float.ofNat n.toNat / multiplicity
+          else 1.0 / multiplicity
         values := values.push weight
         values := values.push (if RealFFT.isEndpoint n.toNat frequency then 0 else weight)
     return values
@@ -42,13 +42,13 @@ def realFFTAdjointWeights (batch n : UInt32) (inverse : Bool) : Buffer :=
 /--
 Adjoint of the unnormalized real transform for arbitrary packed cotangents.
 
-The weights compensate for the conjugate pairs inserted by the normalized inverse. Both the
+The weights compensate for the conjugate pairs inserted by the unnormalized inverse. Both the
 temporary weights and weighted spectrum are released after the inverse has consumed them.
 -/
 def rfft1dAdjoint (gradient : Buffer) (batch n : UInt32) : Buffer :=
   let weights := realFFTAdjointWeights batch n false
   let weighted := mul gradient weights
-  let result := irfft1dPacked weighted batch n
+  let result := irfft1dPackedUnnormalized weighted batch n
   releaseThen weights <| releaseThen weighted result
 
 /-- Adjoint of the normalized inverse, including exact zero imaginary endpoint gradients. -/

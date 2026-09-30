@@ -48,7 +48,7 @@ References (informal):
 @[expose] public section
 
 
-namespace NN.Verification.IBPCert
+namespace NN.Verification.Cert.IBPCert
 
 open NN.MLTheory.CROWN.Graph
 open NN.MLTheory.CROWN
@@ -57,7 +57,6 @@ open Spec TorchLean
 open TorchLean.Tensor
 open Lean
 open Json
-open Import.PyTorch
 open NN.Verification.Json
 
 /--
@@ -146,4 +145,4 @@ def checkOrThrow (g : Graph) (ps : ParamStore Float) (outId : Nat) (path : Strin
   if !ok then
     throw <| IO.userError s!"IBP certificate mismatch: {path}"
 
-end NN.Verification.IBPCert
+end NN.Verification.Cert.IBPCert

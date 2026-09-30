@@ -32,7 +32,9 @@ It does **not** re-implement model math. Instead it wires together:
 
 Run via the TorchLean example runner:
 
-`lake exe torchlean pytorch_roundtrip --model mlp|cnn|transformer --action export|import`
+`scripts/lake.sh exe torchlean pytorch_roundtrip --model mlp --action import`
+
+Choose `mlp`, `cnn`, or `transformer` for `--model`, and `export` or `import` for `--action`.
 
 Design goals:
 - keep paths/dimensions centralized (no duplicated constants across examples),
@@ -80,9 +82,11 @@ private def usage : String :=
     [ "PyTorch round-trip example (TorchLean)"
     , ""
     , "Usage:"
-    , "  lake exe torchlean pytorch_roundtrip --model mlp|cnn|transformer --action export|import"
+    , "  scripts/lake.sh exe torchlean pytorch_roundtrip --model mlp --action import"
     , ""
     , "Notes:"
+    , "  - `--model` accepts mlp, cnn, or transformer (default: mlp)."
+    , "  - `--action` accepts export or import (default: export)."
     , ("  - `export` writes readable reference PyTorch modules under " ++
       "`NN/Examples/Interop/PyTorch/<Model>/`.")
     , ("  - `import` reads the JSON weights under " ++
@@ -127,13 +131,13 @@ private def cnnInputSpatial : Tensor Nat [2] := [cnnInputHeight, cnnInputWidth]
 
 private def cnnFirstConvolution : nn.Convolution.Config 2 :=
   { outChannels := cnnOutputChannels
-    kernelSize := [3, 3]
-    stride := [1, 1]
+    kernelSize := [cnnKernelHeight, cnnKernelWidth]
+    stride := [cnnFirstStride, cnnFirstStride]
     padding := [cnnFirstPadding, cnnFirstPadding] }
 
 private def cnnFirstPooling : nn.Pooling.Config 2 :=
-  { kernelSize := [2, 2]
-    stride := [2, 2] }
+  { kernelSize := [cnnPoolKernelHeight, cnnPoolKernelWidth]
+    stride := [cnnFirstPoolStride, cnnFirstPoolStride] }
 
 private def cnnAfterFirstConvolution : Tensor Nat [2] :=
   cnnFirstConvolution.outputSpatial cnnInputSpatial
@@ -143,13 +147,13 @@ private def cnnAfterFirstPooling : Tensor Nat [2] :=
 
 private def cnnSecondConvolution : nn.Convolution.Config 2 :=
   { outChannels := cnnOutputChannels
-    kernelSize := [3, 3]
-    stride := [1, 1]
+    kernelSize := [cnnKernelHeight, cnnKernelWidth]
+    stride := [cnnSecondStride, cnnSecondStride]
     padding := [cnnSecondPadding, cnnSecondPadding] }
 
 private def cnnSecondPooling : nn.Pooling.Config 2 :=
-  { kernelSize := [2, 2]
-    stride := [2, 2] }
+  { kernelSize := [cnnPoolKernelHeight, cnnPoolKernelWidth]
+    stride := [cnnSecondPoolStride, cnnSecondPoolStride] }
 
 private def cnnAfterSecondConvolution : Tensor Nat [2] :=
   cnnSecondConvolution.outputSpatial cnnAfterFirstPooling
@@ -254,10 +258,7 @@ private def exportCNN : IO Unit := do
       secondPooling
       flattenedWidth := cnnFlattenedWidth
       outputWidth := cnnOutputChannels }
-  let source ←
-    match Export.PyTorch.CNN.classSource config with
-    | .ok code => pure code
-    | .error message => throw <| IO.userError message
+  let source ← IO.ofExcept (Export.PyTorch.CNN.classSource config)
   writePythonFile directory "TestCNN_PyTorch" source
   -- An existing state dict is optional, but an invalid one must fail visibly.
   if ← (stateDictionaryPath .cnn).pathExists then
@@ -266,17 +267,14 @@ private def exportCNN : IO Unit := do
       Import.PyTorch.CNN.load
         cnnInputChannels cnnOutputChannels cnnKernelHeight cnnKernelWidth cnnFlattenedWidth json
       | throw <| IO.userError "CNN JSON present but failed to parse as a CNN state_dict"
-    let sourceWithWeights ←
-      match Export.PyTorch.CNN.withParameters config
+    let sourceWithWeights ← IO.ofExcept <|
+      Export.PyTorch.CNN.withParameters config
         (Export.PyTorch.tensorToPyString stateDictionary.firstConvolutionWeight)
         (Export.PyTorch.tensorToPyString stateDictionary.firstConvolutionBias)
         (Export.PyTorch.tensorToPyString stateDictionary.secondConvolutionWeight)
         (Export.PyTorch.tensorToPyString stateDictionary.secondConvolutionBias)
         (Export.PyTorch.tensorToPyString stateDictionary.classifierWeight)
         (Export.PyTorch.tensorToPyString stateDictionary.classifierBias)
-      with
-      | .ok code => pure code
-      | .error message => throw <| IO.userError message
     writePythonFile directory "TestCNN_WithWeights" sourceWithWeights
   IO.println "Exported CNN PyTorch files under NN/Examples/Interop/PyTorch/CNN/."
 
@@ -319,6 +317,7 @@ private def runExport (model : Model) : IO Unit := do
 
 /-! ## Import actions -/
 
+/-- Load the MLP JSON fixture and evaluate `[0.5, 0.8]` with native `Float` tensor operations. -/
 public def mlpOutput : IO (Tensor Float [1]) := do
   let json ← TorchLean.Json.readFile (stateDictionaryPath .mlp)
   let some stateDictionary :=
@@ -336,6 +335,9 @@ private def importMLP : IO Unit := do
   IO.println "Output (native tensor operations, Float):"
   IO.println (reprStr y)
 
+/--
+Load the CNN JSON fixture and evaluate the row-major input `1..64` on CPU with scalar `Float`.
+-/
 public def cnnOutput : IO (Tensor Float [2]) := do
   let json ← TorchLean.Json.readFile (stateDictionaryPath .cnn)
   let some stateDictionary :=
@@ -366,6 +368,9 @@ private def importCNN : IO Unit := do
   IO.println "Output (executable `nn` module on CPU, Float):"
   IO.println (reprStr y)
 
+/--
+Load the encoder JSON fixture and evaluate the token `[[1.5, 1.5]]` on CPU with scalar `Float`.
+-/
 public def transformerOutput : IO (Tensor Float [1, 2]) := do
   let json ← TorchLean.Json.readFile (stateDictionaryPath .transformer)
   let some stateDictionary :=
@@ -406,6 +411,7 @@ private def runImport (model : Model) : IO Unit := do
 
 /-! ## Public entrypoint called from the examples runner -/
 
+/-- Run the selected import or export action; omitted flags select MLP export. -/
 public def main (args : List String) : IO Unit := do
   let args := TorchLean.CLI.dropDashDash args
   if TorchLean.CLI.hasHelp args then

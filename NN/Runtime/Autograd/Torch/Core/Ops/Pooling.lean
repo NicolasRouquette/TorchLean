@@ -45,17 +45,15 @@ def maxPool {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α
     (Shape.ofList (C ::
       Tensor.to (Spec.poolOutSpatialPad inSpatial kernel stride padding) (List Nat)))) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.maxPool (t := t0)
+    s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.maxPool (t := t0)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) x.id
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.maxPool (t := t0)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) x.id
-    pure (some { id := id })
-  execute (α := α) s .maxPool #[x.identity?] cpu cuda
+  executeRecorded (α := α) s .maxPool #[x.identity?] cpu cuda
 
 /--
 N-D average pooling for channels-first tensors `(C, spatial...)` (no batch axis).
@@ -70,17 +68,15 @@ def avgPool {α : Type} [TorchLean.Storage α] (s : EagerSession α) [Context α
     (Shape.ofList (C ::
       Tensor.to (Spec.poolOutSpatialPad inSpatial kernel stride padding) (List Nat)))) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.avgPool (t := t0)
+    s.recordCpu fun t0 => keepTapeOnError t0 <| Runtime.Autograd.Tape.avgPool (t := t0)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) x.id
-    pure { id := id }
   let cuda := do
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.avgPool (t := t0)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) x.id
-    pure (some { id := id })
-  execute (α := α) s .avgPool #[x.identity?] cpu cuda
+  executeRecorded (α := α) s .avgPool #[x.identity?] cpu cuda
 
 /--
 N-D smooth max pooling (log-sum-exp surrogate) for channels-first tensors `(C, spatial...)`.
@@ -99,20 +95,18 @@ def smoothMaxPool {α : Type} [TorchLean.Storage α] [TensorTransfer α] (s : Ea
     (Shape.ofList (C ::
       Tensor.to (Spec.poolOutSpatialPad inSpatial kernel stride padding) (List Nat)))) := do
   let cpu := do
-    let id ← s.recordCpu fun t0 => keepTapeOnError t0 <|
+    s.recordCpu fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.Tape.smoothMaxPool (t := t0)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding) x.id beta
-    pure { id := id }
   let cuda := do
     let betaF ← TensorTransfer.toFloat (α := α) beta
-    let id ← s.recordCuda fun t0 => keepTapeOnError t0 <|
+    s.recordCuda fun t0 => keepTapeOnError t0 <|
       Runtime.Autograd.LibTorch.Tape.smoothMaxPool (t := t0)
       (d := d) (C := C)
       (inSpatial := inSpatial) (kernel := kernel) (stride := stride) (padding := padding)
       x.id betaF
-    pure (some { id := id })
-  execute (α := α) s .smoothMaxPool #[x.identity?] cpu cuda
+  executeRecorded (α := α) s .smoothMaxPool #[x.identity?] cpu cuda
 
 end EagerSession
 

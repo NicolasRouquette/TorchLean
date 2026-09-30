@@ -164,7 +164,8 @@ Normalized reconstruction weights repeated across the batch.
 Only coordinates hidden in the model input have nonzero weight, and those weights sum to one across
 each batch because this compact example uses a singleton batch.
 -/
-def lossWeights {α : Type} [Storage α] [Context α] : Tensor α output :=
+def lossWeights {α : Type} [Storage α] [Zero α] [One α] [NatCast α] [Div α] :
+    Tensor α output :=
   Tensor.repeatAxis 0 batchSize <|
     ssl.BlockMAE.reconstructionWeights
       (dataShape := [inputChannels, cropHeight, cropWidth]) maskBlocks maskPeriod maskOffset

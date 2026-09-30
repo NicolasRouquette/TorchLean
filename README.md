@@ -40,6 +40,9 @@ For more precision, choose a FloatLib binary format directly in typed tensors an
 below.
 The CUDA command selects LibTorch's GPU runtime and reports an error when CUDA is unavailable.
 TorchLean retains its own tape and backward traversal; the bridge disables LibTorch autograd.
+Attention's matrix products, masking, softmax, and local VJP are composed in Lean, with saved
+buffers owned by the tape. Spectral layers likewise compose FFT, frequency mixing, and inverse FFT
+in Lean. LibTorch supplies the numerical primitives for these computations.
 
 Application code writes concrete tensor types as `Tensor α [dims...]`, with the element type first.
 For example, `Tensor Float [4, 2]` is a four-by-two tensor of `Float` values:
@@ -225,6 +228,8 @@ For a supervised loop at the selected precision, open
 Inputs, losses, predictions, state, and model-state checkpoints retain `Scalar`; `finish` keeps
 an independent snapshot. This path supports eager and graph execution on CPU. Seeded initialization
 and optimizer settings still start from `Float` unless explicitly supplied through typed interfaces.
+Typed sessions reject custom backend profiles, and their finished results do not provide
+`Result.verify`.
 The
 [tensor guide](https://lean-dojo.github.io/TorchLean/blueprint/Building-Models/Tensors-That-Remember-Their-Shapes/)
 works through a typed binary128 model and checks its output and derivatives against exact rationals.

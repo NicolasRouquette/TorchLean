@@ -124,7 +124,9 @@ assumptions; see [trust boundaries](TRUST_BOUNDARIES.md). AI assistance is discl
   compatibility synonyms or duplicate Option/Except versions of the same operation.
 - Avoid repeating a namespace in its declaration names. Name options records `Options`.
   Prefer a named `batch` option when the input and result shapes remain clear. Keep meaningful
-  dimensions and dtypes in names, such as `conv1d` and `Float32`; avoid arbitrary version suffixes.
+  spatial dimensions in names, such as `conv1d`. Scalar type names such as `Float32` name the
+  representation; arithmetic functions should take or infer the format/type instead of exposing
+  separate `32`/`64` suffixed APIs. Avoid arbitrary version suffixes.
 - Lowercase application namespaces such as `nn`, `optim`, and `text` follow the public API.
   Definition-specific auxiliary namespaces use their definition's spelling; other helpers belong
   under `Internal`. Keep top-level API entrypoints as focused import modules.
@@ -191,7 +193,7 @@ Adding one is three steps:
    into the docstring verbatim as a fenced `lean` block under an `Example:` heading, expanding a
    one-line docstring into the multi-line form if it has to.
 
-3. Build. `lake build NNTests` compiles the snippet, and `lake lint` compares the docstring against
+3. Build. `scripts/lake.sh build NNTests` compiles the snippet, and `scripts/lake.sh lint` compares the docstring against
    it, so the two cannot drift apart afterwards.
 
 Snippets use `--` line comments, never nested docstrings: a `-/` inside the snippet would close the
@@ -203,7 +205,7 @@ The build sets `warningAsError`, so any warning fails `lake build`. Check a sing
 way the build will:
 
 ```bash
-lake env lean -DwarningAsError=true NN/Path/To/File.lean
+scripts/lake.sh env lean -DwarningAsError=true NN/Path/To/File.lean
 ```
 
 ## Before Review

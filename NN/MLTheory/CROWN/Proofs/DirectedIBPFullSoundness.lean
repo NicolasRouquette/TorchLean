@@ -110,7 +110,7 @@ theorem ibpStepNodeAt?_all_encloses
       (by simp only [ibpStructuralSupportedNode, hk]) heq hagree henc hstep
   case softmax | hardMaskedSoftmax | layernorm | batchNormEval =>
     exact ibpStepNodeAt?_normalization_encloses hepsilon
-      (by simp only [normalizationNodeKind, hk]) heq hagree henc hstep
+      (by simp only [ibpNormalizationSupportedKind, hk]) heq hagree henc hstep
   case abs | maxElem | minElem | softplus =>
     exact ibpStepNodeAt?_pointwise_encloses
       (by simp only [ibpPointwiseSupportedNode, hk]) heq

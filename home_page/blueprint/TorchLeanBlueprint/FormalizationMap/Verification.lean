@@ -30,7 +30,9 @@ import NN.MLTheory.CROWN.Lyapunov.Certificate
 import NN.MLTheory.CROWN.Lyapunov.Verification
 import NN.MLTheory.Optimization.StronglyConvexGD
 import NN.MLTheory.LearningTheory.DifferentialPrivacy.Core
-import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationIEEE32ExecTwoLayerMlp
+import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationRounded
+import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationBinaryExec
+import NN.MLTheory.Proofs.Approximation.Universal.UniversalApproximationBinaryExecTwoLayerMlp
 import NN.Proofs.Verification.ODE.Enclosure
 import NN.Verification.Geometry3D.Box3D
 
@@ -526,7 +528,7 @@ these lookup equalities, then evaluates the affine bound at the chosen enclosed 
 {uses "ibp_engine_end_to_end"}[the IBP end-to-end theorem].
 :::
 
-:::theorem "alpha_beta_crown_end_to_end" (parent := "bound_propagation") (lean := "NN.MLTheory.CROWN.Graph.AlphaCrownTransferSoundness.alphaBetaCrown_cert_encloses_semantics'")
+:::theorem "alpha_beta_crown_end_to_end" (parent := "bound_propagation") (lean := "NN.MLTheory.CROWN.Graph.AlphaCrownTransferSoundness.alphaBetaCrown_cert_encloses_semantics")
 The α/β-CROWN analogue of {uses "alpha_crown_end_to_end"}[the α-CROWN corollary]: with a branch
 vector `beta` and a certificate replaying the α/β step, every certificate entry encloses the
 semantic value, with the IBP enclosure hypothesis discharged rather than assumed.
@@ -543,14 +545,14 @@ The native fixed-relaxation runner computes IBP bounds, infers stable ReLU phase
 optimizer's branch-and-bound search.
 :::
 
-:::definition "alpha_beta_node_checker" (parent := "bound_propagation") (lean := "NN.Verification.CROWNNodeCertAlphaBeta.checkAlphaBetaCROWNNodeCertificate")
+:::definition "alpha_beta_node_checker" (parent := "bound_propagation") (lean := "NN.Verification.Cert.CROWNNodeCertAlphaBeta.checkAlphaBetaCROWNNodeCertificate")
 The executable checker parses and replays a FloatLib binary32 node certificate. Its final acceptance
 decision has a proved bridge to the proposition-level local replay condition. Connecting that
 binary32 condition to the real enclosure in {bpref "crown_generic_checker_sound"}[] still requires
 the refinement assumptions for the operations in the graph.
 :::
 
-:::theorem "alpha_beta_node_acceptance" (parent := "bound_propagation") (lean := "NN.Verification.CROWNNodeCertAlphaBeta.AlphaBetaCROWNNodeCertificate.accepts_eq_true")
+:::theorem "alpha_beta_node_acceptance" (parent := "bound_propagation") (lean := "NN.Verification.Cert.CROWNNodeCertAlphaBeta.AlphaBetaCROWNNodeCertificate.accepts_eq_true")
 Acceptance of the in-memory α/β-CROWN decision implies `CrownCertLocalOK` for the exact
 FloatLib binary32 replay step used by the checker.
 :::
@@ -752,14 +754,39 @@ map receives only the mechanism's output in this theorem; a function that also c
 private dataset would require a different argument.
 :::
 
-:::theorem "fp32_relu_approximation_budget" (parent := "proof_applications") (lean := "NN.MLTheory.Proofs.UniversalApproximation.IEEE32ExecTwoLayerMLP.relu_twoLayerMlp_ieee32exec_threeTerm")
+:::theorem "rounded_relu_approximation" (parent := "proof_applications") (lean := "NN.MLTheory.Proofs.UniversalApproximation.RoundedReLUApprox.relu_universal_approximation_Icc")
+For each FloatLib format, the constructive hinge network approximates a Lipschitz target with
+error below the requested real approximation tolerance plus its pointwise evaluation-rounding
+bound. Its parameters inhabit FloatLib's rounded-real carrier; their stored real values need not
+be representable in the selected format.
+:::
+
+:::proof "rounded_relu_approximation"
+The real hinge construction supplies parameters. A fold invariant bounds the accumulated
+rounding error using FloatLib's half-ULP theorem at each subtraction, product, and addition.
+The triangle inequality adds this evaluation bound to the approximation tolerance.
+:::
+
+:::theorem "binary_hinge_approximation" (parent := "proof_applications") (lean := "NN.MLTheory.Proofs.UniversalApproximation.BinaryExecReLUApprox.relu_approximation_Icc_binary_three_term")
+For a configured IEEE format and its storage codec, executable hinge evaluation has error below
+the supplied approximation and parameter-quantization budgets plus the proved rounding bound.
+The parameters and intermediate computations must satisfy the theorem's finiteness hypotheses.
+:::
+
+:::proof "binary_hinge_approximation"
+FloatLib's arithmetic refinement identifies each finite executable operation with its rounded-real
+counterpart. A fold proof extends this correspondence to the hinge sum; the rounded-real error
+bound and two triangle inequalities then give the total budget.
+:::
+
+:::theorem "fp32_relu_approximation_budget" (parent := "proof_applications") (lean := "NN.MLTheory.Proofs.UniversalApproximation.BinaryExecTwoLayerMLP.relu_mlp_approximation_three_term")
 Assuming real approximation, parameter quantization, and
-{uses "executable_binary32"}[IEEE32 execution] budgets for a two-layer ReLU network, the total
-error is bounded by their sum.
+execution budgets for a two-layer ReLU network over a configured binary format, the total
+error is bounded by their sum. This includes {uses "executable_binary32"}[binary32 execution].
 :::
 
 :::proof "fp32_relu_approximation_budget"
-After interpreting {uses "executable_binary32"}[the IEEE32 result] as a real value, two triangle
+After interpreting the configured binary result as a real value, two triangle
 inequalities split the target error into the three assumed budgets.
 :::
 

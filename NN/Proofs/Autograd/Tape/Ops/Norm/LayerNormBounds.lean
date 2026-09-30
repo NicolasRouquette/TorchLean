@@ -98,8 +98,6 @@ theorem abs_nrmJvp_le {ε : ℝ} (hε : 0 < ε)
   have hnorm (k) : |nrm X ε i k| ≤ u k * t :=
     abs_nrm_le hε X i k (hu k)
   have hmean := abs_rowMean_le dX i d hd
-  have hsub (a b : ℝ) : |a - b| ≤ |a| + |b| := by
-    simpa only [sub_eq_add_neg, abs_neg] using abs_add_le a (-b)
   have hproduct :
       |(∑ k, dX (idxMN (m := m) (n := n) i k) * nrm X ε i k) / n| ≤
         (∑ k, d k * (u k * t)) / n :=
@@ -111,8 +109,8 @@ theorem abs_nrmJvp_le {ε : ℝ} (hε : 0 < ε)
           nrm X ε i j *
             ((∑ k, dX (idxMN (m := m) (n := n) i k) * nrm X ε i k) / n)| ≤
         d j + (∑ k, d k) / n + (u j * t) * ((∑ k, d k * (u k * t)) / n) := by
-    refine (hsub _ _).trans (add_le_add ?_ ?_)
-    · exact (hsub _ _).trans (add_le_add (hd j) hmean)
+    refine (abs_sub _ _).trans (add_le_add ?_ ?_)
+    · exact (abs_sub _ _).trans (add_le_add (hd j) hmean)
     · rw [abs_mul]
       exact mul_le_mul (hnorm j) hproduct (abs_nonneg _) (mul_nonneg (hu0 j) ht)
   rw [nrmJvp, abs_mul, abs_of_nonneg (invStd_nonneg X ε i)]

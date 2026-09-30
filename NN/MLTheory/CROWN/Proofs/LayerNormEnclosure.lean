@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Proofs.Utils.List
 public import NN.MLTheory.CROWN.Proofs.LayerNormDirected
 public import NN.MLTheory.CROWN.Extras.IntervalLemmas
 public import NN.Proofs.Autograd.Tape.Ops.Norm.MatrixEntries
@@ -117,8 +118,8 @@ theorem max_zero_encloses
 /--
 Every successful directed row transfer encloses its row of the real LayerNorm specification.
 
-The literal hypotheses supply the interpretation of zero and one, which the scalar operation
-contracts do not otherwise specify. Gamma, beta, and epsilon are interpreted stored values.
+The `LawfulBoundOps` laws supply the exact interpretation of zero and one.
+Gamma, beta, and epsilon are interpreted stored values.
 The statement assumes only the input enclosure and the existing scalar operation laws.
 -/
 theorem directedLayerNormRow?_encloses [NonlinearBoundOps α]
@@ -189,7 +190,7 @@ theorem directedLayerNormRow?_encloses [NonlinearBoundOps α]
     split at hout
     · contradiction
     · obtain ⟨bounds, hbounds, hout⟩ := Option.bind_eq_some_iff.mp hout
-      have hpoint := Internal.traverseFin_eq_some_iff.mp hbounds
+      have hpoint := Tensor.Internal.sequenceFinM_get_of_eq_some hbounds
       have houtEq := Option.some.inj hout
       cases houtEq
       intro j
@@ -210,7 +211,7 @@ theorem directedLayerNormRow?_encloses [NonlinearBoundOps α]
       have hfinal := checkedFiniteBounds?_eq_of_eq_some hj
       simpa only [← hfinal] using hshifted
 
-/-- Exact real endpoints instantiate the sequence theorem without literal hypotheses. -/
+/-- Exact real endpoints instantiate the sequence theorem. -/
 theorem directedLayerNormRow?_encloses_real {m n : Nat} (hm : 0 < m) (hn : 0 < n)
     (lo hi gamma beta : Tensor ℝ [n]) (epsilon : ℝ)
     (x : Tensor ℝ [m, n]) (row : Fin m)

@@ -210,7 +210,11 @@ private def compactShapeSummary (report : String) : List String :=
 
 /-- State the verified boundary accurately for executable and metadata reports. -/
 private def compactVerificationSummary (operation : String) : String :=
-  if operation.startsWith "parse_shape" then
+  if operation = "parse_shape (rejected metadata check)" then
+    "Rejected: the metadata checker returned an error."
+  else if operation = "parse_shape (unverified metadata check)" then
+    "Unverified: success of the metadata checker has not been established."
+  else if operation.startsWith "parse_shape" then
     "Verified: grammar, rank, dimensions, and returned metadata."
   else
     "Verified: checked plan, native lowering, and semantic correctness."
@@ -218,6 +222,7 @@ private def compactVerificationSummary (operation : String) : String :=
 /-- Section headings emitted by the report analyzer, in display order. -/
 private def reportSectionTitles : List String :=
   ["Type checks",
+   "Check status",
    "Discharged obligations",
    "Verified logical stages",
    "Generated execution strategy",
@@ -250,7 +255,8 @@ private def reportSectionLines (report title : String) : List String :=
 private def dropReportNumber (line : String) : String :=
   match line.splitOn ". " with
   | [] | [_] => line
-  | _ :: remainder => String.intercalate ". " remainder
+  | number :: remainder =>
+      if number.toNat?.isSome then String.intercalate ". " remainder else line
 
 /-- Render one independently expandable part of an operation audit. -/
 private def reportSectionHtml (report reportTitle displayTitle : String)
@@ -296,12 +302,20 @@ private def reportSectionHtml (report reportTitle displayTitle : String)
 /-- Render one operation as a compact summary followed by focused audit sections. -/
 private def transformationReportEntryHtml (report : String) : Html :=
   let operation := reportOperation report
+  let status :=
+    if operation = "parse_shape (rejected metadata check)" then "Rejected"
+    else if operation = "parse_shape (unverified metadata check)" then "Unverified"
+    else "Verified"
+  let statusColor :=
+    if status = "Verified" then "var(--vscode-testing-iconPassed, #3aa675)"
+    else "var(--vscode-editorWarning-foreground, #cca700)"
   let signature :=
     String.intercalate "\n" <|
       compactTypeSummary report ++ compactShapeSummary report
   let sections :=
     ([
       reportSectionHtml report "Type checks" "Checked tensors and axes",
+      reportSectionHtml report "Check status" "Check status",
       reportSectionHtml report "Verified logical stages"
         "Transformation stages" (ordered := true) (showCount := true),
       reportSectionHtml report "Discharged obligations"
@@ -314,7 +328,7 @@ private def transformationReportEntryHtml (report : String) : Html :=
     ] : List (Option Html)).filterMap id |>.toArray
   Html.element "div" #[
     ("style", json% {
-      "border-left": "3px solid var(--vscode-testing-iconPassed, #3aa675)",
+      "border-left": $("3px solid " ++ statusColor),
       "margin": "0.65em 0",
       "padding": "0.2em 0 0.1em 0.75em"
     })
@@ -337,11 +351,11 @@ private def transformationReportEntryHtml (report : String) : Html :=
       ] #[Html.text operation],
       Html.element "span" #[
         ("style", json% {
-          "color": "var(--vscode-testing-iconPassed, #3aa675)",
+          "color": $(statusColor),
           "font-size": "0.82em",
           "font-weight": "600"
         })
-      ] #[Html.text "Verified"]
+      ] #[Html.text status]
     ],
     Html.element "pre" #[
       ("className", json% "font-code"),
@@ -365,7 +379,7 @@ private def transformationReportEntryHtml (report : String) : Html :=
 /-- Present all discovered operations in one layered InfoView panel. -/
 private def transformationReportHtml (reports : Array String) : Html :=
   Html.element "div" #[("className", json% "mv2")] <| #[
-    Html.element "strong" #[] #[Html.text "Verified einops analysis"]
+    Html.element "strong" #[] #[Html.text "Einops analysis"]
   ] ++ reports.map transformationReportEntryHtml
 
 /--
@@ -386,7 +400,7 @@ elab (name := einopsSuggestionTactic) token:"einops?" : tactic =>
         let operations :=
           String.intercalate ", " <| reports.toList.map reportOperation
         logInfoAt token
-          s!"Verified einops analysis: {operations}.\n\
+          s!"Einops analysis: {operations}.\n\
             Open the InfoView panel for checked types, proof stages, cost, \
             and correctness."
         let html := transformationReportHtml reports

@@ -112,7 +112,7 @@ theorem ibpStepNodeAt?_encloses
         subst hstep
         obtain ⟨hd, hv⟩ := heq stored hc
         rw [hd, RowEncloses]
-        exact ⟨rfl, fun i => by simp only [read_fin, hv i, le_refl, and_self]⟩
+        exact ⟨rfl, fun i => by simp only [Spec.getAtOrZero_eq_getScalar, hv i, le_refl, and_self]⟩
   case detach | reshape | flatten =>
     cases hp : unaryParent? nodes[id]!.parents with
     | none => simp [hp] at hstep
@@ -233,7 +233,7 @@ theorem ibpStepNodeAt?_encloses
   case log =>
     obtain ⟨p, B, hp, hB, hbox⟩ := unary_lookup (k := fun input =>
       if (List.finRange input.dim).all
-          (fun i => decide (0 < Tensor.item (getDimScalarFn (α := α) input.lo i))) then
+          (fun i => decide (0 < Tensor.item (Tensor.unstack (α := α) input.lo i))) then
         boxUnaryEnclosure? NonlinearBoundOps.logBounds input
       else none) hstep
     split at hbox

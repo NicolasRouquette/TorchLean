@@ -46,6 +46,14 @@ structure Idx (Γ : List Shape) (s : Shape) where
   /-- Proof that the selected context entry has shape `s`. -/
   h : Γ.get i = s
 
+/-- Two typed indices with the same position are equal. -/
+@[ext] theorem Idx.ext {Γ : List Shape} {s : Shape} {a b : Idx Γ s}
+    (h : a.i = b.i) : a = b := by
+  cases a
+  cases b
+  cases h
+  rfl
+
 /--
 Read a tensor out of a context at a typed index, casting along the shape equality the index
 carries.

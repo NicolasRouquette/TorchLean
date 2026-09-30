@@ -107,6 +107,9 @@ execution:
   * `updateBuffers`
   * an optional train/eval-dependent update for state such as running statistics
 *
+  * `updatesBuffersInForward`
+  * whether a composite layer delegates buffer updates to its nested forward programs
+*
   * `forward`
   * the execution-polymorphic tensor program from `σ` to `τ`
 :::
@@ -739,7 +742,7 @@ configuration and image dimensions differ from the small summary above:
 # Use one downloaded CIFAR-10 example to exercise the
 # complete image training route.
 python3 scripts/datasets/download_example_data.py --cifar10
-lake -R -K cuda=false exe torchlean cnn \
+scripts/lake.sh -R -Kcuda=false exe torchlean cnn \
   --device cpu --n-total 1 --steps 1 --seed 2026
 ```
 
@@ -879,11 +882,11 @@ Run one optimizer step of the maintained example:
 ```terminal
 # This command trains the complete sequence example, not
 # just the isolated encoder block above.
-lake exe torchlean transformer \
+scripts/lake.sh exe torchlean transformer \
   --device cpu --steps 1 --log false
 ```
 
-The current example reports:
+The recorded run reports:
 
 ```terminal +output
 [TorchLean] arithmetic: native binary32
@@ -953,7 +956,7 @@ the complement is hidden instead:
 
 ```lean (name := bmMask1)
 -- Keep the number of hidden blocks fixed and change which
--- blocks the seed selects.
+-- blocks the offset selects.
 #eval ssl.BlockMask.apply bmSignal bmBlocks 2 1
 ```
 ```leanOutput bmMask1 (whitespace := lax)

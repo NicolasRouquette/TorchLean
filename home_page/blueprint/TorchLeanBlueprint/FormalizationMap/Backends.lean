@@ -136,7 +136,7 @@ tags and native buffer lengths. Dense backward returns one buffer per node; spar
 owned buffers only for selected node ids and requires the caller to release them.
 :::
 
-:::theorem "cuda_execution_contracts" (parent := "backend_selection") (lean := "Runtime.Autograd.LibTorch.Float32Contract.native_add_eq_ieee32_of_isFinite")
+:::theorem "cuda_execution_contracts" (parent := "backend_selection") (lean := "Runtime.Autograd.LibTorch.Float32Contract.native_add_eq_reference_of_isFinite")
 Given the stated native bit-agreement hypothesis and a finite native result, decoded native scalar
 addition equals {uses "executable_binary32"}[`ExecFloat.add`]. Both the hypothesis and the
 finiteness side condition remain visible in the theorem type.
@@ -173,7 +173,7 @@ make that tensor an optimization variable.
 `Session` owns a supervised update action and step counter. `step` updates from one sample;
 `step samples (batch := true)` averages a nonempty array's gradients before one update. Both return
 `Unit` unless `(loss := true)` requests the pre-update loss. `steps` reads the counter, prediction
-and loss use evaluation mode, and `finish` packages the live state as a trained result.
+and loss use evaluation mode, and `finish` takes an independent snapshot as a trained result.
 
 A batch update and an evaluation may use the same parameters with different mode-dependent
 behavior, such as dropout. The step counter tracks updates; it is not a count of every forward

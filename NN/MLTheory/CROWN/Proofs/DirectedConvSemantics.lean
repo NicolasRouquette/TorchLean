@@ -132,7 +132,7 @@ private theorem inferConvConfigOutShape_dilation_pos
   rename_i hdims
   exact inferConvDims_dilation_pos _ _ _ _ _ _ _ _ _ hdims
 
-omit [BoundOps α] [LawfulBoundOps α] in
+omit [Context α] [BoundOps α] [LawfulBoundOps α] in
 /-- Every accepted convolution plan has positive stored dilation on each spatial axis. -/
 theorem planConvTransfer?_dilation_pos
     {configuration : ConvConfig} {parameters : ConvParams α}
@@ -173,7 +173,8 @@ theorem ConvolutionNodeEquation.nodeEquation
   refine ⟨hid, hpdim, ?_⟩
   intro i
   rw [hvalue i, convolutionPoint_eq_affine _ _ _ (planConvTransfer?_dilation_pos hplan)]
-  simp only [read_fin, getScalar_add_spec, Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec,
+  simp only [Spec.getAtOrZero_eq_getScalar, getScalar_add_spec,
+    Proofs.TensorAlgebra.getScalar_mat_vec_mul_spec,
     Tensor.getScalar_map, pointVector, Tensor.getScalar_ofFn, get2, Spec.get, Tensor.unstack_map]
 
 end

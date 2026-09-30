@@ -330,7 +330,7 @@ still implement its local VJP either as TorchLean operations or as a named backe
 disabled gradient recording: neither mode delegates a local or global graph to LibTorch autograd.
 -/
 def matchesVJP (policy : KernelPolicy) (c : KernelCapsule) : Bool :=
-  if policy.vjpMode == .none || !c.op.requiresVJP then
+  if !c.op.requiresVJP then
     true
   else
     match policy.vjpMode with

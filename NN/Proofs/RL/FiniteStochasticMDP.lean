@@ -77,7 +77,7 @@ theorem valueAt_bellmanOptimality
   simp [valueAt, Spec.RL.FiniteStochastic.bellmanOptimality]
 
 /-- Expected next-state value is monotone in the candidate value function. -/
-theorem expectedNextValue_monotone
+theorem expectedNextValue_mono
     (mdp : MDP nStates nActions)
     (valid : Valid mdp)
     (values₁ values₂ : ValueFunction ℝ nStates)
@@ -89,7 +89,7 @@ theorem expectedNextValue_monotone
     mul_le_mul_of_nonneg_left (hValues nextState) (valid.transition_nonneg state action nextState)
 
 /-- Bellman state-action values are monotone in the candidate value function. -/
-theorem actionValue_monotone
+theorem actionValue_mono
     (mdp : MDP nStates nActions)
     (valid : Valid mdp)
     (values₁ values₂ : ValueFunction ℝ nStates)
@@ -98,10 +98,10 @@ theorem actionValue_monotone
     (action : Fin nActions) :
     actionValue mdp values₁ state action ≤ actionValue mdp values₂ state action :=
   discountedBackup_mono _ valid.discount_nonneg
-    (expectedNextValue_monotone mdp valid values₁ values₂ hValues state action)
+    (expectedNextValue_mono mdp valid values₁ values₂ hValues state action)
 
 /-- Bellman expectation operators are pointwise monotone. -/
-theorem bellmanPolicy_monotone
+theorem bellmanPolicy_mono
     (mdp : MDP nStates nActions)
     (valid : Valid mdp)
     (policy : Policy nStates nActions)
@@ -111,10 +111,10 @@ theorem bellmanPolicy_monotone
     valueAt (bellmanPolicy mdp policy values₁) state ≤
       valueAt (bellmanPolicy mdp policy values₂) state := by
   simpa [valueAt_bellmanPolicy] using
-    actionValue_monotone mdp valid values₁ values₂ hValues state (policy state)
+    actionValue_mono mdp valid values₁ values₂ hValues state (policy state)
 
 /-- Optimal Bellman operators are pointwise monotone. -/
-theorem bellmanOptimality_monotone
+theorem bellmanOptimality_mono
     [Fact (0 < nActions)]
     (mdp : MDP nStates nActions)
     (valid : Valid mdp)
@@ -125,7 +125,7 @@ theorem bellmanOptimality_monotone
       valueAt (bellmanOptimality mdp values₂) state := by
   simp only [valueAt_bellmanOptimality]
   exact Finset.sup'_mono_fun fun action _ =>
-    actionValue_monotone mdp valid values₁ values₂ hValues state action
+    actionValue_mono mdp valid values₁ values₂ hValues state action
 
 /-- Coordinatewise expectation difference is bounded by the sup distance. -/
 theorem expectedNextValue_abs_sub_le

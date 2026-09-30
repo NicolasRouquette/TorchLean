@@ -14,6 +14,7 @@ public import NN.Tests.API.Complex
 public import NN.Tests.API.Data
 public import NN.Tests.API.Diffusion
 public import NN.Tests.API.Differential
+public import NN.Tests.API.Fourier
 public import NN.Tests.API.Gpt2Corpus
 public import NN.Tests.API.Macros
 public import NN.Tests.API.Optim
@@ -57,11 +58,15 @@ public import NN.Tests.Runtime.PerfFastPaths
 public import NN.Tests.Runtime.Floats.Suite
 public import NN.Tests.Runtime.Rationals.Suite
 public import NN.Tests.Runtime.Cuda.Suite
+public import NN.Tests.Tensor.AffineIndex
 public import NN.Tests.Tensor.EinsumPlanning
 public import NN.Tests.Tensor.Lexer
 public import NN.Tests.Tensor.LinearAlgebra
+public import NN.Tests.Tensor.NumericContracts
 public import NN.Tests.Tensor.Operations
+public import NN.Tests.Tensor.Report
 public import NN.Tests.Tensor.Storage
+public import NN.Tests.Tensor.StorageImport
 
 /-!
 # Suite
@@ -84,12 +89,12 @@ def usage : String :=
     [ "TorchLean test suite"
     , ""
     , "Usage:"
-    , "  lake build nn_tests_suite && lake exe nn_tests_suite"
+    , "  scripts/lake.sh build nn_tests_suite && scripts/lake.sh exe nn_tests_suite"
     , ""
     , "Notes:"
     , "  Heavier verification certificate checkers are separate executables:"
-    , "    lake exe verify -- all    # run bundled cert checkers"
-    , "    lake exe verify -- list   # list all verifier tools"
+    , "    scripts/lake.sh exe verify -- all    # run bundled cert checkers"
+    , "    scripts/lake.sh exe verify -- list   # list all verifier tools"
     ]
 
 def run : IO Unit := do
@@ -99,7 +104,7 @@ def run : IO Unit := do
   -- These probes are selected before the ordinary suite to avoid unrelated live GPU owners.
   match ← IO.getEnv "TORCHLEAN_LIBTORCH_MEMORY_PROBE" with
   | some "accounting" => Tests.Cuda.Stress.runMemoryAccountingProbe
-  | some "attention-context" => Tests.Cuda.Stress.runAttentionMemoryProbe
+  | some "attention-buffers" => Tests.Cuda.Stress.runAttentionMemoryProbe
   | some "oom-recovery" => Tests.Cuda.Stress.runMemoryOOMProbe
   | some other => throw <| IO.userError s!"unknown LibTorch memory probe: {other}"
   | none =>
@@ -153,6 +158,7 @@ def run : IO Unit := do
     NN.Tests.Runtime.PerfFastPaths.run
     NN.Tests.Tensor.Lexer.run
     NN.Tests.Tensor.LinearAlgebra.run
+    NN.Tests.Tensor.NumericContracts.run
     NN.Tests.Tensor.Operations.run
     NN.Tests.Tensor.Storage.run
     Tests.Floats.run
@@ -171,16 +177,8 @@ def run : IO Unit := do
 
 def main (args : List String) : IO Unit := do
   match args with
-  | List.nil =>
-      run
-  | List.cons arg List.nil =>
-      if arg == "--help" || arg == "-h" then
-        IO.println usage
-      else
-        IO.eprintln s!"Unknown args: {args}"
-        IO.eprintln ""
-        IO.eprintln usage
-        throw <| IO.userError "bad CLI args"
+  | [] => run
+  | ["--help"] | ["-h"] => IO.println usage
   | _ =>
       IO.eprintln s!"Unknown args: {args}"
       IO.eprintln ""

@@ -75,23 +75,23 @@ structure ScalarTrainer (α δ : Type) [TorchLean.Storage α] [TorchLean.Storage
   state : ParamList α paramShapes
   /-- Compute the scalar loss for a curried input pack. -/
   lossFn :
-    Curried.Fn α inputShapes
-      (Curried.Fn δ dataInputShapes (IO (Tensor α [])))
+    Curried.Function α inputShapes
+      (Curried.Function δ dataInputShapes (IO (Tensor α [])))
   /-- Curried backend operation returning `(loss, gradients)` from one forward tape. -/
   diffFn :
-    Curried.Fn α inputShapes
-      (Curried.Fn δ dataInputShapes
+    Curried.Function α inputShapes
+      (Curried.Function δ dataInputShapes
         (IO (Tensor α [] × TorchLean.TensorPack α paramShapes)))
   /-- Compute gradients aligned with `paramShapes` for a curried input pack. -/
   gradFn :
-    Curried.Fn α inputShapes
-      (Curried.Fn δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes)))
+    Curried.Function α inputShapes
+      (Curried.Function δ dataInputShapes (IO (TorchLean.TensorPack α paramShapes)))
   /-- Apply one SGD-style update and return the loss used to compute that update. -/
   stepWithLossFn : α →
-    Curried.Fn α inputShapes
-      (Curried.Fn δ dataInputShapes (IO (Tensor α [])))
+    Curried.Function α inputShapes
+      (Curried.Function δ dataInputShapes (IO (Tensor α [])))
   /-- Apply one SGD-style update for a curried input pack. -/
-  stepFn : α → Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))
+  stepFn : α → Curried.Function α inputShapes (Curried.Function δ dataInputShapes (IO Unit))
   /--
   Optional Adam update path.
 
@@ -99,12 +99,12 @@ structure ScalarTrainer (α δ : Type) [TorchLean.Storage α] [TorchLean.Storage
   `none` and should use the generic optimizer wrappers.
   -/
   adamStep? : Option (α → α → α → α →
-    Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))) := none
+    Curried.Function α inputShapes (Curried.Function δ dataInputShapes (IO Unit))) := none
   /-- CUDA-native Adam update that also returns the loss from its forward tape. -/
   adamStepWithLoss? :
     Option (α → α → α → α →
-      Curried.Fn α inputShapes
-        (Curried.Fn δ dataInputShapes (IO (Tensor α [])))) := none
+      Curried.Function α inputShapes
+        (Curried.Function δ dataInputShapes (IO (Tensor α [])))) := none
   /--
   Optional AdamW update path.
 
@@ -112,12 +112,12 @@ structure ScalarTrainer (α δ : Type) [TorchLean.Storage α] [TorchLean.Storage
   decay. Other backends expose `none` and should use the generic optimizer wrappers.
   -/
   adamWStep? : Option (α → α → α → α → α →
-    Curried.Fn α inputShapes (Curried.Fn δ dataInputShapes (IO Unit))) := none
+    Curried.Function α inputShapes (Curried.Function δ dataInputShapes (IO Unit))) := none
   /-- CUDA-native AdamW update that also returns the loss from its forward tape. -/
   adamWStepWithLoss? :
     Option (α → α → α → α → α →
-      Curried.Fn α inputShapes
-        (Curried.Fn δ dataInputShapes (IO (Tensor α [])))) := none
+      Curried.Function α inputShapes
+        (Curried.Function δ dataInputShapes (IO (Tensor α [])))) := none
   /-- Save and restore optimizer state retained inside the selected runtime backend. -/
   optimizerStateCheckpoint? : Option OptimizerStateCheckpoint := none
   /--

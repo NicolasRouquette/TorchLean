@@ -38,7 +38,7 @@ def run : IO Unit := do
   let n : UInt32 := xs.size.toUInt32
   let x := Buffer.ofFloatArray xs
   let y := Buffer.ofFloatArray ys
-  -- Scalars spanning sign and magnitude, including the identity `c = 0`.
+  -- Scalars spanning sign and magnitude, including the constant-one case `c = 0`.
   for c in (#[-2.0, 0.5, 3.25, -0.125, 1.0, 0.0] : Array Float) do
     let actual := Buffer.scaledProdExp x y c
     let composed := Buffer.exp (Buffer.mul (Buffer.mul (Buffer.full n c) x) y)

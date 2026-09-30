@@ -298,9 +298,7 @@ def run
   let trained ← trainer.trainStream runtime
     (fun step => evaluation.next (config.seed + step))
     evaluation.sample
-    { steps := config.training.steps
-      cudaMemorySampleEvery := config.training.cudaMemorySampleEvery
-      logDestination := .disabled }
+    (config.training.trainOptions (enableLog := false))
     (curveEvery := progressEvery)
     (onEval := evaluate)
   let (x, y) := evaluation.probe
@@ -314,9 +312,8 @@ def run
 /--
 Print the run's configuration: device, execution mode, model geometry, row counts and file paths.
 
-Worth the space, because an FNO run that silently loaded the wrong split looks like a training
-problem
-rather than a data problem.
+An FNO run that silently loaded the wrong split can look like a training problem.
+Printing the paths and row counts helps identify the data error.
 -/
 def printHeader (runtime : Runtime.Config) (config : Options) : IO Unit := do
   IO.println s!"{exeName}: native real-split FNO1D Burgers"

@@ -84,8 +84,9 @@ private theorem sum_restores
       have hscalar := ha'.2 (0 : Fin 1)
       change value (getAtOrZero alo [0]) ≤ a 0 ∧
         a 0 ≤ value (getAtOrZero ahi [0]) at hscalar
-      rw [show getAtOrZero alo [0] = alo.getScalar 0 from read_fin alo 0,
-        show getAtOrZero ahi [0] = ahi.getScalar 0 from read_fin ahi 0] at hscalar
+      rw [show getAtOrZero alo [0] = alo.getScalar 0 from Spec.getAtOrZero_eq_getScalar alo 0,
+        show getAtOrZero ahi [0] = ahi.getScalar 0 from
+          Spec.getAtOrZero_eq_getScalar ahi 0] at hscalar
       exact hscalar)
   have hb' : RowEncloses
       { dim := n
@@ -163,11 +164,12 @@ theorem backwardNode_preserves
         | none => exact hfail
         | some stored =>
             have hsEq := heq stored hs
-            have hb : RowEncloses (pointCoeffBox stored) (dims k) (v k) := by
+            have hb : RowEncloses (FlatBox.ofTensor stored.v) (dims k) (v k) := by
               refine ⟨hsEq.1.symm, ?_⟩
               rw [hsEq.1]
               intro i
-              simp only [pointCoeffBox, read_fin, hsEq.2 i, le_refl, and_self]
+              simp only [FlatBox.ofTensor, Spec.getAtOrZero_eq_getScalar, hsEq.2 i,
+                le_refl, and_self]
             simpa only [sub_add_cancel] using represents_consume hbase ha hb
       case detach | reshape _ _ | flatten _ =>
         simp only [NodeEquation, hkind] at heq

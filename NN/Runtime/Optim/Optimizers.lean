@@ -403,8 +403,7 @@ def Adam.update {α : Type} [TorchLean.Storage α] [Context α]
     [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
     (state : Adam.State α s) (parameters gradients : Tensor α s) :
     (Adam.update state parameters gradients).optimizerState.stepCount =
-      state.stepCount + 1 := by
-  simp [Adam.update]
+      state.stepCount + 1 := rfl
 
 /-! ## AdamW -/
 
@@ -496,8 +495,7 @@ def AdamW.update {α : Type} [TorchLean.Storage α] [Context α]
     [DecidableRel ((· > ·) : α → α → Prop)] {s : Shape}
     (state : AdamW.State α s) (parameters gradients : Tensor α s) :
     (AdamW.update state parameters gradients).optimizerState.stepCount =
-      state.stepCount + 1 := by
-  simp [AdamW.update]
+      state.stepCount + 1 := rfl
 
 /-! ## Adadelta -/
 

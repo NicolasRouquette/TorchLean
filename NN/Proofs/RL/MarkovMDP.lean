@@ -27,7 +27,9 @@ We formalize the standard argument used in dynamic programming:
   then their Bellman backups are uniformly close,
 - in particular, the Bellman expectation operator for a fixed deterministic policy is a
   `γ`-contraction in the sup metric (on bounded value functions),
-- for finite action spaces, Bellman optimality is also a `γ`-contraction in the same metric.
+- for finite action spaces, Bellman optimality is also a `γ`-contraction in the same metric,
+- with bounded rewards, both operators have exactly one bounded measurable fixed point, and value
+  iteration for Bellman optimality converges to it.
 
 References:
 
@@ -136,7 +138,7 @@ private theorem integrable_of_abs_bdd
     (hBdd : BddAbove (Set.range fun s => |values s|)) :
     Integrable values μ := by
   rcases hBdd with ⟨B, hB⟩
-  exact Integrable.mono' (integrable_const B) hMeas.aestronglyMeasurable
+  exact Integrable.of_bound hMeas.aestronglyMeasurable B
     (ae_of_all _ fun s => (Real.norm_eq_abs _).trans_le (hB ⟨s, rfl⟩))
 
 /-- Coordinatewise expectation difference is bounded by the sup distance. -/
@@ -411,36 +413,60 @@ theorem bellmanPolicy_existsUnique_fixedPoint [Nonempty S]
   exact ⟨vStar, ⟨⟨hMeas, hBdd⟩, hfix⟩, fun w ⟨⟨hw, hbw⟩, hwfix⟩ =>
     bellmanPolicy_fixedPoint_unique mdp valid policy w vStar hwfix hfix hw hMeas hbw hBdd⟩
 
-/-- For bounded rewards and a finite action space, Bellman optimality has exactly one bounded
-measurable fixed point, and value iteration converges to it from every bounded measurable start. -/
-theorem bellmanOptimality_existsUnique_fixedPoint [Nonempty S]
+/-- Bellman optimality preserves bounded measurable value functions and contracts `valueSupDist`
+on them, so Banach's theorem gives a bounded measurable fixed point that value iteration reaches
+from every bounded measurable start. The public statements are
+`bellmanOptimality_existsUnique_fixedPoint` and `bellmanOptimality_valueIteration_tendsto`. -/
+private theorem bellmanOptimality_exists_fixedPoint [Nonempty S]
     (mdp : MDP S A) (valid : Valid (S := S) (A := A) mdp)
-    [Fintype A] [Nonempty A] [MeasurableSingletonClass A]
+    [Fintype A] [Nonempty A]
     {R : ℝ} (hR : ∀ s a, |mdp.reward s a| ≤ R) :
     ∃ vStar : ValueFunction S, Measurable vStar ∧ BddAbove (Set.range fun s => |vStar s|) ∧
       bellmanOptimality mdp vStar = vStar ∧
-      (∀ w, Measurable w → BddAbove (Set.range fun s => |w s|) →
-        bellmanOptimality mdp w = w → w = vStar) ∧
       ∀ v, Measurable v → BddAbove (Set.range fun s => |v s|) →
-        Tendsto (fun k => valueSupDist ((bellmanOptimality mdp)^[k] v) vStar) atTop (𝓝 0) := by
-  obtain ⟨vStar, hMeas, hBdd, hfix, hlim⟩ :=
-    exists_fixedPoint_of_contraction (T := bellmanOptimality mdp)
-      valid.discount_nonneg valid.discount_lt_one
-      (fun v hv => by
-        have h := measurable_actionValue mdp valid hv
-        convert Finset.measurable_sup' (f := fun a s => actionValue mdp v s a)
-          Finset.univ_nonempty fun a _ => h.comp (measurable_id.prodMk measurable_const) using 1
-        funext s
-        rw [Finset.sup'_apply]
-        rfl)
-      (fun v ⟨B, hB⟩ => bddAbove_of_abs_le fun s => abs_le.2
-        ⟨(neg_le_of_abs_le (abs_actionValue_le mdp valid hR (fun s => hB ⟨s, rfl⟩) s
-            (Classical.arbitrary A))).trans (Finset.le_sup' _ (Finset.mem_univ _)),
-          Finset.sup'_le _ _ fun a _ =>
-            le_of_abs_le (abs_actionValue_le mdp valid hR (fun s => hB ⟨s, rfl⟩) s a)⟩)
-      (fun v w hv hw hbv hbw => bellmanOptimality_contraction mdp valid v w hv hw hbv hbw)
-  exact ⟨vStar, hMeas, hBdd, hfix, fun w hw hbw hwfix =>
-    bellmanOptimality_fixedPoint_unique mdp valid w vStar hwfix hfix hw hMeas hbw hBdd, hlim⟩
+        Tendsto (fun k => valueSupDist ((bellmanOptimality mdp)^[k] v) vStar) atTop (𝓝 0) :=
+  exists_fixedPoint_of_contraction (T := bellmanOptimality mdp)
+    valid.discount_nonneg valid.discount_lt_one
+    (fun v hv => by
+      have h := measurable_actionValue mdp valid hv
+      convert Finset.measurable_sup' (f := fun a s => actionValue mdp v s a)
+        Finset.univ_nonempty fun a _ => h.comp (measurable_id.prodMk measurable_const) using 1
+      funext s
+      rw [Finset.sup'_apply]
+      rfl)
+    (fun v ⟨B, hB⟩ => bddAbove_of_abs_le fun s => abs_le.2
+      ⟨(neg_le_of_abs_le (abs_actionValue_le mdp valid hR (fun s => hB ⟨s, rfl⟩) s
+          (Classical.arbitrary A))).trans (Finset.le_sup' _ (Finset.mem_univ _)),
+        Finset.sup'_le _ _ fun a _ =>
+          le_of_abs_le (abs_actionValue_le mdp valid hR (fun s => hB ⟨s, rfl⟩) s a)⟩)
+    (fun v w hv hw hbv hbw => bellmanOptimality_contraction mdp valid v w hv hw hbv hbw)
+
+/-- For bounded rewards and a finite action space, Bellman optimality has exactly one bounded
+measurable fixed point. -/
+theorem bellmanOptimality_existsUnique_fixedPoint [Nonempty S]
+    (mdp : MDP S A) (valid : Valid (S := S) (A := A) mdp)
+    [Fintype A] [Nonempty A]
+    {R : ℝ} (hR : ∀ s a, |mdp.reward s a| ≤ R) :
+    ∃! v : ValueFunction S, (Measurable v ∧ BddAbove (Set.range fun s => |v s|)) ∧
+      bellmanOptimality mdp v = v := by
+  obtain ⟨vStar, hMeas, hBdd, hfix, -⟩ := bellmanOptimality_exists_fixedPoint mdp valid hR
+  exact ⟨vStar, ⟨⟨hMeas, hBdd⟩, hfix⟩, fun w ⟨⟨hw, hbw⟩, hwfix⟩ =>
+    bellmanOptimality_fixedPoint_unique mdp valid w vStar hwfix hfix hw hMeas hbw hBdd⟩
+
+/-- For bounded rewards and a finite action space, value iteration converges to the bounded
+measurable fixed point of Bellman optimality from every bounded measurable start. -/
+theorem bellmanOptimality_valueIteration_tendsto [Nonempty S]
+    (mdp : MDP S A) (valid : Valid (S := S) (A := A) mdp)
+    [Fintype A] [Nonempty A]
+    {R : ℝ} (hR : ∀ s a, |mdp.reward s a| ≤ R)
+    {vStar : ValueFunction S} (hMeas : Measurable vStar)
+    (hBdd : BddAbove (Set.range fun s => |vStar s|))
+    (hfix : bellmanOptimality mdp vStar = vStar)
+    (v : ValueFunction S) (hv : Measurable v) (hb : BddAbove (Set.range fun s => |v s|)) :
+    Tendsto (fun k => valueSupDist ((bellmanOptimality mdp)^[k] v) vStar) atTop (𝓝 0) := by
+  obtain ⟨w, hwMeas, hwBdd, hwfix, hlim⟩ := bellmanOptimality_exists_fixedPoint mdp valid hR
+  rw [bellmanOptimality_fixedPoint_unique mdp valid vStar w hfix hwfix hMeas hwMeas hBdd hwBdd]
+  exact hlim v hv hb
 
 end Existence
 

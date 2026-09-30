@@ -30,16 +30,6 @@ private def coordinateStep (dims : Array Nat) (state : Array Nat × Nat) (axis :
   let tailSize := (dims.extract (axis + 1) dims.size).foldl (· * ·) 1
   (state.1.set! axis (state.2 / tailSize), state.2 % tailSize)
 
-private theorem forIn_yield_foldl {ι β : Type} (indices : List ι)
-    (step : β → ι → β) (initial : β) :
-    forIn (m := Id) indices initial (fun i state => pure (.yield (step state i))) =
-      indices.foldl step initial := by
-  induction indices generalizing initial with
-  | nil => rfl
-  | cons i indices ih =>
-      rw [List.forIn_cons]
-      exact ih (step initial i)
-
 private theorem flatCoordinates_eq_fold (dims : Array Nat) (index : Nat) :
     flatCoordinates dims index =
       ((List.range dims.size).foldl (coordinateStep dims)
@@ -50,7 +40,8 @@ private theorem flatCoordinates_eq_fold (dims : Array Nat) (index : Nat) :
   change
     (forIn (m := Id) (List.range dims.size) (Array.replicate dims.size 0, index)
       (fun axis state => pure (.yield (coordinateStep dims state axis)))).1 = _
-  rw [forIn_yield_foldl]
+  rw [List.forIn_pure_yield_eq_foldl]
+  rfl
 
 private theorem coordinate_tailSize (leading tail : List Nat) (head : Nat) :
     (((leading ++ head :: tail).toArray).extract (leading.length + 1)

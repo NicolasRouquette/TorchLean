@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Runtime.Autograd.Torch.TypedGraphSession.Core
+public import NN.Runtime.Autograd.Torch.Core.ParameterGroups
 
 /-!
 # Typed Graph Session: Differentiation and Backpropagation
@@ -64,7 +65,7 @@ def backwardDenseAll {α : Type} [TorchLean.Storage α] (s : TypedGraphSession �
   IO (Array (Spec.SomeTensor α)) := do
   s.validateTensorRef out
   let st0 ← s.state.get
-  let output ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st0.Γ) (ss := st0.ss) out.id sh)
+  let output ← okOrThrow (mkIdxOrThrow (Γ := st0.Γ) (ss := st0.ss) out.id sh)
   if st0.leafMetadata.size != st0.Γ.length then
     throw <| IO.userError
       "typed graph session: leaf metadata is not aligned with the typed leaf context"
@@ -112,7 +113,7 @@ def grad {α : Type} [TorchLean.Storage α] {sh : Shape}
 /-! ## Forward-mode JVP over the typed graph -/
 
 /-- Like `mkIdxOrThrow`, but restricted to leaves `Γ` only. -/
-def mkLeafIdxOrThrow {_α : Type} {Γ : List Shape} (id : Nat) (s : Shape) :
+def mkLeafIdxOrThrow {Γ : List Shape} (id : Nat) (s : Shape) :
     Runtime.Autograd.Result (Proofs.Idx Γ s) := by
     if h : id < Γ.length then
       let fin : Fin Γ.length := ⟨id, h⟩
@@ -147,7 +148,7 @@ def jvpWithTangentPack {α : Type} [TorchLean.Storage α] (st : TypedGraphSessio
     IO (Tensor α sh) := do
   let (_, dctx) ← okOrThrow <|
     Runtime.Autograd.TypedGraph.jvpChecked st.g st.x dx st.nat
-  let idx ← okOrThrow (mkIdxOrThrow (_α := α) (Γ := st.Γ) (ss := st.ss) out.id sh)
+  let idx ← okOrThrow (mkIdxOrThrow (Γ := st.Γ) (ss := st.ss) out.id sh)
   pure (Proofs.getIdx (α := α) (xs := dctx) idx)
 
 /--
@@ -171,7 +172,7 @@ def jvpLeaf {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α) [Zero 
   s.validateTensorRef out
   s.validateTensorRef x
   let st0 ← s.state.get
-  let idxX ← okOrThrow (mkLeafIdxOrThrow (_α := α) (Γ := st0.Γ) x.id shX)
+  let idxX ← okOrThrow (mkLeafIdxOrThrow (Γ := st0.Γ) x.id shX)
   let dxAll : TorchLean.TensorPack α st0.Γ :=
     Proofs.Autograd.Algebra.TensorPack.single (α := α) (Γ := st0.Γ) (s := shX) idxX dx
   jvpWithTangentPack (α := α) st0 out dxAll
@@ -188,18 +189,27 @@ Apply an SGD update to all parameters recorded via `use`.
 
 `gradients` is expected to be the dense gradient array returned by `backwardDenseAll` /
 `backwardScalarDenseAll`. Only entries corresponding to parameters (leaves that were produced by
-`use`) are used to update `Param.value`.
+`use`) are used to update `Param.value`. Repeated uses of the same storage contribute additively
+in leaf recording order. All gradients are validated before each storage is updated once.
 PyTorch comparison: like iterating `params` and doing `p.data -= lr * p.grad`.
 -/
 def sgdStepAll {α : Type} [TorchLean.Storage α] (s : TypedGraphSession α)
   [Sub α] [Mul α] [Add α] [Zero α]
   (learningRate : α) (gradients : Array (Spec.SomeTensor α)) : IO Unit := do
   let parameters ← s.parametersByLeaf.get
-  for (id, parameter) in parameters.toList.filter (fun entry => entry.2.requiresGrad) do
-    let gradient ← match gradients[id]? with
-      | some value => pure value
-      | none =>
-        throw <| IO.userError "torch(TypedGraphSession): gradient array out of bounds during SGD"
+  let groups ← EagerSession.groupParameterRegistrations parameters (← s.parameterStorageByLeaf.get)
+  -- Keep the typed-session diagnostics while checking every contribution before mutation.
+  for group in groups do
+    for id in group.leaves do
+      let gradient ← match gradients[id]? with
+        | some value => pure value
+        | none =>
+          throw <| IO.userError "torch(TypedGraphSession): gradient array out of bounds during SGD"
+      unless gradient.shape == group.parameter.s do
+        throw <| IO.userError "torch(TypedGraphSession): internal grad shape mismatch during SGD"
+  let prepared ← groups.mapM fun group => do
+    pure (group.parameter, ← EagerSession.denseGroupGradient group gradients)
+  for (parameter, gradient) in prepared do
     if hs : gradient.shape = parameter.s then
       let parameterValue ← parameter.get
       if hp : parameterValue.shape = parameter.s then
@@ -237,10 +247,9 @@ theorem backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
       .ok
         (TorchLean.TensorPack.toShapeErasedArray (α := α) (ss := st.Γ ++ st.ss)
           (Proofs.Autograd.Algebra.GraphData.backpropAllCtx (α := α) (Δ := NatEnv) (Γ :=
-            st.Γ) (ss := st.ss) st.g st.x st.nat seed)) := by
-  simpa using
-    (Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
-      (α := α) (Δ := NatEnv) (Γ := st.Γ) (ss := st.ss) st.g st.x st.nat seed)
+            st.Γ) (ss := st.ss) st.g st.x st.nat seed)) :=
+  Proofs.Autograd.Algebra.Graph.backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx
+    (α := α) (Δ := NatEnv) (Γ := st.Γ) (ss := st.ss) st.g st.x st.nat seed
 
 end TypedGraphSession
 

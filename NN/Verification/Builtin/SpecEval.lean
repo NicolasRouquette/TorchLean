@@ -38,8 +38,8 @@ open _root_.TorchLean.Tensor
 /-- Error-reporting monad used by the pure TorchLean spec evaluator. -/
 abbrev SpecM := Except String
 
-instance {α : Type} [TorchLean.Storage α] [Context α] : Runtime.Autograd.Torch.Ops (m :=
-  SpecM) α where
+instance {α : Type} [TorchLean.Storage α] [Context α] :
+    Runtime.Autograd.Torch.Ops (m := SpecM) α where
   Ref := fun s => Tensor α s
   DataRef := fun β _ s => Tensor β s
 
@@ -67,12 +67,10 @@ instance {α : Type} [TorchLean.Storage α] [Context α] : Runtime.Autograd.Torc
 
   reduceSum := fun {s} axis _valid _wf x =>
     let hAxis : Shape.NonemptyAxis axis s := (inferInstance : Shape.HasNonemptyAxis axis s).proof
-    let hRed := hAxis
-    pure (Tensor.reduceSum (α := α) (s := s) axis x hRed)
+    pure (Tensor.reduceSum (α := α) (s := s) axis x hAxis)
   reduceMean := fun {s} axis _valid _wf x =>
     let hAxis : Shape.NonemptyAxis axis s := (inferInstance : Shape.HasNonemptyAxis axis s).proof
-    let hRed := hAxis
-    pure (Tensor.reduceMean (α := α) (s := s) axis x hRed)
+    pure (Tensor.reduceMean (α := α) (s := s) axis x hAxis)
 
   select := fun {_s} axis _axisInBounds x index =>
     pure (Tensor.selectSpec axis x index)
@@ -205,6 +203,5 @@ instance {α : Type} [TorchLean.Storage α] [Context α] : Runtime.Autograd.Torc
     throw <|
       "TorchLeanSpecEval: bernoulli_mask is not supported in spec backend " ++
         "(needs a deterministic counter)"
-
 
 end NN.Verification.Builtin

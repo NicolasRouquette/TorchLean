@@ -81,85 +81,203 @@ def mask : Tensor Bool [n, n] :=
     false, true
   ]).reshape [n, n] (by dsimp; decide)
 
-/-- Evaluate a checked native call at this point in a test's ownership/configuration sequence. -/
+/-- Evaluate a checked buffer operation at this point in a test's ownership sequence. -/
 @[no_expose] def checked {α : Type} (action : Unit → Except String α) : IO α := do
   let result ← IO.lazyPure action
   Utils.okOrThrow result
 
-@[no_expose] def rejectsPairedBackward
-    (output seed : Runtime.Autograd.LibTorch.Buffer) : IO Bool := do
-  try
-    discard <| checked fun _ => Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd output seed
-    pure false
-  catch _ =>
-    pure true
-
-@[no_expose] def checkDeterministicPolicy
-    (output seed : Runtime.Autograd.LibTorch.Buffer) : IO Unit := do
-  match Runtime.Autograd.LibTorch.Buffer.runtimeStatus with
-  | .notLinked => pure ()
-  | _ =>
-    let deterministic ← Runtime.Autograd.LibTorch.getDeterministic
-    let benchmark ← Runtime.Autograd.LibTorch.getCuDNNBenchmark
-    try
-      Runtime.Autograd.LibTorch.setDeterministic (!deterministic)
-      unless ← rejectsPairedBackward output seed do
-        throw <| IO.userError "paired attention accepted a changed deterministic policy"
-    finally
-      Runtime.Autograd.LibTorch.setDeterministic deterministic
-      Runtime.Autograd.LibTorch.setCuDNNBenchmark benchmark
-
-/-- The paired attention ABI keeps its forward output usable after the inputs are released, supports
-repeated backward calls, rejects a released forward buffer, and returns empty results for empty
-shapes. -/
-def checkPairedBuffers : IO Unit := do
+/-- Saved probabilities and borrowed Q/K/V support repeated VJPs after output release.
+A fully blocked row contributes zero even when its cotangent is NaN. -/
+def checkSavedBuffers : IO Unit := do
+  let before ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
   let q ← Runtime.Autograd.LibTorch.Buffer.zerosIO 2
   let k ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, -1.0]
   let v ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[2.0, 4.0]
   let allowed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
     FloatArray.mk #[1.0, 1.0, 0.0, 0.0]
-  let seed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, 7.0]
-  let output ← checked fun _ =>
-    Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd q k v allowed 1 1 2 1 1.0
-  for input in #[q, k, v, allowed] do
-    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO input
-  let ys ← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output
-  Utils.assertFloatArrayApprox "paired attention forward after input release"
-    ys (FloatArray.mk #[3.0, 0.0]) 1e-5
-  for _ in [:2] do
-    let (dq, dk, dv) ← checked fun _ =>
-      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd output seed
-    Utils.assertFloatArrayApprox "paired attention dQ"
-      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dq) (FloatArray.mk #[-1.0, 0.0]) 1e-5
-    Utils.assertFloatArrayApprox "paired attention dK"
-      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dk) (FloatArray.mk #[0.0, 0.0]) 1e-5
-    Utils.assertFloatArrayApprox "paired attention dV ignores blocked cotangent"
-      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dv) (FloatArray.mk #[0.5, 0.5]) 1e-5
-    for gradient in #[dq, dk, dv] do
-      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO gradient
-  checkDeterministicPolicy output seed
+  let (output, probabilities) ← checked fun _ =>
+    Runtime.Autograd.LibTorch.Buffer.attentionForward q k v (some allowed) 1 2 1 1.0
+  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO allowed
+  Utils.assertFloatArrayApprox "attention forward"
+    (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output) (FloatArray.mk #[3.0, 0.0]) 1e-5
+  Utils.assertFloatArrayApprox "attention saved probabilities"
+    (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO probabilities)
+    (FloatArray.mk #[0.5, 0.5, 0.0, 0.0]) 1e-5
   discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO output
-  unless ← rejectsPairedBackward output seed do
-    throw <| IO.userError "paired attention accepted a released forward buffer"
-  discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO seed
+  for blockedSeed in #[7.0, 0.0 / 0.0] do
+    let seed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+      FloatArray.mk #[1.0, blockedSeed]
+    let (dq, dk, dv) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionBackward q k v probabilities seed 1 2 1 1.0
+    Utils.assertFloatArrayApprox "attention dQ ignores blocked cotangent"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dq) (FloatArray.mk #[-1.0, 0.0]) 1e-5
+    Utils.assertFloatArrayApprox "attention dK ignores blocked cotangent"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dk) (FloatArray.mk #[0.0, 0.0]) 1e-5
+    Utils.assertFloatArrayApprox "attention dV ignores blocked cotangent"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dv) (FloatArray.mk #[0.5, 0.5]) 1e-5
+    for buffer in #[seed, dq, dk, dv] do
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  -- A blocked query must be removed before dSᵀ Q; multiplying it by zero still yields NaN.
+  let allowed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    FloatArray.mk #[1.0, 1.0, 0.0, 0.0]
+  let seed ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[1.0, 7.0]
+  for value in #[0.0 / 0.0, 1.0 / 0.0, -1.0 / 0.0] do
+    let blockedQ ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[0.0, value]
+    let (output, saved) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionForward blockedQ k v (some allowed) 1 2 1 1.0
+    Utils.assertFloatArrayApprox "attention blocks nonfinite queries"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output) (FloatArray.mk #[3.0, 0.0]) 0.0
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO output
+    let (dq, dk, dv) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionBackward blockedQ k v saved seed 1 2 1 1.0
+    Utils.assertFloatArrayApprox "attention dK ignores blocked query"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dk) (FloatArray.mk #[0.0, 0.0]) 0.0
+    Utils.assertFloatArrayApprox "attention blocked-query dQ"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dq) (FloatArray.mk #[-1.0, 0.0]) 0.0
+    Utils.assertFloatArrayApprox "attention blocked-query dV"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dv) (FloatArray.mk #[0.5, 0.5]) 0.0
+    for buffer in #[blockedQ, saved, dq, dk, dv] do
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  for buffer in #[allowed, seed] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  for buffer in #[q, k, v, probabilities] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  -- A blocked row stays zero even when the value product contains 0 * NaN or 0 * infinity.
+  let zero ← Runtime.Autograd.LibTorch.Buffer.zerosIO 1
+  let one ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 1.0
+  for value in #[0.0 / 0.0, 1.0 / 0.0, -1.0 / 0.0] do
+    let nonfinite ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 value
+    let (blocked, saved) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionForward zero zero nonfinite (some zero) 1 1 1 1.0
+    Utils.assertFloatArrayApprox "attention blocks nonfinite values"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO blocked) (FloatArray.mk #[0.0]) 0.0
+    for buffer in #[blocked, saved] do
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+    -- A nonfinite key also needs a final dQ mask after contraction, in both scaling branches.
+    for scale in #[1.0, 0.5] do
+      let (blocked, saved) ← checked fun _ =>
+        Runtime.Autograd.LibTorch.Buffer.attentionForward zero nonfinite one (some zero) 1 1 1 scale
+      Utils.assertFloatArrayApprox "attention blocks nonfinite keys"
+        (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO blocked) (FloatArray.mk #[0.0]) 0.0
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO blocked
+      let (dq, dk, dv) ← checked fun _ =>
+        Runtime.Autograd.LibTorch.Buffer.attentionBackward zero nonfinite one saved one 1 1 1 scale
+      for (label, gradient) in #[("dQ", dq), ("dK", dk), ("dV", dv)] do
+        Utils.assertFloatArrayApprox s!"attention blocked nonfinite-key {label}"
+          (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO gradient) (FloatArray.mk #[0.0]) 0.0
+        discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO gradient
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO saved
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO nonfinite
+  -- Allowed NaN and either infinity are not fully blocked rows, even at zero scale.
+  for value in #[0.0 / 0.0, 1.0 / 0.0, -1.0 / 0.0] do
+    let nonfinite ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 value
+    for (label, query, key) in #[("K", one, nonfinite), ("Q", nonfinite, one)] do
+      for scale in #[1.0, 0.0] do
+        let (invalid, invalidSaved) ← checked fun _ =>
+          Runtime.Autograd.LibTorch.Buffer.attentionForward query key one (some one) 1 1 1 scale
+        unless ((← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO invalid).get! 0).isNaN do
+          throw <| IO.userError
+            s!"attention hid allowed nonfinite arithmetic ({label}={value}, scale={scale})"
+        for buffer in #[invalid, invalidSaved] do
+          discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO nonfinite
+  for buffer in #[zero, one] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
   let empty ← Runtime.Autograd.LibTorch.Buffer.zerosIO 0
   for shape in (#[(0, 2, 1), (1, 0, 1), (1, 2, 0)] :
       Array (UInt32 × UInt32 × UInt32)) do
     let (batch, rows, cols) := shape
-    let emptyOutput ← checked fun _ =>
-      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionFwd
-        empty empty empty empty 0 batch rows cols 1.0
+    let (emptyOutput, emptyProbabilities) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionForward empty empty empty none batch rows cols 1.0
+    unless (← Runtime.Autograd.LibTorch.Buffer.sizeIO emptyProbabilities) == batch * rows * rows do
+      throw <| IO.userError "empty attention returned probabilities with the wrong size"
     let (dq, dk, dv) ← checked fun _ =>
-      Runtime.Autograd.LibTorch.Buffer.libTorchAttentionBwd emptyOutput empty
+      Runtime.Autograd.LibTorch.Buffer.attentionBackward
+        empty empty empty emptyProbabilities empty batch rows cols 1.0
     for result in #[emptyOutput, dq, dk, dv] do
-      unless Runtime.Autograd.LibTorch.Buffer.size result == 0 do
-        throw <| IO.userError "paired attention returned a nonempty result for an empty shape"
+      unless (← Runtime.Autograd.LibTorch.Buffer.sizeIO result) == 0 do
+        throw <| IO.userError "attention returned a nonempty output/gradient for an empty shape"
       discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO result
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO emptyProbabilities
   discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO empty
+  let after ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
+  unless after.liveBytes == before.liveBytes do
+    throw <| IO.userError "attention saved-buffer checks retained tensor payloads"
+
+/-- Discard masked overflow and avoid intermediate overflow for shrinking and growing scales. -/
+def checkFiniteInputRegressions : IO Unit := do
+  let before ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
+  let q ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[1e20, 1e20]
+  let k ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[0.0, 1e20]
+  let v ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[2.0, 3.0]
+  let mask ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    FloatArray.mk #[1.0, 0.0, 1.0, 0.0]
+  let (output, probabilities) ← checked fun _ =>
+    Runtime.Autograd.LibTorch.Buffer.attentionForward q k v (some mask) 1 2 1 1.0
+  Utils.assertFloatArrayApprox "attention discards masked overflow"
+    (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output) (FloatArray.mk #[2.0, 2.0]) 0.0
+  for buffer in #[q, k, v, mask, output, probabilities] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  let q ← Runtime.Autograd.LibTorch.Buffer.zerosIO 1
+  let k ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <|
+    FloatArray.mk #[Float.ofNat (2 ^ 100)]
+  let v ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 1.0
+  let (output, probabilities) ← checked fun _ =>
+    Runtime.Autograd.LibTorch.Buffer.attentionForward q k v none 1 1 1 (Float.ofNat (2 ^ 60))
+  Utils.assertFloatArrayApprox "attention scales the dot product"
+    (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output) (FloatArray.mk #[1.0]) 0.0
+  for buffer in #[q, k, v, output, probabilities] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  -- The raw dot product overflows, but the default head-dimension scale makes it finite.
+  let q ← Runtime.Autograd.LibTorch.Buffer.fullIO 4 1.4e19
+  let k ← Runtime.Autograd.LibTorch.Buffer.fullIO 4 1.4e19
+  let v ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[2.0, 2.0, 4.0, 4.0]
+  let seed ← Runtime.Autograd.LibTorch.Buffer.fullIO 4 1.0
+  for scale in #[1.0 / Float.sqrt 2.0, -1.0 / Float.sqrt 2.0] do
+    let (output, probabilities) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionForward q k v none 1 2 2 scale
+    Utils.assertFloatArrayApprox "attention avoids raw dot-product overflow"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output)
+      (FloatArray.mk #[3.0, 3.0, 3.0, 3.0]) 0.0
+    let (dq, dk, dv) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionBackward q k v probabilities seed 1 2 2 scale
+    Utils.assertFloatArrayApprox "attention large-input dQ"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dq)
+      (FloatArray.mk #[0.0, 0.0, 0.0, 0.0]) 0.0
+    -- Compare after rescaling to keep the tolerance relative to these large finite derivatives.
+    let normalizedDK := (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dk).data.map (· / 1.4e19)
+    Utils.assertFloatArrayApprox "attention large-input dK" (FloatArray.mk normalizedDK)
+      (FloatArray.mk #[-2.0 * scale, -2.0 * scale, 2.0 * scale, 2.0 * scale]) 1e-5
+    Utils.assertFloatArrayApprox "attention large-input dV"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO dv)
+      (FloatArray.mk #[1.0, 1.0, 1.0, 1.0]) 0.0
+    for buffer in #[output, probabilities, dq, dk, dv] do
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  for buffer in #[q, k, v, seed] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  -- Split the Float64 scale before narrowing the factors to float32.
+  -- A tiny nonzero scale therefore need not vanish when its square root is representable.
+  let q ← Runtime.Autograd.LibTorch.Buffer.fullIO 2 1e30
+  let k ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[0.0, 1e30]
+  let v ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO <| FloatArray.mk #[2.0, 4.0]
+  for (scale, expected) in #[(1e-46, 4.0), (-1e-46, 2.0), (0.0, 3.0)] do
+    let (output, probabilities) ← checked fun _ =>
+      Runtime.Autograd.LibTorch.Buffer.attentionForward q k v none 1 2 1 scale
+    Utils.assertFloatArrayApprox "attention retains tiny split scale"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output)
+      (FloatArray.mk #[expected, expected]) 0.0
+    for buffer in #[output, probabilities] do
+      discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  for buffer in #[q, k, v] do
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+  let after ← Runtime.Autograd.LibTorch.Buffer.allocatorStats
+  unless after.liveBytes == before.liveBytes do
+    throw <| IO.userError "attention scaling checks retained tensor payloads"
 
 def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: multi_head_attention ==="
-  checkPairedBuffers
+  checkSavedBuffers
+  checkFiniteInputRegressions
 
   let layoutInput : Tensor Float [2, 4] :=
     (Tensor.from (#[0, 1, 2, 3, 4, 5, 6, 7] : Array Float)).reshape [2, 4] (by dsimp; decide)
@@ -177,7 +295,7 @@ def run : IO Unit := do
     specOut ((Tensor.from #[0.0, 1.0, 0.0, 0.0]).reshape [2, 2] (by dsimp; decide))
 
   -- A blocked extreme score must not influence stabilization. The second row checks the explicit
-  -- all-blocked convention used by both composed and fused hard-masked attention.
+  -- all-blocked convention used by hard-masked attention.
   let extremeScores := Runtime.Autograd.LibTorch.Buffer.ofFloatArray <|
     FloatArray.mk #[1000.0, -1000.0, 3.0, 4.0]
   let extremeMask := Runtime.Autograd.LibTorch.Buffer.ofFloatArray <|

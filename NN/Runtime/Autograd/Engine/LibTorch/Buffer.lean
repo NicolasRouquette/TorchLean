@@ -509,6 +509,15 @@ opaque minBwd (a b dLdy : @& Buffer) : Buffer × Buffer
 @[never_extract, extern "torchlean_cuda_buffer_div"]
 opaque div (a b : @& Buffer) : Buffer
 
+/--
+Keep values where the equal-length mask is nonzero and select zero elsewhere.
+
+Selection discards nonfinite values in blocked entries; multiplication by the mask would not.
+A NaN mask is nonzero, matching the numerical backend's boolean conversion.
+-/
+@[never_extract, extern "torchlean_cuda_buffer_mask"]
+opaque mask (values allowed : @& Buffer) : Buffer
+
 /-- Pointwise ReLU activation on a CUDA buffer. -/
 @[never_extract, extern "torchlean_cuda_buffer_relu"]
 opaque relu (b : @& Buffer) : Buffer

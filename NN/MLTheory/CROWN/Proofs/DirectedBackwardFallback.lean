@@ -32,9 +32,9 @@ variable {α : Type} [Storage α] [Context α] [BoundOps α] [LawfulBoundOps α]
 local notation "value" => LawfulBoundOps.toReal (α := α)
 
 omit [Context α] [BoundOps α] [LawfulBoundOps α] in
-private theorem getDimScalarFn_item {n : Nat} (t : Tensor α [n]) (i : Fin n) :
-    (getDimScalarFn t i).item = t.getScalar i := by
-  simp only [getDimScalarFn, Tensor.getScalar, Spec.get]
+private theorem unstack_item_eq_getScalar {n : Nat} (t : Tensor α [n]) (i : Fin n) :
+    (Tensor.unstack t i).item = t.getScalar i := by
+  rfl
 
 /-- Interpret which side of a real objective a directed scalar bounds. -/
 def DirectionBound (dir : BackwardDir) (bound : α) (z : ℝ) : Prop :=
@@ -65,7 +65,7 @@ theorem consumeObjectiveFromBox_encloses
       value (product .lower i) ≤ value (coefficients.getScalar i) * x i.val ∧
         value (coefficients.getScalar i) * x i.val ≤ value (product .upper i) := by
     have hb := hx i
-    simp only [read_fin] at hb
+    simp only [Spec.getAtOrZero_eq_getScalar] at hb
     by_cases ha : (0 : α) < coefficients.getScalar i
     · have hp : 0 ≤ value (coefficients.getScalar i) := by
         simpa only [LawfulBoundOps.toReal_zero (α := α)] using
@@ -86,13 +86,13 @@ theorem consumeObjectiveFromBox_encloses
   cases dir <;>
     simp only [consumeObjectiveFromBox, ↓reduceDIte, castDimScalar_self,
       ← Array.foldl_toList, Array.toList_map, List.foldl_map,
-      Array.finRange, Array.toList_ofFn, getDimScalarFn_item, decide_eq_true_eq,
+      Array.finRange, Array.toList_ofFn, unstack_item_eq_getScalar, decide_eq_true_eq,
       Option.some.injEq] at hresult
   · subst bound
-    simpa only [DirectionBound, dot, read_fin, product,
+    simpa only [DirectionBound, dot, Spec.getAtOrZero_eq_getScalar, product,
       List.finRange] using hs.1
   · subst bound
-    simpa only [DirectionBound, dot, read_fin, product,
+    simpa only [DirectionBound, dot, Spec.getAtOrZero_eq_getScalar, product,
       List.finRange] using hs.2
 
 /-- Constant objective forms have exactly their stored real constant as value. -/

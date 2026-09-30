@@ -149,21 +149,10 @@ theorem buildFrom_denoteAllFrom_matmul_success
         (aT := getIdx (α := α) (xs := ctx) ia)
         (bT := getIdx (α := α) (xs := ctx) ib)
         hN hk hp hDims hGetA hGetB hOut)
-  have hStep :
-      denoteAllState (α := α) inShape
-        (st := (⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩ : State α inShape)) x =
-          vals0.push (Spec.SomeTensor.mk (α := α) n.outShape (nodeData.eval ctx)) := by
-    simpa [vals0, nodeData, ctx] using
-      (denoteAllState_snoc (α := α) (inShape := inShape)
-        (ss := ss) (τ := n.outShape) (gd := gd)
-        (nodeData := nodeData) (x := x))
   have hTail := ih ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩ hRec
-  exact buildFrom_denoteAllFrom_finish (α := α) (g := g) (payload := payload)
-    (i := i) (x := x) (hi := hi) (τ := n.outShape)
-    (nodeData := nodeData)
-    (st1 := ⟨ss ++ [n.outShape], .snoc (ss := ss) gd nodeData⟩)
-    (st' := st') (ctx := ctx) (vals0 := vals0) (input := input)
-    hTail hEval hStep
+  exact buildFrom_denoteAllFrom_nodeData_exact (α := α) (g := g) (payload := payload)
+    (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
+    (τ := n.outShape) (nodeData := nodeData) hTail hEval
 
 /--
 Correctness lemma for the `.matmul` node lowering pass.

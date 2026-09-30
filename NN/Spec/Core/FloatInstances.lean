@@ -53,8 +53,7 @@ machine epsilon or an error bound; callers should choose tolerances for their fo
 instance configuredBinaryContext : Context Value where
   natCast n := ExecFloat.Binary.ofModel (Model.roundRatQ format (n : Rat))
   ratCast value := ExecFloat.Binary.ofModel (Model.roundRatQ format value)
-  pow x y := ExecFloat.Binary.ofModel
-    (Model.pow (ExecFloat.Binary.toModel x) (ExecFloat.Binary.toModel y))
+  pow := ExecFloat.ModelCodec.liftBinary (Model := Model format) (plan := plan) Model.pow
   defaultEpsilon :=
     let candidate : Value := ExecFloat.Binary.ofModel
       (Model.roundRatQ format (1 / 1000000 : Rat))

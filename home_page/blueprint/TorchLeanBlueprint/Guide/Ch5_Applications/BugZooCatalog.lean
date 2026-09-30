@@ -71,7 +71,7 @@ them together with:
 ```terminal
 # Elaborate the maintained catalog through its shared import
 # module.
-lake build NN.Examples.BugZoo.All
+scripts/lake.sh build NN.Examples.BugZoo.All
 ```
 
 A successful build means every definition and theorem in the catalog elaborated;
@@ -185,9 +185,9 @@ def bzMat : Tensor Float [2, 3] :=
 [5.000000, 7.000000, 9.000000]
 ```
 
-The result has shape `[3]`, which the catalog names `RowShape`. Broadcasting this row back across
-the matrix would produce `[[6, 9, 12], [9, 12, 15]]`. The shape alone cannot tell us whether that
-broadcast was intended. TorchLean's `addSpec` requires the two operand shapes to agree, so it
+The result has shape `[3]`, which the catalog names `RowShape`. Adding this row back to the
+matrix by broadcasting would produce `[[6, 9, 12], [9, 12, 15]]`. The shape cannot tell us whether
+that broadcast was intended. TorchLean's `addSpec` requires the two operand shapes to agree, so it
 rejects
 an implicit broadcast:
 
@@ -540,8 +540,8 @@ The displayed weights are zero at every strict-future position. Reversing the ma
 block the last row. A direct softmax over only negative infinities encounters a zero normalizer;
 max-subtraction also encounters the undefined difference $`-\infty-(-\infty)`.
 TorchLean's hard-mask contract gives blocked positions an explicit zero weight, including fully
-blocked rows. Native attention must preserve that choice in both forward evaluation and its local
-VJP.
+blocked rows. The Lean composition over CUDA primitives preserves that choice in both forward
+evaluation and its local VJP.
 
 The checked claim quantifies over every strict-future position, at every sequence length:
 
@@ -833,7 +833,7 @@ weight 2, bias 3, and epsilon $`10^{-5}`:
 ```lean (name := bzLnDw)
 -- The scale gradient multiplies the zero centered
 -- activation.
-#eval LayerNormDegenerateAxis.reproLayerNormDWeight
+#eval LayerNormDegenerateAxis.reproLayerNormWeightGradient
 ```
 ```leanOutput bzLnDw (whitespace := lax)
 0.000000
@@ -842,7 +842,7 @@ weight 2, bias 3, and epsilon $`10^{-5}`:
 ```lean (name := bzLnDx)
 -- The input gradient cancels when the normalization axis
 -- has one feature.
-#eval LayerNormDegenerateAxis.reproLayerNormDX
+#eval LayerNormDegenerateAxis.reproLayerNormInputGradient
 ```
 ```leanOutput bzLnDx (whitespace := lax)
 0.000000
@@ -1002,7 +1002,7 @@ Append a key and a value to a one-token cache and look at the keys:
 ```lean (name := bzKV)
 open KVCache in
 /-- A one token cache holding a zero key and value. -/
-def bzCache : Cache Float 1 2 :=
+def bzCache : Cache Float 1 [2] :=
   { keys := Tensor.full [1, 2] 0.0
     values := Tensor.full [1, 2] 0.0 }
 
@@ -1024,9 +1024,9 @@ open KVCache in
 ```
 ```leanOutput bzKVThm (whitespace := lax)
 @appendKV_last_key :
-  ∀ {α : Type} [inst : Storage α] {seqLen headDim : ℕ}
-    (cache : Cache α seqLen headDim)
-    (newKey newValue : Tensor α [headDim]),
+  ∀ {α : Type} [inst : Storage α] {seqLen : ℕ} {tokenShape : Shape}
+    (cache : Cache α seqLen tokenShape)
+    (newKey newValue : Tensor α tokenShape),
   (appendKV cache newKey newValue).keys[seqLen] = newKey
 ```
 
@@ -1035,9 +1035,10 @@ example and follows the append definition, but the catalog does not state that p
 theorem. Proving it would require reasoning about indices in the left part of the concatenation;
 the final-slot theorem uses the right-part indexing lemma.
 
-The cache has two axes with separate roles: sequence length counts stored token positions and
-head dimension counts coordinates of each key or value. Appending must change the former while
-preserving the latter. Checking only the final key would still miss a value written to the wrong
+This example has two axes with separate roles: sequence length counts stored token positions and
+head dimension counts coordinates of each key or value. The general cache accepts any token shape;
+appending increases the sequence length while preserving that shape.
+Checking only the final key would still miss a value written to the wrong
 slot, so the source includes the corresponding final-value theorem too. Full cached decoding
 needs more than these append facts: the query must read the matching key/value prefix using the
 same mask and positions as full-sequence attention. These local contracts identify pieces of
@@ -1273,7 +1274,7 @@ After adding a catalog entry, import it in `All.lean` so the maintained catalog 
 ```terminal
 # Check that every maintained catalog entry remains
 # reachable from All.
-lake env lean NN/Examples/BugZoo/All.lean
+scripts/lake.sh env lean NN/Examples/BugZoo/All.lean
 ```
 
 # Verification Scope

@@ -16,10 +16,10 @@ structures, transfer rules, and proof files belong under `NN/MLTheory/CROWN`.
 Run the maintained entry points through the unified verifier:
 
 ```bash
-lake exe verify -- torchlean-ibp
-lake exe verify -- torchlean-crown-ops
-lake exe verify -- torchlean-transformer-ibp
-lake exe verify -- torchlean-mlp-workflow
+scripts/lake.sh exe verify -- torchlean-ibp
+scripts/lake.sh exe verify -- torchlean-crown-ops
+scripts/lake.sh exe verify -- torchlean-transformer-ibp
+scripts/lake.sh exe verify -- torchlean-mlp-workflow
 ```
 
 The first three commands use bundled, fixed weights. The MLP workflow trains its own small model.

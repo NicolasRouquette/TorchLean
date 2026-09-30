@@ -42,13 +42,13 @@ layout: null
     "title": "Backend Selection and Trust",
     "url": "{{ '/blueprint/Runtime___-Autograd___-and-Interop/Choosing-How-A-Model-Runs/' | relative_url }}",
     "section": "Guide",
-    "text": "backend eager typed graph lowering CUDA ATen PyTorch runtime provider tape backward trust boundary"
+    "text": "backend eager typed graph lowering CUDA LibTorch ATen PyTorch runtime provider tape backward trust boundary"
   },
   {
     "title": "Floating-Point Semantics",
     "url": "{{ '/blueprint/Floating-Point-and-Native-Boundaries/Floating-Point-Semantics/' | relative_url }}",
     "section": "Guide",
-    "text": "FP32 IEEE floating point real semantics rounding runtime approximation"
+    "text": "FloatLib FP32 binary32 binary128 configurable IEEE floating point formats real semantics rounding runtime approximation"
   },
   {
     "title": "Optimization Theory",

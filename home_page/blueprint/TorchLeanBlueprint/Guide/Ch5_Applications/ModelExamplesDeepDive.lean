@@ -93,7 +93,7 @@ Then run the two-update smoke configuration:
 ```terminal
 # Save both the trained state and the validation trace from
 # the compact preset.
-lake -R -K cuda=true exe torchlean chargpt --device cuda \
+scripts/lake.sh -R -K cuda=true exe torchlean chargpt --device cuda \
   --tiny-shakespeare --preset smoke \
   --save-checkpoint /tmp/chargpt.state.json \
   --log /tmp/chargpt-trainlog.json
@@ -469,7 +469,7 @@ Every structural parameter in the smoke preset can be overridden:
 ```terminal
 # Increase context and depth together while keeping width
 # divisible by head count.
-lake -R -K cuda=true exe torchlean chargpt --device cuda \
+scripts/lake.sh -R -K cuda=true exe torchlean chargpt --device cuda \
   --tiny-shakespeare --preset smoke \
   --width 64 --heads 4 --layers 3 --seq-len 64 \
   --batch-size 8 --steps 20 --eval-every 5 --eval-iters 4
@@ -482,7 +482,7 @@ The parser and the attention computation impose different constraints on these s
 ```terminal
 # Request an invalid head split to inspect validation before
 # model allocation.
-lake -R -K cuda=true exe torchlean chargpt --device cuda \
+scripts/lake.sh -R -K cuda=true exe torchlean chargpt --device cuda \
   --tiny-shakespeare --preset smoke --width 30 --heads 4
 ```
 
@@ -509,7 +509,7 @@ substantially more work than the smoke run:
 ```terminal
 # Select the larger lecture configuration, including its
 # longer training budget.
-lake -R -K cuda=true exe torchlean chargpt --device cuda \
+scripts/lake.sh -R -K cuda=true exe torchlean chargpt --device cuda \
   --tiny-shakespeare --preset karpathy
 ```
 
@@ -529,10 +529,10 @@ sharing the same trainer, optimizer, loss, and runtime options.
 # vision runs.
 python3 scripts/datasets/download_example_data.py --cifar10
 
-lake exe torchlean resnet --device cpu --n-total 1 --steps 1 \
+scripts/lake.sh exe torchlean resnet --device cpu --n-total 1 --steps 1 \
   --log /tmp/resnet-trainlog.json
 
-lake exe torchlean vit --device cpu --n-total 1 --steps 1 \
+scripts/lake.sh exe torchlean vit --device cpu --n-total 1 --steps 1 \
   --log /tmp/vit-trainlog.json
 ```
 
@@ -601,7 +601,7 @@ blocks. If the patch output grid is $`H'\times W'`, the token count is
 $$`N=H'W'.`
 
 This example crops to $`4\times4` and uses $`2\times2` patches with stride two, so
-$`H'=W'=2` and $`N=4`. It appends a class token and pools that token's output. The learned
+$`H'=W'=2` and $`N=4`. It prepends a class token and pools that token's output. The learned
 positional table therefore needs five rows, one for each patch or class-token position:
 
 ```lean (name := dpVit)
@@ -662,8 +662,8 @@ $`\log 10`. To use eight samples and ten updates:
 ```terminal
 # Increase the selected dataset rows independently of the
 # optimizer update count.
-lake exe torchlean resnet --device cpu --n-total 8 --steps 10
-lake exe torchlean vit --device cpu --n-total 8 --steps 10
+scripts/lake.sh exe torchlean resnet --device cpu --n-total 8 --steps 10
+scripts/lake.sh exe torchlean vit --device cpu --n-total 8 --steps 10
 ```
 
 Cross entropy measures assigned probabilities, not the number of classes inferred from a loss
@@ -712,9 +712,9 @@ python3 NN/Examples/Data/prepare_fno1d_burgers.py \
 A one-update CUDA run over four training fields and two held-out fields is:
 
 ```terminal
-# Use the ATen real-FFT path and retain held-out
+# Use the LibTorch FFT path and retain held-out
 # predictions for inspection.
-lake -R -K cuda=true exe torchlean fno1d_burgers --device cuda \
+scripts/lake.sh -R -K cuda=true exe torchlean fno1d_burgers --device cuda \
   --steps 1 --lr 0.003 \
   --train-rows 4 --test-rows 2 --eval-rows 2 \
   --log /tmp/fno-trainlog.json \
@@ -768,7 +768,7 @@ The CPU command uses the full-spectrum parameterization through the generic trai
 ```terminal
 # Run the portable parameterization with the same row
 # limits.
-lake exe torchlean fno1d_burgers --device cpu \
+scripts/lake.sh exe torchlean fno1d_burgers --device cpu \
   --steps 1 --train-rows 4 --test-rows 2 --eval-rows 2
 ```
 
@@ -854,7 +854,7 @@ frequencies with $`|k|\le 8`, minus the positive $`8`. A real input has a conjug
 spectrum, but this retained set omits positive frequency
 8 while retaining -8, and the learned complex weights are independent. The portable layer takes the
 real part of its inverse transform; keeping two bands alone does not establish conjugate symmetry
-or equivalence to the CUDA real-FFT parameterization.
+or equivalence to the retained-bin real-FFT parameterization used by older CUDA runs.
 
 At `modes=16`, the bands meet and retain the whole axis. Each frequency has its own learned
 channel map; this does not mix distinct frequency bins. The

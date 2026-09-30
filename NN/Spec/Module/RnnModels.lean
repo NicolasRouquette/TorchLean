@@ -52,7 +52,6 @@ time step.
 -/
 def sequence
   {α : Type} [TorchLean.Storage α] [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize outputSize : Nat}
   (rnnSpec : RNNSpec α inputSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
@@ -73,7 +72,6 @@ hidden/output.
 -/
 def classifier
   {α : Type} [TorchLean.Storage α] [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize numClasses : Nat}
   (rnnSpec : RNNSpec α inputSize hiddenSize)
   (classifierHead : LinearSpec α hiddenSize numClasses)
@@ -89,7 +87,6 @@ def classifier
 
 /-- A recurrent stack of arbitrary depth and widths, followed by a per-timestep linear head. -/
 def stacked
-  [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen inputSize hiddenSize outputSize : Nat}
   (layers : RecurrentStack (RNNSpec α) inputSize hiddenSize)
   (linearSpec : LinearSpec α hiddenSize outputSize) :
@@ -107,7 +104,6 @@ PyTorch analogue: `nn.Embedding` (conceptually) + `nn.RNN` + `nn.linear` vocabul
 -/
 def languageModel
   {α : Type} [TorchLean.Storage α] [Context α]
-  [DecidableRel ((· > ·) : α → α → Prop)]
   {seqLen vocabularySize hiddenSize : Nat}
   (embeddingSpec : LinearSpec α vocabularySize hiddenSize)
   (rnnSpec : RNNSpec α hiddenSize hiddenSize)
@@ -267,21 +263,16 @@ def Classifier.forward {seqLen inputSize hiddenSize numClasses : Nat}
 Forward pass for an `Rnn.Generator` (many-to-many).
 
 This applies an "embedding" linear map to each token, runs the RNN, and projects each hidden state
-back into vocabulary space.
+back into vocabulary space. Empty sequences preserve the initial hidden state.
 -/
 def Generator.forward {seqLen vocabularySize hiddenSize : Nat}
   (model : Generator α vocabularySize hiddenSize)
   (inputTokens : Tensor α [seqLen, vocabularySize])
-  (initialHidden : Tensor α [hiddenSize]) (h : 0 < seqLen) :
+  (initialHidden : Tensor α [hiddenSize]) :
   (Tensor α [seqLen, vocabularySize] × Tensor α [hiddenSize]) :=
   let embedded := Tensor.mapLeading ([seqLen]) (linearSpec model.embedding) inputTokens
-  let hiddenStates := rnnSequenceSpec model.rnn embedded initialHidden
-  let outputs := Tensor.mapLeading ([seqLen])
-    (linearSpec model.outputProjection) hiddenStates
-  have hLast : seqLen - 1 < seqLen := by
-    simpa [Nat.pred_eq_sub_one] using Nat.pred_lt (Nat.ne_of_gt h)
-  let finalHidden := get hiddenStates ⟨seqLen - 1, hLast⟩
-  (outputs, finalHidden)
+  Model.forwardSequence { rnn := model.rnn, outputLayer := model.outputProjection }
+    embedded initialHidden
 
 /--
 Forward pass for a bidirectional RNN model.
@@ -304,28 +295,15 @@ def BidirectionalModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
     (Tensor.concatAxisSpec .scalar) forwardStates backwardStates
   Tensor.mapLeading ([seqLen]) (linearSpec model.outputLayer) combinedStates
 
--- One-step helper used by some compact examples (single cell update + output projection).
-/--
-One-step helper: run a single RNN cell update and apply an output projection.
-
-This is used by some compact examples that do not build a full `Spec.Module.Chain` or multi-layer
-bundle.
--/
-def cellWithHead {inputSize hiddenSize outputSize : Nat}
-  (cell : RNNSpec α inputSize hiddenSize)
-  (outputLayer : LinearSpec α hiddenSize outputSize)
-  (inputs : Tensor α [inputSize])
-  (hidden : Tensor α [hiddenSize]) :
-  (Tensor α [outputSize] × Tensor α [hiddenSize]) :=
-  let nextHidden := rnnCellSpec cell inputs hidden
-  let output := linearSpec outputLayer nextHidden
-  (output, nextHidden)
-
 -- Backward pass for simple RNN model
 /--
 Backward pass for `Rnn.Model` over a full sequence.
 
-Returns parameter gradients together with the gradient of the input sequence.
+Returns parameter gradients together with the gradient of the input sequence. Empty sequences
+produce zero parameter gradients and an empty input gradient.
+
+`hiddenStates` must come from `rnnSequenceSpec` with a zero initial hidden state, as used by
+`Model.toModule`.
 
 This is a spec-level reference implementation; performance is not a goal here.
 -/
@@ -333,60 +311,34 @@ def Model.backward {seqLen inputSize hiddenSize outputSize : Nat}
   (model : Model α inputSize hiddenSize outputSize)
   (inputs : Tensor α [seqLen, inputSize])
   (hiddenStates : Tensor α [seqLen, hiddenSize])
-  (gradOutputs : Tensor α [seqLen, outputSize]) (h : 0 < seqLen) :
+  (gradOutputs : Tensor α [seqLen, outputSize]) :
   Grads α inputSize hiddenSize outputSize ×
     Tensor α [seqLen, inputSize] :=
 
-  let gradHiddenFromOutput := Tensor.mapLeading ([seqLen])
-    (fun gradOutput => linearInputDerivSpec model.outputLayer.weights gradOutput) gradOutputs
-  let gradOutputWeights := Tensor.reduceSum 0
-    (Tensor.zipEach ([seqLen])
-      [outputSize, hiddenSize]
-      linearWeightsDerivSpec hiddenStates gradOutputs)
-    (Shape.hasNonemptyAxisZeroOfNe h.ne').proof
-  let gradOutputBias := Tensor.reduceSum 0 gradOutputs
-    (Shape.hasNonemptyAxisZeroOfNe h.ne').proof
-
+  let headGrads := timeDistributedLinearBackward model.outputLayer hiddenStates gradOutputs
   let initialHidden := Tensor.full ([hiddenSize]) 0
   let rnnBackward :=
-    rnnSequenceBackwardSpec model.rnn inputs initialHidden hiddenStates gradHiddenFromOutput
+    rnnSequenceBackwardSpec model.rnn inputs initialHidden hiddenStates headGrads.inputGradient
 
   ( { rnn := rnnBackward.parameters
-      output :=
-        { weightGradient := gradOutputWeights
-          biasGradient := gradOutputBias } },
+      output := headGrads.parameters },
     rnnBackward.inputs )
-
-namespace Internal
-
-/--
-Map a scalar-valued function over two aligned sequences, producing a sequence of scalars.
-
-This helper lifts a scalar comparison over aligned sequence elements.
--/
-def mapSequence2 {seqLen dim1 dim2 : Nat}
-  (f : Tensor α [dim1] → Tensor α [dim2] → α)
-  (leftSeq : Tensor α [seqLen, dim1])
-  (rightSeq : Tensor α [seqLen, dim2]) :
-  Tensor α [seqLen] :=
-  Tensor.dim (fun i =>
-    Tensor.scalar (f (Tensor.unstack leftSeq i) (Tensor.unstack rightSeq i)))
-
-end Internal
 
 -- Loss function for sequence classification
 /--
 Mean cross-entropy loss over a sequence of class-probability predictions.
 
 This is the spec-level analogue of a per-time-step classification loss, averaged across steps.
-PyTorch analogue: `torch.nn.CrossEntropyLoss` applied per step and then averaged.
+Predictions are probabilities, with the clamping convention of `crossEntropySpec`.
 -/
 def classificationLoss {seqLen numClasses : Nat}
   [Shape.HasNonemptyAxis 0 ([numClasses])]
   (predictions : Tensor α [seqLen, numClasses])
   (targets : Tensor α [seqLen, numClasses]) :
   α :=
-  let losses := Internal.mapSequence2 (crossEntropySpec 0) predictions targets
+  let losses := Tensor.zipEach [seqLen] []
+    (fun prediction target => Tensor.scalar (crossEntropySpec 0 prediction target))
+    predictions targets
   meanSpec losses
 
 /--

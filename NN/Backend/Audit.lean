@@ -26,14 +26,6 @@ numerical certificates and compared on replay, so they must have decidable equal
 namespace NN
 namespace Backend
 
-namespace KernelCapsule
-
-/-- Whether this capsule is classified as `trustedExternal`, rather than maintained and checked. -/
-def isTrustedExternal (c : KernelCapsule) : Bool :=
-  c.trustLevel == .trustedExternal
-
-end KernelCapsule
-
 /-- Audit row for one selected backend kernel. -/
 structure KernelAudit where
   op : BackendOp
@@ -65,10 +57,6 @@ def ofPlannedKernel (k : PlannedKernel) : KernelAudit :=
     vjpContract := k.capsule.vjpContract
     numericalPolicy := k.capsule.numericalPolicy }
 
-/-- Whether this selected kernel has the `trustedExternal` evidence classification. -/
-def isTrustedExternal (a : KernelAudit) : Bool :=
-  a.trustLevel == .trustedExternal
-
 /-- The four contract descriptors of the selected kernel, paired with the field each one fills. -/
 def contracts (a : KernelAudit) : Array (ContractObligation × ContractDescriptor) :=
   #[(.shape, a.shapeContract), (.layout, a.layoutContract),
@@ -87,13 +75,9 @@ namespace KernelPlanAudit
 def capsuleNames (a : KernelPlanAudit) : Array String :=
   a.kernels.map (·.capsuleName)
 
-/-- Operation names whose selected capsule is trusted external. -/
-def trustedExternalOps (a : KernelPlanAudit) : Array String :=
-  (a.kernels.filter KernelAudit.isTrustedExternal).map (·.op.name)
-
 /-- Whether any selected capsule has the `trustedExternal` evidence classification. -/
 def hasTrustedExternal (a : KernelPlanAudit) : Bool :=
-  a.kernels.any KernelAudit.isTrustedExternal
+  a.kernels.any fun kernel => kernel.trustLevel == .trustedExternal
 
 end KernelPlanAudit
 
@@ -105,11 +89,11 @@ def audit (p : KernelPlan) : KernelPlanAudit :=
 
 /-- Whether any selected capsule has the `trustedExternal` evidence classification. -/
 def hasTrustedExternal (p : KernelPlan) : Bool :=
-  p.kernels.any fun kernel => kernel.capsule.isTrustedExternal
+  p.kernels.any fun kernel => kernel.capsule.trustLevel == .trustedExternal
 
 /-- Operation names whose selected capsules are trusted external. -/
 def trustedExternalOps (p : KernelPlan) : Array String :=
-  (p.kernels.filter fun kernel => kernel.capsule.isTrustedExternal).map (·.op.name)
+  (p.kernels.filter fun kernel => kernel.capsule.trustLevel == .trustedExternal).map (·.op.name)
 
 end KernelPlan
 

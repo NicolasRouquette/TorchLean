@@ -75,8 +75,8 @@ trained.report.arithmetic
 `trainer.train` and `trainer.open` use `Tensor Float` at their data and result boundaries and train
 in binary32. `arithmetic` selects Lean's `Float32` for `.native` or FloatLib's configured
 `ExecFloat.Binary` with 8 exponent bits and 23 fraction bits for `.ieee`.
-Inputs are converted into that scalar when a dataset is
-materialized; predictions, losses, and `trained.state` are read back to `Float`, which is exact for
+Inputs are converted into that scalar as each sample is used;
+predictions, losses, and `trained.state` are read back to `Float`, which is exact for
 binary32 values. `trained.summary` prints `arithmetic=... scalar=...` so a log always shows what
 ran.
 
@@ -132,7 +132,7 @@ history and completed-step count. Open a new session before loading to start a f
 `Trainer.Config.objective` determines how predictions and targets become a scalar loss:
 
 - `.mse` uses mean squared error;
-- `.oneHotCrossEntropy axis` uses one-hot targets along a statically valid class axis;
+- `.oneHotCrossEntropy axis` uses one-hot targets along the chosen class axis;
 - `.custom loss` accepts a checked scalar loss program.
 
 The model output shape and dataset target shape must agree. Indexed class labels should be checked
@@ -204,5 +204,5 @@ on one sample. It is not a second beginner training API.
 Runnable starting point:
 
 ```bash
-lake exe torchlean quickstart_mlp --steps 20
+scripts/lake.sh exe torchlean quickstart_mlp --steps 20
 ```

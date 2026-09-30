@@ -79,8 +79,7 @@ def concreteEinsumReport
   let outputType ← concreteTensorType scalarType outputShape
   let typeEntries :=
     [("Scalar type", scalarTypeDescription)] ++
-      (((List.range operandTypes.length).zip operandTypes).map
-        fun operand => (s!"Operand {operand.1}", operand.2)) ++
+      (operandTypes.mapIdx fun index type => (s!"Operand {index}", type)) ++
       [("Output tensor", outputType)]
   let mut lengths : List (Expr × Nat) := []
   for axis in globalAxes do
@@ -95,30 +94,25 @@ def concreteEinsumReport
   let some contractedShape := axisShape? contractedAxes lengths
     | return none
   let operandLines :=
-    ((List.range inputShapes.length).zip (inputShapes.zip inputAxes)).map
-      fun operand =>
-        s!"  Operand {operand.1}: shape {formatShape operand.2.1}, axes \
-          {formatAxes operand.2.2}"
+    (inputShapes.zip inputAxes).mapIdx fun index (shape, axes) =>
+      s!"  Operand {index}: shape {formatShape shape}, axes {formatAxes axes}"
   let lengthDescriptions :=
     globalAxes.map fun axis =>
       s!"{axis.2} = {(axisLength? lengths axis.1).getD 0}"
   let diagonalDescriptions :=
-    ((List.range inputAxes.length).zip inputAxes).filterMap fun operand =>
-      let repeated := repeatedAxes operand.2
+    inputAxes.zipIdx.filterMap fun (axes, index) =>
+      let repeated := repeatedAxes axes
       if repeated.isEmpty then
         none
       else
-        some s!"operand {operand.1} on {formatAxes repeated}"
+        some s!"operand {index} on {formatAxes repeated}"
   let broadcastDetails :=
-    ((List.range inputShapes.length).zip (inputShapes.zip inputAxes)).filterMap
-      fun operand =>
-        let broadcasts :=
-          broadcastDescriptions operand.2.1 operand.2.2 lengths
-        if broadcasts.isEmpty then
-          none
-        else
-          some s!"operand {operand.1}: \
-            {String.intercalate ", " broadcasts}"
+    (inputShapes.zip inputAxes).zipIdx.filterMap fun ((shape, axes), index) =>
+      let broadcasts := broadcastDescriptions shape axes lengths
+      if broadcasts.isEmpty then
+        none
+      else
+        some s!"operand {index}: {String.intercalate ", " broadcasts}"
   let diagonalSummary :=
     if diagonalDescriptions.isEmpty then
       "none"
@@ -138,10 +132,9 @@ def concreteEinsumReport
     else
       formatAxes ellipsisAxes
   let rankObligations :=
-    ((List.range inputShapes.length).zip (inputShapes.zip inputAxes)).map
-      fun operand =>
-        s!"Operand {operand.1}: physical rank {operand.2.1.length} equals \
-          its {operand.2.2.length} expanded logical labels."
+    (inputShapes.zip inputAxes).mapIdx fun index (shape, axes) =>
+      s!"Operand {index}: physical rank {shape.length} equals \
+        its {axes.length} expanded logical labels."
   let obligations :=
     ["Grammar: every operand and the output use supported singleton logical \
         axes, with at most one ellipsis per expression.",

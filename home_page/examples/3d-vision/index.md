@@ -4,16 +4,19 @@ title: 3D Vision Projection Certificates
 
 A 3D detector can act as an artifact producer. The detector/exporter emits a camera matrix, 3D
 points, image dimensions, and a claimed 2D box. TorchLean reloads that JSON, recomputes the
-projection in Lean, and checks whether the claimed box encloses the projected points. A cuboid
+projection in Lean, and checks whether the claimed box, expanded by its nonnegative tolerance, encloses the projected points. A cuboid
 uses eight corners; the certificate also accepts other point counts.
 
 The result is a small certificate for this exported scene: the checker establishes that
-the claimed 2D box follows from the camera and corner tensors in the artifact. The detector remains
+the projected points lie within the claimed 2D box plus its stated tolerance. The detector remains
 the producer; TorchLean checks the geometric claim it exported.
 
 <div class="media-slab">
-  <img src="{{ '/assets/media/examples/showcase/geometry3d-vision-certificates.png' | relative_url }}" alt="3D vision projection certificate workflow"/>
+  <img src="{{ '/assets/media/examples/showcase/geometry-projection.svg' | relative_url }}" alt="3D vision projection certificate workflow"/>
 </div>
+
+The illustration sketches the workflow. The checker below establishes projection and enclosure
+conditions for the supplied points; its result does not certify the detector's pose or box dimensions.
 
 ## Checked Geometry
 
@@ -31,7 +34,8 @@ point.
 
 Lean checks that image dimensions are positive, the box is ordered and inside the image, all
 supplied points have positive projected depth, every projected point is inside the image, and
-every projected point is enclosed by the claimed 2D box. These checks do not establish that the
+every projected point is enclosed by the claimed 2D box expanded by `tol` in each direction.
+The tolerance must be nonnegative. It does not relax the positive-depth or image-bound checks. These checks do not establish that the
 points form a cuboid or that a detector found the right object. For an empty point set, the
 pointwise conditions are vacuous; the image and box checks still apply.
 

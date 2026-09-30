@@ -81,8 +81,7 @@ Evaluation projection for `mkForwardNode`.
 -/
 @[simp] theorem mkForwardNode_eval {α : Type} [TorchLean.Storage α] {Γ : List Shape} {τ : Shape}
     (f : TensorReader α Γ → Tensor α τ) (ctx : TorchLean.TensorPack α Γ) :
-    (mkForwardNode (α := α) (Γ := Γ) (τ := τ) f).eval ctx = f ctx := by
-  rfl
+    (mkForwardNode (α := α) (Γ := Γ) (τ := τ) f).eval ctx = f ctx := rfl
 
 /-- Internal list recursion used to track the dependent output shape of adjacent swaps. -/
 def swapShapeBySwapsList (s : Shape) : List Nat → Shape
@@ -138,20 +137,8 @@ theorem concatList_fst {α : Type} [TorchLean.Storage α] [Context α] {rest : S
   cases tensors with
   | nil => simp [concatList]
   | cons first others =>
-      have hfold :
-          ∀ acc0 : Sigma fun n => Tensor α (.dim n rest),
-            (others.foldl
-                (fun acc nxt =>
-                  (⟨acc.1 + nxt.1, Tensor.concatAxisSpec .scalar (α := α) (n := acc.1)
-                    (m := nxt.1) (suffix := rest) acc.2 nxt.2⟩ :
-                    Sigma fun n => Tensor α (.dim n rest)))
-                acc0).1 =
-              others.foldl (fun acc nxt => acc + nxt.1) acc0.1 := by
-        intro acc0
-        induction others generalizing acc0 with
-        | nil => rfl
-        | cons nxt others ih => simp [List.foldl, ih]
-      simpa [concatList, List.foldl] using hfold first
+      simp only [concatList, List.foldl_cons, Nat.zero_add]
+      exact (List.foldl_hom Sigma.fst (fun _ _ => rfl)).symm
 
 /-- Concatenate the tensors produced by concat inputs along their leading axis. -/
 def concatInputs
@@ -170,12 +157,8 @@ theorem concatInputs_size_eq_sum
     (ctx : TensorReader α Γ) (inputs : Array (ConcatInput α Γ rest)) :
     (concatInputs (α := α) (Γ := Γ) (rest := rest) ctx inputs).1 =
       inputs.foldl (fun acc input => acc + input.1) 0 := by
-  rw [← Array.foldl_toList]
-  unfold concatInputs
-  rw [concatList_fst]
-  induction inputs.toList using List.reverseRecOn with
-  | nil => rfl
-  | append_singleton xs x ih => simp [List.foldl_append, ih]
+  simpa only [concatInputs, concatList_fst, List.foldl_map] using
+    (Array.foldl_toList (xs := inputs) (f := fun acc input => acc + input.1) (init := 0))
 
 end Internal
 end IRExec

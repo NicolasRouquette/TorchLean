@@ -125,7 +125,8 @@ structure SupContraction [Fact (0 < nStates)] (γ : ℝ)
   /-- The factor is strictly below one. -/
   lt_one : γ < 1
   /-- One application of `T` shrinks every sup distance by `γ`. -/
-  le : ∀ values₁ values₂, valueSupDist (T values₁) (T values₂) ≤ γ * valueSupDist values₁ values₂
+  dist_le : ∀ values₁ values₂,
+    valueSupDist (T values₁) (T values₂) ≤ γ * valueSupDist values₁ values₂
 
 namespace SupContraction
 
@@ -136,7 +137,7 @@ theorem contractingWith (h : SupContraction γ T) :
     ContractingWith γ.toNNReal ((valueEquiv nStates).conj T) := by
   refine ⟨Real.toNNReal_lt_one.mpr h.lt_one, LipschitzWith.of_dist_le_mul fun f g => ?_⟩
   simpa [valueSupDist_eq_dist, h.nonneg] using
-    h.le ((valueEquiv nStates).symm f) ((valueEquiv nStates).symm g)
+    h.dist_le ((valueEquiv nStates).symm f) ((valueEquiv nStates).symm g)
 
 omit [Fact (0 < nStates)] in
 private theorem iterate_apply (k : Nat) (values : ValueFunction ℝ nStates) :
@@ -222,7 +223,7 @@ theorem valueAt_bellmanOptimality
   simp [valueAt, bellmanOptimality]
 
 /-- A Bellman state-action value is monotone in the candidate value function when `γ ≥ 0`. -/
-theorem stateActionValue_monotone
+theorem stateActionValue_mono
     (mdp : FiniteMDP ℝ nStates nActions)
     (values₁ values₂ : ValueFunction ℝ nStates)
     (hγ : 0 ≤ mdp.discount)
@@ -234,7 +235,7 @@ theorem stateActionValue_monotone
   discountedBackup_mono _ hγ (hValues _)
 
 /-- Bellman policy operators are pointwise monotone for nonnegative discounts. -/
-theorem bellmanPolicy_monotone
+theorem bellmanPolicy_mono
     (mdp : FiniteMDP ℝ nStates nActions)
     (policy : Policy nStates nActions)
     (values₁ values₂ : ValueFunction ℝ nStates)
@@ -244,7 +245,7 @@ theorem bellmanPolicy_monotone
     valueAt (bellmanPolicy mdp policy values₁) state ≤
       valueAt (bellmanPolicy mdp policy values₂) state := by
   simpa [valueAt_bellmanPolicy] using
-    stateActionValue_monotone mdp values₁ values₂ hγ hValues state (policy state)
+    stateActionValue_mono mdp values₁ values₂ hγ hValues state (policy state)
 
 /-- Bellman optimality dominates every particular action. -/
 theorem stateActionValue_le_bellmanOptimality
@@ -271,7 +272,7 @@ theorem bellmanPolicy_le_bellmanOptimality
     stateActionValue_le_bellmanOptimality mdp values state (policy state)
 
 /-- Bellman optimality is pointwise monotone for nonnegative discounts. -/
-theorem bellmanOptimality_monotone
+theorem bellmanOptimality_mono
     [Fact (0 < nActions)]
     (mdp : FiniteMDP ℝ nStates nActions)
     (values₁ values₂ : ValueFunction ℝ nStates)
@@ -282,7 +283,7 @@ theorem bellmanOptimality_monotone
       valueAt (bellmanOptimality mdp values₂) state := by
   simp only [valueAt_bellmanOptimality]
   exact Finset.sup'_mono_fun fun action _ =>
-    stateActionValue_monotone mdp values₁ values₂ hγ hValues state action
+    stateActionValue_mono mdp values₁ values₂ hγ hValues state action
 
 /-- Deterministic state-action Bellman values are Lipschitz with constant `γ`. -/
 theorem stateActionValue_abs_sub_le

@@ -48,7 +48,6 @@ References (background on the verifier families exposed here):
 
 @[expose] public section
 
-
 namespace NN.Verification.CLI
 
 /-!
@@ -124,13 +123,13 @@ def lirpaTools : List Tool :=
       "NN/Examples/Verification/LiRPA/cnn_cert.json"
       NN.Verification.LiRPA.Cnn.verifyCert
   , mk "lirpa-attention" "IBP cert: attention softmax block"
-    "NN/Examples/Verification/LiRPA/attention_softmax_cert.json"
+      "NN/Examples/Verification/LiRPA/attention_softmax_cert.json"
       NN.Verification.LiRPA.Attention.verifyCert
   , mk "lirpa-gru" "IBP cert: GRU gate"
       "NN/Examples/Verification/LiRPA/gru_gate_cert.json"
       NN.Verification.LiRPA.Gru.verifyCert
   , mk "lirpa-encoder" "IBP cert: transformer encoder block"
-    "NN/Examples/Verification/LiRPA/transformer_encoder_cert.json"
+      "NN/Examples/Verification/LiRPA/transformer_encoder_cert.json"
       NN.Verification.LiRPA.TransformerEncoder.verifyCert
   ]
 
@@ -167,7 +166,7 @@ def otherTools : List Tool :=
   , { name := "crown-query"
       description := "exact rational CROWN output query (crown_query_v1) with a soundness theorem"
       includeInAll := false
-      run := fun args => NN.Verification.CROWNQuery.run args }
+      run := fun args => NN.Verification.Cert.CROWNQuery.run args }
   , { name := "margin-report"
       description := "check internal consistency of an exported logit-bound report"
       defaultArg := some NN.Verification.Robustness.MarginCertCLI.defaultPath
@@ -259,7 +258,7 @@ def dispatch (args : List String) : IO Unit := do
     | _ => args
   let help := usage tools
   match args with
-  | List.nil =>
+  | [] =>
       IO.println help
   | "list" :: _ =>
       IO.println help
