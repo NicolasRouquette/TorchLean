@@ -10,7 +10,7 @@ We'll also check certificates exported by other tools. Each checker has a specif
 some recompute bounds, while others only check the consistency of supplied bounds and witnesses.
 
 <div class="media-slab">
-  <img src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
+  <img src="{{ '/assets/media/examples/showcase/verification-bounds.png' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
 </div>
 
 ## The Question

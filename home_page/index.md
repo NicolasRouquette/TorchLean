@@ -16,10 +16,10 @@ description: "Tensor computation, floating-point verification, and machine learn
 
   <figure class="home-overview">
     <a
-      href="{{ '/assets/media/examples/showcase/torchlean-components.svg' | relative_url }}"
+      href="{{ '/assets/media/figures/torchlean-layout.png' | relative_url }}"
       aria-label="Open the full TorchLean system diagram">
       <img
-        src="{{ '/assets/media/examples/showcase/torchlean-components.svg' | relative_url }}"
+        src="{{ '/assets/media/figures/torchlean-layout.png' | relative_url }}"
         alt="TorchLean overview: typed tensors, shared graph IR, autograd proofs, IEEE-754 semantics, certificate checking, PyTorch interoperability, CUDA providers, and model analysis."
         loading="eager" />
     </a>

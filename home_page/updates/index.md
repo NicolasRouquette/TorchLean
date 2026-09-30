@@ -27,6 +27,12 @@ title: Updates
 
 ## Running CUDA Through LibTorch
 
+We moved to LibTorch because maintaining CUDA kernels by hand was becoming cumbersome.
+Matrix products, convolutions, pooling, and reductions already have implementations in the
+PyTorch infrastructure. It makes more sense for us to reuse that work and spend our time on
+TorchLean's models, differentiation, and proofs. LibTorch gives us access to those tensor
+operations from C++, while we keep the model definitions and autograd tape in Lean.
+
 The CUDA backend now calls ATen through a LibTorch SDK instead of TorchLean's own kernels.
 TorchLean retains its runtime tape and owns differentiation. Attention and spectral model
 composition live in Lean, using numerical primitives through the buffer API. About 7,000 lines of

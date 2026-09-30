@@ -13,7 +13,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
 
 <div class="showcase-grid showcase-grid-featured">
   <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Semantics-and-Graphs/The-Canonical-Graph-IR/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="TorchLean graph IR to interval bounds example"/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/graph-ir-bounds-new.png' | relative_url }}" alt="TorchLean graph IR to interval bounds example"/>
     <span class="showcase-body">
       <span class="showcase-title">Graph IR and Bounds</span>
       <span class="showcase-text">Follow a small model as it becomes a graph with named operations, then use that graph for shape checks, execution traces, and interval bounds.</span>
@@ -58,7 +58,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
   </a>
 
   <a class="showcase-card showcase-image-card" href="{{ '/examples/scientific-ml/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/scientific-workflows.svg' | relative_url }}" alt="Scientific ML pipeline from Burgers data to FNO training and Lean checks"/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/scientific-ml-new.png' | relative_url }}" alt="Scientific ML pipeline from Burgers data to FNO training and Lean checks"/>
     <span class="showcase-body">
       <span class="showcase-title">Scientific ML</span>
       <span class="showcase-text">Train a Fourier neural operator on Burgers data or a PINN from an equation, then explore separate checks for PDE residuals and datasets.</span>
@@ -67,7 +67,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
   </a>
 
   <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Runtime___-Autograd___-and-Interop/PyTorch-Round-Trip/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/pytorch-artifacts.svg' | relative_url }}" alt="PyTorch round-trip example"/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/pytorch-roundtrip-new.png' | relative_url }}" alt="PyTorch round-trip example"/>
     <span class="showcase-body">
       <span class="showcase-title">PyTorch Round Trip</span>
       <span class="showcase-text">Export PyTorch weights, load them into a TorchLean model, and check that their shapes match.</span>
@@ -76,7 +76,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
   </a>
 
   <a class="showcase-card showcase-image-card" href="{{ '/blueprint/Floating-Point-and-Native-Boundaries/Floating-Point-Semantics/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/floatlib-binary-formats.svg' | relative_url }}" alt="FloatLib configured binary32 and binary128 formats: sign, exponent, fraction, and normal significand precision."/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/float32-ieee-new.png' | relative_url }}" alt="Floating-point formats and IEEE arithmetic illustration"/>
     <span class="showcase-body">
       <span class="showcase-title">Floating-Point Formats and Proofs</span>
       <span class="showcase-text">Compare FloatLib's executable binary arithmetic with rounded <code>FP32</code> models and its proofs of agreement with Lean's logical <code>Float32</code> operations, then follow their use in TorchLean.</span>
@@ -85,7 +85,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
   </a>
 
   <a class="showcase-card showcase-image-card" href="{{ '/examples/numerical-runtime/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="Numerical certificate and binary32 replay for a two-layer MLP"/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/graph-ir-bounds-new.png' | relative_url }}" alt="Numerical certificate and binary32 replay for a two-layer MLP"/>
     <span class="showcase-body">
       <span class="showcase-title">Numerical Runtime Certificates</span>
       <span class="showcase-text">Run a two-layer MLP through operation coverage, interval propagation, backend-capsule audit, and bit-level binary32 replay.</span>
@@ -112,7 +112,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
   </a>
 
   <a class="showcase-card showcase-image-card" href="{{ '/examples/3d-vision/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/geometry-projection.svg' | relative_url }}" alt="3D Vision Certificates example"/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/geometry3d-vision-new.png' | relative_url }}" alt="3D Vision Certificates example"/>
     <span class="showcase-body">
       <span class="showcase-title">3D Vision Certificates</span>
       <span class="showcase-text">Export camera and box tensors from a detector, recompute projection in Lean, and reject boxes that do not enclose projected corners.</span>
@@ -121,7 +121,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
   </a>
 
   <a class="showcase-card showcase-image-card" href="{{ '/examples/verification/' | relative_url }}">
-    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
+    <img class="showcase-media" src="{{ '/assets/media/examples/showcase/verification-bounds-new.png' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
     <span class="showcase-body">
       <span class="showcase-title">IBP and CROWN Verification</span>
       <span class="showcase-text">Bound a model's outputs over an input region using IBP or CROWN, and check certificates exported by other verification tools.</span>
