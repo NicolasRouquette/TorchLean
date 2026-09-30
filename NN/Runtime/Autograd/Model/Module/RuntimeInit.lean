@@ -135,6 +135,7 @@ def append : {ss₁ ss₂ : List Shape} → Plan ss₁ → Plan ss₂ → Plan (
   | .nil, _, .nil, ys => ys
   | .cons _ _, _, .cons x xs, ys => .cons x (append xs ys)
 
+/-- Append initializers in plan order, preserving the existing array prefix. -/
 def Internal.toArrayAux : {ss : List Shape} → Plan ss → Array FloatInit → Array FloatInit
   | .nil, .nil, inits => inits
   | .cons _ _, .cons init rest, inits => Internal.toArrayAux rest (inits.push init)

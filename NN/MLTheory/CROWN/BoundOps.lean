@@ -71,6 +71,8 @@ primitives that appear in IBP for affine/linear layers and basic arithmetic node
 If you want to swap in a quantized backend, the key is to provide an instance of `BoundOps` for
 your scalar type.
 -/
+/-- Arithmetic and capability flags used to compute interval and affine bounds.
+Soundness requires the separate laws for the selected scalar backend. -/
 class BoundOps (α : Type) [TorchLean.Storage α] [Context α] where
   addDown : α → α → α
   addUp   : α → α → α

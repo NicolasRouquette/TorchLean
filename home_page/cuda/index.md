@@ -15,19 +15,19 @@ Select a CUDA-enabled LibTorch SDK and build:
 
 ```bash
 export TORCHLEAN_LIBTORCH_HOME=/opt/libtorch
-scripts/lake.sh -R -K cuda=true build
+scripts/lake.sh -Kcuda=true build
 ```
 
-Run a small CUDA example:
+Run a small CUDA example with a built-in dataset:
 
 ```bash
-scripts/lake.sh -R -K cuda=true exe torchlean mlp --device cuda --execution eager --steps 100
+scripts/lake.sh -Kcuda=true exe torchlean quickstart_mlp --device cuda --execution eager --steps 100
 ```
 
 Run the maintained numerical and native-boundary suite:
 
 ```bash
-scripts/lake.sh -R -K cuda=true test
+TORCHLEAN_REQUIRE_CUDA=1 scripts/lake.sh -Kcuda=true test
 ```
 
 Run the CUDA sanitizer suite when changing the native adapter:
@@ -53,7 +53,10 @@ Float32 addition is not associative, so a reduction's evaluation order can affec
 Request strict deterministic algorithms through the typed LibTorch controls:
 
 ```lean
-Runtime.Autograd.LibTorch.setDeterministic true
+import NN.Runtime
+
+def enableDeterminism : IO Unit :=
+  Runtime.Autograd.LibTorch.setDeterministic true
 ```
 
 `setDeterministic : Bool → IO Unit` checks the native setting and disables convolution
@@ -64,7 +67,7 @@ The same policy can be selected at process startup:
 
 ```bash
 TORCHLEAN_CUDA_DETERMINISTIC_REDUCTIONS=1 \
-  scripts/lake.sh -R -K cuda=true exe torchlean mlp --device cuda
+  scripts/lake.sh -Kcuda=true exe torchlean quickstart_mlp --device cuda --steps 100
 ```
 
 Deterministic execution does not establish bitwise agreement with a particular FloatLib reference

@@ -812,10 +812,10 @@ Run the proof modules directly:
 ```terminal
 # Check the scalar interval semantics and its finite-image
 # theorem as separate modules.
-lake env lean \
+scripts/lake.sh env lean \
   NN/MLTheory/Proofs/Approximation/FloatInterval/Semantics.lean
 
-lake env lean \
+scripts/lake.sh env lean \
   NN/MLTheory/Proofs/Approximation/FloatInterval/ExactImageTheorem.lean
 ```
 

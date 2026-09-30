@@ -105,6 +105,7 @@ def tensorFromJsonBits (tag : String) (s : Shape) (j : Lean.Json) :
 
 -- Encode the tail before the head, as in the original recursive serializer. Pushing in reverse
 -- order avoids copying the growing tail array at every parameter.
+/-- Encode state tensors in reverse order, preserving each tensor's bit representation. -/
 def Internal.stateToJsonBitsRev {ss : List Shape} :
     TorchLean.TensorPack α ss → Array Lean.Json
   | .nil => #[]

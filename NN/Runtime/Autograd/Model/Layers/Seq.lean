@@ -62,6 +62,7 @@ def stateShapes : {σ τ : Shape} → Seq σ τ → List Shape
   | _, _, .id _ => []
   | _, _, .cons l rest => l.stateShapes ++ stateShapes rest
 
+/-- Append each layer's gradient flags in sequential state order. -/
 def Internal.requiresGradAux : {σ τ : Shape} → Seq σ τ → Array Bool → Array Bool
   | _, _, .id _, flags => flags
   | _, _, .cons layer rest, flags => Internal.requiresGradAux rest (flags ++ layer.requiresGrad)

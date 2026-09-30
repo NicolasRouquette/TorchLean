@@ -2,11 +2,12 @@
 title: Verification Bounds
 ---
 
-Verification starts with a concrete promise: a property is checked against the graph, parameters,
-shapes, and scalar interpretation that the verifier actually saw. TorchLean’s examples make those
-objects explicit. Some examples run bound propagation natively over a TorchLean graph. Others replay
-an exported certificate. In both cases, the important trail is the artifact being checked and the
-predicate Lean recomputes.
+Now let's look at what happens when we perturb a model's input. We'll compute bounds on its
+outputs over an input region, starting with interval bound propagation (IBP). Then we'll try
+CROWN, which can retain more information about how the outputs depend on the inputs.
+
+We'll also check certificates exported by other tools. Each checker has a specific job:
+some recompute bounds, while others only check the consistency of supplied bounds and witnesses.
 
 <div class="media-slab">
   <img src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
@@ -14,12 +15,12 @@ predicate Lean recomputes.
 
 ## The Question
 
-Most neural-network verification examples begin with a robustness question:
+The robustness question we'll work with is:
 
 > For every input inside a small box around the example point, can the model’s output still satisfy the
 > desired margin or safety condition?
 
-TorchLean represents that question with four concrete objects:
+To ask it in TorchLean, we need four things:
 
 - a model, written in the same API used for training examples;
 - a lowered `NN.IR.Graph`, so verifier code can traverse named nodes;
@@ -39,8 +40,8 @@ The reusable workflows under `NN/Verification/Builtin/` keep the model, input bo
 property, and bound pass together. The same path works for generated graphs, imported weights, and
 external verifier leaves.
 
-The seed box is built explicitly. For the small MLP example, `inputCenter` is the center point,
-`eps` is the radius, and `inputBox` is the flattened input box inserted at the lowered input node:
+Let's build an input box for a small MLP. We'll use `inputCenter` as its center and `eps` as its
+radius, then insert the flattened `inputBox` at the lowered input node:
 
 ```lean
 let inputCenter : Tensor α [2] :=
@@ -72,7 +73,7 @@ Interval bound propagation assigns a lower and upper bound to each node. A sound
 an operation must enclose all possible outputs of that operation when its inputs range over their
 current boxes.
 
-A scalar example captures the idea. Suppose
+We can see how this works with one scalar. Suppose
 
 $$
 x \in [-1,2],
@@ -104,7 +105,7 @@ coordinates.
 
 ## A Margin Example
 
-Consider a two-logit classifier. To certify class $0$ against class $1$, we want:
+Let's apply this to a classifier with two logits. To certify class $0$ against class $1$, we want:
 
 $$
 \operatorname{logit}_0-\operatorname{logit}_1 \geq 0.
@@ -148,8 +149,10 @@ For ReLU, the affine relaxation depends on the pre-activation interval:
 - if the interval is entirely nonpositive, ReLU is exactly zero;
 - if the interval crosses zero, CROWN uses a sound linear envelope.
 
-The built-in workflow asks the lowered graph for forward CROWN bounds after IBP; the public
-`NN.API.Verification.Lowering` module wraps the same call as `runCROWN`:
+We can ask our lowered graph for a CROWN output box. On the CLI's rounded
+backends, this uses directed backward bounds for the output coordinates. Backends supporting exact
+affine reassociation instead use the nodewise CROWN sweep. Either path can retain an IBP enclosure
+when no affine transfer is available:
 
 ```lean
 let crown ← match lowered.outputBoxCROWN? ps inputBox with
@@ -157,8 +160,9 @@ let crown ← match lowered.outputBoxCROWN? ps inputBox with
   | .error msg => throw <| IO.userError msg
 ```
 
-The result is another `FlatBox` for the output node, this time derived from affine lower and upper
-forms rather than from interval arithmetic alone.
+The result is another `FlatBox` for the output node. It need not improve on IBP. The separate
+`Verification.runCROWN` API returns nodewise affine bounds when those intermediate objects are
+needed, rather than only the final output box.
 
 For a margin objective, the backward pass asks for a bound on one scalar expression, such as
 $\operatorname{logit}_0-\operatorname{logit}_1$. Instead of bounding every output independently,
@@ -220,16 +224,16 @@ rounded-execution assumptions in a certificate theorem.
 
 ## What Each Command Shows
 
-Run the small TorchLean-native examples first:
+Let's run the TorchLean examples first:
 
 ```bash
-lake exe verify -- torchlean-ibp
-lake exe verify -- torchlean-transformer-ibp --with-crown
-lake exe verify -- torchlean-crown-ops
-lake exe verify -- torchlean-mlp-workflow
-lake exe verify -- digits-train-certify --epochs=50 --eps=0.02 --max=100
-lake exe verify -- margin-report
-lake exe verify -- camera-box3d-cert
+scripts/lake.sh exe verify -- torchlean-ibp
+scripts/lake.sh exe verify -- torchlean-transformer-ibp --with-crown
+scripts/lake.sh exe verify -- torchlean-crown-ops
+scripts/lake.sh exe verify -- torchlean-mlp-workflow
+scripts/lake.sh exe verify -- digits-train-certify --epochs=50 --eps=0.02 --max=100
+scripts/lake.sh exe verify -- margin-report
+scripts/lake.sh exe verify -- camera-box3d-cert
 ```
 
 `torchlean-ibp` is the smallest graph-bound check: lower a TorchLean model, attach an input
@@ -240,7 +244,7 @@ passes over softmax and MSE-loss operations. `torchlean-mlp-workflow` trains a c
 checks robustness with the alpha-beta-CROWN path on the resulting graph. The arithmetic used by
 these commands follows the same `--arithmetic native|ieee` flag as the examples.
 
-The remaining commands show artifact boundaries. `digits-train-certify` trains a small
+`digits-train-certify` trains a small
 sklearn-digits classifier with Python, exports weights and test examples, then immediately
 loads them and runs bound and margin checks in Lean. `margin-report` checks the internal arithmetic
 of an exported logit-bound report; it does not establish the provenance of those bounds.
@@ -259,7 +263,7 @@ After preparing the JSON artifacts described in the
 run:
 
 ```bash
-lake exe verify -- vnncomp-mnistfc \
+scripts/lake.sh exe verify -- vnncomp-mnistfc \
   --weights=_external/vnncomp/mnist_fc/model_weights.json \
   --suite=_external/vnncomp/mnist_fc/suite.json
 ```
@@ -269,27 +273,28 @@ lower bound, and the backward objective bound. The exact numbers depend on dtype
 but the shape of the output should look like this:
 
 ```text
-[IBP] logits lo = ...
-[IBP] logits hi = ...
-[CROWN] logits lo = ...
-[CROWN] logits hi = ...
-[CROWN-backward] objective bound = ...
+[IBP] p lo = ...
+[IBP] p hi = ...
+[CROWN] p lo = ...
+[CROWN] p hi = ...
+[CROWN-backward] margin lo = ...
+[CROWN-backward] margin hi = ...
 ```
 
 Then check the bundled alpha-beta-CROWN-style leaf artifact:
 
 ```bash
-lake exe verify -- abcrown-leaf
+scripts/lake.sh exe verify -- abcrown-leaf
 ```
 
 Run the compact LiRPA-style JSON fixtures:
 
 ```bash
-lake exe verify -- lirpa-mlp
-lake exe verify -- lirpa-cnn
-lake exe verify -- lirpa-attention
-lake exe verify -- lirpa-gru
-lake exe verify -- lirpa-encoder
+scripts/lake.sh exe verify -- lirpa-mlp
+scripts/lake.sh exe verify -- lirpa-cnn
+scripts/lake.sh exe verify -- lirpa-attention
+scripts/lake.sh exe verify -- lirpa-gru
+scripts/lake.sh exe verify -- lirpa-encoder
 ```
 
 These commands are good checks when changing certificate parsing or bound-replay utilities. Each bundled
@@ -301,7 +306,7 @@ producer.
 To run the fast non-interactive checker suite:
 
 ```bash
-lake exe verify -- all
+scripts/lake.sh exe verify -- all
 ```
 
 ## External Artifacts
@@ -313,20 +318,18 @@ verifier exposes or dumps terminal leaf data, TorchLean's exporter converts that
 coverage of the root box by the leaves, compatible tensor dimensions, and the witness lower-bound
 test. It does not recompute the lower bounds.
 
-That last sentence is the trust boundary. The Lean checker accepts a specific schema and
-checks the part of the terminal leaf represented in that schema. If the exporter lies about what the
-external verifier produced, that is an exporter/provenance boundary. If the JSON satisfies the schema
-and witness predicate, the Lean side check is local and reproducible.
+The checker therefore relies on the producer for the correctness of the supplied lower bounds.
+It also cannot establish whether the JSON faithfully records the external verifier's output.
 
 The witness selects one output coordinate. The checker requires its lower bound to exceed the
 corresponding unsafe threshold. Mismatched dimensions and out-of-range witness indices are rejected.
 The implementation lives in `NN.Verification.Cert.AbCrownLeafCert` and its shared verification
 utilities.
 
-The CLI entry point defaults to a small bundled artifact:
+We can try the leaf checker with the small bundled certificate, which is also its default input:
 
 ```bash
-lake exe verify -- abcrown-leaf \
+scripts/lake.sh exe verify -- abcrown-leaf \
   NN/Examples/Verification/AbCrown/sample_abcrown_leaf_artifact_v0_1.json
 ```
 
@@ -352,7 +355,7 @@ predicate replayed by the checker.
 
 ## Verification Results
 
-The native and external examples produce different kinds of evidence:
+Now that we've seen the commands, let's distinguish what their results tell us:
 
 - IBP and CROWN commands lower a TorchLean model, attach an input box, propagate bounds over the
   supported graph operations, and report the resulting margin predicate.
@@ -375,10 +378,6 @@ accepted the `abcrown_leaf_artifact_v0_1` witness predicate for a particular JSO
 TorchLean graph IBP pass reported a margin computed for the stated input box and arithmetic. That
 phrasing is more precise than saying only that a verifier ran.
 
-A green command should always be read together with the object it checked. The question is:
-which graph, which box, which scalar semantics, which certificate schema, and which theorem or
-checker predicate did this command use?
-
 ## Where To Read The Source
 
 - TorchLean-native graph and IBP entry point:
@@ -393,6 +392,3 @@ checker predicate did this command use?
   [`NN.Verification.Geometry3D`](https://github.com/lean-dojo/TorchLean/blob/main/NN/Verification/Geometry3D.lean)
 - Verification guide chapter:
   [Neural Network Verification]({{ '/blueprint/Verification-and-Certificates/Neural-Network-Verification/' | relative_url }})
-
-The examples provide commands that check the relevant graph, bound, or certificate artifact in
-Lean, rather than relying only on plots or external Python objects.

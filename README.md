@@ -15,8 +15,8 @@ attached to each execution path.
 ```bash
 git clone https://github.com/lean-dojo/TorchLean.git
 cd TorchLean
-lake exe cache get
-lake build
+scripts/lake.sh exe cache get
+scripts/lake.sh build
 ```
 
 For Linux, macOS, Windows/WSL, CUDA with LibTorch, and an explanation of
@@ -25,13 +25,13 @@ TorchLean's backend architecture, see the [Installation guide](https://lean-dojo
 ## Quickstart
 
 ```bash
-lake exe torchlean quickstart_mlp --device cpu --steps 10 --arithmetic ieee --execution eager
-lake exe torchlean quickstart_mlp --device cpu --steps 10 --execution eager
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 10 --arithmetic ieee --execution eager
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 10 --execution eager
 
 # Optional GPU run with a CUDA-enabled LibTorch SDK, matching toolkit, and NVIDIA GPU:
 export TORCHLEAN_LIBTORCH_HOME=/absolute/path/to/libtorch
-lake -R -K cuda=true build
-lake -R -K cuda=true exe torchlean quickstart_mlp --device cuda --steps 10 --execution eager
+scripts/lake.sh -Kcuda=true build
+scripts/lake.sh -Kcuda=true exe torchlean quickstart_mlp --device cuda --steps 10 --execution eager
 ```
 
 The first quickstart uses [FloatLib](https://github.com/lean-dojo/FloatLib)'s binary32 arithmetic.
@@ -91,15 +91,15 @@ def trainOnce : IO Unit := do
 ## Commands
 
 ```bash
-lake exe torchlean --help
-lake exe verify --help
-lake exe verify -- torchlean-ibp
+scripts/lake.sh exe torchlean --help
+scripts/lake.sh exe verify --help
+scripts/lake.sh exe verify -- torchlean-ibp
 ```
 
 For the maintained examples:
 
 ```bash
-lake build NNExamples
+scripts/lake.sh build NNExamples
 ```
 
 ## Use TorchLean From Another Lean Project
@@ -110,7 +110,7 @@ TorchLean is a normal Lake package. You can depend on the Git repository directl
 require TorchLean from git "https://github.com/lean-dojo/TorchLean.git" @ "main"
 ```
 
-Then run:
+Then run from the downstream project's root, using its own Lake configuration:
 
 ```bash
 lake update
@@ -228,8 +228,8 @@ For a supervised loop at the selected precision, open
 Inputs, losses, predictions, state, and model-state checkpoints retain `Scalar`; `finish` keeps
 an independent snapshot. This path supports eager and graph execution on CPU. Seeded initialization
 and optimizer settings still start from `Float` unless explicitly supplied through typed interfaces.
-Typed sessions reject custom backend profiles, and their finished results do not provide
-`Result.verify`.
+Typed sessions reject custom backend profiles. Their finished results have no attached verifier,
+so `Result.verify` returns an error.
 The
 [tensor guide](https://lean-dojo.github.io/TorchLean/blueprint/Building-Models/Tensors-That-Remember-Their-Shapes/)
 works through a typed binary128 model and checks its output and derivatives against exact rationals.
@@ -260,7 +260,7 @@ Generic rounded-real definitions live in `FloatLib.Floats.Formats.Flocq`; execut
 
 Native conversions now use `ExecFloat.Binary.ofFloat32` and `toFloat32` directly. FloatLib proves
 their exact native round trip, addition/subtraction agreement for finite operands, and square-root
-agreement through native export for every configured input. The finite-input addition theorem
+agreement through native export for every configured binary32 input. The finite-input addition theorem
 allows overflow in the result. These are logical-model theorems; they do not certify compiled
 CPU or CUDA instructions.
 

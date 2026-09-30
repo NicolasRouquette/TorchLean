@@ -37,9 +37,9 @@ without LibTorch now links one file, `unavailable.c`, which exports every symbol
 call with a message that says how to rebuild.
 
 Select the SDK with `-Klibtorch_home=PATH` or `TORCHLEAN_LIBTORCH_HOME`; a CUDA-enabled pip
-PyTorch installation works as the SDK root. This tree was tested locally against pip torch
-2.13.0+cu130 with CUDA 13.0 on A100, and previously against a PyTorch 2.12 nightly. Other SDK
-versions need their own CUDA suite results. Attention composes matrix products and softmax in
+PyTorch installation works as the SDK root. The [SDK notes](https://github.com/lean-dojo/TorchLean/blob/main/csrc/libtorch/README.md#tested-sdk-versions)
+record the tested versions and GPU checks; other SDK versions need their own CUDA suite results.
+Attention composes matrix products and softmax in
 Lean, including its local VJP, and the tape owns Q/K/V and saved probabilities. It uses full score
 matrices with quadratic sequence memory and no fused-attention selection.
 LibTorch is the standard backend for CUDA execution

@@ -2,10 +2,9 @@
 title: Examples
 ---
 
-These examples show TorchLean at work on real machine-learning problems: training models,
-differentiating tensor programs, moving weights through PyTorch, and checking numerical or
-verification claims in Lean. Open an example for the runnable code and the theorem or contract
-behind it.
+Let's try TorchLean on a few examples. We'll train models, compute gradients, import PyTorch
+weights, and check numerical claims in Lean. Pick a topic below and we'll work through the
+commands, code, and results together.
 
 ## Featured Examples
 
@@ -26,7 +25,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/autograd-basics-new.png' | relative_url }}" alt="Autograd basics example"/>
     <span class="showcase-body">
       <span class="showcase-title">Autograd Basics</span>
-      <span class="showcase-text">Compute gradients for small tensor functions, then inspect the tape and VJP objects that make reverse mode explicit.</span>
+      <span class="showcase-text">Compute gradients for small tensor functions and inspect the recorded operations and local gradient calculations.</span>
       <span class="showcase-link">Open guide page</span>
     </span>
   </a>
@@ -62,7 +61,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/scientific-workflows.svg' | relative_url }}" alt="Scientific ML pipeline from Burgers data to FNO training and Lean checks"/>
     <span class="showcase-body">
       <span class="showcase-title">Scientific ML</span>
-      <span class="showcase-text">Prepare the Burgers dataset, train a 1D Fourier neural operator, export prediction artifacts, and connect PDE residual checks to Lean.</span>
+      <span class="showcase-text">Train a Fourier neural operator on Burgers data or a PINN from an equation, then explore separate checks for PDE residuals and datasets.</span>
       <span class="showcase-link">Open scientific ML pipeline</span>
     </span>
   </a>
@@ -71,7 +70,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/pytorch-artifacts.svg' | relative_url }}" alt="PyTorch round-trip example"/>
     <span class="showcase-body">
       <span class="showcase-title">PyTorch Round Trip</span>
-      <span class="showcase-text">Move weights across the Python boundary while keeping tensor shapes, parameter packs, and import checks visible.</span>
+      <span class="showcase-text">Export PyTorch weights, load them into a TorchLean model, and check that their shapes match.</span>
       <span class="showcase-link">Open interop guide</span>
     </span>
   </a>
@@ -125,7 +124,7 @@ the linked pages state the actual artifacts, checker predicates, and theorem ass
     <img class="showcase-media" src="{{ '/assets/media/examples/showcase/bounds-workflow.svg' | relative_url }}" alt="IBP and alpha-CROWN verification example"/>
     <span class="showcase-body">
       <span class="showcase-title">IBP and CROWN Verification</span>
-      <span class="showcase-text">Attach input boxes to an IR graph, propagate interval or affine bounds, and check small external certificates through Lean. PINN examples use the same artifact-first style.</span>
+      <span class="showcase-text">Bound a model's outputs over an input region using IBP or CROWN, and check certificates exported by other verification tools.</span>
       <span class="showcase-link">Open verification tutorial</span>
     </span>
   </a>

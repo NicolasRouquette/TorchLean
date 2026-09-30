@@ -4,6 +4,8 @@ Released under MIT license as described in the file LICENSE.
 Authors: TorchLean Team
 -/
 
+module
+
 import NN.Runtime.Autograd.TypedGraph
 import NN.Runtime.Autograd.Torch.Core.TypedGraph
 
@@ -14,6 +16,8 @@ lowering, retained dense backward, and the final backward that releases the save
 The `public` mode exercises the ordinary checked VJP API. Output hashes fold the `Float.toBits`
 observations of every tensor element. This fixture contains no NaNs.
 -/
+
+public section
 
 open Spec TorchLean Runtime.Autograd
 open Runtime.Autograd.TypedGraph
@@ -52,6 +56,8 @@ private def memory : IO String := do
     (seed : Tensor Float [4]) : IO (TensorPack Float [[4]] × Tensor Float [4]) :=
   okOrThrow (graph.vjpChecked inputs () seed)
 
+/-- Measure a ReLU chain's construction and reverse pass, reporting timings and result hashes.
+`mode` selects the compiled pass, the legacy tape, or the public checked VJP API. -/
 def run (count : Nat) (mode : String := "compiled") : IO Unit := do
   let start ← IO.monoNanosNow
   let (output, state) ← okOrThrow (GraphM.run (chain count))
@@ -112,6 +118,7 @@ def run (count : Nat) (mode : String := "compiled") : IO Unit := do
 
 end TypedGraphScaling
 
+/-- Run the benchmark with a node count and optional `legacy` or `public` mode. -/
 def main (args : List String) : IO Unit := do
   match args with
   | [size] =>

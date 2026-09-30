@@ -212,8 +212,9 @@ Spec semantics: `log(softplus(x) + ε)`.
 /--
 Tanh-approximate GELU as one CUDA tape node.
 
-The native kernels fuse only the pointwise numerical work. TorchLean still records the node and
-owns its VJP rule through `Activation.geluDerivSpec`.
+The adapter evaluates the staged pointwise formula with ATen operations. TorchLean records the
+node and owns its VJP rule through `Activation.geluDerivSpec`; one tape node does not imply one
+GPU kernel launch.
 -/
 @[inline] def gelu {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
   unary (t := t) "gelu" xId s s

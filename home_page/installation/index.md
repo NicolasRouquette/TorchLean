@@ -87,9 +87,9 @@ sudo apt update
 sudo apt install -y git curl bash python3 build-essential
 ```
 
-Then follow the CPU installation steps above. The default build uses the portable CPU runtime. It also
-builds harmless CUDA stub archives so that CPU-only machines can compile the complete Lean project;
-the stubs do not pretend that a GPU is present.
+Then follow the CPU installation steps above. The default build uses the portable CPU runtime.
+One unavailable-backend shim supplies the GPU symbols so CPU-only machines can compile the
+complete Lean project. GPU requests fail with instructions to rebuild with LibTorch.
 
 Linux native targets also build a private mimalloc 3.4.4 object from checksum-pinned source.
 Position-independent code and initial-exec thread-local storage let it link into executables and

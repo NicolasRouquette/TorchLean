@@ -25,6 +25,7 @@ open Spec
 
 noncomputable section
 
+/-- List the image of each axis under the permutation, in source-axis order. -/
 def axisArray {rank : Nat} (e : Equiv.Perm (Fin rank)) : Array Nat :=
   Array.ofFn fun i => (e i).val
 

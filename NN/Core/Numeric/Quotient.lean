@@ -31,20 +31,24 @@ inductive QuotientCoefficients : Nat → Type where
 
 namespace QuotientCoefficients
 
+/-- Constant coefficient, obtained by setting all square-zero variables to zero. -/
 def primal : {n : Nat} → QuotientCoefficients n → Rat
   | _, .scalar x => x
   | _, .dual x _ => primal x
 
+/-- Add corresponding rational coefficients without rounding. -/
 def add : {n : Nat} → QuotientCoefficients n → QuotientCoefficients n →
     QuotientCoefficients n
   | _, .scalar x, .scalar y => .scalar (x + y)
   | _, .dual x dx, .dual y dy => .dual (add x y) (add dx dy)
 
+/-- Subtract corresponding rational coefficients without rounding. -/
 def sub : {n : Nat} → QuotientCoefficients n → QuotientCoefficients n →
     QuotientCoefficients n
   | _, .scalar x, .scalar y => .scalar (x - y)
   | _, .dual x dx, .dual y dy => .dual (sub x y) (sub dx dy)
 
+/-- Multiply coefficient trees using the product rule at each square-zero extension. -/
 def mul : {n : Nat} → QuotientCoefficients n → QuotientCoefficients n →
     QuotientCoefficients n
   | _, .scalar x, .scalar y => .scalar (x * y)

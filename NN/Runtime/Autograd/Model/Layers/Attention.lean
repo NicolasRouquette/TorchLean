@@ -72,8 +72,7 @@ Attention with optional affine projection biases and dropout on softmax probabil
 
 The operation order is projection, head splitting, scaled dot products, masked softmax,
 probability dropout, value aggregation, and output projection. Dropout therefore removes
-individual query/key contributions before values are mixed. The existing fused attention path
-remains available to the bias-free constructors without probability dropout.
+individual query/key contributions before values are mixed.
 -/
 def forward {α : Type} [Storage α] [Context α]
     {m : Type → Type} [Monad m] [Ops (m := m) (α := α)]

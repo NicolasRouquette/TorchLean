@@ -195,7 +195,7 @@ from normalizing a tiny result before scaling it back up.
 opaque irfft1dPackedUnnormalized (spec : @& Buffer) (batch n : UInt32) : Buffer
 
 /--
-Diagonal selective-scan forward kernel for state-space models.
+Diagonal selective scan for state-space models.
 
 Inputs:
 - `A`, `B`, `h0`: length `state`, representing per-channel recurrence parameters and initial state,
@@ -207,6 +207,9 @@ Output:
 
 This is the runtime primitive corresponding to the proof layer affine scan contract in
 `NN.Spec.Layers.SelectiveScan` and `NN.MLTheory.Proofs.StateSpace.Scan`.
+The adapter composes ATen operations in a parallel affine scan for finite inputs whose
+coefficients have magnitude at most one. Other inputs, or a nonfinite parallel result, use the
+sequential recurrence. The parallel schedule can round differently from a left-to-right evaluation.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_fwd"]
 opaque selectiveScanDiagFwd (A B X h0 : @& Buffer) (seqLen state : UInt32) : Buffer
@@ -222,7 +225,7 @@ opaque selectiveScanDiagBwd (A B X h0 out dY : @& Buffer) (seqLen state : UInt32
     Buffer × Buffer × Buffer × Buffer
 
 /--
-Diagonal selective-scan forward kernel with token-dependent coefficients.
+Diagonal selective scan with token-dependent coefficients.
 
 Inputs:
 - `A`, `B`, `X`: length `seqLen*state`, row-major by `(time, flattened_state_channel)`,
@@ -233,7 +236,8 @@ Output:
   `h[t,j] = A[t,j] * h[t-1,j] + B[t,j] * X[t,j]`.
 
 This is the runtime primitive corresponding to full Mamba-style selective scans where the token
-controls the affine transition coefficients.
+controls the affine transition coefficients. It uses the same parallel or sequential scheduling
+as `selectiveScanDiagFwd`.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_var_fwd"]
 opaque selectiveScanDiagVarFwd (A B X h0 : @& Buffer) (seqLen state : UInt32) : Buffer
@@ -244,7 +248,7 @@ Reverse accumulation for token-dependent diagonal coefficients.
 With `g[t] = dY[t] + A[t+1] * g[t+1]`, the returned arrays are
 `dA[t] = g[t] * h[t-1]`, `dB[t] = g[t] * X[t]`, `dX[t] = g[t] * B[t]`, and
 `dH0 = A[0] * g[0]`. Empty sequences return an empty coefficient/input gradient and zero `dH0`.
-The native kernel walks time backwards independently for each state channel.
+The adapter applies the affine scan to the reversed sequence, then forms the pointwise gradients.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_selective_scan_diag_var_bwd"]
 opaque selectiveScanDiagVarBwd (A B X h0 out dY : @& Buffer) (seqLen state : UInt32) :

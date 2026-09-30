@@ -24,6 +24,7 @@ open Proofs.Autograd.Algebra
 
 namespace Layers
 
+/-- Reject zero spatial, kernel, or stride extents, identifying the layer in the error message. -/
 def Internal.validateSpatialDimensions {rank : Nat} (kind : String)
     (inputSize kernelSize stride : TorchLean.Tensor Nat [rank]) : Except String Unit := do
   if inputSize.prod = 0 then

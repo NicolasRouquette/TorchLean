@@ -259,24 +259,24 @@ used in that chain:
 
 ```terminal
 # Compare tensor shapes and scalar representations.
-lake exe torchlean quickstart_tensors
+scripts/lake.sh exe torchlean quickstart_tensors
 # Differentiate a tensor function and a model loss.
-lake exe torchlean quickstart_autograd
+scripts/lake.sh exe torchlean quickstart_autograd
 # Train the small model from a stated seed and update
 # budget.
-lake exe torchlean quickstart_mlp \
+scripts/lake.sh exe torchlean quickstart_mlp \
   --device cpu --steps 200 --seed 2026
 # Exercise eager execution of a graph-based model on CPU.
-lake exe torchlean graphspec --device cpu --execution eager
+scripts/lake.sh exe torchlean graphspec --device cpu --execution eager
 # Compare evaluation and bounds attached to one operation
 # graph.
-lake exe torchlean one_semantic_universe
+scripts/lake.sh exe torchlean one_semantic_universe
 # Compare native Float32 values and derivatives with the
 # executable reference.
-lake exe torchlean float32_semantics
+scripts/lake.sh exe torchlean float32_semantics
 # Replay numerical evidence, including cases the checker
 # must reject.
-lake exe torchlean numerical_certificate
+scripts/lake.sh exe torchlean numerical_certificate
 ```
 
 The first two stay close to concrete tensors. `quickstart_tensors` prints the same small array under
@@ -328,8 +328,8 @@ be evaluated for values or interpreted for bounds.
 Run the graph and arithmetic examples directly:
 
 ```terminal
-lake exe torchlean one_semantic_universe
-lake exe torchlean float32_semantics
+scripts/lake.sh exe torchlean one_semantic_universe
+scripts/lake.sh exe torchlean float32_semantics
 ```
 
 The first evaluates a graph and checks sampled values against an interval. A final $`\tanh`
@@ -352,9 +352,8 @@ The small demonstrations above explain individual ideas. Before relying on a lar
 validation command that reaches the relevant boundary:
 
 ```terminal
-# Compile and run the curated suite against the CPU CUDA stub.
-lake build nn_tests_suite
-lake exe nn_tests_suite
+# Compile and run the curated CPU suite without LibTorch.
+scripts/lake.sh -Kcuda=false test
 
 # Build with the CUDA-enabled LibTorch SDK, then execute on a device.
 export TORCHLEAN_LIBTORCH_HOME=/path/to/libtorch
@@ -367,10 +366,10 @@ scripts/checks/cuda_sanitize_tests.sh \
   --all-tools --cuda-home /usr/local/cuda --skip-build
 
 # Replay the default checked-artifact suite.
-lake exe verify -- all
+scripts/lake.sh exe verify -- all
 
 # Check conventions and rebuild the documentation site.
-lake lint
+scripts/lake.sh lint
 scripts/docs/build_site.sh
 ```
 
@@ -797,7 +796,7 @@ The third is the command line. Flags are parsed strictly, so an unknown flag sto
 rather than being ignored:
 
 ```terminal +output
-$ lake exe torchlean quickstart_tensors --show-backend
+$ scripts/lake.sh exe torchlean quickstart_tensors --show-backend
 error: quickstart_tensors: unexpected arguments: [--show-backend]
 ```
 
@@ -826,7 +825,7 @@ implementation to a checked or explicitly trusted external kernel, and the capsu
 Examples that dispatch backend operations can report their contracts with `--show-backend`:
 
 ```terminal +output
-$ lake exe torchlean quickstart_mlp --steps 3 --show-backend
+$ scripts/lake.sh exe torchlean quickstart_mlp --steps 3 --show-backend
 == Quickstart: simple MLP training (seed=0, steps=3) ==
 ...
   matmul: reference.matmul provider=reference trust=checked

@@ -11,9 +11,9 @@ The checkout selects Lean 4.34.0 and the pinned FloatLib dependency through Lake
 [installation guide]({{ '/installation/' | relative_url }}) to prepare those dependencies.
 
 ```bash
-lake build
-lake exe torchlean quickstart_mlp --device cpu --steps 10 --arithmetic ieee --execution eager
-lake exe verify -- torchlean-ibp
+scripts/lake.sh build
+scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 10 --arithmetic ieee --execution eager
+scripts/lake.sh exe verify -- torchlean-ibp
 ```
 
 The quickstart initializes parameters, executes a binary32 forward pass, computes a loss, runs
@@ -23,8 +23,8 @@ operation graph and propagates an input interval through that graph.
 To see the command-line entry points:
 
 ```bash
-lake exe torchlean --help
-lake exe verify --help
+scripts/lake.sh exe torchlean --help
+scripts/lake.sh exe verify --help
 ```
 
 The first lists runnable examples: quickstarts, supervised models, text models, diffusion, FNO
@@ -123,8 +123,9 @@ to keep that scalar through parameters, activations, and derivatives on the type
 works through an affine model with exact output and derivative checks. The supervised trainer
 above uses `Float` datasets and reports. To retain the chosen scalar through a supervised session,
 use `trainer.openTyped (α := Binary128)`: samples, predictions, losses, reports, and model-state
-checkpoints keep that type. Typed sessions run on CPU, reject custom backend profiles, and do not
-provide `Result.verify`. Seeded initialization and optimizer/scheduler settings still begin with
+checkpoints keep that type. Typed sessions run on CPU and reject custom backend profiles. Their
+results have no attached verifier, so `Result.verify` returns an error. Seeded initialization and
+optimizer/scheduler settings still begin with
 `Float` values; supply typed initial state when those initial values need extra precision.
 The eager CUDA runtime uses LibTorch binary32 buffers; its separate
 matrix-multiplication interface also supports binary64.
@@ -160,7 +161,7 @@ running-statistics updates or extend the trainer's checkpoint interface.
 
 ## Common Next Steps
 
-- Train a model: `lake exe torchlean quickstart_mlp --device cpu --steps 100 --arithmetic ieee`.
+- Train a model: `scripts/lake.sh exe torchlean quickstart_mlp --device cpu --steps 100 --arithmetic ieee`.
 - Inspect a scientific ML run: [Scientific ML]({{ '/examples/scientific-ml/' | relative_url }}).
 - Check a certificate or bound pass: [Verification Bounds]({{ '/examples/verification/' | relative_url }}).
 - Start application code with `import NN.API; open TorchLean`.

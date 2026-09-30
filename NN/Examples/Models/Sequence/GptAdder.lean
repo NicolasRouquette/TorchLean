@@ -40,11 +40,9 @@ This controlled arithmetic sequence task exercises the CUDA GPT training loop:
 * optimizer choices follow the minGPT-style setup (`adamw`, `adam`, or `sgd`),
 * evaluation greedily completes every one-digit addition problem.
 
-Performance note: this uses the eager CUDA runtime, not a persistent CUDA graph.
-The heavy tensor operations run on the GPU, including fused attention,
-but each step still records a fresh autograd tape and synchronizes parameter refs through the
-current scalar training bridge. This is the correctness-facing example; full PyTorch-style
-throughput requires persistent device parameters plus future graph fusion and scheduling.
+Training uses the eager CUDA runtime. Lean records a fresh autograd tape for each step and
+composes attention from LibTorch matrix products and softmax. This example does not use fused
+attention or CUDA graph replay.
 
 The GPT-shaped architecture is constructed through the public TorchLean model constructor
 `nn.models.CausalTransformer.oneHot`, so the example can stay focused on the adder task mechanics.

@@ -712,7 +712,7 @@ The bundled logit-bound report makes the spec-versus-evidence difference visible
 ```terminal
 # Read the counts obtained from the bundled logit-bound
 # report.
-lake exe verify -- margin-report
+scripts/lake.sh exe verify -- margin-report
 ```
 
 ```terminal +output

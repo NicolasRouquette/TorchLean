@@ -57,8 +57,8 @@ device names currently have implementations.
 
 # Building With LibTorch
 
-An ordinary CPU build compiles portable stubs for the CUDA symbols and needs no LibTorch SDK.
-Those stubs let CPU users import the same Lean modules, but they reject CUDA session creation.
+An ordinary CPU build links one unavailable-backend shim and needs no LibTorch SDK.
+It lets CPU users import the same Lean modules, but rejects CUDA session creation.
 A CUDA build needs a CUDA-enabled LibTorch SDK:
 
 The public device selector accepts `.gpu` in Lean and `--device gpu` on the command line.
@@ -81,8 +81,8 @@ selection on later `build`, `exe`, and `env` commands. The build helper records 
 inputs so that a changed native configuration cannot silently reuse an incompatible adapter.
 
 Compilation and session creation answer different questions. A linked adapter still needs a
-visible, supported GPU to open a CUDA session. A CPU build exercises the portable stubs, so its
-success provides no execution evidence about the CUDA adapter.
+visible, supported GPU to open a CUDA session. A CPU build does not execute the CUDA adapter,
+so its success provides no execution evidence about that backend.
 
 To run two optimizer steps and print the selected kernel contracts:
 

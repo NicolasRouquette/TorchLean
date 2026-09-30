@@ -8,8 +8,9 @@ title: Performance
   How long does TorchLean take to build and test on its ordinary continuous-integration runner?
 </p>
 
-The charts use timing records from successful `main`-branch CI runs; opening them does not start
-another workflow or contact a benchmark server. Because GitHub-hosted machines vary,
+The charts fetch timing records from successful `main`-branch CI runs through GitHub's API and
+cache them in your browser for 30 minutes. Opening this page does not start another workflow.
+Because GitHub-hosted machines vary,
 these numbers are useful for spotting changes worth investigating, not for comparing hardware or
 making fine-grained runtime claims.
 

@@ -49,11 +49,10 @@ installing the CPU requirements into a GPU SDK environment can replace its CUDA 
 
 ## LibTorch CUDA build
 
-The CUDA build needs a Linux host with a CUDA-capable GPU and a full LibTorch SDK. This tree was
-tested locally against pip torch 2.13.0+cu130 with CUDA 13.0 on A100, and previously against a
-PyTorch 2.12 nightly. The backend uses a few internal ATen entry points (the fused attention
-selector and its forward and backward kernels), so other SDK versions may fail to compile or need
-the GPU regressions rerun.
+The CUDA build needs a Linux host with a CUDA-capable GPU and a full LibTorch SDK. See the
+[backend's SDK notes](../csrc/libtorch/README.md#tested-sdk-versions) for tested configurations.
+Attention and its local VJP are composed in Lean from LibTorch numerical primitives; there is no
+fused attention selector. Rerun the GPU checks when changing SDKs.
 
 `cuda=true` selects the complete LibTorch backend. The SDK root must contain `include/`,
 `lib/`, and `share/cmake/Torch/TorchConfig.cmake`. A CUDA-enabled Python PyTorch installation can

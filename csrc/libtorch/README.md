@@ -45,12 +45,15 @@ development toolkit, even though TorchLean itself compiles only C++ sources.
 
 ## Tested SDK versions
 
-This tree was tested locally against pip torch 2.13.0+cu130 with CUDA 13.0 on A100, and previously
-against a PyTorch 2.12 nightly (revision 0291f960b6). The build reads the SDK's `TORCH_VERSION` and
-warns below 2.12, but it does not stop the build. Attention is composed in Lean from numerical
-primitives; the bridge no longer calls private ATen attention selectors or paired attention
-kernels. SDK changes can still affect compilation and numerical results. Rerun the CUDA suite
-and the elementwise C++ harness below after changing SDKs.
+The current adapter compiled and passed the curated CUDA suite and focused attention check on
+A100 with pip torch 2.11.0+cu128. Earlier validation used pip torch 2.13.0+cu130 and a PyTorch 2.12
+nightly (revision 0291f960b6). These runs do not guarantee compatibility with every intervening or
+newer SDK.
+
+The build records the SDK's `TORCH_VERSION` and checks compiler/link compatibility. Attention is
+composed in Lean from numerical primitives, without private ATen attention selectors or paired
+attention kernels. SDK changes can still affect compilation and numerical results. Rerun the CUDA
+suite and the elementwise C++ harness below after changing SDKs.
 
 Optional SDK discovery controls are explicit:
 

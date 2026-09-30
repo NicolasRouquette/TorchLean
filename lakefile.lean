@@ -86,7 +86,7 @@ private def nativeCompilerJob (name : String) : SpawnM (Job FilePath) := Job.asy
   traceNativeTool compiler
   return compiler
 
-/-- All numerical CUDA exports, including SDPA, built and linked with the selected LibTorch SDK. -/
+/-- Numerical CUDA primitives built and linked with the selected LibTorch SDK. -/
 target torchlean_libtorch pkg : FilePath := do
   let lean ← getLeanInstall
   let scriptJob ← inputFile (pkg.dir / "scripts/libtorch_build.py") false

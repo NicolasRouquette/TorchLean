@@ -120,8 +120,8 @@ def runKnownSpectrum : IO Unit := do
 def runRoundtripEvenOdd : IO Unit := do
   IO.println "== rfft1d/irfft1d packed roundtrip =="
 
-  -- Even and odd lengths exercise different Nyquist-bin handling. cuFFT's inverse is
-  -- unnormalized, so the runtime wrapper scales by `1/n` before returning.
+  -- Even and odd lengths exercise different Nyquist-bin handling. The adapter requests
+  -- backward normalization from ATen's inverse, which includes the `1/n` factor.
   let even := floatArray #[
     0.25, -0.50, 1.00, 0.75, -1.25, 0.50, 0.125, -0.875,
     -0.30, 0.20, 0.90, -0.10, 0.45, -0.65, 1.10, -0.95

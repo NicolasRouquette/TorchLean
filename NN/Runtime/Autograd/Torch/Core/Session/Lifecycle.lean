@@ -114,7 +114,7 @@ Discard the current forward pass and invalidate its handles. Keep parameters and
 Owned CUDA intermediates are released before the tape drops its references. Parameter leaves can
 refer to the current mirror or an older recorded value, so their snapshots follow Lean reference
 counting and remain valid in any other session that still uses them. Resetting the tape neither
-drains the reuse cache nor changes optimizer history.
+empties LibTorch's allocator cache nor changes optimizer history.
 -/
 def resetTape {α : Type} [Storage α] (s : EagerSession α) : IO Unit := do
   if Config.device s.options == .cuda then

@@ -268,6 +268,8 @@ Use the smallest constructor that matches where the samples come from:
 
 - `Data.fromTensors inputs targets` splits two batched tensors along the sample axis;
 - `Data.fromSamples values` wraps an in-memory array of concrete `Float` samples;
+- `Data.fromStream samples` wraps an indexed stream of concrete `Float` samples without first
+  collecting it into an array;
 - `Data.fromSample sample` wraps one concrete `Float` sample, which is enough to smoke-test a model;
 - `Data.defer action` materializes one concrete `Float` sample from an `IO` action;
 - `Data.generate builder` constructs samples directly in the arithmetic runtime selected by the
@@ -300,6 +302,10 @@ Choosing `Data.fromSamples` is useful when labels are computed one record at a t
 already arrive as pairs. `Data.fromTensors` instead starts with two stacked tensors and uses
 their common leading index to construct those same pairs. Both routes eventually expose the
 same per-item interface to the trainer.
+
+For an existing `Data.SampleStream (Sample.Supervised Float input target)`, use
+`Data.fromStream` instead: `Data.fromSamples` takes an array, not a stream. Both adapters convert
+the sample tensors to the trainer's selected scalar type when they are requested.
 
 The `Data.defer` variant is the one to reach for when the sample lives in a file. Note that the
 file is read when the trainer materializes the dataset, not while the module elaborates, so
