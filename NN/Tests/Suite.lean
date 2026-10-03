@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Tests.Backend.Profile
+public import NN.Tests.Data.IO.Npy
 public import NN.Tests.IR.ShapeContracts
 public import NN.Tests.Verification.Crown
 public import NN.Tests.Verification.CameraCertificates
@@ -64,6 +65,7 @@ def run : IO Unit := do
   | none =>
     IO.println "== TorchLean: curated tests =="
     NN.Tests.Backend.Profile.run
+    NN.Tests.Data.IO.Npy.run
     NN.Tests.Verification.Crown.run
     NN.Tests.Verification.CameraCertificates.run
     NN.Tests.Verification.CertificateParsing.run
