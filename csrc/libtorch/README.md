@@ -227,6 +227,7 @@ Current CUDA coverage:
 | `NN/Tests/Runtime/Cuda/Softmax.lean` | `softmax` and `log_softmax`, forward and backward. |
 | `NN/Tests/Runtime/Cuda/Elementwise.lean` | Scalar elementwise ops, activations, safe logs, products, and `sum`. |
 | `NN/Tests/Runtime/Cuda/Attention.lean` | Attention values and gradients against the CPU reference, including batches. |
+| `NN/Tests/Runtime/Cuda/DeviceInfo.lean` | Per-index device identity readback, current-device agreement, index rejection, and a device-switching probe in a fresh process. |
 | `NN/Tests/Runtime/Cuda/SelectiveScan.lean` | Diagonal selective-scan buffer primitives used by the Mamba/SSM runtime path. |
 | `NN/Tests/Runtime/Cuda/Fft.lean` | Packed real FFT, inverse FFT, spectral convolution, and finite-difference gradient checks. |
 | `NN/Tests/Runtime/Cuda/Stress.lean` | RNG determinism, explicit release, duplicate-parent gradient accumulation, large buffers, reductions, and rectangular matmul. |
