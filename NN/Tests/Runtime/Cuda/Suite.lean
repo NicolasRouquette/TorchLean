@@ -17,6 +17,7 @@ public import NN.Tests.Runtime.Cuda.ConvTranspose
 public import NN.Tests.Runtime.Cuda.GatherScatter
 public import NN.Tests.Runtime.Cuda.TableLookup
 public import NN.Tests.Runtime.Cuda.DeterministicReductions
+public import NN.Tests.Runtime.Cuda.DeviceInfo
 public import NN.Tests.Runtime.Cuda.SelectiveScan
 public import NN.Tests.Runtime.Cuda.PositionalEncoding
 public import NN.Tests.Runtime.Cuda.Matmul
