@@ -64,8 +64,10 @@ rather than falling back to the host. On the host, the native allocator counters
 read zero, `synchronize` and `emptyCache` return at once, `setMemoryFraction` and `setDevice` are
 rejected, generated custom operations fail with an error at their native entry (their kernels are
 compiled at run time for a CUDA device), and the memory accounting probes of the suite are
-skipped. ATen's CPU and CUDA kernels agree on IEEE elementwise float32 but not on reduction order,
-so results of reductions are not bit-identical across the two devices.
+skipped. Results are bit-identical across the two devices only for programs made of the IEEE basic
+operations, gathers and lookups: ATen's CPU and CUDA transcendental functions (`exp`, `log`,
+`tanh`, ...) come from different libraries and differ at the ulp level, and reductions differ in
+order. The suite's tolerances hold on both.
 
 ## Tested SDK versions
 
