@@ -735,13 +735,31 @@ private def checkCustomAutograd : IO Unit := do
   checkConfiguredAutograd
   checkRecordingBuffers
 
+/-- On the host a generated operation has no implementation: it must fail through `IO`, naming
+the requirement, before any CUDA call. -/
+private def checkCustomComputationsOnHost : IO Unit := do
+  let input : Tensor Float32 [4] := [1, -2, 3, -4]
+  let outcome ← try
+    let _ ← square.run input (device := gpu)
+    pure (none : Option String)
+  catch error => pure (some (toString error))
+  match outcome with
+  | none => throw <| IO.userError "custom computation: a generated kernel ran on the host"
+  | some message =>
+      unless (message.splitOn "needs a CUDA device").length > 1 do
+        throw <| IO.userError s!"custom computation on the host: unexpected error: {message}"
+  IO.println "  custom computations: rejected on the host (generated kernels need a CUDA device)"
+
 /-- Exercise native elementwise VJPs, generated computations, and composed buffer operations. -/
 @[no_expose] def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: elementwise ==="
   runActivationNumerics
   checkScaledProductExponential
-  checkCustomComputations
-  checkCustomAutograd
+  if (← Runtime.Autograd.LibTorch.deviceKind) == .cuda then
+    checkCustomComputations
+    checkCustomAutograd
+  else
+    checkCustomComputationsOnHost
 
   let s : Shape := [5]
   let a : Tensor Float s :=

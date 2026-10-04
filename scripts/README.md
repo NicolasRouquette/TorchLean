@@ -70,7 +70,10 @@ The CUDA build needs a Linux host with a CUDA-capable GPU and a full LibTorch SD
 Attention and its local VJP are composed in Lean from LibTorch numerical primitives; there is no
 fused attention selector. Rerun the GPU checks when changing SDKs.
 
-`cuda=true` selects the complete LibTorch backend. The SDK root must contain `include/`,
+`cuda=true` selects the complete LibTorch backend; the SDK it is built against decides the
+device, and a CPU-only SDK runs it on the host (see the
+[backend's host device notes](../csrc/libtorch/README.md#host-device)). The SDK root must contain
+`include/`,
 `lib/`, and `share/cmake/Torch/TorchConfig.cmake`. A CUDA-enabled Python PyTorch installation can
 provide this root. Partial header snapshots alone cannot build the backend.
 
@@ -94,8 +97,8 @@ scripts/lake.sh -Kcuda=true lint
 The sanitizer wrapper enables this mode automatically. GPU execution needs a supported visible
 device; SDK configuration may also probe
 visible devices. TorchLean builds one shared C++ adapter and has no independent
-nvcc prerequisite. The SDK's own CMake package may require a matching CUDA development toolkit
-and invoke its compiler during discovery.
+nvcc prerequisite. A CUDA-enabled SDK's own CMake package may require a matching CUDA development
+toolkit and invoke its compiler during discovery.
 
 Build controls:
 
