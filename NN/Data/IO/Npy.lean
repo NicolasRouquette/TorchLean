@@ -295,6 +295,11 @@ the same loop can fill a `FloatArray`.
 The functions below decode a payload whose byte range and dtype the caller has already checked.
 The dtype is matched once per file rather than once per element, the bytes are read without an
 intermediate `Option`, and the result is unboxed.
+
+The decoders reinterpret stored bits, with the one exception the runtime imposes: `Float.ofBits`
+and `Float32.ofBits` return the canonical quiet NaN for every NaN pattern, so a NaN decodes as a
+NaN but without its sign or payload. Signed zeros, subnormals, infinities and every finite value
+decode to exactly their stored bits.
 -/
 
 /-- Little-endian `UInt64` at byte offset `o`. Out-of-range bytes read as `0`; callers check
