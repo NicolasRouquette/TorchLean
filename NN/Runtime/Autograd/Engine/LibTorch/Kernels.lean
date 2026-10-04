@@ -368,7 +368,10 @@ Gather `table[positions[i]]` for `count` device-resident positions.
 
 `table` has `size > 0` entries. Positions are float32 values computed on device: a NaN reads as
 `0`, every position is clamped to `[0, size - 1]` and then truncated, so a non-integral position
-floors and no selection leaves the table. The result has `count` entries.
+floors and no selection leaves the table. The clamp is applied to the float32 position and again
+to the integer index, so it holds for tables above 2^24 entries, where `size - 1` has no float32
+representation; which entries a float32 position can address exactly is a separate question,
+bounded by `Tape.tableLookup`. The result has `count` entries.
 -/
 @[never_extract, extern "torchlean_cuda_buffer_gather_at"]
 opaque gatherAt (table : @& Buffer) (size : UInt32) (positions : @& Buffer) (count : UInt32) :

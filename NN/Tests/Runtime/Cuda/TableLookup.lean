@@ -15,7 +15,8 @@ public import NN.Tests.Runtime.Cuda.Utils
 
 - `floor` agrees with `Float32.floor` bit for bit, and its tape node has a zero gradient;
 - `gatherAt` agrees with the CPU tape's `indexSelect` for in-range positions, forward and table
-  gradient, and follows its documented addressing for out-of-range and NaN positions;
+  gradient, and follows its documented addressing for out-of-range and NaN positions, on a table
+  above 2^24 entries included;
 - `tableLookup` and `layeredTableLookup` reproduce an executable `Float32` reference bit for bit
   at interior, boundary, out-of-range, integral, and NaN coordinates, and their forward and both
   gradients agree with the same function recorded on the CPU tape from existing nodes;
@@ -118,6 +119,44 @@ def runGatherAt : IO Unit := do
   let odd := Buffer.ofFloatArray (FloatArray.mk #[-3.0, 7.0, 2.75, nan, -0.5])
   assertBits32 "gather_at addressing" (Buffer.toFloatArray (Buffer.gatherAt tableBuf 5 odd 5))
     (FloatArray.mk #[0.125, -2.0, 0.5, 0.125, 0.125])
+
+/--
+In-bounds addressing above 2^24 entries, where `size - 1` has no float32 representation: a float32
+clamp alone rounds that bound up to `size` (16777219 reads as 16777220), and an infinite or
+oversize position then selects one past the end. The native kernels clamp the integer index again.
+-/
+def runGatherAtLargeTable : IO Unit := do
+  IO.println "== gatherAt / scatterAddAt above 2^24 entries =="
+  let size : Nat := 16777220
+  let size32 := size.toUInt32
+  -- A table of zeros, marked at the entries the positions below must select.
+  let mut data := FloatArray.emptyWithCapacity size
+  for _ in [0:size] do
+    data := data.push 0.0
+  data := data.set! 0 1.0
+  data := data.set! 16777216 2.0
+  data := data.set! 16777218 3.0
+  data := data.set! (size - 1) 4.0
+  let table := Buffer.ofFloatArray data
+  let inf : Float := 1.0 / 0.0
+  -- 16777219.0 narrows to 16777220.0 in float32, one past the end, exactly as the bound does.
+  let positions := Buffer.ofFloatArray (FloatArray.mk
+    #[inf, 16777220.0, 16777219.0, 1.0e9, 16777216.0, 16777218.0, -inf, nan, -3.0])
+  assertBits32 "gather_at above 2^24"
+    (Buffer.toFloatArray (Buffer.gatherAt table size32 positions 9))
+    (FloatArray.mk #[4.0, 4.0, 4.0, 4.0, 2.0, 3.0, 1.0, 1.0, 1.0])
+  -- The scatter lands at the same entries; read it back through positions that address exactly.
+  let scatterPositions := Buffer.ofFloatArray (FloatArray.mk
+    #[inf, 16777220.0, 16777216.0, -inf, nan])
+  let values := Buffer.ofFloatArray (FloatArray.mk #[1.0, 2.0, 4.0, 8.0, 16.0])
+  let scattered := Buffer.scatterAddAt size32 scatterPositions values 5
+  unless Buffer.size scattered == size32 do
+    throw <| IO.userError
+      s!"scatter_add_at above 2^24: size {Buffer.size scattered}, expected {size}"
+  let probes := Buffer.ofFloatArray (FloatArray.mk #[inf, 16777216.0, 0.0, 16777218.0])
+  assertBits32 "scatter_add_at above 2^24"
+    (Buffer.toFloatArray (Buffer.gatherAt scattered size32 probes 4))
+    (FloatArray.mk #[3.0, 4.0, 24.0, 0.0])
 
 /-- The backend's clamp, `fmin (fmax x lo) hi`, which selects `lo` for a NaN input. -/
 def clampRef (x lo hi : Float32) : Float32 :=
@@ -342,6 +381,7 @@ def run : IO Unit := do
   IO.println "=== CUDA kernel coverage: floor, gather_at, table lookup ==="
   runFloor
   runGatherAt
+  runGatherAtLargeTable
   runLookupBitExact
   runLookupVsCpu
   runEdges

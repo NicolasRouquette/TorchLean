@@ -1789,10 +1789,14 @@ namespace {
 // Positions computed on device arrive as float32 values, so no host round trip selects them.
 // A NaN position reads as the first entry; every position is then clamped into the table and
 // truncated, which floors a non-integral value and keeps each selection in bounds without a
-// device-side assertion.
+// device-side assertion. The float32 clamp alone does not keep it in bounds: above 2^24 the
+// bound `size - 1` has no float32 representation and rounds up to `size` (16777219 reads as
+// 16777220), so an infinite or oversize position would select one past the end. The clamp is
+// therefore repeated on the integer index, where every table index is exact.
 Tensor table_positions(const Tensor& positions, uint32_t size) {
   const double last = static_cast<double>(size) - 1.0;
-  return at::clamp(at::nan_to_num(positions, 0.0, last, 0.0), 0.0, last).to(at::kLong);
+  const auto clamped = at::clamp(at::nan_to_num(positions, 0.0, last, 0.0), 0.0, last);
+  return at::clamp(clamped.to(at::kLong), int64_t{0}, static_cast<int64_t>(size) - 1);
 }
 
 }  // namespace
