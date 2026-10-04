@@ -89,6 +89,11 @@ def run : IO Unit := do
   | .notLinked => runUnavailable
   | .nativeUnavailable => pure ()
   | .nativeAvailable =>
+      -- On the host there is no CUDA identity to read, and `setDevice` is rejected, so the
+      -- switching probe cannot run either.
+      if (← deviceKind) == .host then
+        IO.println "  skipped: the host device has no CUDA identity to read or switch through"
+        return
       runReadback
       let self : System.FilePath := "/proc/self/exe"
       if !(← self.pathExists) then

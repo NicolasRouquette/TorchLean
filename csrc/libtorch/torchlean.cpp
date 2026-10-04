@@ -508,6 +508,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_libtorch_set_device(uint32_t index
   });
 }
 
+#if TORCHLEAN_LIBTORCH_CUDA
 // Device identity. Every query takes an explicit index and reads the SDK's per-device cached
 // properties, so the answer never depends on the selected device and a multi-GPU host never
 // combines fields from two cards in one record.
@@ -577,6 +578,27 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_libtorch_runtime_version(uint32_t)
     return lean_box_uint32(static_cast<uint32_t>(version));
   });
 }
+#else
+// A CPU-only SDK has no CUDA device to describe and no driver to version: every identity query
+// fails, as an index outside the visible count does on a CUDA-enabled SDK.
+#define TORCHLEAN_NO_DEVICE_IDENTITY(NAME)                                                   \
+  extern "C" LEAN_EXPORT lean_obj_res torchlean_libtorch_##NAME(uint32_t) {                  \
+    return io([]() -> lean_obj_res {                                                         \
+      TORCH_CHECK(false, "LibTorch: this SDK has no CUDA support, so no CUDA device identity"); \
+      return lean_box(0);                                                                    \
+    });                                                                                      \
+  }
+TORCHLEAN_NO_DEVICE_IDENTITY(device_name)
+TORCHLEAN_NO_DEVICE_IDENTITY(device_capability)
+TORCHLEAN_NO_DEVICE_IDENTITY(device_sm_count)
+TORCHLEAN_NO_DEVICE_IDENTITY(device_total_bytes)
+TORCHLEAN_NO_DEVICE_IDENTITY(device_clock_khz)
+TORCHLEAN_NO_DEVICE_IDENTITY(device_mem_clock_khz)
+TORCHLEAN_NO_DEVICE_IDENTITY(device_mem_bus_width)
+TORCHLEAN_NO_DEVICE_IDENTITY(driver_version)
+TORCHLEAN_NO_DEVICE_IDENTITY(runtime_version)
+#undef TORCHLEAN_NO_DEVICE_IDENTITY
+#endif
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_libtorch_get_setting(uint32_t setting) {
   return io([&] {
