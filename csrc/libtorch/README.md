@@ -66,9 +66,11 @@ that also has a GPU (the suite then runs on the host), and `TORCHLEAN_LIBTORCH_D
 on a CUDA device. A CUDA-enabled SDK without a visible device reports `RuntimeStatus.nativeUnavailable`
 rather than falling back to the host. On the host, the native allocator counters and driver memory
 read zero, `synchronize` and `emptyCache` return at once, `setMemoryFraction` and `setDevice` are
-rejected, and the memory accounting probes of the suite are skipped. ATen's CPU and CUDA kernels
-agree on IEEE elementwise float32 but not on reduction order, so results of reductions are not
-bit-identical across the two devices.
+rejected, and the memory accounting probes of the suite are skipped. Results are bit-identical
+across the two devices only for programs made of the IEEE basic operations, gathers and lookups:
+ATen's CPU and CUDA transcendental functions (`exp`, `log`, `tanh`, ...) come from different
+libraries and differ at the ulp level, and reductions differ in order. The suite's tolerances
+hold on both.
 
 ## Tested SDK versions
 
