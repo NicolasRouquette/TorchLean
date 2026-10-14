@@ -10,6 +10,8 @@ public import NN.Runtime.Autograd.TypedGraph
 public import NN.Runtime.Autograd.Torch.Core.TypedGraph
 public import NN.Runtime.Autograd.Torch.TypedGraphSession.Autograd
 public import NN.Runtime.Autograd.Torch.TypedGraphSession.GraphOps
+public import NN.Runtime.Autograd.Torch.TypedGraphSession.Neural
+public import NN.Spec.Core.FloatInstances
 
 /-!
 Canonical `Float32.toBits` comparisons against the original dense Tape engine. These observations
@@ -19,6 +21,8 @@ Branch cancellation distinguishes reverse graph order from creation order; the r
 distinguishes adding a complete local VJP from sequentially scattering its two terms. Singular and
 custom VJPs exercise nodes with zero incoming cotangent, and input/intermediate seeds exercise the
 full dense interface.
+Single-output differentiation separately checks that disconnected overflow and singular VJPs are
+not run, including configured scalars whose storage equality must compare encodings.
 -/
 
 public section
@@ -167,6 +171,47 @@ private def checkCustomDense : IO Unit := do
     (TorchLean.TensorPack.zero (α := Float32) (ss := [[4], [4]]))
   expect "custom VJP contribution is retained"
     (bits gradients[0]! == Array.replicate 4 (3.0 : Float32).toBits)
+  let output : Proofs.Idx ([[4]] ++ [[4]]) [4] := ⟨⟨1, by decide⟩, rfl⟩
+  let gradients := compiled.backwardDenseAllFrom output (Tensor.full [4] 0.0)
+  expect "a reached custom VJP is evaluated even at zero cotangent"
+    (bits gradients[0]! == Array.replicate 4 (3.0 : Float32).toBits)
+
+private def checkDisconnected : IO Unit := do
+  let program : GraphM.M Float32 [[4]] (GraphM.Var [4]) := do
+    let x ← GraphM.arg 0 [4]
+    let _ ← GraphM.exp x
+    GraphM.scale x 2.0
+  let graph ← IO.ofExcept (Torch.lowerToTypedGraph program)
+  let inputs : TorchLean.TensorPack Float32 [[4]] := .cons (Tensor.full [4] 1000.0) .nil
+  let expected := #[Spec.SomeTensor.ofTensor (Tensor.full [4] (2.0 : Float32))]
+  let seed : Tensor Float32 [4] := Tensor.full [4] 1.0
+  compare "unused overflowing exp: pure VJP"
+    (Torch.TypedGraph.vjp graph inputs seed).toShapeErasedArray expected
+  let (gradient, output) ← IO.ofExcept (graph.vjpChecked inputs () seed)
+  compare "unused overflowing exp: checked VJP" gradient.toShapeErasedArray expected
+  expect "unused overflowing exp: forward output" (bits (Spec.SomeTensor.ofTensor output) ==
+    Array.replicate 4 (2000.0 : Float32).toBits)
+  let session ← Torch.Internal.TypedGraphSession.new (α := Float32)
+  let x ← session.input (Tensor.full [4] (1000.0 : Float32)) (requiresGrad := true)
+  let _ ← session.exp x
+  let output ← session.scale x 2.0
+  let gradient ← session.backwardDenseAll output seed
+  compare "unused overflowing exp: session" (gradient.extract 0 1) expected
+  -- Binary16's numerical equality identifies signed zeros and rejects NaN equality. The saved
+  -- support program instead needs the decidable equality of FloatLib's encoded carrier.
+  let program : GraphM.M (FloatLib.Floats.ExecFloat.Binary 5 10) [[1]] (GraphM.Var [1]) := do
+    let x ← GraphM.arg 0 [1]
+    let _ ← GraphM.inv x
+    GraphM.scale x 2
+  let graph ← IO.ofExcept (Torch.lowerToTypedGraph program)
+  let inputs : TorchLean.TensorPack (FloatLib.Floats.ExecFloat.Binary 5 10) [[1]] :=
+    .cons (Tensor.full [1] 0) .nil
+  let seed : Tensor (FloatLib.Floats.ExecFloat.Binary 5 10) [1] := Tensor.full [1] 1
+  let pureGradient := Torch.TypedGraph.vjp graph inputs seed
+  let (checkedGradient, _) ← IO.ofExcept (graph.vjpChecked inputs () seed)
+  for gradient in #[pureGradient, checkedGradient] do
+    let value := (Proofs.getIdx gradient ⟨0, rfl⟩).getScalar ⟨0, by decide⟩
+    expect "configured scalar: disconnected reciprocal does not produce NaN" (value == 2)
 
 private def checkValidation : IO Unit := do
   let program : GraphM.M Float32 [[4]] (GraphM.Var [4]) := do
@@ -214,11 +259,12 @@ def run : IO Unit := do
   checkRepeatedParent
   checkZeroCotangent
   checkCustomDense
+  checkDisconnected
   checkValidation
   checkSession
   IO.println "TypedGraph scaling regressions passed: canonical FP32 toBits \
     (including signed zeros), branch order, repeated parents, \
     input/intermediate seeds, zero-cotangent singular/custom VJPs, validation, repeated backward, \
-    public checked/pure APIs, session frozen leaves"
+    public checked/pure APIs, disconnected FP32/configured VJPs, session frozen leaves"
 
 end TypedGraphScalingRegression

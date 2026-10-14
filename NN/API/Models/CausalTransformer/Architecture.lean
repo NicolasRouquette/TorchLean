@@ -11,7 +11,7 @@ public import NN.API.Seeded
 /-!
 # Causal Transformer Architecture
 
-Configuration, shape families, and graph constructors for GPT-style causal Transformers.
+Configuration, shape families, and model constructors for GPT-style causal Transformers.
 -/
 
 @[expose] public section

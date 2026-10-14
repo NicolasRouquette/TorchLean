@@ -231,7 +231,9 @@ def close {obsShape : Shape} {nActions : Nat} (g : Client obsShape nActions) : I
     let _ ← Internal.requestObj g (Json.mkObj [("cmd", "close")])
     pure ()
   catch _ =>
-    pure ()
+    -- A rejected close request need not stop the helper's request loop.
+    -- Terminate that child before waiting, rather than waiting for an exit it never promised.
+    try g.child.kill catch _ => pure ()
   let _ ← g.child.wait
   pure ()
 

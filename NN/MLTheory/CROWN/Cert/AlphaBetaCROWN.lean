@@ -264,6 +264,10 @@ ordinary executable path used by TorchLean's high-level verifier: α uses the ch
 relaxation, while β records every ReLU phase already proved stable by IBP. Crossing intervals remain
 unconstrained. This is a fixed-relaxation α/β-CROWN pass, not the external branch-and-bound search
 performed by full Alpha-Beta-CROWN implementations.
+
+The output-box API uses this affine pass only for backends that certify exact reassociation.
+Rounded backends use directed CROWN instead; rounded affine coefficients alone are not sound
+enclosures of the real-valued model. The requested input box seeds both paths.
 -/
 
 /-- Infer the strongest phase justified directly by one pre-activation interval. -/
@@ -315,11 +319,18 @@ def runAlphaBetaCROWN
           g.nodes ps ibp alpha beta bounds ctx id)
     initial
 
-/-- Evaluate the automatic α/β-CROWN pass at the graph output. -/
+/-- Evaluate the automatic α/β-CROWN pass at the graph output.
+
+Rounded scalars use directed CROWN: composing nearest-rounded affine coefficients is not a
+sound enclosure calculation. Both routes seed IBP with the caller's requested input box.
+-/
 def outputBoxAlphaBetaCROWN?
     [BoundOps α] [NonlinearBoundOps α]
     (g : Graph) (ps : ParamStore α) (xB : FlatBox α)
     (inputId outputId inputDim : Nat) : Except String (FlatBox α) := do
+  if !BoundOps.supportsExactAffineReassociation (α := α) then
+    return ← Graph.outputBoxCROWN? g ps xB inputId outputId inputDim
+  let ps := ps.seedInputBox inputId xB
   let ibp := Graph.runIBP (α := α) g ps
   let ctx : AffineCtx := { inputId := inputId, inputDim := inputDim }
   let bounds := runAlphaBetaCROWN (α := α) g ps ctx ibp

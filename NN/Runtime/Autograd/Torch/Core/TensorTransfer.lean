@@ -89,19 +89,22 @@ instance (priority := 1000) : TensorTransfer Float32 where
 /--
 Host-side conversion for FloatLib's configured IEEE-754 binary32 scalar.
 
-The configured arithmetic uses software kernels. Scalar and tensor readback to `Float` remain
-available for reports and checkpoints, but this does not select native CUDA arithmetic. Finite
-binary32 values embed exactly in binary64; the native conversion canonicalizes NaN payloads.
+Configured values use the encoded custom-operation path on GPU, not the native ATen operator
+catalogue. Scalar and tensor readback to `Float` remain available for reports and checkpoints;
+readback does not change that execution policy. Finite binary32 values embed exactly in binary64;
+the native conversion canonicalizes NaN payloads.
 -/
 instance (priority := 1000) :
     TensorTransfer (ExecFloat.Binary (exponentBits := 8) (fractionBits := 23)) where
   encoding? := some inferInstance
   toFloatTensor := fun {_s} _ =>
     throw <| IO.userError
-      "torch: configured binary32 supports host readback; select native arithmetic for CUDA"
+      "torch: configured binary32 uses encoded custom operations; native ATen transfer \
+        requires Float or Float32"
   ofFloatTensor := fun {_s} _ =>
     throw <| IO.userError
-      "torch: configured binary32 supports host readback; select native arithmetic for CUDA"
+      "torch: configured binary32 uses encoded custom operations; native ATen transfer \
+        requires Float or Float32"
   toFloat := fun x => pure (ExecFloat.Binary.toFloat32 x).toFloat
   readFloatTensor := fun tensor => pure <|
     TorchLean.Tensor.map (fun x => (ExecFloat.Binary.toFloat32 x).toFloat) tensor

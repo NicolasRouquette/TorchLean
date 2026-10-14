@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.MLTheory.LearningTheory.Robustness.Spec
+public import NN.Tensor.Reductions
 
 /-!
 # `NN.MLTheory.Robustness.Runtime`
@@ -44,11 +45,16 @@ Runtime `L∞` norm, defined by specializing the polymorphic spec to `Float`.
 def tensorLinfNormFloat {s : Shape} (t : Tensor Float s) : Float :=
   NN.MLTheory.Robustness.Spec.tensorLinfNorm (α := Float) (s := s) t
 
-/--
-Runtime `L2` norm, defined by specializing the polymorphic spec to `Float`.
--/
+/-- Runtime `L2` norm with scaling before squaring.
+Finite entries do not overflow or underflow merely because their squares do. NaNs propagate;
+an infinite entry or an unrepresentable final norm still produces infinity. -/
 def tensorL2NormFloat {s : Shape} (t : Tensor Float s) : Float :=
-  NN.MLTheory.Robustness.Spec.tensorL2Norm (α := Float) (s := s) t
+  let scale := Tensor.maxAbs t
+  if scale == 0 || !scale.isFinite then scale else
+    let squares := t.foldl (fun sum value =>
+      let normalized := value / scale
+      sum + normalized * normalized) 0
+    scale * Float.sqrt squares
 
 /-- `L2` distance (specialization of `Robustness.Spec.tensorDistance`). -/
 def tensorL2DistanceFloat {s : Shape} (t1 t2 : Tensor Float s) : Float :=

@@ -380,13 +380,35 @@ theorem gelu_deriv_correct (x : ℝ) :
         =
       ((1 : ℝ) + tanh_term + x * sech_term * inner_deriv) / two := by
     simp [tanh_term, sech_term, Activation.Math.tanhSpec, mul_assoc]
+  have hCorrection : (if sech_term == 0 then 0 else x * sech_term * inner_deriv) =
+      x * sech_term * inner_deriv := by
+    split_ifs with h
+    · have hzero := beq_iff_eq.mp h
+      simp [hzero]
+    · rfl
+  change HasDerivAt (fun y : ℝ => y * ((1 + Activation.Math.tanhSpec (u y)) / two))
+    ((1 + tanh_term + (if sech_term == 0 then 0 else x * sech_term * inner_deriv)) / two) x
+  rw [hCorrection]
   simpa [u, two, three, pi, sqrt_two_over_pi, coeff, tanh_term, sech_term, inner_deriv,
-    Activation.Math.tanhSpec] using hdiv.congr_deriv hderiv
+    Activation.Math.tanhSpec, mul_div_assoc] using hdiv.congr_deriv hderiv
+
+/-- The compensated formula agrees with `log(1 + x)` over the reals. -/
+theorem log1p_spec_eq_log_one_add (x : ℝ) :
+    Activation.Math.log1pSpec x = Real.log (1 + x) := by
+  simp only [Activation.Math.log1pSpec, MathFunctions.log]
+  split_ifs with h₁ h₂
+  · have hzero : x = 0 := by have := beq_iff_eq.mp h₁; linarith
+    simp [hzero]
+  · have := beq_iff_eq.mp h₂
+    linarith
+  · have hzero : x ≠ 0 := by intro h; simp [h] at h₁
+    have hshift : (1 : ℝ) + x - 1 = x := by ring
+    simp [hshift, hzero]
 
 /-- The branch-stable real softplus specification is extensionally `log (1 + exp x)`. -/
 theorem softplus_spec_eq_log_one_add_exp (x : ℝ) :
     Activation.Math.softplusSpec (α := ℝ) x = Real.log (1 + Real.exp x) := by
-  simp only [Activation.Math.softplusSpec, MathFunctions.log, MathFunctions.exp]
+  simp only [Activation.Math.softplusSpec, log1p_spec_eq_log_one_add, MathFunctions.exp]
   split_ifs with hx
   · have hexp : Real.exp x ≠ 0 := ne_of_gt (Real.exp_pos x)
     have hinner : (1 : ℝ) + Real.exp (-x) ≠ 0 := by positivity
@@ -497,18 +519,30 @@ theorem safe_log_deriv_correct (x ε : ℝ) (hε : 0 < ε) :
   simpa [Function.comp_def, MathFunctions.log, Activation.Math.softplusDerivSpec, one_div,
     div_eq_mul_inv, mul_assoc, mul_left_comm, mul_comm] using h_comp
 
-/--
-Correctness of the `smoothAbs` derivative spec (a smooth absolute-value surrogate).
+/-- Scaling before squaring preserves the real smooth-absolute-value function. -/
+theorem smooth_abs_spec_eq_sqrt (x ε : ℝ) (hε : 0 < ε) :
+    Activation.Math.smoothAbsSpec x ε = Real.sqrt (x * x + ε) := by
+  let scale := max |x| (Real.sqrt ε)
+  have hscale : 0 < scale := (Real.sqrt_pos.2 hε).trans_le (le_max_right _ _)
+  have hne : scale ≠ 0 := hscale.ne'
+  have hinner : (x / scale) * (x / scale) + (ε / scale) / scale =
+      (x * x + ε) / (scale * scale) := by
+    field_simp
+  have hroot : Real.sqrt (scale * scale) = scale := Real.sqrt_mul_self (le_of_lt hscale)
+  simp only [Activation.Math.smoothAbsSpec, MathFunctions.abs, MathFunctions.sqrt,
+    abs_of_pos hε]
+  change (if scale == 0 || !(scale / scale == scale / scale) then Real.sqrt (x * x + ε)
+    else scale * Real.sqrt ((x / scale) * (x / scale) + (ε / scale) / scale)) = _
+  simp only [show (scale == 0) = false by simp [hne], div_self hne, beq_self_eq_true,
+    Bool.not_true, Bool.false_or, Bool.false_eq_true, ↓reduceIte]
+  rw [hinner, Real.sqrt_div (add_nonneg (mul_self_nonneg x) hε.le) (scale * scale), hroot]
+  field_simp [hne]
 
-`smooth_abs(x; ε) = sqrt(x^2 + ε)` is a differentiable replacement for `|x|` near `0`.
-
-Related PyTorch primitives:
-https://pytorch.org/docs/stable/generated/torch.abs.html
--/
+/-- For positive `ε`, `sqrt(x² + ε)` is differentiable with derivative `x / sqrt(x² + ε)`. -/
 theorem smooth_abs_deriv_correct (x ε : ℝ) (hε : 0 < ε) :
     HasDerivAt (fun y => Activation.Math.smoothAbsSpec y ε) (Activation.Math.smoothAbsDerivSpec
       x ε) x := by
-  unfold Activation.Math.smoothAbsSpec Activation.Math.smoothAbsDerivSpec
+  simp_rw [Activation.Math.smoothAbsDerivSpec, smooth_abs_spec_eq_sqrt _ ε hε]
   -- `smooth_abs(x) = sqrt(x^2 + ε)`
   have hx0 : x * x + ε ≠ 0 := by
     have : 0 < x * x + ε := by
@@ -521,7 +555,7 @@ theorem smooth_abs_deriv_correct (x ε : ℝ) (hε : 0 < ε) :
   -- simplify `(1 / (2 * sqrt u)) * (2 * x)` to `x / sqrt u`
   have : (1 / (2 * Real.sqrt (x * x + ε))) * (2 * x) = x / Real.sqrt (x * x + ε) := by
     field_simp
-  simpa [Function.comp_def, Activation.Math.smoothAbsSpec, MathFunctions.sqrt, this, div_eq_mul_inv,
+  simpa [Function.comp_def, MathFunctions.sqrt, this, div_eq_mul_inv,
     mul_assoc, mul_left_comm, mul_comm, add_assoc, add_left_comm, add_comm] using h_comp
 
 end Proofs

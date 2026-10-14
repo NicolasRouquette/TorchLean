@@ -177,21 +177,27 @@ def testBiboStability {s₁ s₂ : Shape}
       0.0 ≤ inputBound && 0.0 ≤ outputBound do
     throw "BIBO diagnostic requires finite nonnegative bounds"
   let mut passed := true
+  let mut foundInput := false
   for x in testInputs do
     let inputNorm := tensorL2NormFloat x
-    let outputNorm := tensorL2NormFloat (f x)
-    unless inputNorm.isFinite && outputNorm.isFinite do
+    unless inputNorm.isFinite do
       throw "BIBO diagnostic encountered a non-finite norm"
-    if inputNorm ≤ inputBound && !(outputNorm ≤ outputBound) then
-      passed := false
+    if inputNorm ≤ inputBound then
+      foundInput := true
+      let outputNorm := tensorL2NormFloat (f x)
+      unless outputNorm.isFinite do
+        throw "BIBO diagnostic encountered a non-finite norm"
+      if !(outputNorm ≤ outputBound) then passed := false
+  unless foundInput do
+    throw "BIBO diagnostic is inconclusive: no test input lies inside the requested bound"
   pure passed
 
 /--
 Empirical estimate of a Lyapunov-style stability margin.
 
-For each candidate radius `r` in `testRadii`, we generate a small finite set of points on a
-coordinatewise cosine perturbation around `equilibrium` and check a bounded-horizon Lyapunov
-test. The generated points are not generally on the L2 sphere of radius `r`.
+For each candidate radius `r`, normalize cosine directions and sample inside its L2 ball around
+`equilibrium`, then check a bounded-horizon Lyapunov test. If boundary rounding places a point
+outside the ball, use an interior point on the same ray (or the center if it still rounds outside).
 The result is `some` maximum radius when at least one radius passes, and `none` when valid evidence
 was collected but every radius failed. Empty or non-finite radius sets are errors.
 -/
@@ -215,7 +221,15 @@ where
     Array (Tensor Float s) :=
     Array.range count |>.map (fun i =>
       let angle := Float.ofNat i * 2.0 * 3.14159 / Float.ofNat count
-      addSphericalPerturbation center radius angle)
+      let direction := addSphericalPerturbation (Tensor.zeros s) 1 angle
+      let norm := tensorL2NormFloat direction
+      if norm == 0 then center else
+        let point (r : Float) := Tensor.addSpec center
+          (Tensor.map (fun value => (value / norm) * r) direction)
+        let boundary := point radius
+        if tensorL2DistanceFloat center boundary ≤ radius then boundary else
+          let interior := point (radius / 2)
+          if tensorL2DistanceFloat center interior ≤ radius then interior else center)
 
   addSphericalPerturbation {s : Shape} (center : Tensor Float s) (radius : Float) (angle : Float)
     : Tensor Float s :=

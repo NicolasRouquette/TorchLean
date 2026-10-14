@@ -164,7 +164,7 @@ theorem runtime_two_sub_one_exact :
       (toModel (ofBits32 0x40000000)).toReal - (toModel (1 : Binary 8 23)).toReal := by
   have hbits : ExecFloat.sub (ofBits32 0x40000000) (1 : Binary 8 23) = (1 : Binary 8 23) := by
     rw [FloatLib.Floats.ExecFloat.Proof.sub_eq_spec]
-    decide
+    decide +kernel
   rw [hbits, toReal_one, toReal_two]
   norm_num
 

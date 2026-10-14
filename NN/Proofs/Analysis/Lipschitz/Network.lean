@@ -167,10 +167,7 @@ theorem matVec_norm_le_frobenius {m n : Nat}
   rw [← Real.sqrt_mul hsum_nonneg]
   exact Real.sqrt_le_sqrt hsquared
 
-/--
-Linear transformations preserve $\ell_2$-norm bounds.
-Fundamental theorem for neural network stability analysis.
--/
+/-- Matrix-vector multiplication is Lipschitz with its matrix's Frobenius norm as a bound. -/
 theorem linear_op_norm_bound {m n : Nat}
   (W : Tensor ℝ [m, n])
   (x y : Tensor ℝ [n]) :
@@ -192,8 +189,7 @@ theorem linear_op_norm_bound {m n : Nat}
 -- Composition theorems for building network-level Lipschitz bounds.
 
 /--
-Composition of Lipschitz functions preserves Lipschitz property.
-Essential for analyzing deep neural networks.
+Composing the two distance bounds multiplies their constants.
 
 The nonnegative `Lg` preserves the inequality when multiplying the bound for `f`.
 No sign assumption on `Lf` is needed.
@@ -211,10 +207,7 @@ theorem lipschitz_composition {s t u : Shape}
     _ ≤ Lg * (Lf * tensorL2Dist x y) := mul_le_mul_of_nonneg_left (hf x y) hLg
     _ = (Lg * Lf) * tensorL2Dist x y := (mul_assoc _ _ _).symm
 
-/--
-ReLU + Linear composition Lipschitz bound.
-Practical theorem for single neural network layer analysis.
--/
+/-- ReLU after matrix-vector multiplication retains the matrix's Frobenius Lipschitz bound. -/
 theorem relu_linear_lipschitz {m n : Nat}
   (W : Tensor ℝ [m, n])
   (x y : Tensor ℝ [n]) :

@@ -22,10 +22,14 @@ The builder handles arithmetic, shape operations, common activations, pooling, l
 and arbitrary-rank convolution. Composite operations such as multi-head attention produce several
 IR nodes. Training BatchNorm, transposed convolution, smooth max-pooling, tensor-valued
 gather/scatter indices, and selection on an inner axis return lowering errors.
+GELU also returns an error until the IR can retain its cubic association and gate division;
+expanding it into a different multiplication schedule can overflow a finite source result.
+Clamp retains the source's min/max operand order. Scalar contexts with differentiation metadata
+return a lowering error because the IR cannot conditionally clear their tangents at clamp bounds.
 
-Log-softmax currently expands to softmax followed by log, unlike the stable source primitive.
-For finite-precision scalars, a probability can underflow to zero and fail the IR logarithm's
-positive-domain check. This expansion does not preserve the source's numerical behavior.
+Log-softmax returns a lowering error until the verifier IR has a faithful stable operation.
+Replacing it by softmax followed by log changes finite-precision results even when every
+probability is positive. Eager and typed-graph execution retain the stable source primitive.
 
 Softplus and `safeLog` have dedicated operations that retain the scalar specification's stable
 branch. SafeLog stores epsilon as a scalar constant parent, so its value, including any dual
@@ -324,11 +328,18 @@ instance {α : Type} [TorchLean.Storage α] [Context α] :
   abs := fun {s} x => emitUnary (α := α) (kind := .abs) (x := x) (t := s)
   sqrt := fun {s} x => emitUnary (α := α) (kind := .sqrt) (x := x) (t := s)
   clamp := fun {s} x lo hi => do
-    -- Lower to `min(max(x, lo), hi)` using const-filled tensors.
-    let loT : Tensor α s := Tensor.full (α := α) s lo
-    let hiT : Tensor α s := Tensor.full (α := α) s hi
-    let y ← emitBinary (α := α) (kind := .maxElem) (a := x) (b := .const loT)
-    emitBinary (α := α) (kind := .minElem) (a := y) (b := .const hiT)
+    match Context.stopGradient? (α := α) with
+    | some _ =>
+        fail (α := α)
+          ("TorchLean→IR: clamp with scalar differentiation metadata is outside the " ++
+            "verifier IR fragment; use eager or typed-graph execution for conditional " ++
+            "tangent clearing.")
+    | none =>
+        -- Operand order matters for signed zeros, NaNs and arbitrary scalar min/max instances.
+        let loT : Tensor α s := Tensor.full (α := α) s lo
+        let hiT : Tensor α s := Tensor.full (α := α) s hi
+        let y ← emitBinary (α := α) (kind := .maxElem) (a := .const loT) (b := x)
+        emitBinary (α := α) (kind := .minElem) (a := .const hiT) (b := y)
   max := fun {_s} a b =>
     emitBinary (α := α) (kind := .maxElem) (a := a) (b := b)
   min := fun {_s} a b =>
@@ -428,40 +439,20 @@ instance {α : Type} [TorchLean.Storage α] [Context α] :
   relu := fun {s} x => emitUnary (α := α) (kind := .relu) (x := x) (t := s)
   sigmoid := fun {s} x => emitUnary (α := α) (kind := .sigmoid) (x := x) (t := s)
   tanh := fun {s} x => emitUnary (α := α) (kind := .tanh) (x := x) (t := s)
-  gelu := fun {s} x => do
-    -- Keep GELU explicit in verifier IR until the IR itself gains a dedicated opcode. Runtime
-    -- backends use one tape node; this expansion remains transparent to graph proofs.
-    let c0 : α := Activation.Math.geluTanhCoeff
-    let c1 : α := MathFunctions.sqrt (2 / MathFunctions.pi)
-    let x2 ← emitBinary (α := α) (kind := .mulElem) (a := x) (b := x)
-    let x3 ← emitBinary (α := α) (kind := .mulElem) (a := x2) (b := x)
-    let c0Tensor : Tensor α s := Tensor.full s c0
-    let scaledX3 ← emitBinary (α := α) (kind := .mulElem) (a := x3) (b := .const c0Tensor)
-    let inner ← emitBinary (α := α) (kind := .add) (a := x) (b := scaledX3)
-    let c1Tensor : Tensor α s := Tensor.full s c1
-    let tanhInput ← emitBinary (α := α) (kind := .mulElem) (a := inner) (b := .const c1Tensor)
-    let tanhOut ← emitUnary (α := α) (kind := .tanh) (x := tanhInput) (t := s)
-    let ones : Tensor α s := Tensor.full s 1
-    let onePlus ← emitBinary (α := α) (kind := .add) (a := tanhOut) (b := .const ones)
-    let mid ← emitBinary (α := α) (kind := .mulElem) (a := x) (b := onePlus)
-    let halves : Tensor α s := Tensor.full s (1 / 2)
-    emitBinary (α := α) (kind := .mulElem) (a := mid) (b := .const halves)
+  gelu := fun {_s} _x =>
+    fail (α := α)
+      ("TorchLean→IR: GELU is outside the verifier IR fragment; " ++
+        "use eager or typed-graph execution. The IR cannot yet preserve its gate division.")
   softmaxLast := fun {s} x => do
     let axis :=
       match Spec.Shape.rank s with
       | 0 => 0
       | Nat.succ r => r
     emitUnary (α := α) (kind := .softmax axis) (x := x) (t := s)
-  logSoftmaxLast := fun {s} x => do
-    -- Unlike the stable source primitive, this expansion can underflow before taking log.
-    -- The IR evaluator rejects zero probabilities; graph shape validation does not detect this
-    -- numerical mismatch. Eager and typed-graph training retain the stable primitive.
-    let axis :=
-      match Spec.Shape.rank s with
-      | 0 => 0
-      | Nat.succ r => r
-    let probs ← emitUnary (α := α) (kind := .softmax axis) (x := x) (t := s)
-    emitUnary (α := α) (kind := .log) (x := probs) (t := s)
+  logSoftmaxLast := fun {_s} _x =>
+    fail (α := α)
+      ("TorchLean→IR: stable log-softmax is outside the verifier IR fragment; " ++
+        "use eager or typed-graph execution. Softmax followed by log is not a faithful lowering.")
   softplus := fun {s} x => emitUnary (α := α) (kind := .softplus) (x := x) (t := s)
   exp := fun {s} x => emitUnary (α := α) (kind := .exp) (x := x) (t := s)
   sin := fun {s} x => emitUnary (α := α) (kind := .sin) (x := x) (t := s)

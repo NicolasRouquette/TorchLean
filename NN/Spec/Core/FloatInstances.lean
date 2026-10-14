@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Spec.Core.Context
+public import NN.Tensor.Internal.Representation.Storage
 public import FloatLib.Floats.Formats.BinaryInterchange.Configured
 public import FloatLib.Floats.Formats.BinaryInterchange.Configured.Transcendentals
 
@@ -41,6 +42,11 @@ variable {format : FloatFormat} {plan : Configured.StoragePlan format} {code : T
     [ExecFloat.ModelCodec plan (Model format) code]
 
 local notation "Value" => ExecFloat (Configured.Family format code plan)
+
+/-- Compare configured scalar encodings in saved reverse programs. Numerical equality is not
+enough here: signed zeros and NaNs must keep their distinct storage representations. -/
+instance configuredBinaryStorage : Storage Value :=
+  { instArrayStorage Value with decEq? := some inferInstance }
 
 /--
 Use any configured binary format as a tensor/model scalar.

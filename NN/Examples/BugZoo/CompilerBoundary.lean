@@ -55,6 +55,8 @@ Successful lowering preserves the denotation of every node for every input.
 The one fragment hypothesis excludes raw logarithm nodes, whose source semantics rejects
 nonpositive inputs while the executable graph totalizes them. The executable graph is a Lean
 reference evaluator; native kernels and external compilers remain separate conformance boundaries.
+Successful lowering is also required: it currently rejects GELU and log-softmax instead of
+substituting formulas with a different floating-point evaluation order.
 -/
 theorem lowering_preserves_denotation
     {α : Type} [Storage α] [Context α]

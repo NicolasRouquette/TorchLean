@@ -94,15 +94,16 @@ def discountedReturnsDone [Zero α] [One α] [Add α] [Mul α] {n : Nat} (gamma 
   let indices : Tensor (Fin n) [n] := Tensor.ofFn id
   Tensor.scanr (fun i future => discountedBackup rewards[i] gamma future dones[i]) bootstrap indices
 
-/-- Generalized Advantage Estimation, retaining the common horizon in all five tensor types. -/
+/-- Generalized Advantage Estimation, retaining the common horizon in all five tensor types.
+Terminal branches do not multiply unused bootstrap values or future advantages by zero. -/
 def generalizedAdvantageEstimation [Zero α] [One α] [Add α] [Mul α] [Sub α]
     {n : Nat} (gamma lam : α)
     (rewards values nextValues : Tensor α [n]) (dones : Tensor Bool [n]) : Tensor α [n] :=
   let indices : Tensor (Fin n) [n] := Tensor.ofFn id
   Tensor.scanr (fun i nextAdvantage =>
-    let mask := continueMask (α := α) dones[i]
-    let delta := rewards[i] + gamma * mask * nextValues[i] - values[i]
-    delta + gamma * lam * mask * nextAdvantage) 0 indices
+    let delta := if dones[i] then rewards[i] - values[i]
+      else rewards[i] + gamma * nextValues[i] - values[i]
+    if dones[i] then delta else delta + gamma * lam * nextAdvantage) 0 indices
 
 /-- Lambda-returns `R_t = A_t + V_t`, with equal lengths enforced by the tensor shape. -/
 def returnsFromAdvantages [Add α] {n : Nat} (advantages values : Tensor α [n]) : Tensor α [n] :=

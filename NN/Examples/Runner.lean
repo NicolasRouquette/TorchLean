@@ -24,6 +24,7 @@ public import NN.Examples.Data.Loaders.Cifar10Images
 public import NN.Examples.Factorization.Check
 public import NN.Examples.Functional.Transcendentals
 public import NN.Examples.Interop.PyTorch.Roundtrip
+public import NN.Examples.Interop.JAX
 
 /-!
 # TorchLean Example Runner
@@ -152,10 +153,12 @@ def commandGroups : List CommandGroup :=
         , statusCommand "dqn_replay" "inspect checked DQN replay-buffer behavior"
             NN.Examples.Models.RL.DqnReplay.main
         ] }
-  , { title := "PyTorch interop"
+  , { title := "External graphs and weights"
       commands :=
         [ unitCommand "pytorch_roundtrip" "export PyTorch source or import reference JSON weights"
             NN.Examples.Interop.PyTorch.Roundtrip.main
+        , unitCommand "jaxpr" "import captured JAX graphs and compare their Lean outputs"
+            NN.Examples.Interop.JAX.run
         ] }
   , { title := "Data"
       commands :=
@@ -224,6 +227,7 @@ def usage : String :=
     , "Runtime flags:"
     , "  --choose                         ask for a device when the example supports --device"
     , "  --device auto|cpu|gpu|cuda|rocm|metal|wasm|tpu|trainium|custom|external"
+    , "      execution backends: CPU and CUDA; other parsed device names are not implemented"
     , "  --arithmetic native|ieee|complex"
     , "      arithmetic availability depends on the example; check its --help"
     , "  --execution eager|typed-graph"

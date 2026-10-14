@@ -88,6 +88,10 @@ theorem tangent_forward {E : Type*} [NormedAddCommGroup E] [NormedSpace ℝ E] {
   subst no
   exact hgraph.tangent_eval directions x inputs values data hinputs ro
 
+private theorem storage_nested_real_no_equality (n : Nat) :
+    Storage.decEq? (α := Dual.Nested ℝ n) = none := by
+  cases n <;> rfl
+
 /-- Every extracted input cotangent is the iterated derivative of the real typed graph's VJP.
 
 The two runs must record the same node shapes and select the same output. Buffer observers do
@@ -109,6 +113,9 @@ theorem tangent_vjp {E : Type*} [NormedAddCommGroup E] [NormedSpace ℝ E] {n : 
       (getIdx (nested.vjp values data (DualTensor.jet directions seed x)) input) =
       iteratedFDeriv ℝ n
         (fun y => getIdx (real.vjp (inputs y) data (seed y)) input) x directions := by
+  have realPullback (y : E) := vjp_eq_backpropCtx real (inputs y) data (seed y) (by rfl)
+  simp_rw [vjp_eq_backpropCtx nested values data (DualTensor.jet directions seed x)
+    (storage_nested_real_no_equality n), realPullback]
   rcases real with ⟨rs, rg, ro, rb⟩
   rcases nested with ⟨ns, ng, no, nb⟩
   dsimp only at sameShapes hgraph sameOutput ⊢

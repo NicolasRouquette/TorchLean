@@ -848,11 +848,12 @@ that replays the affine step; `alphaCrown_cert_encloses_evalGraphRec` fixes the 
 and the values to `evalGraphRec`, so only the graph, input, slope, and certificate hypotheses
 remain. These are the forms a caller should cite.
 
-The executable `outputBoxAlphaBetaCROWN?` path first runs IBP. `runAlphaBetaCROWN` takes those
-intervals, infers every ReLU phase they already force, and rechecks it while replaying affine
-bounds. Unstable phases remain
-unsplit and use the default alpha relaxation. This is a useful native fixed-relaxation pass; it is
-not the external Alpha-Beta-CROWN optimizer's branch-and-bound search.
+The executable `outputBoxAlphaBetaCROWN?` seeds IBP with the requested input box. On backends that
+support exact affine reassociation, `runAlphaBetaCROWN` takes those intervals, infers every ReLU
+phase they already force, and rechecks it while replaying affine bounds. Unstable phases remain
+unsplit and use the default alpha relaxation. Rounded scalar backends instead use directed CROWN;
+nearest-rounded affine coefficients cannot be treated as exact-real enclosures. Both paths are
+distinct from the external Alpha-Beta-CROWN optimizer's branch-and-bound search.
 
 ```lean (name := crownThms)
 -- Combine local certificate consistency with a proof that

@@ -6,6 +6,8 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Spec.Core.FloatInstances
+
 public import NN.Proofs.RuntimeApprox.IEEE32.Expressions
 public import NN.MLTheory.LearningTheory.Stability.Core
 

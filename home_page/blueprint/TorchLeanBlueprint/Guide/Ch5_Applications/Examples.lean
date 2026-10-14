@@ -593,13 +593,14 @@ too, so the ReLU layer acts as the identity and we can chain the two affine laye
 #eval show IO Unit from do
   let xLo := fun j => Tensor.at exCenter (j, ()) - exEps
   let xHi := fun j => Tensor.at exCenter (j, ()) + exEps
-  let hidden := (List.finRange 3).map fun i =>
+  let intervals := (List.finRange 3).map fun i =>
     exRow (fun j => Tensor.at exW1 (i, (j, ())))
       (Tensor.at exB1 (i, ())) xLo xHi
-  for (box, i) in hidden.zipIdx do
+  for (box, i) in intervals.zipIdx do
     IO.println s!"h{i + 1} = ({box.fst}, {box.snd})"
   let y := exRow (fun i => Tensor.at exW2 (0, (i, ()))) exB2
-    (fun i => (hidden[i]!).fst) (fun i => (hidden[i]!).snd)
+    (fun i => (intervals[i]!).fst)
+    (fun i => (intervals[i]!).snd)
   IO.println s!"y   = ({y.fst}, {y.snd})"
   IO.println s!"mid = {0.5 * (y.fst + y.snd)}"
 ```
@@ -749,7 +750,7 @@ $$`\frac{\partial y}{\partial W_2}=h,
 #eval show IO Unit from do
   let x := fun j => Tensor.at exCenter (j, ())
   let w2 := fun i => Tensor.at exW2 (0, (i, ()))
-  let hidden := (List.finRange 3).map fun i =>
+  let activations := (List.finRange 3).map fun i =>
     (List.finRange 2).foldl
       (fun acc j => acc + Tensor.at exW1 (i, (j, ())) * x j)
       (Tensor.at exB1 (i, ()))
@@ -758,7 +759,7 @@ $$`\frac{\partial y}{\partial W_2}=h,
       (fun acc i =>
         acc + w2 i * Tensor.at exW1 (i, (j, ())))
       0.0
-  IO.println s!"h      = {hidden}"
+  IO.println s!"h      = {activations}"
   IO.println s!"W2     = {(List.finRange 3).map w2}"
   IO.println s!"W2 W1  = {dInput}"
 ```

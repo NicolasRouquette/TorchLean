@@ -52,7 +52,7 @@ theorem denoteRearrange_eq_of_equivalent
   rw [cast_tensor_eq_reindex hInputShape inputTensor]
   rw [cast_tensor_eq_reindex hOutputShape.symm]
   ext outputCoordinate
-  simpa only [denoteRearrange, Rep.reindex_apply, cast_eq_equivCast] using
+  simpa only [denoteRearrange, Rep.reindex_apply, Equiv.cast_apply] using
     congrArg inputTensor (hEquivalent outputCoordinate)
 
 /--
@@ -88,7 +88,7 @@ theorem rearrangeEquivalent_of_denoteRearrange_nat_eq
   rw [cast_tensor_eq_reindex hInputShape coordinateTensor] at hAtCoordinate
   rw [cast_tensor_eq_reindex hOutputShape.symm] at hAtCoordinate
   simpa only [denoteRearrange, Rep.reindex_apply, coordinateTensor,
-    Rep.get_ofFn, cast_eq_equivCast] using hAtCoordinate
+    Rep.get_ofFn, Equiv.cast_apply] using hAtCoordinate
 
 /--
 For fixed shapes, coordinate equivalence is exactly equality of rearrange

@@ -108,19 +108,30 @@ def hasFormatMagic (format : Format) (path : System.FilePath) : IO Bool :=
     pure (magic == format.magic)
 
 /--
-Write a checkpoint through a temporary sibling and rename it after the handle has been closed.
+Write a checkpoint through an exclusively reserved sibling and rename it after closing the handle.
 
-If writing or renaming fails, the temporary file is removed. The destination is never exposed as a
-partially written checkpoint on filesystems with atomic same-directory replacement.
+The callback must not retain the handle beyond its call; `withFile` closes it when its last
+reference is dropped.
+
+If reservation fails, leave the existing sibling untouched. After reservation, a write or rename
+failure removes only this writer's temporary file. The destination is never exposed as a partially
+written checkpoint on filesystems with atomic same-directory replacement.
 -/
 def writeAtomically
     (path : System.FilePath) (write : IO.FS.Handle → IO Unit) : IO Unit := do
   let timestamp ← IO.monoNanosNow
   let temporary := System.FilePath.mk s!"{path}.tmp-{timestamp}"
-  try
-    IO.FS.withFile temporary IO.FS.Mode.write fun handle => do
+  -- Reserve before entering cleanup: a colliding name belongs to another writer.
+  let writeError? ← IO.FS.withFile temporary IO.FS.Mode.writeNew fun handle => do
+    try
       write handle
       handle.flush
+      pure none
+    catch error =>
+      pure (some error)
+  try
+    if let some error := writeError? then
+      throw error
     IO.FS.rename temporary path
   catch error =>
     try

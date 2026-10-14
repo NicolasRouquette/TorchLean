@@ -14,6 +14,7 @@ public import NN.Runtime.Autograd.Model
 public import NN.Runtime.Autograd.Train
 public import NN.Runtime.External
 public import NN.Runtime.PyTorch
+public import NN.Runtime.JAX
 public import NN.Runtime.Optim
 public import NN.Runtime.RL
 
@@ -29,7 +30,7 @@ building, training, importing, exporting, or checking runnable models:
 - deterministic dataset/training utilities;
 - optional external-process helpers for untrusted producer / trusted checker workflows;
 - pure optimizer and scheduler equations;
-- PyTorch import/export bridge infrastructure; and
+- PyTorch and Jaxpr import/export bridge infrastructure; and
 - typed reinforcement-learning runtime helpers.
 
 For ordinary application code, prefer `import NN.API`. Import this file when you need the full

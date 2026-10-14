@@ -104,10 +104,12 @@ build_dir_for() {
   python3 - "$build_root" "$1" "$2" <<'PY'
 import hashlib
 import os
+from pathlib import Path
 import sys
 
 build_root, package_root, profile = sys.argv[1:]
-workspace_hash = hashlib.sha256(os.fsencode(package_root)).hexdigest()[:12]
+toolchain = (Path(package_root) / "lean-toolchain").read_text().strip()
+workspace_hash = hashlib.sha256(os.fsencode(package_root + "\0" + toolchain)).hexdigest()[:12]
 workspace_id = os.path.basename(package_root) + "-" + workspace_hash
 print(os.path.realpath(os.path.join(build_root, workspace_id, profile)))
 PY

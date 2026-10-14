@@ -130,6 +130,12 @@ def sqrtPosBoundTensor {s : Shape} (η eps : ℝ) (xR : Tensor R s) : SpecTensor
     (fun a => eps / Real.sqrt η + ulp β fexp (Real.sqrt (max a 0)) / 2)
     (tensorToSpec (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)
 
+/-- Square-root budget valid at zero as well as on positive inputs. -/
+def sqrtBoundTensor {s : Shape} (eps : ℝ) (xR : Tensor R s) : SpecTensor s :=
+  Tensor.map
+    (fun a => Real.sqrt eps + ulp β fexp (Real.sqrt (max a 0)) / 2)
+    (tensorToSpec (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd)) xR)
+
 /--
 Per-entry bound tensor for hyperbolic tangent (`tanh`).
 

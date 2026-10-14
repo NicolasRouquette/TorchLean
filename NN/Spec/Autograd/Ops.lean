@@ -227,7 +227,7 @@ def expOp   {s : Shape} : OpSpec α s s :=
 /--
 Elementwise natural logarithm.
 
-Domain discipline: this is the raw mathematical/PyTorch-style rule. The VJP multiplies by `1/x`,
+Domain discipline: this is the raw mathematical/PyTorch-style rule. The VJP divides by `x`,
 so callers should use it only when the input is strictly positive. Runtime backends are allowed to
 reject nonpositive inputs rather than silently manufacture a gradient. Use `safeLogOp` when the
 intended model is the smooth surrogate $\log(\operatorname{softplus}(x)+\varepsilon)$.
@@ -235,7 +235,7 @@ intended model is the smooth surrogate $\log(\operatorname{softplus}(x)+\varepsi
 PyTorch analogy: `torch.log(x)`. -/
 def logOp   {s : Shape} : OpSpec α s s :=
 { forward := fun x => logSpec x
-, backward := fun x dLdy => mulSpec (invSpec x) dLdy }
+, backward := fun x dLdy => divSpec dLdy x }
 
 /--
 Elementwise smooth logarithm surrogate, $\log(\operatorname{softplus}(x)+\varepsilon)$.
@@ -288,8 +288,8 @@ usual ones for the scalar backend's power operation. -/
 def powOp {s : Shape} (rhs : Tensor α s) : OpSpec α s s :=
 { forward := fun x => powSpec x rhs
 , backward := fun x dLdy =>
-    let exponentMinusOne := subSpec rhs (Tensor.full s (1 : α))
-    let localGrad := mulSpec rhs (powSpec x exponentMinusOne)
+    let localGrad := map2Spec (fun base exponent =>
+      if exponent == 0 then 0 else exponent * base ^ (exponent - 1)) x rhs
     mulSpec localGrad dLdy }
 
 /--
@@ -303,10 +303,7 @@ PyTorch analogy: `torch.reciprocal(x)` or `1 / x`. -/
 def invOp   {s : Shape} : OpSpec α s s :=
 { forward := fun x => invSpec x
 , backward := fun x dLdy =>
-    -- d/dx (1/x) = -1/x^2
-    let x2 := squareSpec x
-    let g := mulSpec (Tensor.full _ (-(1 : α))) (invSpec x2)
-    mulSpec g dLdy
+    divSpec (divSpec (negSpec dLdy) x) x
 }
 
 /--

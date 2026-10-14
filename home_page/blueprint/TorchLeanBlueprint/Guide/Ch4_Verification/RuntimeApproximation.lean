@@ -928,13 +928,12 @@ directly:
 - AdamW records errors for both moments, bias correction, square root, adaptive division,
   decoupled weight decay, and the final subtraction.
 
-AdamW needs more than a nominal epsilon. Its theorem requires a positive lower bound on the exact
-bias-corrected second moment and explicit margins showing that rounding does not cross either the
-square-root or division boundary. This is the numerical counterpart of the recurrence in Kingma and
-Ba's Adam paper (https://arxiv.org/abs/1412.6980) and of the decoupled decay
+For AdamW, we bound the complete denominator, including epsilon, rather than requiring a positive
+second moment. The square-root estimate remains valid at zero; division needs the denominator's
+rounding error to stay below its lower bound. This is the numerical counterpart of the recurrence
+in Kingma and Ba's Adam paper (https://arxiv.org/abs/1412.6980) and of the decoupled decay
 {Informal.citet adamw2019}[] introduced. Alongside those update stages, the theorem records
-approximation budgets for the state and
-derived scalars, and domain margins for the square root and division.
+approximation budgets for the state and derived scalars, and a margin for division.
 
 ```lean (name := optimizers)
 -- Stateful optimizers must preserve the state relation as
@@ -1022,25 +1021,19 @@ derived scalars, and domain margins for the square root and division.
                 |toSpec (stateR.learningRate * stateR.weightDecay) -
                   stateS.learningRate * stateS.weightDecay| ≤
                     derivedErrors.decayScale →
-                  0 < η →
-                    0 ≤ stateS.epsilon →
-                      (have nextStepCount := stateS.stepCount + 1;
-                        have moment2 :=
-                          (stateS.secondMoment.scaleSpec stateS.beta2).addSpec
-                            (gradsS.squareSpec.scaleSpec (1 - stateS.beta2));
-                        TorchLean.Tensor.Forall (fun z => η ≤ z)
-                          (moment2.scaleSpec (1 / (1 -
-                            Optim.scalarPowNat stateS.beta2
-                            nextStepCount)))) →
-                        (adamWStepErrorTrace stateError derivedErrors
-                          paramsError gradsError η stateR paramsR
-                                gradsR).correctedSecondMoment <
-                            η →
+                  (have nextStepCount := stateS.stepCount + 1;
+                    have moment2 :=
+                      (stateS.secondMoment.scaleSpec stateS.beta2).addSpec
+                        (gradsS.squareSpec.scaleSpec (1 - stateS.beta2));
+                    have corrected := moment2.scaleSpec
+                      (1 / (1 - Optim.scalarPowNat stateS.beta2 nextStepCount));
+                    TorchLean.Tensor.Forall (fun z => η ≤ z)
+                      (corrected.sqrtSpec.addSpec (TorchLean.Tensor.full s stateS.epsilon))) →
                           (adamWStepErrorTrace stateError
                             derivedErrors paramsError gradsError η
                             stateR paramsR
                                   gradsR).denominator <
-                              √η →
+                              η →
                             have trace :=
                               adamWStepErrorTrace stateError
                                 derivedErrors paramsError
@@ -1081,18 +1074,16 @@ longest in the chapter. Five of its hypotheses are error budgets for quantities 
 than stores: `1 - beta1`, `1 - beta2`, and the two bias-correction reciprocals
 `1 / (1 - beta^(t+1))` , together with `learningRate * weightDecay` . Those are computed in floating
 point on every step, so they carry their own
-rounding, including the arithmetic used for the powers. Then come the domain
-conditions: `0 < eta` , `0 ≤ stateS.epsilon` , a `Tensor.Forall` saying the
-exact bias-corrected second moment is everywhere at least `eta`, and two strict inequalities
-requiring the accumulated error in the corrected second moment and in the denominator to stay below
-`eta` and `√eta` . The first error-margin premise is currently unused by the proof, since the
-square-root rule handles the spec's nonnegative clamp; the denominator margin is needed for
-division. These conditions are stronger than merely choosing positive epsilon: they require
-the corrected
-second moment itself to have a strictly positive lower bound, excluding a zero second moment even
-when epsilon would make the numerical division finite. An application with zero second moments
-therefore needs another estimate; positive epsilon alone does not discharge this theorem's
-hypotheses. These are domain conditions for the NF proof model, which does not model NaNs.
+rounding, including the arithmetic used for the powers. The `Tensor.Forall` hypothesis bounds
+every entry of the exact denominator, `sqrt(max correctedSecondMoment 0) + epsilon`, from below
+by `eta`. The accumulated denominator error must stay strictly below `eta`. Because the error
+bound is nonnegative, this strict margin also establishes that `eta` is positive.
+
+At a zero-gradient first step, the second moment can be zero and epsilon supplies the denominator.
+The square-root estimate uses `|sqrt(a) - sqrt(b)| ≤ sqrt(|a - b|)` for nonnegative arguments,
+so it needs no positive lower bound on the second moment. Positive epsilon still does not settle
+the whole numerical claim: the application must show that the denominator error is smaller than
+its chosen margin. These are conditions for the NF proof model, which does not model NaNs.
 
 `NumericalStepContract.run_approx` composes updates for any supplied contract. Its
 `StepStreamApprox` hypothesis relates the sequence of step inputs, and its conclusion `RunApprox`
@@ -1263,7 +1254,7 @@ These are graph-level bridge theorems:
   accumulation error model still explicit.
 - `backprop_optimizer_update_approx_graphData` applies any numerical optimizer contract to one typed
   parameter gradient produced by that executable reverse pass. SGD uses trivial step evidence;
-  AdamW supplies its bias-correction and positivity margins through `AdamWStepAssumptions`. A model
+  AdamW supplies its bias-correction and denominator margins through `AdamWStepAssumptions`. A model
   with several
   parameter tensors applies the same theorem at each parameter index.
 - `trainingStepTrace` computes a proof-free report of forward, backward, gradient, parameter, and
@@ -1302,17 +1293,17 @@ with $`\varepsilon_{p'}` equal to that computed bound, not a user-chosen test to
 SGD uses the same theorem and additionally returns a bound for the updated momentum buffer.
 
 For AdamW, the route is longer: update both moments, apply bias correction, take the second-moment
-square root, form the adaptive learning rate, apply decoupled decay, and subtract the Adam update.
+square root, form the adaptive learning rate, apply decoupled decay, and subtract the update.
 `AdamWStepErrorTrace` keeps the error after each stage, one field per stage, from
 `squaredGradient` through `parameterError`. The evidence that makes those numbers meaningful is
-`AdamWStepAssumptions`: a strictly positive `minimumSecondMoment` lying below every entry of the
-exact bias-corrected second moment, plus the `AdamWDerivedErrors` budgets for the rounded scalars
+`AdamWStepAssumptions`: `minimumDenominator` lies below every entry of
+`sqrt(max correctedSecondMoment 0) + epsilon`, alongside `AdamWDerivedErrors` for the rounded
+scalars
 `1 - beta1`, `1 - beta2`, the two reciprocal bias corrections, and the product `lr * weightDecay`.
-The validity predicate demands that the trace's `correctedSecondMoment` error stay below that margin
-and its `denominator` error below the margin's square root. The current proof uses only the latter
-error-margin condition to keep division away from zero; the former remains an unnecessary API
-premise. These are proof obligations, not executable tests. The optimizer theorem remains the same;
-only the local contract's validity evidence is richer than SGD's.
+The denominator error must remain below that margin. A square-root bound valid at zero accounts
+for the second-moment error, so a zero-gradient first step is not excluded: epsilon supplies its
+positive denominator. Nonzero moments can supply a larger margin. These are proof obligations,
+not executable tests.
 
 These proofs describe numerical recurrences for explicit states. They do not automatically cover
 the native trainer's parameter lookup, mutable moment-buffer allocation, per-parameter clocks, or

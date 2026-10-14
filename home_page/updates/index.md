@@ -3,6 +3,7 @@ title: Updates
 ---
 
 <nav class="timeline-nav" aria-label="TorchLean update timeline">
+  <a href="#october-2026-lean-435">Lean 4.35 and numerical fixes</a>
   <a href="#october-2026-custom-computations">Custom computations</a>
   <a href="#september-2026-libtorch">LibTorch backend</a>
   <a href="#september-2026-floatlib">FloatLib and precision</a>
@@ -21,6 +22,31 @@ title: Updates
 </nav>
 
 <div class="updates-timeline">
+
+<article class="update-card" id="october-2026-lean-435" markdown="1">
+  <div class="update-date">October 2026</div>
+  <div class="update-body" markdown="1">
+
+## Lean 4.35 and Numerical Fixes
+
+We updated Lean, mathlib and the documentation tools to 4.35, along with FloatLib. We also
+checked calculations near zero, at very large magnitudes and across the CPU/GPU boundary.
+Softplus now keeps small negative-tail values, log-cosh stays finite for large residuals,
+and the log and reciprocal gradients avoid unnecessary overflow in intermediate expressions.
+
+For rounded CROWN, we now use directed bounds and start propagation from the requested input box.
+ODE corridor endpoints and time bounds round outward. Typed backward passes skip unreachable
+nodes, so an unused singular calculation cannot contaminate a gradient. Reached nodes still run
+their backward rules, even when their cotangent is zero.
+
+The proof updates include binary32 reduction bounds over the tree's own representable operands,
+an AdamW denominator margin that admits a zero-gradient first step, and replay-buffer theorems
+about stored contents and FIFO order. We removed ODE wrappers whose continuous binary32
+assumption admitted only constant trajectories; real-valued interpolation needs its own stated
+enclosure and differential-equation assumptions.
+
+  </div>
+</article>
 
 <article class="update-card" id="october-2026-custom-computations" markdown="1">
   <div class="update-date">October 2026</div>

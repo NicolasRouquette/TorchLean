@@ -33,6 +33,18 @@ layout: null
     "text": "custom Lean functions CPU GPU square activation indexed reads row sum bounded folds precision source proofs"
   },
   {
+    "title": "Checking a Captured Computation",
+    "url": "{{ '/examples/verify/' | relative_url }}",
+    "section": "Examples",
+    "text": "torchlean.verify PyTorch JAX capture tensor graph mixed precision casts structure types execution output comparison"
+  },
+  {
+    "title": "JAX Computations and Lean Proofs",
+    "url": "{{ '/examples/jaxpr/' | relative_url }}",
+    "section": "Examples",
+    "text": "JAX Jaxpr import tensor program sum squares permutation invariance Lean proof mixed precision constants"
+  },
+  {
     "title": "Numerical Runtime Certificates",
     "url": "{{ '/examples/numerical-runtime/' | relative_url }}",
     "section": "Examples",

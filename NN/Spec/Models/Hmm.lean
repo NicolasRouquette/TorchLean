@@ -157,7 +157,7 @@ normalization does not guarantee a floating-point sum of exactly one.
 def normalizeVec {n : Nat} (v : Tensor α [n]) : (Tensor α [n] × α) :=
   let s := sumSpec v
   if s > 0 then
-    (scaleSpec v (1 / s), s)
+    (divSpec v (Tensor.full [n] s), s)
   else
     (uniformVec (α := α) (n := n), 0)
 
@@ -257,7 +257,7 @@ private def hmmBackwardScaled
             Tensor.scalar (sumSpec sumOverJ))
         let beta :=
           if nextStep.scale > 0 then
-            scaleSpec betaRaw (1 / nextStep.scale)
+            divSpec betaRaw (Tensor.full [nStates] nextStep.scale)
           else
             betaRaw
         (some (beta, current), beta)).2
@@ -300,7 +300,7 @@ private def xiAt {nStates nObservations : Nat}
           (alpha_t.getScalar i * aij * emitNext.getScalar j * beta_next.getScalar j)))
   -- Normalize so each ξ_t sums to 1 (helps control roundoff).
   let s := sumSpec xiRaw
-  if s > 0 then scaleSpec xiRaw (1 / s) else xiRaw
+  if s > 0 then divSpec xiRaw (Tensor.full [nStates, nStates] s) else xiRaw
 
  /-- Sum $\xi_t(i,j)$ over an array of $\xi$ matrices (expected transition count). -/
 private def sumXi

@@ -5,7 +5,7 @@ website. Run commands from the repository root; use `--help` on the command-line
 
 | Path | Purpose |
 | --- | --- |
-| `lake.sh` | Run Lake with separate `cpu` and `cuda-libtorch` build caches. |
+| `lake.sh` | Run Lake with separate build caches for each toolchain and CPU/LibTorch profile. |
 | `libtorch_build.py` | Build and cache the complete LibTorch C++ backend through SDK CMake. |
 | `checks/repo_lint.py` | Check source hygiene, public interfaces, and documentation references. |
 | `checks/dependency_audit.py` | Inspect imports and check library dependency boundaries. |

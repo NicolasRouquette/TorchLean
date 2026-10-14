@@ -18,9 +18,8 @@ operation with exact real arithmetic. The enclosure predicates and the two `Lawf
 form in which CROWN theorems ask for that guarantee, and `ℝ` itself is the instance where the
 guarantee is trivial because no rounding happens.
 
-Naming `ℝ` alongside `Real.exp`, `Real.log`, and `Real.sqrt` costs roughly 1700 mathlib modules, so
-the split is deliberate: certificate replay, the graph checker, and the trainer only ever run the
-executable interface and stop at `BoundOps`, while the soundness proofs continue on to this file.
+The real-analysis dependencies belong to the soundness proofs. Certificate replay, the graph
+checker, and the trainer use the executable `BoundOps` interface without importing this file.
 -/
 
 @[expose] public section

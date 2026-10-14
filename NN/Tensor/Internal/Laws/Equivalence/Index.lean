@@ -301,13 +301,6 @@ theorem linearize_equivCast
 
 namespace Rearrangement.Impl
 
-/-- Ordinary dependent transport and `Equiv.cast` are the same operation. -/
-theorem cast_eq_equivCast {α β : Sort u}
-    (h : α = β) (value : α) :
-    cast h value = Equiv.cast h value := by
-  cases h
-  rfl
-
 /-- Casting a tensor shape equals reindexing along the induced coordinate cast. -/
 theorem cast_tensor_eq_reindex {α : Type u} [Storage α]
     {sourceShape targetShape : Shape}

@@ -156,8 +156,8 @@ scripts/lake.sh -Kcuda=true exe torchlean gpt2 --device cuda --tiny-shakespeare 
 Once we've trained the model, we can save its state for another run. TorchLean's checkpoint
 format stores the shape-indexed state in JSON and preserves the exact IEEE-754 bit patterns.
 
-`gpt2_saved` is a separate example because it loads a state pack, checks that the shapes
-match the model architecture, and runs sampling without touching an optimizer.
+`gpt2_saved` loads a state pack, checks its checkpoint format and tensor shapes,
+and samples without opening an optimizer. Those checks do not establish architecture identity.
 
 The GPT-2 command writes a checkpoint through `--save-checkpoint`; the inference example reloads
 the same shape-indexed state before sampling. If the shape list no longer matches

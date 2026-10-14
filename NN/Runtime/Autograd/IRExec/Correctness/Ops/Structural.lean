@@ -92,13 +92,11 @@ theorem buildFrom_denoteAllFrom_detach
           cases hP : g.getNode pId with
           | error msg =>
               simp [hp, hP] at hBuild
-              try cases hBuild
           | ok pNode =>
               simp (config := { failIfUnchanged := false }) [hp, hP] at hBuild
               cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId pNode.outShape with
               | error msg =>
                   simp [hIdx] at hBuild
-                  try cases hBuild
               | ok ip =>
                   simp [hIdx] at hBuild
                   by_cases hOut : pNode.outShape = n.outShape

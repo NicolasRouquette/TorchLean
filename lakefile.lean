@@ -126,9 +126,11 @@ target torchlean_allocator pkg : FilePath := do
   let lean ← getLeanInstall
   let buildScript := pkg.dir / "scripts/lean_allocator.py"
   let scriptJob ← inputFile buildScript false
+  let runtimeJob ← inputFile (pkg.dir / "csrc/runtime/allocator.cpp") false
+  let runtimeHeaderJob ← inputFile (lean.includeDir / "lean/lean.h") false
   let compatJob ← inputFile (pkg.dir / "csrc/runtime/lean_libc_compat.h") false
   let headerJob ← inputFile (lean.includeDir / "lean/mimalloc.h") false
-  let deps := scriptJob.mix (compatJob.mix headerJob)
+  let deps := scriptJob.mix (runtimeJob.mix (runtimeHeaderJob.mix (compatJob.mix headerJob)))
   let compilerJob ← nativeCompilerJob "c++"
   compilerJob.bindM fun compiler => do
     let output := pkg.buildDir / "torchlean_allocator.o"
@@ -182,7 +184,7 @@ lean_exe verify where
 lean_exe nn_tests_suite where
   root := `NN.Tests.Suite
 
--- Cross-runtime numerical regression tools.
+-- Developer-only cross-runtime regression tools, outside the public NN import surface.
 lean_exe pytorch_export_check where
   root := `NN.Tests.Interop.PyTorchMain
 
@@ -205,8 +207,8 @@ require floatlib from git
 
 -- Complete API documentation (HTML) via `scripts/lake.sh build TorchLeanDocs:docs`.
 require «doc-gen4» from git
-  "https://github.com/leanprover/doc-gen4" @ "v4.34.0"
+  "https://github.com/leanprover/doc-gen4" @ "v4.35.0"
 
 -- Keep `mathlib` last so Mathlib’s dependency versions win, which is required for cache tooling.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.34.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"

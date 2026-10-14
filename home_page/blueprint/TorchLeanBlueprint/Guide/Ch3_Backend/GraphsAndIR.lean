@@ -81,6 +81,8 @@ The kernel-selection branch produces metadata that must later be connected to ru
 `TorchLean.Program` is an operation-polymorphic function, not a stored graph. The
 broad `lowerForwardToIR` pass executes that function with an IR-building interpreter and validates
 the graph it produces. It does not by itself carry an end-to-end source-lowering theorem.
+Stable log-softmax and GELU currently return lowering errors, rather than replacing them with
+numerically different expansions. Eager and typed-graph execution still support both operations.
 
 The theorem-backed source path is deliberately separate:
 

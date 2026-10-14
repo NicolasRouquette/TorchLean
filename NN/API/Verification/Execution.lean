@@ -17,6 +17,10 @@ public import NN.Verification.Builtin.Lowering -- shake: keep
 
 Implementation support for the public `trained.verify` operation. The public named arguments are
 lowered into a verifier input region and returned as a validated `Verification.Report`.
+The bounds concern the recorded verifier graph. The broad lowering does not attach a
+finite-precision source-equivalence theorem: one-hot slicing and leading-axis selection can
+change signed zeros and exceptional values, including in multi-sample attention. Applying a
+report to the original execution needs that separate correspondence argument.
 
 Applications should import `NN.API.Verification` and call
 `trained.verify center (radius := r) (norm := .inf)`. Direct verifier graph construction remains
@@ -60,6 +64,8 @@ Build the verification closure retained by an ordinary trained result.
 
 The closure captures the completed parameter snapshot, so subsequent updates to the training
 session cannot change the model being verified.
+The returned report describes the lowered graph; it does not resolve the source-correspondence
+restriction on its one-hot slicing and selection operations.
 -/
 def forState {σ τ : Shape} {α : Type}
     [TorchLean.Storage α] [Context α]

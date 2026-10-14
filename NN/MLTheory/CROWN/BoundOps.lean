@@ -149,12 +149,13 @@ def max4 (a b c d : α) : α :=
 def denominatorAvoidsZero (lo hi : α) : Bool :=
   decide (lo > 0) || decide (0 > hi)
 
-/-- A coarse softplus enclosure that stays finite without evaluating an exponential.
+/-- A coarse softplus enclosure that avoids evaluating an exponential.
 
 For a real input, `max x 0 ≤ softplus x ≤ max x 0 + 1`: after the sign branch, the
 remaining logarithm lies between zero and `log 2 < 1`. Directed addition therefore gives an
-enclosure even when an endpoint is too large for an exponential-based transfer. The graph checker
-can use this range as a constant affine bound on every backend that supplies directed arithmetic. -/
+enclosure even when an endpoint is too large for an exponential-based transfer. The upper
+endpoint can still overflow during directed addition. The graph checker can use this range as a
+constant affine bound on every backend that supplies directed arithmetic. -/
 def softplusBounds [BoundOps α] (lo hi : α) : Option (α × α) :=
   some (BoundOps.max2 lo 0, BoundOps.addUp (BoundOps.max2 hi 0) 1)
 
@@ -248,8 +249,8 @@ def nextDown (x : Float) : Float :=
 `a + b` rounded toward `+∞`, without widening an exact sum.
 
 The Knuth two-sum error term is exact for finite operands under round-to-nearest, so the rounded
-sum steps up one ulp only when it lies below the exact sum. On overflow the error term is NaN and
-the infinite rounded sum is returned unchanged.
+sum steps up one ulp only when it lies below the exact sum. Finite negative overflow returns the
+largest-magnitude negative finite value, as required by rounding toward `+∞`.
 
 Unlike `instBoundOpsFloat`, which always widens, this keeps exact `center + radius` endpoints when
 JSON input boxes are decoded (`NN.Verification.Util.Json`); only the two directions that decoder
@@ -257,6 +258,7 @@ needs are provided.
 -/
 def addUpTight (a b : Float) : Float :=
   let s := a + b
+  if a.isFinite && b.isFinite && s.toBits == negInfBits then nextUp s else
   let bv := s - a
   let err := (a - (s - bv)) + (b - bv)
   if err > 0 then nextUp s else s
@@ -264,6 +266,7 @@ def addUpTight (a b : Float) : Float :=
 /-- `a - b` rounded toward `-∞`, without widening an exact difference; see `addUpTight`. -/
 def subDownTight (a b : Float) : Float :=
   let s := a - b
+  if a.isFinite && b.isFinite && s.toBits == posInfBits then nextDown s else
   let bv := s - a
   let err := (a - (s - bv)) + (-b - bv)
   if err < 0 then nextDown s else s

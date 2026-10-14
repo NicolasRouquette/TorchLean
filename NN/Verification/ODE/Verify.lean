@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.Verification.Util.Json
+public import NN.API.Arithmetic
 public import NN.Verification.ODE.Parse
 public import NN.API.CLI.Parser
 public import NN.Verification.Builtin.Lowering.API
@@ -413,14 +414,13 @@ private def buildDerivativeGraph1D {α : Type} [TorchLean.Storage α] [Context �
         throw <| IO.userError s!"buildDerivativeGraph1D: output node {outId} out of bounds"
   pure (dg, st.ps, dOutId)
 
-/-- Seed the time endpoints directly, avoiding the rounding introduced by a center/radius
-roundtrip. Conversion into the selected arithmetic backend still uses `ofFloat`. -/
+/-- Seed time endpoints outward, without a center/radius round trip. -/
 private def seedInput1D {α : Type} [TorchLean.Storage α] [Context α]
-    (ps : ParamStore α) (ofFloat : Float → α) (I : Interval) : ParamStore α :=
+    [TorchLean.Runtime.FromFloat α] (ps : ParamStore α) (I : Interval) : ParamStore α :=
   ps.seedInputBox 0
     { dim := 1
-      lo := Tensor.full [1] (ofFloat I.lo)
-      hi := Tensor.full [1] (ofFloat I.hi) }
+      lo := Tensor.full [1] (TorchLean.Runtime.ofFloatDirected false I.lo)
+      hi := Tensor.full [1] (TorchLean.Runtime.ofFloatDirected true I.hi) }
 
 /--
 Compute bounds for `u(t)` and `du/dt` on a time interval.
@@ -428,10 +428,10 @@ Compute bounds for `u(t)` and `du/dt` on a time interval.
 This evaluates IBP over the derivative graph `m.dg` after seeding the converted endpoints of `I`.
 -/
 private def boundsOn {α : Type} [TorchLean.Storage α] [Context α] [BoundOps α]
-    (ofFloat : Float → α) (m : CorridorModel α) (I : Interval) : IO (Bounds α) := do
+    [TorchLean.Runtime.FromFloat α] (m : CorridorModel α) (I : Interval) : IO (Bounds α) := do
   if m.inDim ≠ 1 then
     throw <| IO.userError s!"ODE verifier expects inputDim=1, got {m.inDim}"
-  let ps := seedInput1D (α := α) m.baseParams ofFloat I
+  let ps := seedInput1D (α := α) m.baseParams I
   let ibp := runIBP (α:=α) m.dg ps
   let outB ←
     match NN.MLTheory.CROWN.Graph.outputBox? ibp m.outId with
@@ -863,14 +863,16 @@ Verify a single time interval by bounding `u₋, u₊, du₋, du₊` and checkin
 Returns `(ok, msg)` where `msg` is a short debug string explaining the first failing check.
 -/
 private def verifyInterval {α : Type} [TorchLean.Storage α] [Context α] [BoundOps α] [ToString α]
+    [TorchLean.Runtime.FromFloat α]
     (ofFloat : Float → α) (rhs : Expr) (mL mU : CorridorModel α) (I : Interval)
     (config : ODEVerifierSettings) : IO (Bool × String) := do
-  let bL ← boundsOn (α := α) ofFloat mL I
-  let bU ← boundsOn (α := α) ofFloat mU I
+  let bL ← boundsOn (α := α) mL I
+  let bU ← boundsOn (α := α) mU I
   let slackA : α := ofFloat config.slack
   if ¬checkOrder (α := α) bL.u bU.u slackA then
     return (false, s!"order failed on {I}: uL∈{showPair bL.u} not ≤ uU∈{showPair bU.u}")
-  let tBox := (ofFloat I.lo, ofFloat I.hi)
+  let tBox := (TorchLean.Runtime.ofFloatDirected (α := α) false I.lo,
+    TorchLean.Runtime.ofFloatDirected (α := α) true I.hi)
   let envL : NN.Verification.ODE.Env α := { t := tBox, u := bL.u }
   let envU : NN.Verification.ODE.Env α := { t := tBox, u := bU.u }
   let some fL := NN.Verification.ODE.eval (α := α) ofFloat envL rhs
@@ -890,7 +892,7 @@ If `verifyInterval` fails on `I`, this splits the interval and recurses until ei
 succeeds everywhere or we hit `(depth = 0)` / the `minWidth` cutoff.
 -/
 private partial def verifySegmentRecursive {α : Type} [TorchLean.Storage α] [Context α] [BoundOps α]
-    [ToString α]
+    [ToString α] [TorchLean.Runtime.FromFloat α]
     (ofFloat : Float → α) (rhs : Expr) (mL mU : CorridorModel α) (I : Interval)
     (config : ODEVerifierSettings) (depth : Nat) : IO Bool := do
   let (ok, msg) ← verifyInterval (α := α) ofFloat rhs mL mU I config
@@ -922,7 +924,7 @@ Verify a full certificate segment: check initial conditions at `t0`, then recurs
 This loads both corridor networks and then recursively verifies `seg.t`.
 -/
 private def verifySegmentWith {α : Type} [TorchLean.Storage α] [Context α] [BoundOps α]
-    [ToString α]
+    [ToString α] [TorchLean.Runtime.FromFloat α]
     (ofFloat : Float → α) (loadModel : ModelBackend → String → IO (CorridorModel α))
     (rhs : Expr) (seg : ODECertificateSegment) (config : ODEVerifierSettings) : IO Bool := do
   if config.verbose then
@@ -933,11 +935,11 @@ private def verifySegmentWith {α : Type} [TorchLean.Storage α] [Context α] [B
   let mU ← loadModel config.modelBackend seg.upperWeights
   let slackA : α := ofFloat config.slack
   let t0I : Interval := { lo := seg.t.lo, hi := seg.t.lo }
-  let bL0 ← boundsOn (α := α) ofFloat mL t0I
-  let bU0 ← boundsOn (α := α) ofFloat mU t0I
+  let bL0 ← boundsOn (α := α) mL t0I
+  let bU0 ← boundsOn (α := α) mU t0I
   let (iLoF, iHiF) := seg.init
-  let iLo : α := ofFloat iLoF
-  let iHi : α := ofFloat iHiF
+  let iLo : α := TorchLean.Runtime.ofFloatDirected false iLoF
+  let iHi : α := TorchLean.Runtime.ofFloatDirected true iHiF
   if !Ival.leBool bL0.u.2 iLo then
     IO.eprintln s!"[ODE] FAIL initial: uL(t0)∈{showPair bL0.u} not ≤ init.lo={iLoF}"
     return false

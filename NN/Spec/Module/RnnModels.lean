@@ -162,13 +162,13 @@ def StackedModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
     (inputs : Tensor α [seqLen, inputSize])
     (initialHiddens : model.layers.States (fun width => Tensor α [width])) :
     Tensor α [seqLen, outputSize] × model.layers.States (fun width => Tensor α [width]) :=
-  let (hidden, finalStates) := model.layers.run
+  let (outputs, finalStates) := model.layers.run
     (fun cell input state =>
       let outputs := rnnSequenceSpec cell input state
       let finalState := if h : seqLen = 0 then state else
         get outputs ⟨seqLen - 1, Nat.sub_one_lt h⟩
       (outputs, finalState)) inputs initialHiddens
-  (Tensor.mapLeading [seqLen] (linearSpec model.outputLayer) hidden, finalStates)
+  (Tensor.mapLeading [seqLen] (linearSpec model.outputLayer) outputs, finalStates)
 
 /--
 Bundle of parameters for a many-to-one RNN classifier.

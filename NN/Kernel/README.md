@@ -79,6 +79,12 @@ programs. Recognition has a finite
 traversal budget. If a recognized expression's equivalence
 cannot be proved, it is rejected rather than accepted through an axiom.
 
+GPU compilation also checks that the arithmetic used in this proof is the arithmetic of
+TorchLean's selected scalar encoding. Locally redefining `+`, for example, must not silently turn
+into CUDA addition. The frontend rejects overridden operations and variable scalar dictionaries;
+ordinary CPU functions can still use them. Manually supplying a custom `Scalar` dictionary is an
+extension trust boundary, not a proof of its device implementation.
+
 ## Recording a calculation for differentiation
 
 We can record an ordinary function without changing its definition:

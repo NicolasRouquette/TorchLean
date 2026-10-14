@@ -373,12 +373,11 @@ The documentation build checks that its elaborated examples and imports remain v
 Sanitizer checks the tested binaries with `memcheck`, `racecheck`, `initcheck`, and `synccheck`;
 its results are specific to the executions it observes.
 
-Read the coverage of these commands as carefully as their results. `verify -- all` runs ten
-sections, while `verify -- list` registers twenty-four tools, so a green `all` leaves fourteen
-registered tools untouched, including every `torchlean-*` workflow and the two-stage Lyapunov
-pipelines and `crown-query`. The `includeInAll` fields in
-{src "NN/Verification/CLI.lean"}[the command registry] specify this scope; success is not a claim
-that the excluded tools passed. The same
+Read the coverage of these commands as carefully as their results. `verify -- all` runs the
+bundled checks whose registry entries opt in. It excludes every `torchlean-*` workflow, the
+two-stage Lyapunov pipelines, `crown-query`, and the imported-IR checker. The `includeInAll`
+fields in {src "NN/Verification/CLI.lean"}[the command registry] specify this scope;
+success is not a claim that the excluded tools passed. The same
 applies inside a section: `margin-report` finishes with
 
 ```terminal +output
@@ -685,7 +684,7 @@ flag before starting its computation.
 The first is elaboration. A shape error in a matrix product is not a runtime failure; the file does
 not compile. Here is a two by three tensor multiplied by itself:
 
-```lean (name := ccMM) +error
+```lean (name := ccMM) +error -keep
 -- A two-by-three matrix cannot multiply itself: the
 -- contracted dimensions disagree.
 def ccA : Tensor Float [2, 3] :=

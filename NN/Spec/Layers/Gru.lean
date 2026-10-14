@@ -282,13 +282,13 @@ def gruExtractIntermediateValues {seqLen inputSize hiddenSize : Nat}
    Tensor α [seqLen, hiddenSize] ×  -- newCandidates
    Tensor α [seqLen, hiddenSize]) := -- resetHiddens
   let (_, saved) := Sequence.mapAccum seqLen initialHidden fun i previous =>
-    let (hidden, reset, update, candidate, resetHidden) :=
+    let (next, reset, update, candidate, resetHidden) :=
       gruCellSpecWithIntermediates gru (get inputs i) previous
-    (hidden, (hidden, reset, update, candidate, resetHidden))
+    (next, (next, reset, update, candidate, resetHidden))
 
   let hiddenStates := Tensor.dim fun i =>
-    let (hidden, _, _, _, _) := saved.getScalar i
-    hidden
+    let (next, _, _, _, _) := saved.getScalar i
+    next
   let resetGates := Tensor.dim fun i =>
     let (_, reset, _, _, _) := saved.getScalar i
     reset

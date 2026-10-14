@@ -11,14 +11,16 @@ Ordinary model code should usually `import NN.API`.
 ## One Tensor Type
 
 `Tensor α shape` is the single shape-indexed representation used for proofs and CPU execution.
-Every value owns one contiguous row-major buffer whose length is certified by its static shape.
-The proof is erased by code generation.
+Every value stores its entries in one row-major buffer whose length is certified by its static
+shape. The proof is erased by code generation. Whether scalar values are contiguous and unboxed
+depends on their storage instance.
 
 `Storage α` selects the physical buffer:
 
 - `Float` uses `FloatArray`.
 - `UInt8` uses `ByteArray`.
-- Arbitrary element types, including proof-oriented types, use `Array α`.
+- Arbitrary element types, including `Float32` and proof-oriented types, use `Array α`, which
+  may hold boxed values.
 
 The tensor also acts as a total coordinate function in statements and proofs. This observation view
 does not allocate a second recursive tensor.

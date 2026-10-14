@@ -11,7 +11,7 @@ nonnegative tolerance. A cuboid has eight corners, but the certificate also supp
 counts.
 
 <div class="media-slab">
-  <img src="{{ '/assets/media/examples/showcase/geometry3d-vision-certificates.png' | relative_url }}" alt="3D vision projection certificate workflow"/>
+  <img src="{{ '/assets/media/examples/showcase/projection-certificate-workflow.png' | relative_url }}" alt="Export a projection matrix, 3D points and image box, then check projected depth and enclosure"/>
 </div>
 
 The illustration sketches the workflow. Here we check projection and enclosure for the supplied

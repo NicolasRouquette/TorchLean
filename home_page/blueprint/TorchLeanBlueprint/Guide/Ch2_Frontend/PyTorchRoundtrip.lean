@@ -25,9 +25,9 @@ Suppose we train a `2 → 3 → 1` MLP in PyTorch {Informal.citep pytorch2019}[]
 its learned weights in Lean. Four tensors must cross over: two weight matrices and two biases.
 Their names and nested dimensions tell the importer which field each tensor should fill.
 
-The importer reconstructs known model families with specified parameter layouts. It does not
-reconstruct arbitrary `nn.Module` objects, so the expected architecture must be supplied on the
-Lean side.
+These weight importers reconstruct known model families with specified parameter layouts. They do
+not reconstruct arbitrary `nn.Module` objects, so that path needs the expected architecture on the
+Lean side. Captured graphs use a separate adapter and the shared IR parser.
 
 The checked-in
 {src "NN/Examples/Interop/PyTorch/Roundtrip.lean"}[round-trip program]
@@ -38,6 +38,87 @@ family record or rejects it.
 
 Named Lean blocks are checked while this page is built. Shell and Python transcripts are recorded
 runs with separate reproduction commands; they are not executed automatically by the guide build.
+
+# Checking a captured computation
+
+The shared IR describes tensor programs, not only neural networks. An ordinary tensor function
+can have inputs, constants, casts, array operations and results without layers, trainable
+parameters or a loss. Both capture adapters use this interface; operation coverage, rather than
+the presence of a model class, determines what can be imported.
+
+The Python entry point `torchlean.verify(model, *inputs)` captures a PyTorch function or module,
+then asks the Lean IR checker to validate its structure and element types. Add
+`checks=("structure", "types", "compare")` to compare CPU reference execution with the frontend
+on that input. Casts, tensor promotions, broadcasts, and binary constants remain explicit in the
+artifact. Linear parameters are loaded at their declared precision from complete binary words.
+
+The ordered tensor interface is shared by both frontends. PyTorch capture reads user argument
+order from the export graph signature, separately from lifted parameters and constants.
+Unused arguments remain in that interface. Each argument retains its own shape and dtype;
+the IR does not require one global scalar type for the model.
+
+The report names each requested check and its scope. A sample comparison is not an all-input
+theorem, and an unsupported request cannot silently become a shape check. Frontend equivalence,
+external kernels, and captured physical device/layout constraints remain outside these checks.
+The same entry point accepts `frontend="jax"` or a typed artifact dictionary from another producer.
+See the {src "home_page/examples/verify/index.md"}[captured-computation example] for runnable code.
+
+Element descriptors preserve configured binary and decimal formats, integer and posit widths,
+complex component types, and named representations. The shared decoder validates their parameters;
+it does not select an implementation. Typed custom calls also carry shape and element-type
+signatures. The interpreter checks those signatures and requires a supplied implementation;
+the default reference executes binary arithmetic and supplies Boolean and arbitrary-width integer
+storage for layout operations. Integer arithmetic, cross-type integer casts, other element
+families and unimplemented custom calls are rejected.
+
+# Captured graphs from JAX
+
+Weights are not the only useful artifact we can bring into Lean. A captured tensor computation
+also tells us which operations use those weights. The Jaxpr adapter in
+{src "NN/Runtime/JAX/jaxpr.py"}[`jaxpr.py`] lowers a static tensor computation to the
+same graph format used by the PyTorch and ONNX adapters. The Lean entry point is
+`Import.JAX.parseProgram`, from `NN.Runtime.JAX`. It checks a type for each node as well as
+dependencies and shapes. `Import.JAX.parseGraph` retains the homogeneous, scalar-polymorphic path.
+
+Arguments may have different shapes and element types. `export(function, *inputs)` and
+`torchlean.verify(function, *inputs, frontend="jax")` preserve their positional order.
+Version-two artifacts list those arguments in `input_ids`; one-input captures still use
+version one. The shared parser checks the complete interface, including unused arguments,
+and execution requires the declared number, shapes and types of tensor arguments.
+This interface is independent of the model architecture. Nested input containers require
+their own explicit type rules.
+
+For example, `jnp.sum(x * x)` becomes an input, an elementwise multiplication, and a scalar sum.
+The companion
+{src "NN/Examples/Interop/JAX.lean"}[Lean example] proves that this graph's real-valued evaluation
+is unchanged by any permutation of a vector's entries, for any vector length. It first connects
+the graph evaluator to the tensor formula, then reuses the finite-sum reindexing theorem. This
+is a property of the graph's Lean semantics, not a proof of the Python translation or XLA kernels.
+
+The Python example captures a small MLP, sums, broadcasts, reshapes, a batched contraction,
+and several returned tensors, reporting unsupported entries separately. Capture it with
+`python3 NN/Examples/Interop/JAX/export.py /tmp/torchlean-jax-examples`, then run
+`scripts/lake.sh exe torchlean jaxpr /tmp/torchlean-jax-examples/mlp.json`.
+The runner checks the graph and compares homogeneous examples using native Lean binary64 arithmetic.
+
+For mixed precision, a Jaxpr conversion becomes an explicit cast in `NN.IR.Program`. Constants
+carry their complete binary words. `NN.IR.Interpreter.binary` executes the same graph using
+FloatLib at each declared precision, and `NN.IR.Binary.cast_value` connects its conversions to
+FloatLib's directed-rounding specification. Try `mixed_precision.json`, `float16_sum.json`, or
+`bfloat16_sum.json`; the runner compares their recorded results by interchange word. These examples
+do not establish equivalence with every XLA execution or reduction schedule. Jaxpr capture also
+preserves Boolean, integer and complex descriptors and exact constant words for type and shape
+checks. The default reference also executes Boolean and fixed-width integer layout operations;
+the explicit binary-only interpreter used by the companion remains separate. Integer arithmetic
+and complex execution need further implementations. Dynamic control flow and
+heterogeneous contractions with separate accumulation types are rejected until their rules are
+represented explicitly.
+
+JAX division is currently rejected rather than replaced by reciprocal multiplication, which
+changes rounding and exceptional values. This also excludes mean and LayerNorm expansions.
+Square root needs a structurally nonnegative operand because the IR clamps negative inputs.
+The softmax expansion's `reduce_max` is unsupported, so conventional attention using that
+expansion cannot yet be imported.
 
 # Round-Trip Contract
 

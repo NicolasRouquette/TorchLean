@@ -303,12 +303,12 @@ lets us compare parameter layouts while keeping the external input and output sh
 -- while the public [2] → [1] map stays
 -- fixed.
 /-- The running example, given a hidden width. -/
-def bmMlp (hidden : Nat) :
+def bmMlp (width : Nat) :
     nn.Builder (nn.Sequential [2] [1]) :=
   nn.Sequential![
-    nn.linear 2 hidden,
+    nn.linear 2 width,
     nn.relu,
-    nn.linear hidden 1
+    nn.linear width 1
   ]
 
 #eval nn.printSummary (nn.build 2026 (bmMlp 8))
@@ -394,7 +394,7 @@ Two kinds of mistake are possible in a model definition, and TorchLean reports t
 places. The first kind breaks composition, so it is a type error. Insert a layer whose input width
 does not match the previous output:
 
-```lean +error (name := bmMiddle)
+```lean +error -keep (name := bmMiddle)
 -- The inserted layer expects nine hidden entries, but its
 -- predecessor supplies eight.
 def bmMiddle :

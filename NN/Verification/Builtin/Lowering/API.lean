@@ -22,10 +22,11 @@ interpreter, then checks the graph's structure and shapes. A successful result i
 ready for verifier passes, but does not by itself prove equality with the source program. The
 theorem-backed source fragment lives under `NN.Verification.Builtin.Proved`.
 
-In particular, the builder's softmax-then-log expansion does not retain stable log-softmax
-behavior under finite precision. Its one-hot matrix encoding of slicing also performs arithmetic
-instead of direct indexing. Structural validation does not establish numerical equivalence for
-either expansion.
+GELU and stable log-softmax are rejected rather than replaced by numerically different
+expansions. The one-hot matrix encoding of slicing performs arithmetic instead of direct indexing;
+structural validation does not establish numerical equivalence for that encoding.
+Clamp preserves the source operand order, but rejects scalar contexts whose `stopGradient?`
+requires conditional differentiation-metadata clearing at the bounds.
 -/
 
 @[expose] public section

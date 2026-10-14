@@ -216,24 +216,10 @@ theorem push_comp {α : Type u} [Storage α] [AddCommMonoid α]
       (Σ middleCoordinate : Fiber g outputCoordinate,
         Fiber f middleCoordinate.1) ≃
         Fiber (g ∘ f) outputCoordinate :=
-    { toFun := fun coordinate =>
-        ⟨coordinate.2.1, by
-          change g (f coordinate.2.1) = outputCoordinate
-          rw [coordinate.2.2]
-          exact coordinate.1.2⟩
-      invFun := fun inputCoordinate =>
-        ⟨⟨f inputCoordinate.1, inputCoordinate.2⟩,
-          ⟨inputCoordinate.1, rfl⟩⟩
-      left_inv := fun coordinate => by
-        rcases coordinate with
-          ⟨⟨middleCoordinate, middleProperty⟩,
-            ⟨inputCoordinate, inputProperty⟩⟩
-        change f inputCoordinate = middleCoordinate at inputProperty
-        subst middleCoordinate
-        rfl
-      right_inv := fun inputCoordinate => by
-        rcases inputCoordinate with ⟨inputCoordinate, inputProperty⟩
-        rfl }
+    Equiv.sigmaSubtypeFiberEquivSubtype f
+      (p := fun inputCoordinate => g (f inputCoordinate) = outputCoordinate)
+      (q := fun middleCoordinate => g middleCoordinate = outputCoordinate)
+      (fun _ => Iff.rfl)
   change
     (∑ middleCoordinate : Fiber g outputCoordinate,
       ∑ inputCoordinate : Fiber f middleCoordinate.1,

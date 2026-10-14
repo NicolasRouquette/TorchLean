@@ -54,7 +54,7 @@ example :
     Infer.nodeOutShape
       (node (.maxPool (squareWindowConfig 3 1 0)) smallSpatialInput) #[smallSpatialInput] =
       .ok (.dim 1 (.dim 0 (.dim 0 .scalar))) := by
-  decide
+  rfl
 
 example :
     (Infer.nodeOutShape
@@ -67,7 +67,7 @@ example :
         (node (.broadcastTo .scalar (.dim 3 .scalar)) (.dim 3 .scalar))
         #[.scalar] =
       .ok (.dim 3 .scalar) := by
-  decide
+  rfl
 
 example :
     (Infer.nodeOutShape (node (.layernorm 1) (.dim 0 .scalar)) #[.dim 0 .scalar]).isOk =

@@ -344,41 +344,17 @@ enclosure theorem bounds the error of
 whichever schedule that was:
 
 ```lean (name := sumTreeEnc)
--- Read the reduction-order witness and the local rounding
--- assumption together.
-#check @IEEE32Exec.sumTreeResult_enclosure
-```
-```leanOutput sumTreeEnc (whitespace := lax)
-IEEE32Exec.sumTreeResult_enclosure : ∀
-  (xs :
-    Array
-      (ExecFloat.Binary 8 23 FloatFormat.Encoding.ieee (FloatFormat.Encoding.ieee.defaultBias 8)
-        IEEE32Exec.evalIEEE._proof_1 IEEE32Exec.evalIEEE._proof_2 IEEE32Exec.evalIEEE._proof_3
-        IEEE32Exec.evalIEEE._proof_4))
-  (r :
-    ExecFloat.Binary 8 23 FloatFormat.Encoding.ieee (FloatFormat.Encoding.ieee.defaultBias 8)
-      IEEE32Exec.evalIEEE._proof_1 IEEE32Exec.evalIEEE._proof_2 IEEE32Exec.evalIEEE._proof_3
-      IEEE32Exec.evalIEEE._proof_4),
-  IEEE32Exec.sumTreeResult xs r →
-    ∀ (u : ℝ),
-      RelativeLocalAddBound (fun a b => Model.roundAt FloatFormat.binary32 (a + b)) u →
-        0 ≤ u →
-          ∃ t,
-            t.leaves.toList.Perm xs.toList ∧
-              IEEE32Exec.evalIEEE t = r ∧
-                |r.toModel.toReal - IEEE32Exec.exactSumIEEE t| ≤
-                  (ReductionBound.growth u t.leafCount - 1) * IEEE32Exec.sumAbsIEEE t
+-- Binary32 uses the tree's own representable operands.
+#check @IEEE32Exec.sumTreeResult_enclosure_binary32
 ```
 
-The hypothesis `RelativeLocalAddBound` needs particular care. It quantifies over *all real*
-operands, not just the intermediates of this execution. For gradual-underflow FP32 rounding, the
-usual $`u=2^{-24}` does not satisfy that global hypothesis near zero. Proving that one tree has
-normal intermediate sums does not supply this universally quantified premise. Consequently this
-theorem alone cannot be instantiated with the usual unit roundoff to certify the measured table.
-A usable normal-path result would need a premise restricted to the tree's intermediates, or an
-absolute/mixed rounding model that handles underflow.
+This corollary uses $`u=2^{-24}` and requires finite inputs and finite intermediate sums. It reuses
+FloatLib's addition bound on the tree's own representable binary32 operands, including subnormal
+sums. It does not assume a relative rounding bound for arbitrary real operands. That distinction
+matters near zero: the generic `sumTreeResult_enclosure` takes a universally quantified
+`RelativeLocalAddBound`, which the usual unit roundoff cannot supply there.
 
-Under its stated hypothesis, `ReductionBound.growth u t.leafCount` is $`(1+u)^{n-1}` for $`n`
+`ReductionBound.growth u t.leafCount` is $`(1+u)^{n-1}` for $`n`
 leaves. It does not depend on tree depth, so it charges the same factor to a balanced schedule and
 a sequential one. A sharper logarithmic-depth bound requires another theorem. The current library
 also does not provide a complete compensated-summation error contract. Its proved Sterbenz
@@ -386,6 +362,10 @@ subtraction lemma is a useful ingredient, but does not by itself prove the Kahan
 
 The witness tree records an allowed order. Its permutation condition preserves every supplied
 summand, with multiplicity; it does not permit dropping a term.
+
+`IEEE32Exec.dotTreeResult_enclosure_binary32` gives the same accumulation bound for a dot
+product's already-rounded products. Comparing with the original real dot product also needs the
+multiplication errors. Neither corollary identifies the schedule used by an external GPU kernel.
 
 # Cancellation And Relative Error
 

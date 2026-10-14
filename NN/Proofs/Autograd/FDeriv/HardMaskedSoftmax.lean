@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+import Mathlib.Algebra.BigOperators.Field
 public import NN.Proofs.Autograd.FDeriv.SoftmaxSpec
 public import NN.Spec.Layers.Attention
 

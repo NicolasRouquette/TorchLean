@@ -527,7 +527,7 @@ theorem evalNodeRaw_shape_shape_op
     (hEval : evalNodeRaw payload input vals i n = .ok v) : v.shape = inferred := by
   rcases hk with ⟨s₁, s₂, hk⟩ | ⟨inS, outS, hk⟩ | ⟨s, hk⟩
   · simp only [Infer.nodeOutShape, hk] at hInfer
-    simp only [evalNodeRaw, hk] at hEval
+    simp only [evalNodeRaw, evalTransform, hk] at hEval
     peel_ok hInfer
     peel_ok hEval
     obtain ⟨_, _, _, _, hInfer⟩ := hInfer
@@ -535,7 +535,7 @@ theorem evalNodeRaw_shape_shape_op
     subst hEval hInfer
     rfl
   · simp only [Infer.nodeOutShape, hk] at hInfer
-    simp only [evalNodeRaw, hk] at hEval
+    simp only [evalNodeRaw, evalTransform, hk] at hEval
     peel_ok hInfer
     peel_ok hEval
     obtain ⟨_, _, _, _, hInferred⟩ := hInfer
@@ -543,7 +543,7 @@ theorem evalNodeRaw_shape_shape_op
     subst hv hInferred
     rfl
   · simp only [Infer.nodeOutShape, hk] at hInfer
-    simp only [evalNodeRaw, hk] at hEval
+    simp only [evalNodeRaw, evalTransform, hk] at hEval
     peel_ok hInfer
     peel_ok hEval
     obtain ⟨_, _, _, hInferred⟩ := hInfer
@@ -646,7 +646,7 @@ theorem evalNodeRaw_shape_concat (hk : ∃ axis, n.kind = .concat axis)
     (hEval : evalNodeRaw payload input vals i n = .ok v) : v.shape = inferred := by
   obtain ⟨axis, hk⟩ := hk
   simp only [Infer.nodeOutShape, hk] at hInfer
-  simp only [evalNodeRaw, hk, evalConcat] at hEval
+  simp only [evalNodeRaw, evalTransform, hk, evalConcat] at hEval
   peel_ok hEval
   obtain ⟨parents, hMap, hEval⟩ := hEval
   rcases hd : OpContracts.inferConcatOutShape axis (parents.map (fun pv => pv.shape)) with
@@ -687,12 +687,12 @@ theorem evalNodeRaw_shape_declared
       ∃ config, n.kind = .conv config)
     (hEval : evalNodeRaw payload input vals i n = .ok v) : v.shape = n.outShape := by
   rcases hk with ⟨perm, hk⟩ | ⟨a₁, a₂, hk⟩ | ⟨config, hk⟩
-  · simp only [evalNodeRaw, hk] at hEval
+  · simp only [evalNodeRaw, evalTransform, hk] at hEval
     peel_ok hEval
     obtain ⟨_, _, _, _, _, _, _, hv⟩ := hEval
     subst hv
     rfl
-  · simp only [evalNodeRaw, hk] at hEval
+  · simp only [evalNodeRaw, evalTransform, hk] at hEval
     peel_ok hEval
     obtain ⟨_, _, _, _, _, _, _, _, _, _, hv⟩ := hEval
     subst hv

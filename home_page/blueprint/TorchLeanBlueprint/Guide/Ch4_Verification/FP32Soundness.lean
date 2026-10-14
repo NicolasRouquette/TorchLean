@@ -6,9 +6,6 @@ import NN.Proofs.RuntimeApprox.FP32.Layers
 import NN.Proofs.RuntimeApprox.FP32.MLP
 import NN.Proofs.RuntimeApprox.FP32.CROWN
 import NN.Runtime.Autograd.Engine.LibTorch.Float32Contract
--- The parity example is the test behind the native-agreement assumption, and the last
--- section evaluates its API directly rather than paraphrasing what the CLI printed.
-import NN.Tests.Floats.NativePrimitiveParity
 import TorchLeanBlueprint.Bib
 import TorchLeanBlueprint.Roles
 
@@ -29,10 +26,6 @@ open TorchLean.Floats.IEEE754
 -- The CUDA float32 contract is where the "which provider actually ran this?" question is stated
 -- as a hypothesis rather than assumed away, so the last section quotes it directly.
 open Runtime.Autograd.LibTorch.Float32Contract
-
--- `caseRows`, `summary`, `sweep` and `nanOracleReport` come from the parity example. They are
--- evaluated below, so the numbers on this page are produced by the same code the CLI runs.
-open NN.Tests.Floats.NativePrimitiveParity
 
 -- Verso compares each `leanOutput` block against the real compiler message. Several signatures
 -- below print wider than this file's 100-column limit, so those blocks ask for
@@ -820,7 +813,7 @@ order, and min/max behavior; they do not yet connect the default approximate
 theorem above remains a result about the `FP32` proof model until such a transcendental contract
 is supplied.
 
-FloatLib also proves correspondence with Lean 4.34's logical native float model. Its native
+FloatLib also proves correspondence with Lean's logical native float model. Its native
 round-trip theorem covers every value; addition and subtraction correspondence require finite
 inputs, while their results may overflow. Its square-root theorem covers every configured input
 through native export, which canonicalizes NaNs. These are operation-specific statements about
@@ -937,139 +930,6 @@ return to *Neural Network Verification*.
 
 The finite-result implication retains the sign of zero, which conversion to a real number erases.
 
-# Native Parity Test Results
-
-The parity examples test specific native operations against FloatLib binary32. The following results
-show the evidence they provide and how to interpret disagreements.
-
-The examples test two providers. The first is available inside Lean. `Float32` is a native binary32
-type, backed by the host's floating-point unit through externs,
-which makes it a provider in exactly the sense the contract means. The example
-`native_float32_parity` compares it against FloatLib binary32, and its API is what the rest of this
-section evaluates. The following block computes one curated case as the page builds:
-
-```lean (name := fpsParityZeros)
--- Signed-zero bits expose distinctions that a real-valued
--- observation would erase.
-#eval IO.println (caseRows
-  { what := "signed zeros"
-  , x := 0x80000000, y := 0x00000000 })
-```
-
-```leanOutput fpsParityZeros
-  [signed zeros] 0x80000000 0x00000000
-    add 0x00000000= mul 0x80000000= div 0x7fc00000= sqrt 0x80000000=
-```
-
-The first line is the two operands, `-0` and `+0`. The second is what `Float32` returned for each
-primitive, with a trailing `=` when the reference model returned the same bits and a `!` when it did
-not. Reading the row is the point of writing operands as bit patterns rather than as decimals:
-`-0 + 0 = +0` and `-0 × 0 = -0` have different result signs, which the bits identify unambiguously,
-and `-0 / +0` is an invalid operation, which is why a `NaN` shows up in the third column.
-
-The square-root column applies the raw IEEE primitive to the first operand and preserves its
-negative zero. This is a statement about that primitive's bits. A tensor API can define a
-guarded square root with an explicit zero branch, in which case its semantics also include
-the guard and selected result at the boundary. Comparing that API with the row requires
-accounting for the branch before invoking the primitive contract. The bit-level example helps
-identify which part of such a computation an agreement theorem would cover.
-
-The fifteen curated cases were chosen for reasons a reader can check, including: a tie that
-rounds down
-and a tie that rounds up, a subnormal sum, an overflow to infinity, a cancellation that leaves one
-ULP, the signed zeros above, the minimum normal halved into the subnormal range, the minimum
-subnormal halved into nothing, one third as the canonical inexact quotient, and the invalid
-operations `∞/∞` and `√(-1)`. Four primitives per case:
-
-```lean (name := fpsParitySummary)
--- Count the four primitive comparisons for each curated
--- operand pair.
-#eval IO.println (summary curatedCases)
-```
-
-```leanOutput fpsParitySummary
-60 comparisons, all bit-exact
-```
-
-The sweep extends the selected examples with operands drawn from a `xorshift32` stream. Its seed
-makes the sequence reproducible, so a disagreement can be investigated using the same operands:
-
-```lean (name := fpsParitySweep)
--- A fixed generator seed makes any sampled disagreement
--- reproducible.
-#eval IO.println (sweep 20000 1).render
-```
-
-```leanOutput fpsParitySweep
-  add: 19839/19839 bit-exact
-  mul: 19839/19839 bit-exact
-  div: 19839/19839 bit-exact
-  sqrt: 19839/19839 bit-exact
-```
-
-That is the interpreter, running inside the elaborator that built this page. The gap between
-20,000 draws and 19,839 tested pairs consists of draws whose operands were `NaN`, which the sweep
-skips.
-
-This bit-exact sweep deliberately skips NaN operands. Lean's `Float32` cannot serve as an oracle for
-`NaN` payloads at all,
-because `Float32.Model.ofBits` is documented to canonicalize every `NaN` input into the canonical
-one, while FloatLib binary32 keeps the pattern it was handed:
-
-```lean (name := fpsParityNaN)
--- Inspect conversion before arithmetic when investigating a
--- NaN-payload mismatch.
-#eval IO.println (nanOracleReport 0x7fac6de8)
-```
-
-```leanOutput fpsParityNaN
-NaN 0x7fac6de8: Float32 keeps 0x7fc00000, configured binary32 keeps 0x7fac6de8
-```
-
-The disagreement occurs during conversion, before arithmetic. It therefore cannot establish a
-mismatch in addition or division; a payload-sensitive arithmetic test must preserve the input bits.
-
-The GPU check uses the same Lean reference stream and the production LibTorch backend.
-`scripts/checks/cuda.sh parity` generates reference bits with `--emit-cases`, builds a C++
-regression against the selected SDK and TorchLean library, and checks addition, multiplication,
-division, square root, and fused multiply-add:
-
-```terminal
-# Use the same SDK and shared library as the CUDA build.
-export TORCHLEAN_LIBTORCH_HOME=/path/to/libtorch
-export TORCHLEAN_BACKEND_LIBRARY=/path/to/libtorchlean_libtorch.so
-scripts/checks/cuda.sh parity --sweep 200000
-```
-
-Every finite result and signed zero must match the reference bits. When both results are NaNs,
-`AgreeUpToNaN` permits different signs and payloads; the harness reports those encoding differences
-separately. A zero result in place of a nonzero subnormal is a failure, as is a NaN in place of a
-finite quotient. Ignoring NaN payloads does not relax those finite-value requirements.
-
-The test reaches the operations TorchLean actually uses. Addition, multiplication, division, and
-scalar AXPY pass through the production buffer interface. AXPY routes through ATen `addcmul` with
-its scalar multiplier set to one, which the selected SDK's CUDA kernel evaluates as a
-single-rounding
-FMA. The fixtures check that property for the selected build. Square root has two checks: the raw
-IEEE operation and `Buffer.sqrt`, whose selected activation returns zero for nonpositive inputs.
-The latter is a different function and needs a different expected result.
-
-Fusing a multiply and an add changes rounding. For binary32 inputs
-$`x=1+2^{-23}`, $`y=1+2^{-23}`, and $`z=-(1+2^{-22})`, a fused operation retains $`2^{-46}`;
-rounding the product first loses that residual. A second fixture distinguishes a true binary32
-FMA from computing in binary64 and then rounding. These cases check the production AXPY path and
-the staged Adam update, so passing a standalone arithmetic instruction would not be sufficient.
-
-The regression also observes ATen calls with the caller's autograd mode both enabled and disabled.
-TorchLean's native boundary must disable recording during the operation, return tensors without
-LibTorch gradient history, and restore the caller's mode. TorchLean's own tape remains responsible
-for recording dependencies and traversing local VJPs.
-
-Passing this sweep is evidence about its inputs, the linked SDK, and the tested device. It does not
-construct `NativePrimitiveAgreement` for every possible input. Retain the SDK version, source and
-binary hashes, device, and precision settings with the result. A reduction also needs an
-expression-level argument: primitive agreement does not determine the order in which its partial
-sums are added.
 
 # Remaining Deployment Proof Obligations
 

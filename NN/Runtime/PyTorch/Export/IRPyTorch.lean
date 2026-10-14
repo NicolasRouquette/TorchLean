@@ -242,6 +242,18 @@ private def bindings (g : NN.IR.Graph) (ps : ParamStore Float) (options : Option
               , indent 4 s!"self.register_buffer(\"{attr "batchnorm" n.id "mean"}\", {mean})"
               , indent 4 s!"self.register_buffer(\"{attr "batchnorm" n.id "var"}\", {var})"
               ]
+    | .layernorm axis =>
+        let normalizedShape := Shape.ofList (n.outShape.toList.drop axis)
+        let p := ps.layerNorm[n.id]?.getD
+          { normalizedShape := normalizedShape, gamma := Tensor.full normalizedShape 1,
+            beta := Tensor.full normalizedShape 0, eps := TorchLean.normalizationEpsilon }
+        if p.normalizedShape != normalizedShape then
+          throw s!"IR→PyTorch: LayerNorm parameter shape mismatch at node {n.id}"
+        let gamma := tensor (flat p.gamma) p.normalizedShape
+        let beta := tensor (flat p.beta) p.normalizedShape
+        initLines := initLines ++ #[
+          indent 4 s!"self.{attr "layernorm" n.id "gamma"} = nn.Parameter({gamma})",
+          indent 4 s!"self.{attr "layernorm" n.id "beta"} = nn.Parameter({beta})"]
     | _ => pure ()
 
   -- Pass 2: const nodes (stored as flattened values in ParamStore.constVals).
@@ -477,14 +489,14 @@ private def forward (g : NN.IR.Graph) (ps : ParamStore Float) (bindings : Bindin
         -- evaluated by PyTorch, so selecting between two exponentials would still overflow.
         lines := lines ++ #[
           indent 4 s!"_positive = v{p} > 0",
-          indent 4 s!"_tail = torch.log(1 + torch.exp(torch.where(_positive, -v{p}, v{p})))",
+          indent 4 s!"_tail = torch.log1p(torch.exp(torch.where(_positive, -v{p}, v{p})))",
           indent 4 s!"v{id} = torch.where(_positive, v{p} + _tail, _tail)"
         ]
     | .safeLog =>
         let (p, epsilon) ← expectBinary id n.parents
         lines := lines ++ #[
           indent 4 s!"_positive = v{p} > 0",
-          indent 4 s!"_tail = torch.log(1 + torch.exp(torch.where(_positive, -v{p}, v{p})))",
+          indent 4 s!"_tail = torch.log1p(torch.exp(torch.where(_positive, -v{p}, v{p})))",
           indent 4 s!"_softplus = torch.where(_positive, v{p} + _tail, _tail)",
           indent 4 s!"v{id} = torch.log(_softplus + v{epsilon})"
         ]
@@ -502,7 +514,8 @@ private def forward (g : NN.IR.Graph) (ps : ParamStore Float) (bindings : Bindin
         lines := lines ++ #[indent 4 s!"v{id} = torch.abs(v{p})"]
     | .sqrt =>
         let p ← expectUnary id n.parents
-        lines := lines ++ #[indent 4 s!"v{id} = torch.sqrt(v{p})"]
+        lines := lines ++ #[indent 4
+          s!"v{id} = torch.sqrt(torch.where(v{p} <= 0, torch.zeros_like(v{p}), v{p}))"]
     | .softmax axis =>
         let p ← expectUnary id n.parents
         lines := lines ++ #[indent 4 s!"v{id} = torch.softmax(v{p}, dim={axis})"]
@@ -529,8 +542,11 @@ private def forward (g : NN.IR.Graph) (ps : ParamStore Float) (bindings : Bindin
         let dims := Shape.toList n.outShape
         let normalized := dims.drop axis
         let normalizedShape := shapeLiteral (Shape.ofList normalized)
+        let epsilon := (ps.layerNorm[id]?.map (·.eps)).getD TorchLean.normalizationEpsilon
         lines := lines ++ #[indent 4
-          s!"v{id} = F.layer_norm(v{p}, normalized_shape={normalizedShape})"]
+          s!"v{id} = F.layer_norm(v{p}, normalized_shape={normalizedShape}, " ++
+          s!"weight=self.{attr "layernorm" id "gamma"}, bias=self.{attr "layernorm" id "beta"}, " ++
+          s!"eps={floatLiteral epsilon})"]
     | .reshape _inShape outShape =>
         let p ← expectUnary id n.parents
         lines := lines ++ #[indent 4 s!"v{id} = v{p}.reshape({shapeLiteral outShape})"]

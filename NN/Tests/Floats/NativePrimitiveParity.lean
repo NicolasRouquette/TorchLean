@@ -37,7 +37,7 @@ Run:
 The last form prints one case per line for the CUDA parity script to consume.
 -/
 
-@[expose] public section
+@[expose] section
 
 open FloatLib.Floats (ExecFloat)
 open FloatLib.Floats.ExecFloat (Binary)
@@ -176,7 +176,7 @@ structure Mismatch where
   model : UInt32
 deriving Inhabited
 
-/-- Rendering used both by the tutorial output and by test failures. -/
+/-- Report operand and result bits so a disagreement can be reproduced. -/
 def Mismatch.render (m : Mismatch) : String :=
   s!"{m.op}({m.operands}): native {hex m.native} model {hex m.model}"
 
@@ -241,10 +241,6 @@ def Report.check (r : Report) (c : Case) : Report :=
 def Report.clean (r : Report) : Bool :=
   r.add.failed == 0 && r.mul.failed == 0 && r.div.failed == 0 && r.sqrt.failed == 0
 
-/-- Total comparisons, four per case. -/
-def Report.checked (r : Report) : Nat :=
-  r.add.checked + r.mul.checked + r.div.checked + r.sqrt.checked
-
 /-- The four tally lines, in contract order. -/
 def Report.render (r : Report) : String :=
   String.intercalate "\n"
@@ -256,17 +252,6 @@ def Report.render (r : Report) : String :=
 /-- Check a list of cases and summarize the result. -/
 def runCases (cases : Array Case) : Report :=
   cases.foldl Report.check {}
-
-/--
-The one-line verdict used by the book and by the tests: how many comparisons ran, and whether all
-of them were bit-exact.
--/
-def summary (cases : Array Case) : String :=
-  let r := runCases cases
-  if r.clean then
-    s!"{r.checked} comparisons, all bit-exact"
-  else
-    s!"{r.checked} comparisons, {r.add.failed + r.mul.failed + r.div.failed + r.sqrt.failed} failed"
 
 /--
 Marsaglia's xorshift32 generator (Marsaglia, "Xorshift RNGs", J. Stat. Soft. 8(14), 2003). A named
@@ -304,7 +289,7 @@ def nanOracleReport (payload : UInt32) : String :=
   let model := (ofBits32 payload).toBits32
   s!"NaN {hex payload}: Float32 keeps {hex native}, configured binary32 keeps {hex model}"
 
-/-- Command-line help for the native parity tutorial. -/
+/-- Command-line help for the internal native-parity check. -/
 def usage : String :=
   String.intercalate "\n"
     [ "TorchLean native binary32 parity check"
@@ -352,7 +337,7 @@ def emitLines (draws : Nat) (seed : UInt32) : Array String := Id.run do
   return out
 
 /-- Entry point. -/
-def main (args : List String) : IO Unit := do
+public def main (args : List String) : IO Unit := private_decl% (do
   let args := CLI.dropDashDash args
   if CLI.hasHelp args then
     IO.println usage
@@ -388,6 +373,6 @@ def main (args : List String) : IO Unit := do
   for payload in [0x7FAC6DE8, 0xFFAC6DE8, 0x7F800001] do
     IO.println s!"  {nanOracleReport (UInt32.ofNat payload)}"
   unless curated.clean do
-    throw <| IO.userError "native binary32 parity: curated cases disagree with configured binary32"
+    throw <| IO.userError "native binary32 parity: curated cases disagree with configured binary32")
 
 end NN.Tests.Floats.NativePrimitiveParity

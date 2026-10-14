@@ -70,7 +70,7 @@ def new {α : Type} [Storage α] [TensorTransfer α]
       refOwner := refOwner
       refGeneration := refGeneration }
 
-/-- Force-free a CUDA buffer allocation; the external finalizer is safe to call twice. -/
+/-- Release a CUDA allocation; repeated release and later finalization are safe. -/
 def releaseCudaBuffer (b : Runtime.Autograd.LibTorch.Buffer) : IO Unit := do
   let released ← Runtime.Autograd.LibTorch.Buffer.releaseIO b
   AnyParam.observeCudaCleanupFlag released

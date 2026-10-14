@@ -62,6 +62,9 @@ Each row of `actionOneHot` must select exactly one action. Actions and targets a
 so only the selected online Q values receive gradients. Reduction averages over transitions;
 adding unused actions does not rescale the loss.
 
+For floating-point inputs, Q values must be finite: one-hot selection multiplies every entry,
+so an unselected infinity or NaN can contaminate the selected value through `0 * value`.
+
 Pass a positive `delta`. Target construction, termination masking, and target-network updates
 remain the caller's responsibility.
 -/

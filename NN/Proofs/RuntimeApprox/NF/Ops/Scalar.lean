@@ -193,6 +193,45 @@ private theorem abs_sqrt_sub_sqrt_le_div_sqrt_of_le {a b η : ℝ} (ha : 0 ≤ a
   rw [hdiv, abs_div, abs_of_pos hden_pos]
   exact div_le_div_of_nonneg_left (abs_nonneg (a - b)) (Real.sqrt_pos.2 hη) hden_ge
 
+private theorem abs_sqrt_sub_sqrt_le_sqrt {a b error : ℝ} (ha : 0 ≤ a) (hb : 0 ≤ b)
+    (h : |a - b| ≤ error) : |Real.sqrt a - Real.sqrt b| ≤ Real.sqrt error := by
+  apply Real.abs_le_sqrt
+  have ha2 := Real.sq_sqrt ha
+  have hb2 := Real.sq_sqrt hb
+  have hab := abs_le.mp h
+  rcases le_total (Real.sqrt a) (Real.sqrt b) with order | order
+  · have cross := mul_nonneg (Real.sqrt_nonneg a) (sub_nonneg.mpr order)
+    nlinarith
+  · have cross := mul_nonneg (Real.sqrt_nonneg b) (sub_nonneg.mpr order)
+    nlinarith
+
+/-- The clamped square-root error is bounded even at zero, without a positive input margin.
+The `sqrt eps` term uses the square root's Hölder bound; rounding adds one half-ULP.
+-/
+theorem approx_sqrt_clamp_nf {x : ℝ} {xR : R} {eps : ℝ}
+    (hx : |toSpec (β := β) (fexp := fexp) (rnd := rnd) xR - x| ≤ eps) :
+    |toSpec (β := β) (fexp := fexp) (rnd := rnd) (Numerics.MathFunctions.sqrt (max xR 0)) -
+        Real.sqrt (max x 0)| ≤
+      Real.sqrt eps + ulp β fexp
+        (Real.sqrt (max (toSpec (β := β) (fexp := fexp) (rnd := rnd) xR) 0)) / 2 := by
+  let xhat := toSpec (β := β) (fexp := fexp) (rnd := rnd) xR
+  have hmax : |max xhat 0 - max x 0| ≤ eps :=
+    (abs_max_sub_max_le_abs xhat x 0).trans hx
+  have hdiff := abs_sqrt_sub_sqrt_le_sqrt (le_max_right xhat 0) (le_max_right x 0) hmax
+  have hsqrt :
+      toSpec (β := β) (fexp := fexp) (rnd := rnd) (Numerics.MathFunctions.sqrt (max xR 0)) =
+        Proofs.RuntimeRoundingApprox.roundR (β := β) (fexp := fexp) (rnd := rnd)
+          (Real.sqrt (max xhat 0)) := by
+    have hxmax :
+        toSpec (β := β) (fexp := fexp) (rnd := rnd) (max xR (0 : R)) = max xhat 0 := by
+      simpa [xhat] using toSpec_max (β := β) (fexp := fexp) (rnd := rnd) xR (0 : R)
+    simpa [hxmax] using toSpec_sqrt (β := β) (fexp := fexp) (rnd := rnd) (max xR 0)
+  have hround := Proofs.RuntimeRoundingApprox.roundR_abs_error
+    (β := β) (fexp := fexp) (rnd := rnd) (Real.sqrt (max xhat 0))
+  rw [hsqrt]
+  exact (abs_sub_le _ (Real.sqrt (max xhat 0)) _).trans
+    ((add_le_add hround hdiff).trans_eq (add_comm _ _))
+
 /--
 Forward approximation bound for `sqrt (max · 0)` under a positive lower bound.
 

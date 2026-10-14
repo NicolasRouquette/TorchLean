@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import Mathlib.Basic.Real.Basic
+public import FloatLib.Numerics.Reduction.Tree
 import FloatLib.Numerics.Reduction.Error
 
 /-!
@@ -17,9 +18,9 @@ A binary tree records the parenthesization of a rounded sum. Under the explicit 
 absolute-leaf-scale error enclosure. The argument is independent of a floating-point format.
 We retain the array-facing schedule API and use FloatLib's generic reduction-tree error bound.
 
-Binary32 does not satisfy the usual relative bound globally: gradual underflow needs an
-absolute-error term. The executable specializations require proofs that intermediates are finite
-as well as the local-bound hypothesis. No unconditional unit-roundoff claim is made here.
+Binary32 does not satisfy the relative bound globally over arbitrary real operands. The separate
+`IEEE32` module also provides tree-local corollaries: addition of representable operands inherits
+FloatLib's usual unit-roundoff bound whenever every intermediate sum is finite.
 -/
 
 @[expose] public section
@@ -125,9 +126,12 @@ def RelativeLocalAddBound (roundAdd : ℝ → ℝ → ℝ) (u : ℝ) : Prop :=
   ∀ a b : ℝ, _root_.abs (roundAdd a b - (a + b)) ≤ u * (_root_.abs a + _root_.abs b)
 
 -- Keep the array-facing schedule API while sharing FloatLib's error analysis.
-private def toReductionTree : SumTree α → FloatLib.Numerics.ReductionTree α
+/-- Preserve the schedule when reusing FloatLib's reduction theorems. -/
+def SumTree.toReductionTree : SumTree α → FloatLib.Numerics.ReductionTree α
   | .leaf x => .leaf x
-  | .node a b => .node (toReductionTree a) (toReductionTree b)
+  | .node a b => .node a.toReductionTree b.toReductionTree
+
+open SumTree (toReductionTree)
 
 private theorem eval_toReductionTree (t : SumTree α)
     (combine : ℝ → ℝ → ℝ) (value : α → ℝ) :

@@ -11,16 +11,16 @@ public import NN.Proofs.Autograd.Tape.Ops.Transformer.PostNorm
 /-!
 # Post-Norm Transformer Encoder Block
 
-This module builds one concrete SSA graph for a post-norm encoder block, proves its end-to-end VJP
-theorem, and names the two-sublayer composition theorem at the block boundary:
+This module builds one concrete SSA graph for a post-norm encoder block and proves its
+end-to-end VJP theorem:
 
 `x ↦ LN₂(FFN(LN₁(MHA(x) + x)) + LN₁(MHA(x) + x))`.
 
 The two sublayers already have graph-level VJP theorems in `PostNorm.lean`.  `encoderBlockGraph`
 assembles them into a single graph over the context `[x, Wq, Wk, Wv, Wo, gamma₁, beta₁, gamma₂,
 beta₂]` with VJP theorem `encoderBlock_backpropVec_eq_adjoint_fderiv_at`, and
-`postNormEncoderBlock_hasFDerivAt` is the map-level composition result that a model proof imports
-when it needs the whole encoder block as one differentiable map.
+`twoSublayerPostNormBlock_hasFDerivAt` gives map-level composition for a model proof
+that needs the whole encoder block as one differentiable map.
 
 Attention uses the direct-reshape variant from `DirectReshapeAttention`, whose head split differs
 from the executable attention layout. The FFN maps and biases are fixed inputs to this construction,
@@ -457,15 +457,6 @@ theorem encoderBlock_backpropVec_eq_adjoint_fderiv_at
     (encoderBlockGraphFDerivCorrectAt
       (seqLen := seqLen) (dModel := dModel) (numHeads := numHeads) (headDim := headDim)
       (dFF := dFF) fc1 b1 fc2 b2 c ε₁ ε₂ xV hε₁ hε₂)
-
-/--
-Fréchet differentiability of a complete post-norm Transformer encoder block.
-
-This is `twoSublayerPostNormBlock_hasFDerivAt` under its encoder name.  `attnPack` builds the first
-LayerNorm input triple from the outer model context; `ffnPack` builds the second LayerNorm input
-triple after the first post-norm sublayer has evaluated.  Both LayerNorm epsilons must be positive.
--/
-alias postNormEncoderBlock_hasFDerivAt := twoSublayerPostNormBlock_hasFDerivAt
 
 end
 

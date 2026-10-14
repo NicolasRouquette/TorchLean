@@ -12,20 +12,32 @@ public import NN.Runtime.PyTorch.Wire
 /-!
 # PyTorch graph capture
 
-This module generates a Python script that captures an `nn.Module` and writes its graph as
-`torchlean.ir.v1` JSON. The Lean importer reads that artifact and checks it before evaluation:
+This module generates a Python script that captures an `nn.Module` and writes a shared
+tensor-graph artifact. The Lean importer checks it before evaluation:
 
 ```text
 PyTorch nn.Module
   --torch.export / FX capture-->
-TorchLean graph JSON (`torchlean.ir.v1`)
-  --Import.PyTorch.TorchExport.parseGraph-->
-NN.IR.Graph
+TorchLean graph JSON (`torchlean.ir.v1` or `torchlean.ir.v2`)
+  --Import.IR.parseProgram-->
+NN.IR.Program
 ```
 
 PyTorch handles capture and shape propagation. The generated script translates supported
 operations into `NN.IR.OpKind` and reports an error for unsupported operations or configurations.
 The importer then checks the graph's edges, shapes, and operation attributes.
+
+Tensor entries also retain their dtypes. Binary constants and linear parameters carry complete
+interchange words for `Import.IR.parseProgram` and its typed payload loader. Conversions and
+pointwise tensor promotions become explicit cast nodes; pointwise broadcasting is explicit too.
+Metadata assertions supported by capture are retained as `capture_constraints`. Physical device
+and layout constraints are not validated by the CPU reference interpreter.
+
+`example` may be one tensor or a tuple of positional tensors. Argument order comes from
+`torch.export`'s graph signature, not from parameter placeholder order. Unused user arguments
+remain in the interface; dead parameter values and dead intermediate nodes may be omitted.
+One input uses version one's `input_id`; multiple inputs use version two's `input_ids`.
+Returned containers are flattened to tensor leaves; non-tensor leaves are rejected.
 
 Operator matching uses exact callable or ATen identities. For example, `torch.log` can become an
 IR `.log` node, while `torch.log1p` needs a different formula and is rejected. Similar names and
@@ -70,6 +82,7 @@ applied here so the sections concatenate into a valid module.
 /-- Imports and the artifact format marker. -/
 def imports : Array String :=
   #[ "import argparse"
+   , "import inspect"
    , "import importlib.util"
    , "import json"
    , "import operator"
@@ -83,7 +96,19 @@ def imports : Array String :=
 
 /-- Shape readers for FX node metadata plus the `getitem`/`getattr` target tests. -/
 def shapes : Array String :=
-  #[ "def _shape_of(value):"
+  #[ "def _dtype_of(value):"
+   , indent 4 "dtype = getattr(value, 'dtype', None)"
+   , indent 4 "name = str(dtype).removeprefix('torch.')"
+   , indent 4 "if name in ('float16', 'bfloat16', 'float32', 'float64', 'bool'): return name"
+   , indent 4 "if name.startswith(('int', 'uint')) and name.lstrip('uint').isdigit():"
+   , indent 8 "return {'kind': 'integer', 'signed': not name.startswith('uint'),"
+   , indent 8 "        'width': int(name.lstrip('uint'))}"
+   , indent 4 "raise NotImplementedError(f'unsupported PyTorch element type: {dtype}')"
+   , ""
+   , "def _node_dtype(node):"
+   , indent 4 "return _dtype_of(node.meta.get('val', node.meta.get('tensor_meta')))"
+   , ""
+   , "def _shape_of(value):"
    , indent 4 "if hasattr(value, \"shape\"):"
    , indent 8 "return [int(x) for x in tuple(value.shape)]"
    , indent 4 "if isinstance(value, (tuple, list)) and value and hasattr(value[0], \"shape\"):"
@@ -120,17 +145,20 @@ def tupleKind : Array String :=
    , indent 4 "if node.op == \"call_module\" and model is not None:"
    , indent 8 "mod = model.get_submodule(str(node.target))"
    , indent 8 "if isinstance(mod, nn.MultiheadAttention):"
+   , indent 8 "    call = inspect.signature(mod.forward).bind(*node.args, **node.kwargs)"
+   , indent 8 "    call.apply_defaults()"
+   , indent 8 "    arguments = call.arguments"
    , indent 8 "    if mod.add_zero_attn or mod.bias_k is not None or mod.bias_v is not None:"
    , indent 8 ("        raise NotImplementedError(\"nn.MultiheadAttention with added" ++
        " bias/zero sequence entries is outside the current TorchLean IR import subset\")")
    , indent 8 "    if mod.kdim != mod.embed_dim or mod.vdim != mod.embed_dim:"
    , indent 8 ("        raise NotImplementedError(\"nn.MultiheadAttention with kdim/vdim " ++
        "different from embed_dim is outside the current TorchLean IR import subset\")")
-   , indent 8 ("    if node.kwargs.get(\"attn_mask\", None) is not None or " ++
-       "node.kwargs.get(\"key_padding_mask\", None) is not None:")
+   , indent 8 ("    if arguments.get(\"attn_mask\", None) is not None or " ++
+       "arguments.get(\"key_padding_mask\", None) is not None:")
    , indent 8 ("        raise NotImplementedError(\"masked nn.MultiheadAttention needs an " ++
        "explicit TorchLean hard-mask lowering\")")
-   , indent 8 "    if bool(node.kwargs.get(\"is_causal\", False)):"
+   , indent 8 "    if bool(arguments.get(\"is_causal\", False)):"
    , indent 8 ("        raise NotImplementedError(\"causal nn.MultiheadAttention needs an " ++
        "explicit TorchLean hard-mask lowering\")")
    , indent 8 "    return {"
@@ -171,17 +199,37 @@ def model : Array String :=
    , indent 8 "return any(node.target is function for function in functions)"
    , indent 4 "return node.op == \"call_method\" and node.target in methods"
    , ""
-   , "def _node_refs(obj, node_to_id):"
+   , "def _nonnegative(value, model=None):"
+   , indent 4 "# Structural evidence also excludes negative zero, not just negative numbers."
+   , indent 4 "if not isinstance(value, torch.fx.Node): return False"
+   , indent 4 "if _is_op(value, ('aten.exp.default', 'aten.abs.default'),"
+   , indent 8 ("          (torch.exp, torch.abs, torch.absolute), " ++
+       "('exp', 'abs', 'absolute')):")
+   , indent 8 "return True"
+   , indent 4 "if value.op == 'call_module' and model is not None:"
+   , indent 8 ("return isinstance(model.get_submodule(str(value.target)), " ++
+       "(nn.Softplus, nn.Sigmoid))")
+   , indent 4 ("if _is_op(value, ('aten.clamp_min.default',), " ++
+       "(torch.clamp_min,), ('clamp_min',)):")
+   , indent 8 "lower = value.args[1] if len(value.args) > 1 else value.kwargs.get('min')"
+   , indent 8 "return isinstance(lower, (int, float)) and lower > 0"
+   , indent 4 "return False"
+   , ""
+   , "def _node_refs(obj, node_to_id, strict=False):"
    , indent 4 "refs = []"
    , indent 4 "def visit(x):"
    , indent 8 "if isinstance(x, torch.fx.Node):"
    , indent 8 "    ref = node_to_id.get(x, None)"
    , indent 8 "    if ref is not None:"
    , indent 8 "        refs.append(ref)"
+   , indent 8 "    elif strict:"
+   , indent 8 "        raise NotImplementedError('graph result has no tensor lowering')"
    , indent 8 "elif isinstance(x, (tuple, list)):"
    , indent 8 "    for y in x: visit(y)"
    , indent 8 "elif isinstance(x, dict):"
    , indent 8 "    for y in x.values(): visit(y)"
+   , indent 8 "elif strict:"
+   , indent 8 "    raise NotImplementedError('graph return leaves must be tensors')"
    , indent 4 "visit(obj)"
    , indent 4 "return refs"
    , ""
@@ -197,6 +245,28 @@ def model : Array String :=
 def payload : Array String :=
   #[ "def _tensor_values(value):"
    , indent 4 "return value.detach().cpu().tolist()"
+   , ""
+   , "def _tensor_bits(value):"
+   , indent 4 "name = str(value.dtype).removeprefix('torch.')"
+   , indent 4 "if value.dtype is torch.bool:"
+   , indent 8 "return [int(item) for item in value.detach().cpu().reshape(-1).tolist()]"
+   , indent 4 "width = {'float16': 16, 'bfloat16': 16, 'float32': 32, 'float64': 64}.get(name)"
+   , indent 4 "if width is None and name.startswith(('int', 'uint')):"
+   , indent 8 "width = value.element_size() * 8"
+   , indent 4 "if width is None: raise NotImplementedError(f'no binary word encoding for {name}')"
+   , indent 4 "integer = {8: torch.int8, 16: torch.int16, 32: torch.int32, 64: torch.int64}[width]"
+   , indent 4 "words = value.detach().cpu().contiguous().reshape(-1).view(integer).tolist()"
+   , indent 4 "return [int(word) % (1 << width) for word in words]"
+   , ""
+   , "def _binary_payload(name, value):"
+   , indent 4 "return {name + '_bits': _tensor_bits(value), name + '_dtype': _dtype_of(value)}"
+   , ""
+   , "def _constant(value):"
+   , indent 4 ("result = {" ++ Wire.field .const ++
+       ", 'shape': list(value.shape), 'value_kind': 'tensor',")
+   , indent 4 "          'dtype': _dtype_of(value), 'bits': _tensor_bits(value)}"
+   , indent 4 "if torch.isfinite(value).all(): result['values'] = _tensor_values(value)"
+   , indent 4 "return result"
    , ""
    , "_TENSOR_VALUES = {}"
    , ""
@@ -218,7 +288,8 @@ def payload : Array String :=
    , indent 8 ("raise NotImplementedError(f\"linear bias must have shape {(out_dim,)}, got " ++
        "{tuple(bias.shape)}\")")
    , indent 4 ("return {\"out_dim\": out_dim, \"in_dim\": in_dim, \"weight\": " ++
-       "_tensor_values(weight), \"bias\": _tensor_values(bias)}")
+       "_tensor_values(weight), \"bias\": _tensor_values(bias), " ++
+       "**_binary_payload('weight', weight), **_binary_payload('bias', bias)}")
    , ""
    , "def _multihead_attention_payload(mod):"
    , indent 4 "if mod.in_proj_weight is None:"
@@ -423,7 +494,12 @@ def operands : Array String :=
 
 /-- `_lower_kind` rules for elementwise `aten`/functional targets that carry no payload. -/
 def elementwise : Array String :=
-  #[ "    if _is_op(node, (\"aten.add.Tensor\",), (operator.add, torch.add), (\"add\",)):" ] ++
+  #[ "    if _is_op(node, ('aten._to_copy.default', 'aten.to.dtype'), (),"
+   , "              ('to', 'float', 'double', 'half', 'bfloat16')):"
+   , "        if _node_dtype(node) == _node_dtype(args[0]): return " ++ Wire.object .detach
+   , "        return {" ++ Wire.field .custom ++
+       ", 'primitive': 'cast', 'rounding': 'nearestEven'}"
+   , "    if _is_op(node, (\"aten.add.Tensor\",), (operator.add, torch.add), (\"add\",)):" ] ++
     operands ++
   #[ "        alpha = kwargs.get(\"alpha\", args[2] if len(args) > 2 else 1)"
    , "        if alpha != 1:"
@@ -461,7 +537,17 @@ def elementwise : Array String :=
        "(torch.abs, torch.absolute), (\"abs\", \"absolute\")):"
    , "        return {\"kind\": " ++ Wire.quoted .abs ++ "}"
    , "    if _is_op(node, (\"aten.sqrt.default\",), (torch.sqrt,), (\"sqrt\",)):"
+   , indent 8 "source = args[0] if args else kwargs.get('input', kwargs.get('self'))"
+   , "        if not _nonnegative(source, model):"
+   , indent 12 ("raise NotImplementedError('raw sqrt requires a structurally nonnegative " ++
+       "operand; TorchLean sqrt clamps negative values')")
    , "        return {\"kind\": " ++ Wire.quoted .sqrt ++ "}"
+   , indent 4 ("if _is_op(node, ('aten.clamp_min.default',), " ++
+       "(torch.clamp_min,), ('clamp_min',)):")
+   , "        lower = args[1] if len(args) > 1 else kwargs.get('min')"
+   , indent 8 ("if not isinstance(lower, (int, float)): " ++
+       "raise NotImplementedError('clamp_min requires a scalar bound')")
+   , "        return {\"kind\": " ++ Wire.quoted .maxElem ++ ", 'clamp_min': float(lower)}"
    , "    if _is_op(node, (\"aten.reciprocal.default\",), (torch.reciprocal,), (\"reciprocal\",)):"
    , "        return {\"kind\": " ++ Wire.quoted .inv ++ "}"
    , "    if _is_op(node, (\"aten.maximum.default\",), (torch.maximum,), (\"maximum\",)):"
@@ -696,10 +782,22 @@ FX records `x.relu_(); return x` with an unused result for the ReLU call. Skippi
 checking its contract would erase the update to `x`. Unsupported calls therefore fail even when
 their results have no users. -/
 def coverage : Array String :=
-  #[ "def _check_graph_operators(graph, model):"
+  #[ "def _metadata_constraint(node):"
+   , indent 4 "if not _is_op(node, ('aten._assert_tensor_metadata.default',)): return None"
+   , indent 4 "if len(node.args) != 1 or set(node.kwargs) - {'dtype', 'device', 'layout'}:"
+   , indent 8 "raise NotImplementedError('unsupported tensor metadata assertion')"
+   , indent 4 "dtype = node.kwargs.get('dtype')"
+   , indent 4 "value = node.args[0].meta.get('val', node.args[0].meta.get('tensor_meta'))"
+   , indent 4 "if dtype is not None and dtype != getattr(value, 'dtype', None):"
+   , indent 8 "raise NotImplementedError('metadata assertion conflicts with the captured dtype')"
+   , indent 4 "return {'value': node.args[0].name,"
+   , indent 4 "        **{key: str(value) for key, value in node.kwargs.items()}}"
+   , ""
+   , "def _check_graph_operators(graph, model):"
    , indent 4 "for node in graph.nodes:"
    , indent 8 "if node.op in (\"placeholder\", \"get_attr\", \"output\"):"
    , indent 8 "    continue"
+   , indent 8 "if _metadata_constraint(node) is not None: continue"
    , indent 8 "if _tuple_shapes_of_node(node):"
    , indent 8 "    _tuple_kind(node, model)"
    , indent 8 "elif node.op in (\"call_function\", \"call_method\", \"call_module\"):"
@@ -720,9 +818,13 @@ def capture (options : Options) : Array String :=
   #[ "def _capture(model, example, require_torch_export=False):"
    , indent 4 "global _TENSOR_VALUES"
    , indent 4 "_TENSOR_VALUES = {}"
+   , indent 4 "examples = (example,) if isinstance(example, torch.Tensor) else example"
+   , indent 4 "if not isinstance(examples, tuple) or not examples or not all("
+   , indent 4 "    isinstance(value, torch.Tensor) for value in examples):"
+   , indent 8 "raise NotImplementedError('capture requires positional tensor arguments')"
    , indent 4 "if " ++ boolLiteral options.preferTorchExport ++ ":"
    , indent 8 "try:"
-   , indent 8 "    ep = torch.export.export(model, (example,))"
+   , indent 8 "    ep = torch.export.export(model, examples)"
    , indent 8 "    # Functionalization can turn mutation into ordinary tensor operations."
    , indent 8 "    # Extra outputs describe state updates that need their own replay rules."
    , indent 8 ("    if any(spec.kind.name != \"USER_OUTPUT\" for " ++
@@ -732,11 +834,11 @@ def capture (options : Options) : Array String :=
    , indent 8 "    # ExportedProgram lifts parameters, buffers, and constants into graph"
    , indent 8 "    # placeholders. Their order is not a user-input contract, so classify"
    , indent 8 "    # placeholders through graph_signature rather than taking the first one."
-   , indent 8 "    user_input_names = {"
+   , indent 8 "    user_input_names = ["
    , indent 8 "        spec.arg.name"
    , indent 8 "        for spec in ep.graph_signature.input_specs"
    , indent 8 "        if getattr(spec.kind, \"name\", \"\") == \"USER_INPUT\""
-   , indent 8 "    }"
+   , indent 8 "    ]"
    , indent 8 "    state = dict(ep.state_dict)"
    , indent 8 "    constants = dict(getattr(ep, 'constants', {}))"
    , indent 8 "    for spec in ep.graph_signature.input_specs:"
@@ -747,6 +849,7 @@ def capture (options : Options) : Array String :=
        " = value")
    , indent 8 "    if _graph_is_lowerable(ep.graph, model):"
    , indent 8 "        return ep.graph, user_input_names"
+   , indent 8 "    if require_torch_export: _check_graph_operators(ep.graph, model)"
    , indent 8 "except Exception:"
    , indent 8 "    if require_torch_export:"
    , indent 8 "        raise"
@@ -756,47 +859,55 @@ def capture (options : Options) : Array String :=
    , indent 4 "from torch.fx import symbolic_trace"
    , indent 4 "from torch.fx.passes.shape_prop import ShapeProp"
    , indent 4 "gm = symbolic_trace(model)"
-   , indent 4 "ShapeProp(gm).propagate(example)"
+   , indent 4 "ShapeProp(gm).propagate(*examples)"
    , indent 4 "for node in gm.graph.nodes:"
    , indent 8 "if node.op == 'get_attr':"
    , indent 8 "    value = gm"
    , indent 8 "    for part in str(node.target).split('.'): value = getattr(value, part)"
    , indent 8 "    if isinstance(value, torch.Tensor): _TENSOR_VALUES[node.name] = value"
    , indent 4 "_check_graph_operators(gm.graph, model)"
-   , indent 4 "return gm.graph, None"
+   , indent 4 "return gm.graph, [node.name for node in gm.graph.nodes if node.op == 'placeholder']"
    , "" ]
 
 /-- The exported entry point: walk the captured graph and write the artifact. -/
 def entrypoint (options : Options) : Array String :=
   #[ s!"def {options.functionName}(model, example, json_path: str, require_torch_export=False):"
    , indent 4 "graph, user_input_names = _capture(model, example, require_torch_export)"
+   , indent 4 "input_names = set(user_input_names)"
    , indent 4 "nodes = []"
+   , indent 4 "promotion_cache = {}"
+   , indent 4 "broadcast_cache = {}"
    , indent 4 "node_to_id = {}"
    , indent 4 "output_ids = None"
-   , indent 4 "input_id = None"
+   , indent 4 "input_nodes = {}"
+   , indent 4 "capture_constraints = []"
    , indent 4 "for node in graph.nodes:"
+   , indent 8 "constraint = _metadata_constraint(node)"
+   , indent 8 "if constraint is not None:"
+   , indent 8 "    capture_constraints.append(constraint)"
+   , indent 8 "    continue"
    , indent 8 "if node.op == \"output\":"
-   , indent 8 "    refs = _node_refs(node.args, node_to_id)"
+   , indent 8 "    refs = _node_refs(node.args, node_to_id, strict=True)"
    , indent 8 "    if not refs:"
    , indent 8 ("        raise NotImplementedError(\"TorchLean graph import requires at least " ++
        "one tensor output\")")
    , indent 8 "    output_ids = refs"
    , indent 8 "    continue"
-   , indent 8 "if len(getattr(node, \"users\", {})) == 0:"
+   , indent 8 "is_input = node.op == 'placeholder' and node.name in input_names"
+   , indent 8 "if len(getattr(node, \"users\", {})) == 0 and not is_input:"
    , indent 8 "    # FX often leaves dead tuple projections behind, e.g. attention weights from"
    , indent 8 "    # `y, _ = mha(...)`. They are not part of the exported value, so we omit them"
    , indent 8 ("    # instead of forcing every unused container projection to have a tensor " ++
        "lowering.")
    , indent 8 "    node_to_id[node] = None"
    , indent 8 "    continue"
-   , indent 8 "if node.op in (\"get_attr\",):"
+   , indent 8 "if node.op == 'get_attr' or (node.op == 'placeholder' and"
+   , indent 8 "    not is_input):"
+   , indent 8 "    value = _TENSOR_VALUES.get(node.name)"
+   , indent 8 "    if value is None: raise NotImplementedError('non-tensor lifted input')"
+   , indent 8 "    node_to_id[node] = len(nodes)"
+   , indent 8 "    nodes.append({'id': len(nodes), 'parents': [], **_constant(value)})"
    , indent 8 "    continue"
-   , indent 8 "if node.op == \"placeholder\" and user_input_names is not None:"
-   , indent 8 "    if node.name not in user_input_names:"
-   , indent 8 "        # Parameters, buffers, constants, and effect tokens live outside"
-   , indent 8 "        # TorchLean's single user-input tensor dataflow graph."
-   , indent 8 "        node_to_id[node] = None"
-   , indent 8 "        continue"
    , indent 8 "node_id = len(nodes)"
    , indent 8 "node_to_id[node] = node_id"
    , indent 8 "shape = _node_shape(node)"
@@ -804,29 +915,80 @@ def entrypoint (options : Options) : Array String :=
    , indent 8 ("value_meta = {\"value_kind\": \"tuple\", \"tuple_shapes\": tuple_shapes} if " ++
        "tuple_shapes else {\"value_kind\": \"tensor\", \"shape\": shape}")
    , indent 8 "if node.op == \"placeholder\":"
-   , indent 8 "    if input_id is not None:"
-   , indent 8 ("        raise NotImplementedError(\"TorchLean graph import currently supports" ++
-       " one user input\")")
    , indent 8 ("    kind = " ++ Wire.object .input)
    , indent 8 "    parents = []"
-   , indent 8 "    input_id = node_id"
+   , indent 8 "    input_nodes[node.name] = node_id"
    , indent 8 "elif tuple_shapes:"
    , indent 8 "    # The importer expands known tuple producers into tensor dataflow."
    , indent 8 "    kind = _tuple_kind(node, model)"
-   , indent 8 "    parents = _node_refs((node.args, node.kwargs), node_to_id)"
+   , indent 8 "    call = inspect.signature(model.get_submodule(str(node.target)).forward)"
+   , indent 8 ("    parents = _node_refs(tuple(" ++
+       "call.bind(*node.args, **node.kwargs).arguments.values()),")
+   , indent 8 "                         node_to_id)"
    , indent 8 "elif node.op in (\"call_function\", \"call_method\", \"call_module\"):"
    , indent 8 "    kind = _lower_kind(node, model)"
    , indent 8 "    parents = _node_refs((node.args, node.kwargs), node_to_id)"
+   , indent 8 "    if 'clamp_min' in kind:"
+   , indent 8 ("        source = node.args[0] if node.args else " ++
+       "node.kwargs.get('input', node.kwargs.get('self'))")
+   , indent 8 "        value = _resolve_tensor(source).new_full(shape, kind.pop('clamp_min'))"
+   , indent 8 "        bound = len(nodes)"
+   , indent 8 "        nodes.append({'id': bound, 'parents': [], **_constant(value)})"
+   , indent 8 "        parents = _node_refs((source,), node_to_id) + [bound]"
+   , indent 8 ("    elif kind['kind'] in " ++
+       "('add', 'sub', 'mul_elem', 'max_elem', 'min_elem', 'matmul'):")
+   , indent 8 ("        left = node.args[0] if node.args else " ++
+       "node.kwargs.get('input', node.kwargs.get('self'))")
+   , indent 8 ("        right = node.args[1] if len(node.args) > 1 else " ++
+       "node.kwargs.get('other', node.kwargs.get('mat2'))")
+   , indent 8 "        parents = _node_refs((left, right), node_to_id)"
+   , indent 8 "    if kind['kind'] in ('linear', 'conv', 'layernorm', 'batch_norm_eval'):"
+   , indent 8 "        # These existing operators own their parameter payload, not extra edges."
+   , indent 8 "        first = node.args[0] if node.args else node.kwargs.get('input')"
+   , indent 8 "        parents = _node_refs((first,), node_to_id)"
    , indent 8 "else:"
    , indent 8 "    raise NotImplementedError(f\"unsupported FX node op: {node.op}\")"
+   , indent 8 "if not tuple_shapes:"
+   , indent 8 "    dtype = _node_dtype(node)"
+   , indent 8 "    if kind['kind'] in ('add', 'sub', 'mul_elem', 'max_elem', 'min_elem'):"
+   , indent 8 "        promoted = []"
+   , indent 8 "        for parent in parents:"
+   , indent 8 "            source = nodes[parent]"
+   , indent 8 "            if source['dtype'] != dtype:"
+   , indent 8 "                key = (parent, json.dumps(dtype, sort_keys=True))"
+   , indent 8 "                if key not in promotion_cache:"
+   , indent 8 ("                    nodes.append({'id': len(nodes), " ++ Wire.field .custom ++
+       ", 'parents': [parent],")
+   , indent 8 "                                  'shape': source['shape'], 'dtype': dtype,"
+   , indent 8 "                                  'primitive': 'cast', 'rounding': 'nearestEven'})"
+   , indent 8 "                    promotion_cache[key] = len(nodes) - 1"
+   , indent 8 "                parent = promotion_cache[key]"
+   , indent 8 "            if source['shape'] != shape:"
+   , indent 8 "                key = (parent, tuple(shape))"
+   , indent 8 "                if key not in broadcast_cache:"
+   , indent 8 ("                    nodes.append({'id': len(nodes), " ++ Wire.field .broadcastTo ++
+       ", 'parents': [parent],")
+   , indent 8 "                                  'shape': shape, 'dtype': dtype,"
+   , indent 8 "                                  'from_shape': source['shape'], 'to_shape': shape})"
+   , indent 8 "                    broadcast_cache[key] = len(nodes) - 1"
+   , indent 8 "                parent = broadcast_cache[key]"
+   , indent 8 "            promoted.append(parent)"
+   , indent 8 "        parents = promoted"
+   , indent 8 "node_id = len(nodes)"
+   , indent 8 "node_to_id[node] = node_id"
    , indent 8 "entry = {\"id\": node_id, \"parents\": parents, **value_meta, **kind}"
+   , indent 8 "if not tuple_shapes: entry['dtype'] = _node_dtype(node)"
    , indent 8 "if " ++ boolLiteral options.includeDebugTargets ++ ":"
    , indent 8 "    entry[\"debug_target\"] = _target_name(node.target)"
    , indent 8 "nodes.append(entry)"
-   , indent 4 "if input_id is None or output_ids is None:"
+   , indent 4 "if len(input_nodes) != len(user_input_names) or output_ids is None:"
    , indent 8 "raise RuntimeError(\"could not identify graph input/output\")"
-   , indent 4 ("payload = {\"format\": FORMAT, \"input_id\": input_id, \"output_ids\": " ++
-       "output_ids, \"nodes\": nodes}")
+   , indent 4 "input_ids = [input_nodes[name] for name in user_input_names]"
+   , indent 4 ("payload = {\"format\": FORMAT if len(input_ids) == 1 else \"torchlean.ir.v2\", " ++
+       "\"frontend\": \"pytorch\", \"output_ids\": output_ids, \"nodes\": nodes}")
+   , indent 4 "if len(input_ids) == 1: payload['input_id'] = input_ids[0]"
+   , indent 4 "else: payload['input_ids'] = input_ids"
+   , indent 4 "payload['capture_constraints'] = capture_constraints"
    , indent 4 "try:"
    , indent 8 "text = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)"
    , indent 4 "except ValueError as exc:"

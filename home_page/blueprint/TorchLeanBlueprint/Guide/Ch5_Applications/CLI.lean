@@ -846,7 +846,7 @@ scripts/lake.sh exe verify -- list
 scripts/lake.sh exe verify -- torchlean-ibp
 ```
 
-The registry currently holds 24 tools. Each row below is one `Tool` record in
+Each row below is one `Tool` record in
 {src "NN/Verification/CLI.lean"}[`NN/Verification/CLI.lean`], and the last column is its
 `includeInAll` field:
 
@@ -855,6 +855,10 @@ The registry currently holds 24 tools. Each row below is one `Tool` record in
   * Tool
   * Reads
   * In `all`
+*
+  * `ir`
+  * typed graph structure, dtype checks, and optional binary sample comparison
+  * no
 *
   * `lirpa-mlp`
   * IBP certificate for a feed-forward MLP
@@ -995,7 +999,7 @@ retroactively verify the process that produced the artifact.
 scripts/lake.sh exe verify -- all
 ```
 
-runs 10 of the 24 tools, one after another:
+runs the bundled checks marked `yes` above, one after another:
 
 ```terminal +output
 == lirpa-mlp ==
@@ -1015,8 +1019,9 @@ IBP certificate verified: serialized bounds enclose Lean recomputation.
 [margin report] positive_margin=318
 ```
 
-The 14 tools it skips are the ones marked `no` above: interactive, externally dependent, or
-long-running. That list includes every `torchlean-*` in-memory workflow, so a green `all` is not
+The tools it skips are marked `no` above: interactive, externally dependent, long-running, or
+awaiting a caller-supplied artifact. That list includes every `torchlean-*` in-memory workflow
+and `ir`, so a green `all` is not
 evidence that model lowering and bound propagation still work. Run those explicitly.
 
 `margin-report` reports a positive margin for 318 of 360 examples, and `all` still exits `0`.

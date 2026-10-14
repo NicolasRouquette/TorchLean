@@ -27,8 +27,11 @@ This file gives the TorchLean `Program` interface a pure reference interpreter:
 This interpreter is not the `Proved.ForwardProgram` evaluator covered by the lowering theorem.
 It supports operations outside that proved fragment, including transposed convolution and smooth
 max pooling. Raw logarithm uses the scalar specification without the IR evaluator's positivity
-check, and log-softmax uses the stable specification rather than taking the logarithm of softmax.
-Agreement with the broader `lowerForwardToIR` builder is therefore not established for all programs.
+check, and log-softmax uses the stable specification. The broader `lowerForwardToIR` builder
+rejects log-softmax and GELU until the verifier IR supports their operation schedules.
+It also rejects clamp for scalar contexts with differentiation metadata, since the source clears
+that metadata outside the open clamp interval.
+Agreement with that builder is not established for all programs.
 -/
 
 @[expose] public section

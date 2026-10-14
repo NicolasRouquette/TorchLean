@@ -168,7 +168,7 @@ slots, as the swapped-bias example below demonstrates.
 Change the hidden width of the first linear layer to five while leaving the second layer's input
 width at three:
 
-```lean +error (name := gsBroken)
+```lean +error -keep (name := gsBroken)
 -- The hidden width disagrees at the connection, so
 -- elaboration must reject this chain.
 def gsBroken : Chain [[5, 2], [5], [1, 3], [1]] [2] [1] :=

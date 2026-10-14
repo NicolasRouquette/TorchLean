@@ -91,10 +91,9 @@ def rmsNorm {α : Type} [TorchLean.Storage α] [Context α]
       let epsT ← const (m := m) (α := α) (s := meanSqShape) (Tensor.full meanSqShape ε)
       let denom ← sqrt (m := m) (α := α) (s := meanSqShape)
         (← add (m := m) (α := α) (s := meanSqShape) meanSqClamped epsT)
-      let invDenom ← inv (m := m) (α := α) (s := meanSqShape) denom
-      let invDenomB ← Runtime.Autograd.Torch.broadcastAfterSum
-        (m := m) (α := α) s axis invDenom
-      let normalized ← mul (m := m) (α := α) (s := s) x invDenomB
+      let denomB ← Runtime.Autograd.Torch.broadcastAfterSum
+        (m := m) (α := α) s axis denom
+      let normalized ← Runtime.Autograd.Torch.Ops.div (m := m) (α := α) (s := s) x denomB
       let gammaB ← broadcastTo (m := m) (α := α) (s₁ := .dim width .scalar) (s₂ := s)
         (by
           simpa [s, Shape.appendDim_eq_concat] using
@@ -133,10 +132,9 @@ def l2Normalize {α : Type} [TorchLean.Storage α] [Context α]
         (Shape.CanBroadcastTo.scalarTo reducedShape) epsilon
       let denominator ← sqrt (m := m) (α := α) (s := reducedShape)
         (← add (m := m) (α := α) (s := reducedShape) normSquared epsilonB)
-      let inverse ← inv (m := m) (α := α) (s := reducedShape) denominator
-      let inverseB ← Runtime.Autograd.Torch.broadcastAfterSum
-        (m := m) (α := α) s axis inverse
-      mul (m := m) (α := α) (s := s) x inverseB
+      let denominatorB ← Runtime.Autograd.Torch.broadcastAfterSum
+        (m := m) (α := α) s axis denominator
+      Runtime.Autograd.Torch.Ops.div (m := m) (α := α) (s := s) x denominatorB
 
 /--
 Normalize each sample and channel using its own spatial mean and variance.

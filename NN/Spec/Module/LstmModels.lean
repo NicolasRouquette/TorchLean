@@ -445,9 +445,9 @@ def StackedModel.forward {seqLen inputSize hiddenSize outputSize : Nat}
     (inputs : Tensor α [seqLen, inputSize])
     (initialStates : model.layers.States (LSTMState α)) :
     Tensor α [seqLen, outputSize] × model.layers.States (LSTMState α) :=
-  let (hidden, finalStates) := model.layers.run
+  let (outputs, finalStates) := model.layers.run
     (fun cell input state => lstmSequenceSpec cell input state) inputs initialStates
-  (Tensor.mapLeading [seqLen] (linearSpec model.outputLayer) hidden, finalStates)
+  (Tensor.mapLeading [seqLen] (linearSpec model.outputLayer) outputs, finalStates)
 
 -- LSTM Language Model forward pass with teacher forcing
 /--

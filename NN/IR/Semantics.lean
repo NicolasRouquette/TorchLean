@@ -613,6 +613,60 @@ def binaryParentIds (i : Nat) (n : Node) : Except String (Nat × Nat) :=
   | some parents => pure parents
   | none => throw s!"IR eval: node {i}: expected 2 parents ({n.summary})"
 
+/-- Evaluate tensor layout operations without requiring scalar arithmetic.
+
+The same implementation serves homogeneous graphs and typed interpreters, including tensors
+of Boolean, integer, symbolic, or user-defined elements. Numerical operators are rejected here.
+-/
+@[simp] def evalTransform {α : Type} [TorchLean.Storage α]
+    (vals : Array (Spec.SomeTensor α)) (i : Nat) (n : Node) :
+    Except String (Spec.SomeTensor α) := do
+  let getParent := getParentValue vals i n
+  match n.kind with
+  | .permute perm => do
+      let pId ← unaryParentId i n
+      let vOut ← permuteSomeTensor (α := α) (v := ← getParent pId) perm
+      if h : vOut.shape = n.outShape then
+        pure (Spec.SomeTensor.mk (α := α) n.outShape (h ▸ vOut.tensor))
+      else
+        throw <|
+          s!"IR eval: node {i}: permute outShape mismatch: \
+            computed={repr vOut.shape}, declared={repr n.outShape} ({n.summary})"
+  | .broadcastTo s₁ s₂ => do
+      let pId ← unaryParentId i n
+      let p ← expectShape (α := α) (expected := s₁) (← getParent pId)
+      if h : Spec.Shape.CanBroadcastTo s₁ s₂ then
+        let y := Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) h p
+        pure (Spec.SomeTensor.mk (α := α) s₂ y)
+      else throw s!"IR eval: node {i}: broadcastTo invalid: {repr s₁} → {repr s₂}"
+  | .reshape inS outS => do
+      let pId ← unaryParentId i n
+      let pV ← getParent pId
+      let pT ← expectShape (α := α) (expected := inS) pV
+      if h : Spec.Shape.size inS = Spec.Shape.size outS then
+        let y := Tensor.reshapeSpec (α := α) (source := inS) (target := outS) pT h
+        pure (Spec.SomeTensor.mk (α := α) outS y)
+      else
+        throw s!"IR eval: node {i}: reshape numel mismatch: \
+          {Spec.Shape.size inS} vs {Spec.Shape.size outS}"
+  | .flatten s => do
+      let pId ← unaryParentId i n
+      let pV ← getParent pId
+      let pT ← expectShape (α := α) (expected := s) pV
+      let y := Tensor.flattenSpec (α := α) (shape := s) pT
+      pure (Spec.SomeTensor.mk (α := α) (ShapeUtil.flattenOutShape s) y)
+  | .concat axis => do
+      let parents ← n.parents.mapM getParent
+      evalConcat (α := α) i n axis parents
+  | .transpose axis₁ axis₂ => do
+      let pId ← unaryParentId i n
+      let parent ← getParent pId
+      let perm ← OpContracts.transposePerm parent.shape.rank axis₁ axis₂
+      let output ← permuteSomeTensor (α := α) parent perm
+      let tensor ← expectShape (α := α) (expected := n.outShape) output
+      pure (Spec.SomeTensor.mk (α := α) n.outShape tensor)
+  | _ => throw s!"IR eval: {n.kind.tag} requires a numerical or primitive implementation"
+
 /--
 Evaluate a known node from its already computed parent values, without the final declared-shape
 normalization.
@@ -649,15 +703,9 @@ selected branch exactly as before the split.
           fun error =>
           s!"IR eval: custom {name}: {repr error}"
         pure (Spec.SomeTensor.ofTensor result)
-    | .permute perm => do
-        let pId ← unaryParentId i n
-        let vOut ← permuteSomeTensor (α := α) (v := ← getParent pId) perm
-        if h : vOut.shape = n.outShape then
-          pure (Spec.SomeTensor.mk (α := α) n.outShape (h ▸ vOut.tensor))
-        else
-          throw <|
-            s!"IR eval: node {i}: permute outShape mismatch: \
-              computed={repr vOut.shape}, declared={repr n.outShape} ({n.summary})"
+    | .permute _ | .broadcastTo _ _ | .reshape _ _ | .flatten _ |
+        .concat _ | .transpose _ _ =>
+        evalTransform vals i n
     | .detach => do
         let pId ← unaryParentId i n
         let p ← expectShape (α := α) (expected := n.outShape) (← getParent pId)
@@ -721,13 +769,6 @@ selected branch exactly as before the split.
     | .avgPool config => do
         let pId ← unaryParentId i n
         evalAvgPool (α := α) config (← getParent pId)
-    | .broadcastTo s₁ s₂ => do
-        let pId ← unaryParentId i n
-        let p ← expectShape (α := α) (expected := s₁) (← getParent pId)
-        if h : Spec.Shape.CanBroadcastTo s₁ s₂ then
-          let y := Tensor.broadcastTo (α := α) (s₁ := s₁) (s₂ := s₂) h p
-          pure (Spec.SomeTensor.mk (α := α) s₂ y)
-        else throw s!"IR eval: node {i}: broadcastTo invalid: {repr s₁} → {repr s₂}"
     | .reduceSum axis => do
         let pId ← unaryParentId i n
         let pV ← getParent pId
@@ -882,33 +923,6 @@ selected branch exactly as before the split.
           throw <|
             s!"IR eval: node {i}: layernorm internal error: bad reshape sizes \
               ({Spec.Shape.size n.outShape} vs {Spec.Shape.size view2d}) ({n.summary})"
-    | .reshape inS outS => do
-        let pId ← unaryParentId i n
-        let pV ← getParent pId
-        let pT ← expectShape (α := α) (expected := inS) pV
-        if h : Spec.Shape.size inS = Spec.Shape.size outS then
-          let y := Tensor.reshapeSpec (α := α) (source := inS) (target := outS) pT h
-          pure (Spec.SomeTensor.mk (α := α) outS y)
-        else
-          throw
-            (s!"IR eval: node {i}: reshape numel mismatch: \
-              {Spec.Shape.size inS} vs {Spec.Shape.size outS}")
-    | .flatten s => do
-        let pId ← unaryParentId i n
-        let pV ← getParent pId
-        let pT ← expectShape (α := α) (expected := s) pV
-        let y := Tensor.flattenSpec (α := α) (shape := s) pT
-        pure (Spec.SomeTensor.mk (α := α) (ShapeUtil.flattenOutShape s) y)
-    | .concat axis => do
-        let parents ← n.parents.mapM getParent
-        evalConcat (α := α) i n axis parents
-    | .transpose axis₁ axis₂ => do
-        let pId ← unaryParentId i n
-        let parent ← getParent pId
-        let perm ← OpContracts.transposePerm parent.shape.rank axis₁ axis₂
-        let output ← permuteSomeTensor (α := α) parent perm
-        let tensor ← expectShape (α := α) (expected := n.outShape) output
-        pure (Spec.SomeTensor.mk (α := α) n.outShape tensor)
     | .mseLoss => do
         let (yId, tId) ← binaryParentIds i n
         mseLossSomeTensor (α := α) i (← getParent yId) (← getParent tId)

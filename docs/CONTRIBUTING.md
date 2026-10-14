@@ -1,6 +1,6 @@
 # Contributing to TorchLean
 
-Use the pinned Lean 4.34.0 toolchain and mathlib dependency, and keep changes focused. FloatLib tracks
+Use the pinned Lean 4.35.0 toolchain and mathlib dependency, and keep changes focused. FloatLib tracks
 `main` in `lakefile.lean`; `lake-manifest.json` locks the revision used by a checkout. Update it with
 `scripts/lake.sh update floatlib`, rebuild and test, and commit the updated manifest with any fixes.
 Paths below are relative to the repository root.
@@ -17,8 +17,8 @@ scripts/lake.sh test
 scripts/lake.sh lint
 ```
 
-The wrapper requires Bash and Python 3. It keeps `cpu` and `cuda-libtorch` builds in
-separate local cache directories and holds a checkout lock while Lake runs. Use it consistently
+The wrapper requires Bash and Python 3. It keeps each pinned toolchain's `cpu` and `cuda-libtorch`
+builds in separate local cache directories and holds a checkout lock while Lake runs. Use it consistently
 when switching profiles; direct `lake` commands do not acquire that lock. Blueprint builds select
 the parent library's CPU cache even after a CUDA build.
 

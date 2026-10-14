@@ -130,7 +130,7 @@ value at all. -/
         size_eq := by simp [TorchLean.Tensor.Internal.Shape.size] }
 
 /--
-Reinterpret the same contiguous row-major buffer at an equal-size shape.
+Reinterpret the same row-major buffer at an equal-size shape.
 
 The equality is the complete safety condition: reshape neither pads, truncates,
 nor moves scalar data.

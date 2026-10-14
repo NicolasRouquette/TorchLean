@@ -61,7 +61,7 @@ expects length eight.
 
 Changing the second layer's input width to `7` breaks that composition:
 
-```lean +error (name := reBad)
+```lean +error -keep (name := reBad)
 -- The final layer asks for seven inputs, but the preceding
 -- layer produces eight.
 def reBadModel : nn.Builder (nn.Sequential [2] [1]) :=

@@ -425,7 +425,7 @@ def Seq2SeqDecoderSpec.forwardInference {embedDim hiddenDim vocabularySize : Nat
   let hVocab : 0 < vocabularySize := lt_of_le_of_lt (Nat.zero_le startToken.val) startToken.isLt
   let initialHistory : Array (Tensor α [embedDim]) := #[]
   let (_, results) := Sequence.mapAccum maxLen (h0, initialInput, initialHistory) fun _ state =>
-    let (hidden, input, history) := state
+    let (previous, input, history) := state
     -- A decoder without attention only needs the current embedding. Discarding its history keeps
     -- the RNN-only loop linear in `maxLen`, while the attention path retains the full input prefix.
     let history := if decoder.attention.isSome then history else #[]
@@ -433,7 +433,7 @@ def Seq2SeqDecoderSpec.forwardInference {embedDim hiddenDim vocabularySize : Nat
     let inputPrefix : Tensor α [history.size + 1, embedDim] :=
       Tensor.dim (fun i =>
         nextHistory[i.val]'(by simpa only [nextHistory, Array.size_push] using i.isLt))
-    let (nextHidden, logits) := decoder.forwardStep inputPrefix hidden
+    let (nextHidden, logits) := decoder.forwardStep inputPrefix previous
     let token := Fin.cast (by simp [Shape.size])
       (argmax (s := [vocabularySize]) (by simpa [Shape.size] using hVocab) logits)
     let nextInput := get targetEmbedding token

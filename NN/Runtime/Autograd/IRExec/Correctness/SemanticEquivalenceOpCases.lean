@@ -215,10 +215,8 @@ theorem buildFrom_denoteAllFrom_reshape
                     (τ := n.outShape) (nodeData := nodeData) hTail hEval
                 ·
                   simp [hOut] at hBuild
-                  try cases hBuild
               ·
                 simp [hNumel] at hBuild
-                try cases hBuild
 
 /-- Semantic-preservation lemma for `.flatten s` lowering. -/
 theorem buildFrom_denoteAllFrom_flatten
@@ -299,7 +297,6 @@ theorem buildFrom_denoteAllFrom_flatten
                   (τ := n.outShape) (nodeData := nodeData) hTail hEval
               ·
                 simp [expected, hOut] at hBuild
-                try cases hBuild
 
 end IRExec
 end Autograd

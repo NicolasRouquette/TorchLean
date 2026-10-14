@@ -73,7 +73,7 @@ deterministic seed-state computation waiting to initialize its parameters.
 Suppose the second linear layer is typed with the wrong input width. In TorchLean the definition
 does not survive elaboration:
 
-```lean +error (name := tpWidth)
+```lean +error -keep (name := tpWidth)
 -- A seven-input readout cannot follow an eight-output
 -- hidden layer.
 def tpBroken :

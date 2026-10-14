@@ -234,7 +234,7 @@ Try changing the hidden width from `4` to `6` in both linear layers. The printed
 `[[6, 2], [6], [1, 6], [1]]`. Now change only the second layer, to `nn.linear 6 1`, and the model
 stops elaborating:
 
-```lean +error (name := wfWidthClash)
+```lean +error -keep (name := wfWidthClash)
 -- Change only the final layer's input width to expose the
 -- broken composition.
 def wfBroken : nn.Builder (nn.Sequential [2] [1]) :=

@@ -6,7 +6,7 @@ error theory, and interval operations. TorchLean retains rounded-real specializa
 interval endpoint contracts, quantization, and the proofs needed by tensor and runtime consumers.
 
 The dependency follows FloatLib's `main` branch, with its resolved revision locked in
-`lake-manifest.json`, using Lean and mathlib 4.34.0. Run `scripts/lake.sh update floatlib` and
+`lake-manifest.json`, using Lean and mathlib 4.35.0. Run `scripts/lake.sh update floatlib` and
 rebuild to adopt upstream changes; ordinary builds use the locked revision.
 Import `NN.Floats` for the adapters, or import FloatLib directly when a program needs a generic
 scalar API.
@@ -132,6 +132,13 @@ generic arithmetic refinements to the binary32 model used by TorchLean.
 generic reduction-tree error bound. The binary32 execution refinement remains in
 `NN.Proofs.RuntimeApprox.Reductions.IEEE32`. These bounds account for rounding at each chosen
 tree node; FloatLib's exact sum and dot-product accumulators round only once at the end.
+
+The binary32 corollaries `evalIEEE_enclosure_binary32` and `sumTreeResult_enclosure_binary32`
+use unit roundoff `2⁻²⁴` on the tree's representable operands. They require finite leaves and
+finite intermediate sums, and include subnormal sums without assuming a global relative-error
+bound on all real inputs. `dotTreeResult_enclosure_binary32` bounds accumulation relative to the
+exact sum of already-rounded products; a real dot-product bound must also account for multiplication.
+An external reduction still needs evidence that it follows one of these tree schedules.
 
 The nested derivative quotient repair also remains TorchLean code, in
 `NN.Core.Numeric.Quotient` and `NN.Runtime.Autograd.Model.Dual`. FloatLib supplies exact finite

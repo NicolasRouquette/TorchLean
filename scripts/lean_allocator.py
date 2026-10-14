@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build Lean 4.34's mimalloc for TorchLean executables and shared libraries.
+"""Build Lean's pinned mimalloc for TorchLean executables and shared libraries.
 
-Lean 4.34 pins mimalloc 3.4.4, which includes the large-free size correction.
+Lean 4.35 pins mimalloc 3.4.5, which includes the large-free size correction.
 Its arena collector can still clear a concurrently published purge wakeup.
 The patch below publishes arena deadlines before their wakeup, clears before
 scanning, and preserves concurrent deadlines and the existing retry timing.
@@ -14,7 +14,7 @@ this object before libleanrt.a. This serves compiled TorchLean executables;
 it does not replace the allocator inside the Lean compiler or `#eval`.
 
 Source is downloaded once and verified by SHA-256. For offline builds, set
-TORCHLEAN_MIMALLOC_ARCHIVE to the same verified v3.4.4 source archive.
+TORCHLEAN_MIMALLOC_ARCHIVE to the same verified v3.4.5 source archive.
 Review this source and header binding when updating the Lean toolchain.
 """
 import argparse
@@ -27,11 +27,11 @@ import tarfile
 import tempfile
 import urllib.request
 
-SOURCE_URL = "https://codeload.github.com/microsoft/mimalloc/tar.gz/refs/tags/v3.4.4"
-SOURCE_SHA256 = "8ba991a7266983bd5eefc36e140c24734f720fd9b1fd79ddaeff44ea85d16760"
-HEADER_SHA256 = "b457b2365eb25d852efe02f0b5808c99f822b2934d6bcf9acf3a06254c8dcdd1"
+SOURCE_URL = "https://codeload.github.com/microsoft/mimalloc/tar.gz/refs/tags/v3.4.5"
+SOURCE_SHA256 = "19a43af0645c57d348e729d5b31e23e912582911bb1047f795790834d3416221"
+HEADER_SHA256 = "ad053de727da9c2e33937f6793305e4027b1a414c9a5ada75c609ccfbd28f3e1"
 OS_SHA256 = "e55a179cbbe6035133e0d76f5a09b0958044af9cc91b49174ca660505814454c"
-ARENA_SHA256 = "0919ab2a7a69a90ff88b7cfcdb3d4c67a2bfc791b8a6617cd31b37b7b9295093"
+ARENA_SHA256 = "1fce023490012642709ce0ad33ff8244f98ce78ba299d8a9198508f9d837931f"
 ROOT = Path(__file__).resolve().parent.parent
 ARENA_PATCHES = (
     ("""// Schedule a purge. This is usually delayed to avoid repeated decommit/commit calls.""",
@@ -113,7 +113,7 @@ def extract_source(archive, directory):
         for member in tar:
             relative = Path(member.name)
             if relative.is_absolute() or ".." in relative.parts or \
-                    relative.parts[0] != "mimalloc-3.4.4":
+                    relative.parts[0] != "mimalloc-3.4.5":
                 raise RuntimeError("unexpected mimalloc archive path")
             if member.isdir():
                 continue
@@ -122,7 +122,7 @@ def extract_source(archive, directory):
             target = directory / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(tar.extractfile(member).read())
-    source = directory / "mimalloc-3.4.4"
+    source = directory / "mimalloc-3.4.5"
     if sha(source / "src/os.c") != OS_SHA256 or \
             sha(source / "src/arena.c") != ARENA_SHA256 or \
             sha(source / "include/mimalloc.h") != HEADER_SHA256:
@@ -159,7 +159,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if sha(args.lean_include / "lean/mimalloc.h") != HEADER_SHA256:
-        raise RuntimeError("allocator build requires Lean's pinned mimalloc 3.4.4 header; "
+        raise RuntimeError("allocator build requires Lean's pinned mimalloc 3.4.5 header; "
                            "review this binding after a toolchain update")
     archive = source_archive()
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -171,7 +171,9 @@ def main():
         arena_source.write_text(patch_arena_source(arena_source.read_text()))
         temporary_object = directory / "mimalloc.o"
         flags = compiler_flags(source)
-        subprocess.run([args.compiler, *flags, str(source / "src/static.c"),
+        flags += ["-I" + str(args.lean_include),
+                  "-I" + str(source / "src")]
+        subprocess.run([args.compiler, *flags, str(ROOT / "csrc/runtime/allocator.cpp"),
                         "-o", str(temporary_object)], check=True, timeout=180)
         os.replace(temporary_object, args.output)
         args.output.with_suffix(".json").write_text(json.dumps({

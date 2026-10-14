@@ -7,6 +7,7 @@ Authors: TorchLean Team
 module
 
 public import NN.IR.Check
+public import NN.IR.DType
 public import NN.IR.Payload
 public import NN.Runtime.PyTorch.Import.Core
 public import NN.Runtime.PyTorch.Wire
@@ -29,7 +30,7 @@ The runtime bridge therefore uses a small, explicit JSON format:
 {
   "format": "torchlean.ir.v1",
   "input_id": 0,
-  "output_ids": [4],
+  "output_ids": [1],
   "nodes": [
     {"id": 0, "kind": "input", "parents": [], "shape": [1, 4]},
     {"id": 1, "kind": "relu", "parents": [0], "shape": [1, 4]}
@@ -112,7 +113,7 @@ inductive ValueShape where
   | tuple (items : Array Shape)
   deriving Repr, BEq
 
-/-- One raw PyTorch/FX value node from `torchlean.ir.v1` JSON. -/
+/-- One raw tensor or container value from a graph artifact. -/
 structure CapturedValueNode where
   /-- Raw FX node id from the JSON artifact. -/
   id : Nat
@@ -271,7 +272,15 @@ def kind (ctx : String) (outShape : Shape) (o : StateDict) : Except String OpKin
     | throw s!"PyTorch graph import: {ctx}: unsupported TorchLean IR op kind `{tagString}`"
   match tag with
   | .custom =>
-      throw s!"PyTorch graph import: {ctx}: custom computations need a checked Lean body"
+      -- A typed cast carries its element rule in `IR.Program`, not a homogeneous body.
+      -- The ordinary evaluator rejects it unless an implementation is supplied explicitly.
+      match o.get? "primitive" with
+      | some (.str "cast") => pure (.custom "cast" [outShape] outShape)
+      | some (.str "call") =>
+          let name ← Lean.Name.fromJson? (← field ctx "name" o)
+          let inputShapes ← shapes ctx (← field ctx "input_shapes" o)
+          pure (.custom name.toString inputShapes.toList outShape)
+      | _ => throw s!"PyTorch graph import: {ctx}: custom computations need a checked Lean body"
   | .const =>
       let valueShape ←
         match o.get? "value_shape" with
@@ -327,16 +336,34 @@ def node (j : Json) : Except String CapturedValueNode := do
   let valueShape ← valueShape ctx o
   pure { id := id, parents := parents, kind := kind, valueShape := valueShape, raw := o }
 
-/-- Parse the graph object into the PyTorch/FX value-level graph, before tensor lowering. -/
+/-- Read the ordered tensor interface. Version one has one input; version two lists all inputs.
+
+An artifact must use the interface of its declared version. Keeping these fields
+exclusive prevents two readers from assigning different argument orders to the same graph.
+-/
+def inputs (j : Json) : Except String (Array Nat) := do
+  let o ← object "root" j
+  let format ← string "root.format" (← field "root" "format" o)
+  if format == Wire.format then
+    if (o.get? "input_ids").isSome then
+      throw "IR import: version one uses input_id, not input_ids"
+    pure #[← natField "root" "input_id" o]
+  else if format == "torchlean.ir.v2" then
+    if (o.get? "input_id").isSome then
+      throw "IR import: version two uses input_ids, not input_id"
+    let ids ← natArrayField "root" "input_ids" o
+    if ids.isEmpty then
+      throw "IR import: input_ids must contain at least one input"
+    pure ids
+  else
+    throw s!"IR import: unsupported format `{format}`"
+
+/-- Parse the value-level graph, retaining the first argument for single-input consumers. -/
 def graph (j : Json) : Except String CapturedValueGraph := do
   let o ← object "root" j
-  match o.get? "format" with
-  | some (.str format) =>
-      if format != Wire.format then
-        throw s!"PyTorch graph import: unsupported format `{format}` (expected `{Wire.format}`)"
-  | some bad => typeError "root.format" "string" bad
-  | none => throw "PyTorch graph import: root: missing field `format`"
-  let inputId ← natField "root" "input_id" o
+  let ids ← inputs j
+  let some inputId := ids[0]?
+    | throw "IR import: missing first input"
   let outputIds ← natArrayField "root" "output_ids" o
   if outputIds.isEmpty then
     throw "PyTorch graph import: root.output_ids must contain at least one output"
@@ -359,9 +386,12 @@ The tensor IR checker performs the corresponding validation after lowering. This
 still necessary because tuple/container nodes do not enter the tensor IR, and because `rawToTensor`
 is indexed by raw node id while lowering is in progress.
 -/
-def check (vg : CapturedValueGraph) : Except String Unit := do
+def check (vg : CapturedValueGraph) (inputIds : Array Nat := #[vg.inputId]) :
+    Except String Unit := do
   if vg.nodes.isEmpty then
     throw "PyTorch graph import: graph contains no nodes"
+  unless inputIds[0]? == some vg.inputId do
+    throw "IR import: the first argument must match the designated input"
   let mut inputCount := 0
   for i in [0:vg.nodes.size] do
     let raw ←
@@ -378,12 +408,17 @@ def check (vg : CapturedValueGraph) : Except String Unit := do
           s!"PyTorch graph import: node[{raw.id}]: parent id {parentId} is not < {raw.id}"
     if raw.kind = Wire.tag .input then
       inputCount := inputCount + 1
-  if inputCount != 1 then
-    throw s!"PyTorch graph import: expected exactly one input node, got {inputCount}"
-  let input ← get vg vg.inputId
-  if input.kind != Wire.tag .input then
-    throw <|
-      s!"PyTorch graph import: input_id {vg.inputId} designates `{input.kind}`, not `input`"
+  if inputCount != inputIds.size then
+    throw <| s!"IR import: interface lists {inputIds.size} inputs, " ++
+      s!"but the graph contains {inputCount} input nodes"
+  let mut inputs : Std.HashSet Nat := {}
+  for id in inputIds do
+    let input ← get vg id
+    if input.kind != Wire.tag .input then
+      throw s!"IR import: argument {id} designates `{input.kind}`, not `input`"
+    if inputs.contains id then
+      throw s!"IR import: repeated input node {id}"
+    inputs := inputs.insert id
   for outputId in vg.outputIds do
     let _output ← get vg outputId
   pure ()
@@ -395,8 +430,9 @@ Tuple/container nodes are preserved in `CapturedValueGraph`, but they do not bec
 TorchLean's verification and execution passes consume the clean tensor DAG, while the import layer
 can explain container-valued PyTorch failures without changing their semantics.
 -/
-def lower (vg : CapturedValueGraph) : Except String CapturedGraph := do
-  check vg
+def lower (vg : CapturedValueGraph) (inputIds : Array Nat := #[vg.inputId]) :
+    Except String CapturedGraph := do
+  check vg inputIds
   let mut rawToTensor : Array (Option Nat) := Array.replicate vg.nodes.size none
   let mut tensorNodes : Array Node := #[]
   let mut mhaPayloadBindings : Array MhaPayloadBinding := #[]
@@ -657,6 +693,12 @@ def parseGraph (j : Json) : Except String CapturedGraph := do
 /-- Parse serialized parameters into the node-keyed Float payload. -/
 def parsePayload (j : Json) : Except String (Payload Float) := do
   let valueGraph ← Internal.graph j
+  for node in valueGraph.nodes do
+    if let some dtype := node.raw.get? "dtype" then
+      match ← NN.IR.DType.fromJson dtype with
+      | .binary _ => pure ()
+      | _ => throw s!"PyTorch graph import: node[{node.id}]: non-floating values cannot \
+          enter a Float payload; use the typed IR importer"
   let captured ← Internal.validate (← Internal.lower valueGraph)
   let mut constParams : Array (Option (ConstFlat Float)) :=
     Array.replicate captured.graph.nodes.size none

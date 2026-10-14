@@ -286,7 +286,6 @@ theorem buildFrom_denoteAllFrom_softmax
               cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId n.outShape with
               | error msg =>
                   simp [hIdx] at hBuild
-                  try cases hBuild
               | ok ip =>
                   simp [hIdx] at hBuild
                   let nodeData : ForwardNode α ([inShape] ++ ss) n.outShape :=

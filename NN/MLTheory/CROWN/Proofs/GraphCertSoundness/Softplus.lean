@@ -44,7 +44,7 @@ exponential at either endpoint. -/
 theorem softplus_envelope_real (x : ℝ) :
     max x 0 ≤ Activation.Math.softplusSpec x ∧
       Activation.Math.softplusSpec x ≤ max x 0 + 1 := by
-  simp only [Activation.Math.softplusSpec, MathFunctions.log, MathFunctions.exp]
+  simp only [Activation.Math.softplusSpec, Proofs.log1p_spec_eq_log_one_add, MathFunctions.exp]
   by_cases hx : x > 0
   · simp only [ite_eq_left hx, max_eq_left (le_of_lt hx)]
     have htail := softplus_tail_bounds_real (neg_nonpos.mpr (le_of_lt hx))

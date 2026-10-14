@@ -56,20 +56,18 @@ def broadcastScalarToShape (g : Buffer) (outShape : Shape) : Buffer :=
   let axisMap := Array.replicate outDims.size 0
   Buffer.broadcastTo g #[] outDims axisMap
 
-/-- Numerically stable softplus: `max(x,0) + log(1 + exp(-abs(x)))`. -/
+/-- Numerically stable softplus: `max(x,0) + log1p(exp(-abs(x)))`. -/
 def softplusBuf (x : Buffer) (n : UInt32) : Buffer :=
   let zeros := Buffer.full n 0.0 (Buffer.dtype x)
-  let ones := Buffer.full n 1.0 (Buffer.dtype x)
   let max0 := Buffer.max x zeros
   let absx := Buffer.abs x
   let negAbs := Buffer.scale absx (-1.0)
   let expNegAbs := Buffer.exp negAbs
-  let onePlusExp := Buffer.add ones expNegAbs
-  let logTerm := Buffer.log onePlusExp
+  let logTerm := Buffer.log1p expNegAbs
   let y := Buffer.add max0 logTerm
-  Buffer.releaseThen zeros <| Buffer.releaseThen ones <| Buffer.releaseThen max0 <|
+  Buffer.releaseThen zeros <| Buffer.releaseThen max0 <|
     Buffer.releaseThen absx <| Buffer.releaseThen negAbs <| Buffer.releaseThen expNegAbs <|
-      Buffer.releaseThen onePlusExp <| Buffer.releaseThen logTerm y
+      Buffer.releaseThen logTerm y
 
 /--
 Row-wise stable softmax.

@@ -714,7 +714,7 @@ print(tuple((adv + values_column).shape))
 TorchLean requires the advantages and values to have the same tensor shape. A length mismatch
 is rejected before the calculation runs:
 
-```lean (name := rlShapeMismatch) +error
+```lean (name := rlShapeMismatch) +error -keep
 -- The return operation requires one value for every
 -- advantage coordinate.
 def rlAdvThree : Tensor Float [3] :=

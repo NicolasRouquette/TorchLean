@@ -118,11 +118,11 @@ def checkGruInitialState : IO Unit := do
   let inputs : Tensor Float [1, 1] := [[0.0]]
   let initial : Tensor Float [1] := [1.0]
   let outputGrad : Tensor Float [1, 1] := [[1.0]]
-  let (hidden, reset, update, candidate, _) :=
+  let (hiddenStates, reset, update, candidate, _) :=
     gruExtractIntermediateValues model.gru inputs initial
   let (gradient, _) :=
-    model.backward inputs hidden outputGrad reset update candidate (by decide) initial
-  expect "GRU nonzero initial forward state" (hidden.to (Array Float) == #[0.5])
+    model.backward inputs hiddenStates outputGrad reset update candidate (by decide) initial
+  expect "GRU nonzero initial forward state" (hiddenStates.to (Array Float) == #[0.5])
   expect "GRU nonzero initial update bias"
     (gradient.cell.updateBias.to (Array Float) == #[0.25])
   expect "GRU nonzero initial candidate recurrent weight"

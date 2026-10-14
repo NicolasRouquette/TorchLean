@@ -21,6 +21,9 @@ PROBE = r"""
 #include <time.h>
 #include <atomic>
 #include <thread>
+// Lean 4.35 bundles its allocation entry point with mimalloc. This standalone
+// allocator probe needs only its fatal OOM callback, not the rest of Lean's runtime.
+extern "C" void lean_internal_panic_out_of_memory(void) { abort(); }
 static size_t rss() {
   FILE* f = fopen("/proc/self/statm", "r");
   size_t size = 0, resident = 0;
@@ -503,6 +506,7 @@ def main():
     parser.add_argument("--object", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     limit = 64 * 1024 * 1024
     results = {}
     with tempfile.TemporaryDirectory(prefix="torchlean-allocator-check-") as directory:

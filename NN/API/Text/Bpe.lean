@@ -123,15 +123,33 @@ def charToByte? (c : Char) : Option UInt8 :=
 def byteEncode (s : String) : String :=
   String.ofList ((s.toUTF8.toList).map byteToChar)
 
-/-- Decode GPT-2 byte-to-unicode escaped text back into a UTF-8 string. -/
-def byteDecode? (s : String) : Option String := do
-  let bytes ← s.toList.foldl
+/-- Undo the byte-to-unicode escape before selecting a UTF-8 decoding policy. -/
+def byteDecodeBytes? (s : String) : Option ByteArray :=
+  s.toList.foldl
     (fun acc? c => do
       let acc ← acc?
       let b ← charToByte? c
       some (acc.push b))
     (some ByteArray.empty)
-  String.fromUTF8? bytes
+
+/-- Decode GPT-2 byte-to-unicode escaped text strictly as UTF-8. -/
+def byteDecode? (s : String) : Option String := do
+  String.fromUTF8? (← byteDecodeBytes? s)
+
+/-- Display a token prefix even when it ends partway through a Unicode character.
+Malformed bytes become replacement characters; complete valid characters are retained. -/
+def displayBytes (bytes : ByteArray) : String := Id.run do
+  let mut position := 0
+  let mut text := ""
+  while position < bytes.size do
+    match bytes.utf8DecodeChar? position with
+    | some character =>
+        text := text.push character
+        position := position + character.utf8Size
+    | none =>
+        text := text.push '�'
+        position := position + 1
+  return text
 
 /-! ## Pre-tokenization -/
 
@@ -368,16 +386,23 @@ def encode (tokenizer : Tokenizer) (text : String) : Except String (Array Nat) :
     Internal.encodeFragment representation fragment)
   pure (encoded.foldl (· ++ ·) #[])
 
-/-- Decode GPT-2 BPE ids back to text. -/
-def decode (tokenizer : Tokenizer) (tokens : Array Nat) : Except String String := do
+/-- Decode GPT-2 BPE ids for display. `strict := true` rejects incomplete or invalid UTF-8
+instead of substituting replacement characters. Unknown token ids are rejected in both modes. -/
+def decode (tokenizer : Tokenizer) (tokens : Array Nat) (strict : Bool := false) :
+    Except String String := do
   let representation := Tokenizer.Internal.view tokenizer
   let escaped ← tokens.toList.mapM (fun token =>
     match Internal.tokenString? representation token with
     | some text => pure text
     | none => throw s!"BPE token id is absent from vocabulary: {token}")
-  match Internal.byteDecode? (String.join escaped) with
-  | some s => pure s
-  | none => throw "BPE decoded bytes were not valid UTF-8"
+  let some bytes := Internal.byteDecodeBytes? (String.join escaped)
+    | throw "BPE vocabulary contains an invalid byte escape"
+  if strict then
+    match String.fromUTF8? bytes with
+    | some s => pure s
+    | none => throw "BPE decoded bytes were not valid UTF-8"
+  else
+    pure (Internal.displayBytes bytes)
 
 /-! ## File Loading -/
 

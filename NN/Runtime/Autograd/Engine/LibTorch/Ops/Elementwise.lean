@@ -148,20 +148,16 @@ and upstream gradient remain owned by the tape.
 @[inline] def log {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
   unary (t := t) "log" xId s s
     (forward := Buffer.log)
-    (backward := fun x dLdy =>
-      let invX := Buffer.inv x
-      Buffer.releaseThen invX <| Buffer.mul dLdy invX)
+    (backward := fun x dLdy => Buffer.div dLdy x)
 
 /-- Elementwise reciprocal `1/x`. -/
 @[inline] def inv {s : Shape} (t : Tape) (xId : Nat) : Result (Tape × Nat) :=
   unary (t := t) "inv" xId s s
     (forward := Buffer.inv)
     (backward := fun x dLdy =>
-      let invx := Buffer.inv x
-      let invx2 := Buffer.mul invx invx
-      let prod := Buffer.mul dLdy invx2
-      Buffer.releaseThen invx <| Buffer.releaseThen invx2 <|
-        Buffer.releaseThen prod <| Buffer.scale prod (-1.0))
+      let negative := Buffer.neg dLdy
+      let quotient := Buffer.div negative x
+      Buffer.releaseThen negative <| Buffer.releaseThen quotient <| Buffer.div quotient x)
 
 /--
 Elementwise `log(softplus(x) + ε)`.

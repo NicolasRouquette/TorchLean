@@ -235,7 +235,8 @@ def adaptiveMaxPoolValue
     let value := getAtOrZero input (List.zipWith Nat.add starts offset)
     match best with
     | none => some value
-    | some current => if value > current then some value else best)
+    | some current =>
+        if value > current || (!(current > value) && !(value == value)) then some value else best)
   -- Positive input and output extents make every adaptive window nonempty.
   best?.getD 0
 
@@ -254,11 +255,12 @@ def maxPoolValue
       (padding := padding), best with
     | none, _ => best
     | some v, none => some v
-    | some v, some b => if v > b then some v else best)
+    | some v, some b => if v > b || (!(b > v) && !(v == v)) then some v else best)
   -- The default makes this helper total; valid pooling shapes always select an input value.
   best?.getD 0
 
-/-- First winning kernel coordinate and value, ignoring padding, shared by the JVP and VJP. -/
+/-- Winning kernel coordinate and value, ignoring padding, shared by the JVP and VJP.
+Finite ties select the first maximum; a NaN wins over finite values, and later NaNs replace it. -/
 def maxPoolWinner?
     {d : Nat} {inSpatial : Tensor Nat [d]}
     (input : Tensor α (Shape.ofList inSpatial.data.toList))
@@ -270,7 +272,8 @@ def maxPoolWinner?
       (padding := padding), best with
     | none, _ => best
     | some v, none => some (winIdxs, v)
-    | some v, some (_, b) => if v > b then some (winIdxs, v) else best)
+    | some v, some (_, b) =>
+        if v > b || (!(b > v) && !(v == v)) then some (winIdxs, v) else best)
 
 /--
 Selected-branch tangent for one hard max-pooling window.

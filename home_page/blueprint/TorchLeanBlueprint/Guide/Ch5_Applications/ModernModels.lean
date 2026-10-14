@@ -173,7 +173,7 @@ def mmBranches : nn.Builder (nn.Sequential [32] [8]) := do
 
 Give the shortcut the wrong width and there is no model to run:
 
-```lean +error (name := mmClash)
+```lean +error -keep (name := mmClash)
 -- This deliberate mismatch asks the shortcut for six
 -- coordinates instead of eight.
 def mmClash : nn.Builder (nn.Sequential [32] [8]) := do

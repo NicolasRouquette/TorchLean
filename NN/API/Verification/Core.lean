@@ -27,7 +27,7 @@ namespace Verification
 inductive Algorithm where
   /-- Fast interval bound propagation. -/
   | ibp
-  /-- Forward affine CROWN bounds. -/
+  /-- CROWN output bounds: forward affine on exact backends, directed backward on rounded ones. -/
   | crown
   /--
   Fixed-relaxation alpha-CROWN with ReLU phases taken from IBP. The constructor is named after

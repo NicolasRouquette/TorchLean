@@ -42,6 +42,9 @@ An edge family turns each scalar input coordinate into `basisSize` features. A K
 applies a learned linear map to all expanded features. The basis is a TorchLean model fragment, not
 an arbitrary Lean callback, so the resulting KAN can run in eager, typed graph, CPU, and CUDA
 training paths supported by the underlying operations.
+
+For the usual KAN interpretation, the basis must expand each input coordinate independently.
+The shape signature alone does not enforce this: a custom basis model can mix coordinates.
 -/
 structure EdgeFamily where
   /-- Short label shown in model summaries and training metadata. -/

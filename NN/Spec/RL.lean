@@ -30,9 +30,9 @@ Folder map:
 - `MarkovMDP`: measure-theoretic MDPs over measurable spaces using mathlib Markov kernels.
 - `Envs/GridWorld`: a concrete finite environment plus deterministic/stochastic MDP views.
 
-The names `MDP`, `ValueFunction`, and `bellmanPolicy` appear in multiple namespaces on purpose:
-`Spec.RL` for deterministic finite MDPs, `Spec.RL.FiniteStochastic` for finite stochastic MDPs, and
-`Spec.RL.Markov` for measurable-space MDPs. Keeping these layers separate avoids forcing every RL
+Deterministic finite MDPs live in `Spec.RL`, finite stochastic MDPs in
+`Spec.RL.FiniteStochastic`, and measurable-space MDPs in `Spec.RL.Markov`. Each namespace supplies
+the definitions its representation needs. Keeping these layers separate avoids forcing every RL
 development into the heaviest probability-theory abstraction.
 -/
 

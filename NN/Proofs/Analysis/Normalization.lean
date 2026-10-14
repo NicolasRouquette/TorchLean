@@ -22,6 +22,8 @@ Current focus:
 That fact matters because inference-time BatchNorm can be folded into a preceding/following affine
 layer for verification, bound propagation, and simplification. Training-mode BatchNorm has
 batch-dependent statistics and is not claimed by this theorem.
+The folding identity is over real arithmetic; it does not justify reordering finite-precision
+division, multiplication, and addition without a separate rounding analysis.
 -/
 
 @[expose] public section

@@ -10,9 +10,11 @@ public import NN.Runtime.Autograd.TypedGraph.Core
 public import NN.Proofs.Autograd.Tape.Algebra.SavedBackward
 
 /-!
-Checked TypedGraph compilation saves local node programs and an indexed primal context. Reverse
-execution uses the certified compact contributions when available and preserves the complete dense
-gradient semantics. The explicit Tape adapter connects this execution to the runtime tape engine.
+Checked TypedGraph compilation saves local node programs and an indexed primal context. The
+all-seeds reverse pass preserves complete dense gradient semantics. Single-output differentiation
+visits dependencies of that output when storage equality and certified compact support are
+available. Other cases retain conservative traversal. The explicit Tape adapter connects the
+dense pass to the runtime tape engine.
 -/
 
 @[expose] public section
@@ -98,11 +100,12 @@ def backwardDenseFrom [Add α] (compiled : Compiled α Γ ss)
     (seed : TorchLean.TensorPack α (Γ ++ ss)) : Array (Spec.SomeTensor α) :=
   (compiled.saved.backpropStored seed).values
 
-/-- Seed any input or intermediate output and compute the complete gradient context. -/
+/-- Seed one output and traverse its certified support when storage equality is available.
+Opaque VJPs visit the full prefix; carriers without equality use the dense reference. -/
 def backwardDenseAllFrom [Add α] [Zero α] {shape : Shape}
     (compiled : Compiled α Γ ss) (output : Idx (Γ ++ ss) shape)
     (seed : Tensor α shape) : Array (Spec.SomeTensor α) :=
-  compiled.backwardDenseFrom (TensorPack.single output seed)
+  (compiled.saved.backpropFrom output seed).values
 
 end Compiled
 

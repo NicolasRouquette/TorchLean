@@ -710,7 +710,8 @@ private theorem bridge_concat
     (hshapes : ParentShapesMatch nodes node rvals)
     (heval : NN.IR.Graph.evalNode payload input rvals i node = .ok t) :
     evalNode? nodes ps inputs (liftVals rvals) i = some (flatOfSome t) := by
-  simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw, hkind] at heval
+  simp only [NN.IR.Graph.evalNode, NN.IR.Graph.evalNodeRaw,
+    NN.IR.Graph.evalTransform, hkind] at heval
   obtain ⟨raw, hraw, hnorm⟩ := NN.IR.Graph.bind_ok_iff.mp heval
   obtain ⟨parents, hparents, hconcat⟩ := NN.IR.Graph.bind_ok_iff.mp hraw
   obtain ⟨layout, values, hlayout, hvalues, hresult⟩ :=

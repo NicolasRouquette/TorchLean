@@ -8,6 +8,7 @@ module
 
 public import NN.Floats.IEEEExec.Bridge.Finite
 public import NN.Proofs.RuntimeApprox.Reductions.Tree
+import FloatLib.Floats.Formats.BinaryInterchange.Configured.Reduction.Tree
 
 /-!
 # Reductions
@@ -31,9 +32,11 @@ parameters depend only on:
 - $A=\sum_i|\mathtt{leaf}_i|$ (a scale factor).
 
 The bound uses the geometric factor $(1+u)^{n-1}-1$, not the rational $\gamma_k$ bound.
-Its rounding hypothesis quantifies over all real operands. Finiteness of the selected tree does
-not establish that hypothesis, and binary32 underflow prevents choosing the usual normal-range
-unit roundoff globally. These are conditional theorems, not executable certificate checks.
+The generic rounding hypothesis quantifies over all real operands. Finiteness of one tree does
+not establish it, and binary32 underflow prevents choosing the usual unit roundoff globally over
+arbitrary real operands. The `_binary32` corollaries instead reuse FloatLib's bounds for the
+tree's own representable operands. They admit `u = 2⁻²⁴`, including subnormal sums, under the
+finite-execution hypothesis alone. These are mathematical enclosures, not native-kernel checks.
 
 For `ExecFloat.Binary 8 23`, we connect the executable `add` to the real model
 `Model.roundAt FloatFormat.binary32 (a + b)`, but only on the *finite* branch. If `Inf`/`NaN`/
@@ -219,6 +222,85 @@ theorem sumTreeResult_enclosure
   rw [htr]
   exact hE
 
+private def modelTree (t : SumTree (ExecFloat.Binary 8 23)) :=
+  t.toReductionTree.map toModel
+
+private theorem modelTree_eval (t : SumTree (ExecFloat.Binary 8 23)) :
+    (modelTree t).eval Model.add id = toModel (evalIEEE t) := by
+  induction t with
+  | leaf x => rfl
+  | node a b ha hb =>
+    change Model.add ((modelTree a).eval Model.add id) ((modelTree b).eval Model.add id) = _
+    rw [ha, hb]
+    symm
+    exact toModel_add (evalIEEE a) (evalIEEE b)
+
+private theorem modelTree_finite (t : SumTree (ExecFloat.Binary 8 23))
+    (finite : FiniteEvalSumTree t) : Model.ReductionTree.FiniteEval (modelTree t) := by
+  induction t with
+  | leaf x => exact finite
+  | node a b ha hb =>
+    refine ⟨ha finite.1, hb finite.2.1, ?_⟩
+    change Model.isFinite ((modelTree (.node a b)).eval Model.add id) = true
+    rw [modelTree_eval]
+    exact finite.2.2
+
+private theorem modelTree_exact (t : SumTree (ExecFloat.Binary 8 23)) :
+    ((modelTree t).leaves.map Model.toReal).sum = exactSumIEEE t := by
+  induction t with
+  | leaf x =>
+    simp [modelTree, SumTree.toReductionTree, FloatLib.Numerics.ReductionTree.map,
+      FloatLib.Numerics.ReductionTree.leaves, exactSumIEEE, exactSum, Function.comp_apply]
+  | node a b ha hb =>
+    change (((modelTree a).leaves ++ (modelTree b).leaves).map Model.toReal).sum = _
+    simp only [List.map_append, List.sum_append, ha, hb, exactSumIEEE, exactSum]
+
+private theorem modelTree_scale (t : SumTree (ExecFloat.Binary 8 23)) :
+    (modelTree t).sumAbs Model.toReal = sumAbsIEEE t := by
+  induction t with
+  | leaf x => rfl
+  | node a b ha hb =>
+    change (modelTree a).sumAbs Model.toReal + (modelTree b).sumAbs Model.toReal = _
+    simp only [ha, hb, sumAbsIEEE, sumAbs]
+
+private theorem modelTree_nodeCount (t : SumTree (ExecFloat.Binary 8 23)) :
+    (modelTree t).nodeCount = t.leafCount - 1 := by
+  induction t with
+  | leaf x => rfl
+  | node a b ha hb =>
+    change (modelTree a).nodeCount + (modelTree b).nodeCount + 1 = _
+    simp only [ha, hb, SumTree.leafCount]
+    have := a.leafCount_pos
+    have := b.leafCount_pos
+    omega
+
+/-- A finite binary32 sum has the usual unit-roundoff enclosure, including subnormal sums.
+
+FloatLib bounds addition on this tree's own representable operands. Unlike the generic enclosure,
+this corollary needs no rounding assumption quantified over arbitrary real inputs.
+-/
+theorem evalIEEE_enclosure_binary32 (t : SumTree (ExecFloat.Binary 8 23))
+    (finite : FiniteEvalSumTree t) :
+    |(toModel (evalIEEE t)).toReal - exactSumIEEE t| ≤
+      (growth ((2 : ℝ) ^ (-24 : ℤ)) t.leafCount - 1) * sumAbsIEEE t := by
+  have bound := Model.ReductionTree.abs_toReal_eval_sub_sum_le_geometric
+    (modelTree t) rfl (modelTree_finite t finite)
+  simp only [modelTree_eval, modelTree_exact, modelTree_scale, modelTree_nodeCount,
+    Model.unitRoundoffAt_eq] at bound
+  exact bound
+
+/-- Every finite binary32 sum schedule has the tree-local unit-roundoff enclosure. -/
+theorem sumTreeResult_enclosure_binary32
+    (xs : Array (ExecFloat.Binary 8 23)) (r : ExecFloat.Binary 8 23)
+    (result : sumTreeResult xs r) :
+    ∃ t : SumTree (ExecFloat.Binary 8 23),
+      List.Perm t.leaves.toList xs.toList ∧ evalIEEE t = r ∧
+      |(toModel r).toReal - exactSumIEEE t| ≤
+        (growth ((2 : ℝ) ^ (-24 : ℤ)) t.leafCount - 1) * sumAbsIEEE t := by
+  obtain ⟨t, permutation, evaluated, finite⟩ := result
+  refine ⟨t, permutation, evaluated, ?_⟩
+  simpa only [evaluated] using evalIEEE_enclosure_binary32 t finite
+
 /-!
 ## Dot-product accumulation (sum of products)
 
@@ -393,6 +475,47 @@ theorem dotTreeResult_enclosure
   have htr : (toModel r).toReal = evalRealDotIEEE t := by simpa [hr] using hto
   rw [htr]
   exact hE
+
+private def productTree :
+    SumTree (ExecFloat.Binary 8 23 × ExecFloat.Binary 8 23) → SumTree (ExecFloat.Binary 8 23)
+  | .leaf (x, y) => .leaf (ExecFloat.mul x y)
+  | .node a b => .node (productTree a) (productTree b)
+
+private theorem productTree_properties
+    (t : SumTree (ExecFloat.Binary 8 23 × ExecFloat.Binary 8 23)) :
+    evalIEEE (productTree t) = evalDotIEEE t ∧
+      exactSumIEEE (productTree t) = exactSumDotIEEE t ∧
+      sumAbsIEEE (productTree t) = sumAbsDotIEEE t ∧
+      (productTree t).leafCount = t.leafCount ∧
+      (FiniteEvalDot t → FiniteEvalSumTree (productTree t)) := by
+  induction t with
+  | leaf pair => cases pair; exact ⟨rfl, rfl, rfl, rfl, id⟩
+  | node a b ha hb =>
+    simp only [productTree, evalIEEE, evalDotIEEE, exactSumIEEE, exactSumDotIEEE,
+      sumAbsIEEE, sumAbsDotIEEE, exactSum, sumAbs, SumTree.leafCount,
+      FiniteEvalSumTree, FiniteEvalDot]
+    exact ⟨congrArg₂ ExecFloat.add ha.1 hb.1,
+      congrArg₂ (· + ·) ha.2.1 hb.2.1,
+      congrArg₂ (· + ·) ha.2.2.1 hb.2.2.1,
+      congrArg₂ (· + ·) ha.2.2.2.1 hb.2.2.2.1,
+      fun finite => ⟨ha.2.2.2.2 finite.1, hb.2.2.2.2 finite.2.1,
+        by simpa only [ha.1, hb.1] using finite.2.2⟩⟩
+
+/-- Binary32 dot-product accumulation needs only finite products and finite intermediate sums.
+The reference is the exact sum of the already-rounded products, not the original real dot product.
+-/
+theorem dotTreeResult_enclosure_binary32
+    (xs : Array (ExecFloat.Binary 8 23 × ExecFloat.Binary 8 23)) (r : ExecFloat.Binary 8 23)
+    (result : dotTreeResult xs r) :
+    ∃ t : SumTree (ExecFloat.Binary 8 23 × ExecFloat.Binary 8 23),
+      List.Perm t.leaves.toList xs.toList ∧ evalDotIEEE t = r ∧
+      |(toModel r).toReal - exactSumDotIEEE t| ≤
+        (growth ((2 : ℝ) ^ (-24 : ℤ)) t.leafCount - 1) * sumAbsDotIEEE t := by
+  obtain ⟨t, permutation, evaluated, finite⟩ := result
+  refine ⟨t, permutation, evaluated, ?_⟩
+  obtain ⟨evaluation, exactSum, scale, count, finiteness⟩ := productTree_properties t
+  simpa only [evaluation, exactSum, scale, count, evaluated] using
+    evalIEEE_enclosure_binary32 (productTree t) (finiteness finite)
 
 end
 

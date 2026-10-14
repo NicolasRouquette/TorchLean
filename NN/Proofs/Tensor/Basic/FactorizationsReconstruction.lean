@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+import Mathlib.Data.List.GetD
 public import NN.Proofs.Utils.MathFunctions
 public import NN.Proofs.Tensor.Basic.Factorizations
 

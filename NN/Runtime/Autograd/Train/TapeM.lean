@@ -72,7 +72,8 @@ Compute the mean of a dataset of scalar-valued losses.
 /-- Mean reduction for an array of scalar-valued losses, written in `TapeM`.
 
 This is a common pattern in training loops: compute a scalar loss per sample, sum, then scale by
-`1/N`.
+`1/N`. Loss callbacks and additions run in array order. The sum and reciprocal are computed in
+the chosen scalar type; narrow formats can lose contributions or overflow on large datasets.
 -/
 def meanScalarOver {a b : Type}
   [TorchLean.Storage a] [Add a] [Mul a] [Div a] [One a] [NatCast a]

@@ -193,7 +193,7 @@ that broadcast was intended. TorchLean's `addSpec` requires the two operand shap
 rejects
 an implicit broadcast:
 
-```lean (name := bzBadAdd) +error
+```lean (name := bzBadAdd) +error -keep
 /--
 Elementwise addition requires an explicit broadcast of the
 reduced row.

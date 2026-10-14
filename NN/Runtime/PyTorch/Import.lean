@@ -31,6 +31,11 @@ For graphs, the matching path is:
 2. `Import.PyTorch.TorchExport.parseGraph` reads the `torchlean.ir.v1` JSON into `NN.IR.Graph`.
 3. The parser runs the shared IR well-formedness and shape checkers before accepting the graph.
 
+For per-node element types and explicit binary casts, use `Import.IR.parseProgram` from
+`NN.Runtime.IR`. Its exact-word payload loader supplies typed constants and linear parameters.
+The Python `torchlean.verify` entry point uses this path; other parameterized operators still need
+exact typed payload loaders before binary execution can run them.
+
 Op kind strings in that artifact are resolved through `Interop.PyTorch.Wire`, the same table
 the exporters write with; parsing a serialized operator tag recovers its `NN.IR.OpTag` identity.
 

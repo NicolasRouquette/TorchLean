@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+import Mathlib.Algebra.BigOperators.Field
 public import NN.Proofs.Tensor.Basic.LinearAlgebra
 public import NN.Proofs.Utils.MathFunctions
 public import NN.Spec.Layers.Activation

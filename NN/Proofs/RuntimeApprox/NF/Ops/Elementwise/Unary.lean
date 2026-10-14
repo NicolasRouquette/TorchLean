@@ -165,6 +165,24 @@ theorem approxTensor_exp_spec {s : Shape} :
           (approx_exp_nf (β := β) (fexp := fexp) (rnd := rnd) (x := x) (xR := xR) (eps := eps) hx))
   simpa [expSpec, expBoundTensor] using h
 
+/-- Shape-generic square-root approximation, including zero second moments. -/
+theorem approxTensor_sqrt_spec {s : Shape}
+    {xS : SpecTensor s} {xR : Tensor R s} {eps : ℝ}
+    (hx : approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      xS xR eps) :
+    approxTensor (α := R) (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+      (sqrtSpec xS) (sqrtSpec xR)
+      (linfNorm (sqrtBoundTensor (β := β) (fexp := fexp) (rnd := rnd) eps xR)) := by
+  have bound := approxTensor_map_spec_of_scalar_bound (α := R)
+    (toSpec := toSpec (β := β) (fexp := fexp) (rnd := rnd))
+    (fS := fun x => Numerics.MathFunctions.sqrt (max x 0))
+    (fR := fun xR => Numerics.MathFunctions.sqrt (max xR 0))
+    (bnd := fun a eps => Real.sqrt eps + ulp β fexp (Real.sqrt (max a 0)) / 2) hx (by
+      intro x xR hx
+      simpa [Proofs.mathfunc_sqrt_eq_rsqrt] using
+        approx_sqrt_clamp_nf (β := β) (fexp := fexp) (rnd := rnd) hx)
+  simpa [sqrtSpec, sqrtBoundTensor] using bound
+
 /-- Shape-generic square-root approximation on a certified positive tensor domain.
 
 The pointwise lower bound `η ≤ x` is carried by `Tensor.Forall` over the exact tensor. Because the

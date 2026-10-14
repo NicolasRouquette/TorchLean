@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+import Mathlib.Algebra.BigOperators.Field
 public import NN.Proofs.Analysis.Softmax
 public import NN.Proofs.Autograd.FDeriv.Softmax
 public import NN.Proofs.RuntimeApprox.NF.ShapeOps

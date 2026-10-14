@@ -74,7 +74,7 @@ theorem buildFrom_denoteAllFrom_broadcastTo
   | some pId =>
           cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId s₁ with
           | error msg =>
-              simp [hp, hIdx] at hBuild; try cases hBuild
+              simp [hp, hIdx] at hBuild
           | ok ip =>
               simp [hp, hIdx] at hBuild
               by_cases hCan : Spec.Shape.CanBroadcastTo s₁ s₂
@@ -162,7 +162,7 @@ theorem buildFrom_denoteAllFrom_axisReduction
   | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
-              simp [hp, hP] at hBuild; try cases hBuild
+              simp [hp, hP] at hBuild
           | ok pNode =>
               simp [hp, hP] at hBuild
               let s := pNode.outShape
@@ -318,7 +318,7 @@ theorem buildFrom_denoteAllFrom_sum
   | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
-              simp [hp, hP] at hBuild; try cases hBuild
+              simp [hp, hP] at hBuild
           | ok pNode =>
               simp [hp, hP] at hBuild
               let s := pNode.outShape

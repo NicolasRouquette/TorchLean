@@ -332,7 +332,7 @@ theorem evalAt_concat_leadingAxis_eq
   unfold Graph.evalAt
   rw [variadicGraphOut_getNode]
   simp only [Bind.bind, Except.bind]
-  simp only [Graph.evalNode, Graph.evalNodeRaw, variadicNodeOut]
+  simp only [Graph.evalNode, Graph.evalNodeRaw, Graph.evalTransform, variadicNodeOut]
   simp only [variadicNodeOut] at hParents
   rw [hParents]
   simp only [Bind.bind, Except.bind]

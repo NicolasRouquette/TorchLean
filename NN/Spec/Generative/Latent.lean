@@ -62,13 +62,28 @@ D_{\mathrm{KL}}\!\left(\mathcal{N}(\mu,\sigma^2)\,\middle\|\,\mathcal{N}(0,1)\ri
 $$
 
 We return the mean across the latent shape, matching TorchLean's existing loss convention.
+For real-like scalars, the small-log-variance branch avoids subtracting one from a nearly
+unit exponential. A final nonnegative clamp removes negative roundoff; it is not an error bound.
+Complex inputs retain the original algebraic expression when the real-like guard fails.
 -/
 def diagonalGaussianKlToStandard
     {latent : Shape} (mu logvar : Tensor α latent) : α :=
-  let var := Tensor.expSpec logvar
-  let mu2 := mulSpec mu mu
-  let ones := Tensor.full (α := α) latent (1 : α)
-  let per := var + mu2 - ones - logvar
+  let per := Tensor.map2Spec (fun mean logVariance =>
+    let magnitude := MathFunctions.abs mean
+    let varianceMagnitude := MathFunctions.abs logVariance
+    -- Complex magnitudes need not equal either signed input, so do not clamp that expression.
+    if (magnitude == mean || magnitude == -mean) &&
+        (varianceMagnitude == logVariance || varianceMagnitude == -logVariance) then
+      let varianceTerm := if varianceMagnitude < 1 then
+          -- exp(v) - 1 - v = 2 sinh²(v/2) + sinh(v) - v.
+          -- The quadratic term survives when exp(v) rounds to one near the prior.
+          let halfSinh := MathFunctions.sinh (logVariance / 2)
+          2 * halfSinh * halfSinh + (MathFunctions.sinh logVariance - logVariance)
+        else MathFunctions.exp logVariance - 1 - logVariance
+      let value := mean * mean + varianceTerm
+      if value == value then max 0 value else value
+    else
+      MathFunctions.exp logVariance + mean * mean - 1 - logVariance) mu logvar
   (1 / 2) * Tensor.meanSpec per
 
 /-- A finite codebook for vector-quantized latent models. -/

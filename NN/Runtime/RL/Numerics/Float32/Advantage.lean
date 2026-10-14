@@ -167,19 +167,17 @@ def generalizedAdvantageEstimationWithBoundariesChecked {n : Nat}
     Except String (Tensor (Binary 8 23) [n]) := do
   let indices : Tensor (Fin n) [n] := Tensor.ofFn id
   Tensor.scanrM (fun idx advNext => do
-    let bootstrapMask : Binary 8 23 := continueMask (α := Binary 8 23) terminated[idx]
-    let continuationMask : Binary 8 23 := continueMask (α := Binary 8 23) boundaries[idx]
-    -- delta = r + γ * bootstrapMask * nextValue - value
-    let t1 ← checkedMul "gae/mul(gamma,mask)" gamma bootstrapMask
-    let t2 ← checkedMul "gae/mul(t1,nextValue)" t1 nextValues[idx]
-    let t3 ← checkedAdd "gae/add(reward,t2)" rewards[idx] t2
-    let delta ← checkedSub "gae/sub(t3,value)" t3 values[idx]
-    -- adv = delta + γ * λ * continuationMask * advNext
-    let u1 ← checkedMul "gae/mul(gamma,lam)" gamma lam
-    let u2 ← checkedMul "gae/mul(u1,mask)" u1 continuationMask
-    let u3 ← checkedMul "gae/mul(u2,advNext)" u2 advNext
-    let adv ← checkedAdd "gae/add(delta,u3)" delta u3
-    pure adv) 0 indices
+    -- Discarded bootstrap and continuation terms must not raise numerical errors.
+    let delta ← if terminated[idx] then
+        checkedSub "gae/sub(reward,value)" rewards[idx] values[idx]
+      else do
+        let future ← checkedMul "gae/mul(gamma,nextValue)" gamma nextValues[idx]
+        let target ← checkedAdd "gae/add(reward,future)" rewards[idx] future
+        checkedSub "gae/sub(target,value)" target values[idx]
+    if boundaries[idx] then return delta
+    let discount ← checkedMul "gae/mul(gamma,lam)" gamma lam
+    let continuation ← checkedMul "gae/mul(discount,advNext)" discount advNext
+    checkedAdd "gae/add(delta,continuation)" delta continuation) 0 indices
 
 /--
 Checked fixed-horizon GAE with a single `dones` mask, the checked counterpart to

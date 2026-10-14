@@ -390,7 +390,11 @@ def elaborate (source : Syntax) (expectedType? : Option Lean.Expr) : TermElabM L
       unless result.isAppOf ``Except && args.size == 2 do
         throwError "Program.of: expected NN.Kernel.Reader"
       pure args[1]!
-    let scalar ← synthInstance (← mkAppM ``Scalar #[α])
+    let scalar ← instantiateMVars (← synthInstance (← mkAppM ``Scalar #[α]))
+    unless [``instScalarFloat32, ``instScalarFloat, ``instScalarConfigured].contains
+        (scalar.getAppFn.constName?.getD Name.anonymous) do
+      throwError "Program.of: GPU execution requires TorchLean's named scalar instance; \
+        custom or variable scalar implementations must use CPU execution"
     unless ← isDefEq (← inferType read) (← mkAppM ``Reader #[α]) do
       throwError "Program.of: the first argument must be NN.Kernel.Reader"
     let resultType ← mkAppM ``Except #[mkConst ``NN.Kernel.Error, α]
@@ -403,6 +407,12 @@ def elaborate (source : Syntax) (expectedType? : Option Lean.Expr) : TermElabM L
       let arithmetic ← elabTermEnsuringType (← `(Arithmetic.ofOps)) (some arithmeticType)
       synthesizeSyntheticMVarsNoPostponing
       let arithmetic ← instantiateMVars arithmetic
+      let deviceArithmetic ← mkAppOptM ``Scalar.arithmetic #[some α, some scalar]
+      unless ← isDefEq arithmetic deviceArithmetic do
+        throwError "Program.of: source arithmetic differs from the selected GPU arithmetic; \
+          use CPU execution for overridden operations"
+      let native ← mkExpectedTypeHint (← mkEqRefl arithmetic)
+        (← mkEq arithmetic deviceArithmetic)
       let evaluation ← mkAppM ``evaluate #[arithmetic, expression, read, index]
       let equality ← mkEq evaluation body
       -- Recursive equations provide the proof without speculative definitional evaluation.
@@ -439,7 +449,7 @@ def elaborate (source : Syntax) (expectedType? : Option Lean.Expr) : TermElabM L
       let proof ← if bridges.isEmpty then pure proof else withTransparency .reducible do
         mkAuxTheorem proofType proof (zetaDelta := true)
           (kind? := (← getMainModule) ++ `_recurrence)
-      let result ← mkAppM ``Program.mk #[scalar, arithmetic, reference, expression, proof]
+      let result ← mkAppM ``Program.mk #[scalar, arithmetic, reference, expression, proof, native]
       if let some expectedType := expectedType? then
         unless ← isDefEq (← inferType result) expectedType do
           throwError "Program.of: expected {expectedType}, produced {← inferType result}"

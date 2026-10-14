@@ -84,11 +84,12 @@ def jacrevParams {α : Type} [TorchLean.Storage α] [Context α]
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TorchLean.TensorPack α Γ :=
     TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let (tape, _) ← IO.ofExcept <|
-    Runtime.Autograd.TypedGraph.lowerToTapeChecked c.data args ()
+  let compiled ← IO.ofExcept <|
+    Runtime.Autograd.TypedGraph.compileChecked c.data args ()
   TensorPack.stackLeadingM τ fun index => do
     let seedOut := (Tensor.oneHot (α := α) τ.size index).reshape τ (by simp [Spec.Shape.size])
-    let allGradients ← IO.ofExcept <| c.vjpFromTape tape seedOut
+    let allGradients := ((compiled.saved.backpropFrom c.output seedOut).toPack.split
+      (ss₁ := Γ) (ss₂ := c.nodeShapes)).1
     pure (TorchLean.TensorPack.split
       (ss₁ := paramShapes) (ss₂ := inputShapes) allGradients).1
 
@@ -106,11 +107,12 @@ def jacrevInputs {α : Type} [TorchLean.Storage α] [Context α]
   let Γ : List Shape := paramShapes ++ inputShapes
   let args : TorchLean.TensorPack α Γ :=
     TorchLean.TensorPack.append (α := α) (ss₁ := paramShapes) (ss₂ := inputShapes) params xs
-  let (tape, _) ← IO.ofExcept <|
-    Runtime.Autograd.TypedGraph.lowerToTapeChecked c.data args ()
+  let compiled ← IO.ofExcept <|
+    Runtime.Autograd.TypedGraph.compileChecked c.data args ()
   TensorPack.stackLeadingM τ fun index => do
     let seedOut := (Tensor.oneHot (α := α) τ.size index).reshape τ (by simp [Spec.Shape.size])
-    let allGradients ← IO.ofExcept <| c.vjpFromTape tape seedOut
+    let allGradients := ((compiled.saved.backpropFrom c.output seedOut).toPack.split
+      (ss₁ := Γ) (ss₂ := c.nodeShapes)).1
     pure (TorchLean.TensorPack.split
       (ss₁ := paramShapes) (ss₂ := inputShapes) allGradients).2
 
@@ -210,17 +212,9 @@ def Impl.dualGradients {α : Type} [TorchLean.Storage α] [Context α]
       Runtime.Autograd.Model.Program β (paramShapes ++ inputShapes) Shape.scalar)
     (argsD : TorchLean.TensorPack (Dual α) (paramShapes ++ inputShapes)) :
     IO (TorchLean.TensorPack (Dual α) (paramShapes ++ inputShapes)) := do
-  let αD := Dual α
-  let Γ : List Shape := paramShapes ++ inputShapes
-  let graph ← lowerToTypedGraph (α := αD)
+  let graph ← lowerToTypedGraph (α := Dual α)
     (paramShapes := paramShapes) (inputShapes := inputShapes) loss
-  let ssFull : List Shape := graph.nodeShapes
-  let fullGraph : Proofs.Autograd.Algebra.GraphData αD Unit Γ ssFull :=
-    graph.data
-
-  let (tape, _ctx) ← IO.ofExcept <|
-    Runtime.Autograd.TypedGraph.lowerToTapeChecked fullGraph argsD ()
-  IO.ofExcept <| graph.vjpFromTape tape (Tensor.scalar (1 : αD))
+  Prod.fst <$> pullback graph argsD (Tensor.scalar (1 : Dual α))
 
 /--
 Hessian-vector product (HVP) for a scalar loss w.r.t. *parameters*.

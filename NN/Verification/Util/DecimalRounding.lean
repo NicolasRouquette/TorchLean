@@ -6,6 +6,8 @@ Authors: TorchLean Team
 
 module
 
+public import NN.Spec.Core.FloatInstances
+
 public import FloatLib.Floats.Formats.BinaryInterchange.Rounding.Directed.Runtime
 public import FloatLib.Floats.Formats.IEEE754.Native
 public import NN.Tensor.Conversion

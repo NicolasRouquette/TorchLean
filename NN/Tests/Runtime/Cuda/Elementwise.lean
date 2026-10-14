@@ -120,9 +120,20 @@ def checkActivation
 
 /-- Direct activations retain tiny values, selected nonfinite behavior, and TorchLean's VJPs. -/
 def runActivationNumerics : IO Unit := do
-  IO.println "== direct tanh/sigmoid numerical regressions =="
+  IO.println "== direct activation numerical regressions =="
   let inf := Float.ofBits 0x7ff0000000000000
   let nan := Float.ofBits 0x7ff8000000000000
+  -- The ordered maximum keeps NaN; a strict-positive mask would incorrectly erase it.
+  let reluInputs : Array Float := #[nan, -inf, -1.0, -0.0, 0.0, 1.0, inf]
+  let reluValues := FloatArray.mk <| reluInputs.map Activation.Math.reluSpec
+  for dtype in #[Runtime.Autograd.LibTorch.Dtype.float32,
+      Runtime.Autograd.LibTorch.Dtype.float64] do
+    let input ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO (FloatArray.mk reluInputs) dtype
+    let output ← IO.lazyPure fun _ => Runtime.Autograd.LibTorch.Buffer.relu input
+    assertActivationArray s!"relu nonfinite/zero ({repr dtype})"
+      (← Runtime.Autograd.LibTorch.Buffer.toFloatArrayIO output) reluValues
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO output
+    discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO input
   let tiny : Array Float :=
     #[1e-30, -1e-30, 1e-12, -1e-12, 1e-8, -1e-8, 1e-5, -1e-5]
   let central : Array Float := #[-3.0, -1.0, -0.5, 0.5, 1.0, 3.0]
@@ -290,17 +301,17 @@ private def checkRecursion : IO Unit := do
   checkRecursiveReads
   IO.println "  custom recursion: runtime depths, nested calls, precision and failed reads passed"
 
-open FloatLib.Floats.Formats.BinaryInterchange (Model)
+open FloatLib.Floats
+open FloatLib.Floats.Formats.BinaryInterchange
 
 /-- Compare full encodings, including signed zeros and NaN payloads, across the foreign boundary.
 The input includes every pair of exceptional/rounding-boundary patterns plus distributed words.
 This checks native/software selection and foreign arithmetic, not FloatLib's proved model. -/
-@[noinline, nospecialize] private def checkBinary {α : Type} [Storage α] [NN.Kernel.Scalar α]
-    [Zero α] [Add α] [Sub α] [Mul α] [Div α] [Neg α] [BEq α]
-    [LT α] [LE α] [DecidableLT α] [DecidableLE α]
-    (label : String) : IO Unit := do
-  let .binary format := (inferInstance : NN.Kernel.Scalar α).precision |
-    throw <| IO.userError "configured precision check requires a binary descriptor"
+@[noinline, nospecialize] private def checkBinary {format : FloatFormat}
+    {plan : Configured.StoragePlan format} {code : Type}
+    [ExecFloat.ModelCodec plan (Model format) code]
+    (zero : ExecFloat (Configured.Family format code plan)) (label : String) : IO Unit := do
+  let α := ExecFloat (Configured.Family format code plan)
   let exponentBits := format.expWidth
   let fractionBits := format.fracWidth
   let model (x : α) := Model.ofNatBits (fmt := format) (NN.Kernel.Scalar.encode x)
@@ -362,39 +373,39 @@ This checks native/software selection and foreign arithmetic, not FloatLib's pro
   check "weak order" (← (fun (x y : α) => if x ≤ y then x else y).zip left right (device := gpu))
     (reference fun x y =>
       if Model.compare x y == some .lt || Model.compare x y == some .eq then x else y)
-  let _ ← (fun (x : α) => x * x).run (Tensor.zeros [0]) (device := gpu)
+  let _ ← (fun (x : α) => x * x).run (Tensor.full [0] zero) (device := gpu)
   IO.println s!"  custom {label}: complete encodings matched FloatLib"
 
 private def checkSmallPrecisions : IO Unit := do
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 5 10) "binary16"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 8 7) "bfloat16"
+  checkBinary (0 : ExecFloat.Binary 5 10) "binary16"
+  checkBinary (0 : ExecFloat.Binary 8 7) "bfloat16"
 
 private def checkTinyPrecisions : IO Unit := do
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 4 3) "IEEE e4m3"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 5 2) "IEEE e5m2"
+  checkBinary (0 : ExecFloat.Binary 4 3) "IEEE e4m3"
+  checkBinary (0 : ExecFloat.Binary 5 2) "IEEE e5m2"
 
 private def checkEncodings : IO Unit := do
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 4 3 (encoding := .finiteMaxNaN))
+  checkBinary (0 : ExecFloat.Binary 4 3 (encoding := .finiteMaxNaN))
     "e4m3 finite/NaN"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 4 3 (encoding := .finiteUnsignedZero))
+  checkBinary (0 : ExecFloat.Binary 4 3 (encoding := .finiteUnsignedZero))
     "e4m3 unsigned zero"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 4 3 (encoding := .finite))
+  checkBinary (0 : ExecFloat.Binary 4 3 (encoding := .finite))
     "fully finite e4m3"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 6 13 (bias := 17))
+  checkBinary (0 : ExecFloat.Binary 6 13 (bias := 17))
     "custom width and bias"
   -- These have the same widths as hardware formats but different arithmetic conventions.
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 5 10 (bias := 14))
+  checkBinary (0 : ExecFloat.Binary 5 10 (bias := 14))
     "binary16 custom bias"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 8 7 (encoding := .finite))
+  checkBinary (0 : ExecFloat.Binary 8 7 (encoding := .finite))
     "fully finite bfloat16 width"
 
 private def checkStandardPrecisions : IO Unit := do
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 8 23) "configured binary32"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 11 52) "configured binary64"
+  checkBinary (0 : ExecFloat.Binary 8 23) "configured binary32"
+  checkBinary (0 : ExecFloat.Binary 11 52) "configured binary64"
 
 private def checkWidePrecisions : IO Unit := do
-  checkBinary (α := WideBinary) "binary128"
-  checkBinary (α := FloatLib.Floats.ExecFloat.Binary 15 240) "256-bit storage"
+  checkBinary (0 : WideBinary) "binary128"
+  checkBinary (0 : ExecFloat.Binary 15 240) "256-bit storage"
   -- These low bits cannot survive a binary64 upload. Check captured constants and a fold too.
   let a : WideBinary := Rat.cast (1 + 1 / (2 ^ 100 : Nat) : Rat)
   let exact : Tensor WideBinary [3] := [a, 1, -a]
@@ -572,9 +583,7 @@ private def checkRecordedRecurrence (steps : Nat) : IO Unit := do
 
 /-- The scalar frontend must record on the existing CUDA tape, not return detached values.
 Its shared intermediate uses the ordinary multiplication VJP twice; cleanup stays session-owned. -/
-private def checkCustomAutograd : IO Unit := do
-  checkRecordedRecurrence 0
-  checkRecordedRecurrence 3
+@[noinline] private def checkNativeAutograd : IO Unit := do
   -- The unused branch divides by zero. Recording must choose the branch before execution,
   -- rather than evaluate both and try to mask an invalid result or cotangent afterwards.
   let guarded := fun (x : Float32) => if x == 0 then x else -(x * x / x)
@@ -646,6 +655,8 @@ private def checkCustomAutograd : IO Unit := do
         cpuGradient[i]!.toBits == gpuGradient[i]!.toBits do
       throw <| IO.userError "custom calculation: division/negation VJP disagrees"
 
+/-- Encoded tensors keep all their configured digits through recorded forward and reverse steps. -/
+@[noinline] private def checkConfiguredAutograd : IO Unit := do
   -- The low-order bit in this input is not representable in a native double. Compare the
   -- complete forward and gradient words, including accumulation of the shared input's VJPs.
   let a : WideBinary :=
@@ -682,6 +693,9 @@ private def checkCustomAutograd : IO Unit := do
           NN.Kernel.Scalar.encode recordedGradient[i] do
       throw <| IO.userError "custom branch: encoded traversal or VJP changed precision"
 
+/-- Resident buffers reject mixed dtypes and preserve binary64 words through byte transfers. -/
+@[noinline] private def checkRecordingBuffers : IO Unit := do
+  let wide : Tensor Float [1] := Tensor.full [1] (Float.ofBits 0x3ff0000000001000)
   let buffer ← Runtime.Autograd.LibTorch.Buffer.ofFloatArrayIO
     (FloatArray.mk #[wide[0]]) .float64
   let wrong ← Runtime.Autograd.LibTorch.Buffer.fullIO 1 1 .float32
@@ -713,6 +727,13 @@ private def checkCustomAutograd : IO Unit := do
   finally
     discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO wrong
     discard <| Runtime.Autograd.LibTorch.Buffer.releaseIO buffer
+
+private def checkCustomAutograd : IO Unit := do
+  checkRecordedRecurrence 0
+  checkRecordedRecurrence 3
+  checkNativeAutograd
+  checkConfiguredAutograd
+  checkRecordingBuffers
 
 /-- Exercise native elementwise VJPs, generated computations, and composed buffer operations. -/
 @[no_expose] def run : IO Unit := do

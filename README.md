@@ -186,11 +186,11 @@ for precision, shapes, and derivatives. Import `NN.API.Precision` for the scalar
 - `NN/Tensor`: the shared shape-indexed tensor type, packed CPU storage, conversions, and operations.
 - `NN/Spec`: mathematical tensor, layer, model, and dynamical-system definitions.
 - `NN/Runtime`: executable autograd, optimizers, training loops, CUDA boundary,
-  PyTorch import/export, and RL runtime support.
+  PyTorch import/export, Jaxpr graph import, and RL runtime support.
 - `NN/Backend`: contract-carrying kernel capsules, the planner, backend profiles, execution
   audits, and the contract check that accepts or rejects a kernel plan.
-- `NN/IR` and `NN/GraphSpec`: graph IR, graph semantics, and typed architecture
-  descriptions.
+- `NN/IR` and `NN/GraphSpec`: graph semantics, per-node precision and explicit casts,
+  and typed architecture descriptions.
 - `NN/Proofs`: tensor algebra, selected autograd correctness theorems, analytic derivatives,
   runtime approximation, and bridge proofs.
 - `NN/Floats`: TorchLean's scalar integration and numerical proof adapters.

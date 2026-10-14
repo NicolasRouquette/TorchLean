@@ -515,6 +515,10 @@ opaque cos (b : @& Buffer) : Buffer
 @[never_extract, extern "torchlean_cuda_buffer_log"]
 opaque log (b : @& Buffer) : Buffer
 
+/-- Elementwise `log(1 + x)` without losing a small positive `x` in the addition. -/
+@[never_extract, extern "torchlean_cuda_buffer_log1p"]
+opaque log1p (b : @& Buffer) : Buffer
+
 /-- Reciprocal: `1/x`. -/
 @[never_extract, extern "torchlean_cuda_buffer_inv"]
 opaque inv (b : @& Buffer) : Buffer

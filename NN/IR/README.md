@@ -25,6 +25,15 @@ smallest `NN.IR.*` dependency they need.
 - `Operator.lean`: `OpKind`, its static attributes, and `OpTag` constructor identities with parent
   counts and diagnostic names. This module has no graph, runtime, or artifact-format dependency.
 - `Graph.lean`: nodes, dependency edges, declared shapes, and topological well formedness.
+- `DType.lean` and `Program.lean`: per-node element types, explicit casts, typed extension
+  signatures, and designated inputs/results on that same graph.
+- `Interpreter.lean`: heterogeneous tensor evaluation, reusing `Graph.evalNodeRaw` for ordinary
+  arithmetic and `Graph.evalTransform` for storage-only operations. Its scalar family and
+  implementations are explicit; unsupported operations fail.
+- `Binary.lean` and `BinaryProofs.lean`: FloatLib-backed binary execution at each node's precision
+  and the theorem relating interpreter casts to FloatLib's directed conversions.
+- `Reference.lean`: the same binary arithmetic plus Boolean and arbitrary-width integer storage
+  for layout operations, with checked complete-word encoding and a lossless decoding theorem.
 - `OpContracts.lean`: shared shape arithmetic for ops such as concat, matmul, pooling, conv, and
   axis-moving utilities. Concat and matmul use list-indexed arbitrary-rank contracts.
 - `Infer.lean`: canonical declared-output-shape validation. `Graph.inferShapesFrom` walks the node
@@ -49,6 +58,18 @@ Shape inference checks the declared signature; evaluation checks the actual pare
 runs the body with bounded reads. The body's source-correspondence proof also covers failed reads.
 This does not imply a derivative rule, a range rule, or an export translation. Those consumers must
 report unsupported custom operations until the corresponding implementation is supplied.
+
+Typed `Program` extensions use the same custom-node shape contract, with their element signature
+and implementation supplied separately. A typed cast must run through a typed interpreter;
+extracting `program.graph` and interpreting it homogeneously is not mixed-precision execution.
+
+Reshape, flatten, broadcast, permutation, transpose and concatenation need tensor storage, not
+scalar arithmetic. Their shared evaluator works unchanged for Boolean, integer, rational, symbolic
+and user-defined elements when the interpreter supplies their representation. `Interpreter.reference`
+supplies Boolean and fixed-width integer storage alongside FloatLib binary arithmetic. The
+binary-only interpreter remains available separately. `detach` remains on the scalar-context path
+because dual-valued tensors
+must also clear differentiation metadata, rather than merely copy their stored values.
 
 `Infer.nodeOutShape` and `Graph.evalNodeRaw` are both matches over `OpKind`, but they do not
 contain two copies of the shape arithmetic. Every operation whose output shape is not simply a
@@ -100,7 +121,19 @@ verification/export/runtime tooling can consume after a model has been lowered o
 In PyTorch terms, `NN.GraphSpec` is closer to a typed model construction DSL; `NN.IR` is closer to
 an FX/TorchScript-style graph with explicit shapes and external parameter payloads.
 
-## How A Model Reaches IR
+## How A Tensor Program Reaches IR
+
+The same IR represents general tensor computations. A program need not contain a layer, a loss,
+parameters, or an optimizer: its interface is an ordered collection of tensor inputs and results.
+Supported array operations and numerical algorithms use the same shape and element-type checks
+as model computations. This is not a compiler for arbitrary Lean or Python programs; control flow
+and operations still need explicit lowering rules.
+
+From Python, `torchlean.verify(model, *inputs)` captures a supported PyTorch computation and
+requests the shared typed graph checks. Select `frontend="jax"` for Jaxpr capture, or pass a typed
+artifact dictionary from another producer. Optional execution and comparison concern only supplied
+arguments; this interface does not automatically produce proofs of arbitrary properties. See the
+[captured-computation example](../../home_page/examples/verify/index.md).
 
 There are several routes into the same graph language:
 
@@ -108,10 +141,23 @@ There are several routes into the same graph language:
   verification.
 - GraphSpec models can be lowered when the architecture needs explicit sharing and
   named parameter layouts.
-- PyTorch `torch.export` and ONNX adapters can write `torchlean.ir.v1` JSON, which Lean then parses
-  and validates.
+- PyTorch `torch.export` records positional tensor arguments, including unused arguments, from
+  its graph signature. One input uses version one; multiple inputs use version two's `input_ids`.
+  The ONNX adapter emits version one. Lean parses and validates the resulting tensor graphs.
+- The Jaxpr adapter in `NN/Runtime/JAX/jaxpr.py` lowers static tensor computations to the same
+  format. Multiple tensor arguments use version two's ordered `input_ids`; each input has its
+  own shape and dtype. `Import.JAX.parseProgram` checks per-node types and explicit casts.
+  `Interpreter.binary` uses FloatLib for mixed binary precision; the homogeneous graph path remains
+  scalar-polymorphic. Structured control flow is not yet lowered; see the
+  [JAX example](../../home_page/examples/jaxpr/index.md).
 - Verification examples can build small graphs directly when the graph itself is the artifact under
   study.
+
+Frontend coverage is narrower than the graph's operator vocabulary. JAX division is rejected
+until its arithmetic schedule has a direct lowering; JAX mean and LayerNorm expansions therefore
+remain unsupported. Square root needs a structurally nonnegative argument to agree with the
+IR's negative-input clamp. The full JAX softmax expansion also needs a `reduce_max` lowering,
+so importing arbitrary attention code is not supported yet.
 
 ## Role And Scope
 
@@ -143,6 +189,33 @@ operator should therefore add three things in the right places:
 
 Adding a tag without these follow-up pieces creates a graph that can be printed but not responsibly
 used for verified claims.
+
+## Element Descriptors And Extensions
+
+`DType.toJson` and `DType.fromJson` share one frontend-independent representation. Binary
+descriptors retain exponent width, fraction width, bias, and exceptional-value encoding. Decimal
+descriptors retain FloatLib's declet count, exponent width, and signed bias. Integer widths,
+posit widths, complex component types, and named extensions are represented explicitly too.
+Named-type component arrays preserve qualified names without losing numeric or escaped components.
+`DType.fromJson_valid` proves that a successfully decoded descriptor passes its parameter checks.
+
+`Reference.read_write` proves lossless element-word decoding for every supported format and
+integer width. Boolean words are zero or one. Integers use Lean's `BitVec n`, retaining signedness
+in the descriptor; no conversion to a host float is involved. This reference implements their
+layout operations, not integer arithmetic or casts between distinct integer types. Other scalar
+families still need their own implementation.
+
+`Import.IR.parsePayload` takes an interpreter and a word decoder explicitly. The same loader
+checks constants and linear parameters at their declared types and shapes, including decoder
+results. A custom decoder cannot silently return a tensor at a different type or shape.
+
+A producer can declare a custom tensor node with `primitive = "call"`, a qualified `name`,
+`input_shapes`, `input_dtypes`, and `output_dtype`. The shared checker compares this signature
+with the actual edges and result. Execution additionally requires an implementation in
+`Interpreter.Payload.call`; merely declaring the signature does not register executable code or
+prove its mathematical properties. The default binary payload rejects unimplemented calls.
+Likewise, a valid decimal, posit, or named descriptor does not imply that the binary interpreter
+can execute it. Other interpreters must provide the corresponding scalar operations.
 
 ## Payload Discipline
 

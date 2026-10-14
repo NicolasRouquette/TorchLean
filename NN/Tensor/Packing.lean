@@ -31,7 +31,8 @@ and packed shape. The public constructor itself carries no proof that arbitrary
 -/
 structure Packed (α : Type) (shape : Spec.Shape)
     (componentShapes : List Spec.Shape) [TorchLean.Storage α] where
-  /-- Contiguous tensor containing every packed component. -/
+  /-- Row-major tensor containing every packed component.
+  Scalar storage is chosen by `Storage α`. -/
   tensor : TorchLean.Tensor α shape
 
 namespace Packed

@@ -389,7 +389,11 @@ def logCorrect {s : Shape} :
   jvp := fun x dx => mulSpec dx (invSpec (α:=ℝ) (s:=s) x)
   correct := by
     intro x dx δ
-    simpa [Spec.logOp] using (dot_elemwise_adjoint (dx:=dx)
+    have hBackward : divSpec δ x = mulSpec (invSpec x) δ := by
+      apply TorchLean.Tensor.Internal.Rep.ext
+      intro coordinate
+      simp [divSpec, mulSpec, invSpec, map2Spec, Tensor.map, div_eq_mul_inv, mul_comm]
+    simpa [Spec.logOp, hBackward] using (dot_elemwise_adjoint (dx:=dx)
       (df:=invSpec (α:=ℝ) (s:=s) x) (δ:=δ))
 }
 

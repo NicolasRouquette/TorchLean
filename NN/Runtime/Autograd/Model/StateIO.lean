@@ -225,6 +225,10 @@ def writeShape (handle : IO.FS.Handle) (shape : Shape) : IO Unit := do
 /-- Read and validate one tensor shape from a streaming checkpoint. -/
 def readShape (handle : IO.FS.Handle) (expected : Shape) : IO Unit := do
   let rank ← Torch.Internal.CheckpointIO.readNat64 "StateIO" handle
+  -- The destination fixes the rank; reject impossible metadata before reading its dimensions.
+  if rank != expected.rank then
+    throw <| IO.userError
+      s!"StateIO: checkpoint rank mismatch (file={rank}, expected={expected.rank})"
   let mut reversedDims := []
   for _ in [0:rank] do
     reversedDims := (← Torch.Internal.CheckpointIO.readNat64 "StateIO" handle) :: reversedDims

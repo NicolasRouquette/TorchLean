@@ -64,7 +64,10 @@ Real-number proofs do not automatically describe a binary32 run.
 uses FloatLib's native import/export, finite-input addition/subtraction, and square-root theorems
 directly. `CompilerBoundary.lean` proves that successful lowering of
 the supported IR fragment preserves node denotations in a Lean reference evaluator. Its hypothesis
-excludes raw logarithm nodes; external compiler and native-kernel conformance remain separate obligations.
+excludes raw logarithm nodes. Lowering also rejects GELU and log-softmax rather than replacing
+their numerical formulas. These restrictions concern the canonical-IR forward lowering; the
+ordinary eager and typed-graph model paths still support both. External compiler and native-kernel
+conformance remain separate obligations.
 
 The final geometry case starts from tensors exported by a detector. Lean recomputes camera
 projection and positive depth, then checks that the reported two-dimensional box, expanded by its
@@ -121,7 +124,7 @@ theorem trueInfinityMask_future_attention_weight_zero
     (Spec.hardMaskedSoftmaxSpec scores (Spec.causalMask n))[(i, j)] = 0
 ```
 
-Lean 4.34.0 defines core `Float32` operations through `Float32.Model`. The scalar connection comes
+Lean defines core `Float32` operations through `Float32.Model`. The scalar connection comes
 from FloatLib directly. We can use its theorem to prove addition agreement for finite operands:
 
 ```lean

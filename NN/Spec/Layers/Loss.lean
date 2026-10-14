@@ -313,7 +313,18 @@ def cosineSimilarityDerivSpec {s : Shape}
 /-- Log-cosh loss (reduced-to-scalar): `log(cosh(predicted - target))`. -/
 def logCoshSpec {s : Shape} (predicted : Tensor α s) (target : Tensor α s) : α :=
   let diff := subSpec predicted target
-  let per_elem := Tensor.map (fun d => MathFunctions.log (MathFunctions.cosh d)) diff
+  let per_elem := Tensor.map (fun d =>
+    let a := MathFunctions.abs d
+    if a == d || a == -d then
+      if a < 1 then
+        -- cosh(a) = 1 + 2 sinh²(a/2); log1p retains the small loss near zero.
+        let halfSinh := MathFunctions.sinh (a / 2)
+        Activation.Math.log1pSpec (2 * halfSinh * halfSinh)
+      else
+        -- Factoring out exp(a) avoids overflowing cosh(a) in the tails.
+        a + Activation.Math.log1pSpec (MathFunctions.exp (-(2 * a))) - MathFunctions.log 2
+    else
+      MathFunctions.log (MathFunctions.cosh d)) diff
   meanSpec per_elem
 
 /-- Derivative of `logCoshSpec` w.r.t. `predicted`. -/

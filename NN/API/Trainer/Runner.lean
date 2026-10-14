@@ -292,6 +292,10 @@ def withBoundOptimizer {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ 
 Mean parameter gradient and mean loss for a nonempty batch at one parameter point.
 
 With `withLoss := false` the losses are not read back and the second component is `0`.
+For IEEE scalars we retain a pre-weighted sum alongside the ordinary sum and use it only if the
+ordinary sum becomes nonfinite. Finite means are clamped to the observed componentwise range.
+This avoids overflow in examples such as two equal large gradients; mixed-sign cancellation can
+still lose precision, and this is not an accuracy guarantee.
 -/
 def meanGradAndLoss {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ τ}
     {α : Type} [TorchLean.Storage α] [Context α]
@@ -313,15 +317,46 @@ def meanGradAndLoss {σ τ : Spec.Shape} {model : TorchLean.nn.Sequential σ τ}
           pure (← TorchLean.Module.Objective.grad objective arguments TorchLean.Arguments.empty,
             0)
       let (firstGradient, firstLoss) ← sampleGradient firstSample
+      let count : α := (batch.size : α)
+      let bounded := TorchLean.Numeric.QuotientArithmetic.supported (α := α) &&
+        decide (TorchLean.Numeric.QuotientArithmetic.depth (α := α) = 0)
       let mut gradientSum := firstGradient
+      let mut weightedGradient := if bounded then firstGradient.map (fun tensor =>
+        Tensor.map (fun value => value / count) tensor) else firstGradient
+      let mut gradientMin := firstGradient
+      let mut gradientMax := firstGradient
       let mut lossSum := firstLoss
+      let mut weightedLoss := if bounded then firstLoss / count else 0
+      let mut lossMin := firstLoss
+      let mut lossMax := firstLoss
       for sample in batch.drop 1 do
         let (gradient, lossValue) ← sampleGradient sample
         lossSum := lossSum + lossValue
         gradientSum := gradientSum.zipWith gradient Tensor.add
-      let reciprocalCount : α := 1 / (batch.size : α)
-      pure (gradientSum.map (fun tensor => tensor.scale reciprocalCount),
-        lossSum * reciprocalCount)
+        if bounded then
+          weightedLoss := weightedLoss + lossValue / count
+          lossMin := min lossMin lossValue
+          lossMax := max lossMax lossValue
+          weightedGradient := weightedGradient.zipWith gradient (fun total value =>
+            Tensor.map2Spec (fun total value => total + value / count) total value)
+          gradientMin := gradientMin.zipWith gradient Tensor.minSpec
+          gradientMax := gradientMax.zipWith gradient Tensor.maxSpec
+      let average (sum weighted : α) : α :=
+        let difference := sum - sum
+        let weightedDifference := weighted - weighted
+        if bounded && !(difference == difference) && weightedDifference == weightedDifference
+          then weighted else sum / count
+      let clamp (low high value : α) : α :=
+        if bounded && value == value then min high (max low value) else value
+      let meanGradient := gradientSum.zipWith weightedGradient (Tensor.map2Spec average)
+      let meanGradient := if bounded then
+          (meanGradient.zipWith gradientMin (fun value low =>
+            Tensor.map2Spec (fun value low => if value == value then max low value else value)
+              value low)).zipWith gradientMax (fun value high =>
+            Tensor.map2Spec (fun value high => if value == value then min high value else value)
+              value high)
+        else meanGradient
+      pure (meanGradient, clamp lossMin lossMax (average lossSum weightedLoss))
 
 /--
 Compute mean parameter gradients for a nonempty batch at one parameter point.

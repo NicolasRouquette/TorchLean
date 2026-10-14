@@ -157,6 +157,25 @@ def checkLargeBatchMean : IO Unit := do
   unless Float.abs (parameter.item + 4.0) < 1e-5 do
     throw <| IO.userError s!"CUDA batch gradient overflowed: {parameter.item}"
 
+/-- Running statistics survive single-sample and accumulated native updates on one GPU. -/
+def checkBatchNormState : IO Unit := do
+  let model := nn.batchNorm (batchShape := [1]) (channels := 1) ([2] : Tensor Nat [1])
+    (momentum := 0.5)
+  let trainer := TorchLean.Trainer.new model { device := .cuda, execution := .eager }
+  let session ← trainer.open
+  let sample : Sample.Supervised Float [1, 1, 2] [1, 1, 2] :=
+    { input := [[[1, 3]]], target := Tensor.zeros [1, 1, 2] }
+  session.step sample
+  session.step (batch := true) #[sample, sample]
+  let state ← session.state
+  for (index, expected) in #[(2, 1.75), (3, 1.875)] do
+    if h : index < (nn.stateShapes trainer.model).length then
+      let values := (state.get ⟨index, h⟩).to (Array Float)
+      unless values.size == 1 && (values[0]?.map (fun value => close value expected)).getD false do
+        throw <| IO.userError s!"CUDA BatchNorm lost buffer {index}: {values}"
+    else
+      throw <| IO.userError "CUDA BatchNorm state is missing its running statistics"
+
 /-- A scalar square gives Adam a changing gradient with just one parameter. -/
 def quadraticObjective (initial : Float) :
     IO (Module.Objective Float Float [[]] []) := do
@@ -341,6 +360,7 @@ def run : IO Unit := do
   checkMixedBatchOptimizer (optim.adam { learningRate := 0.03 })
   checkMixedBatchOptimizer (optim.adamW { learningRate := 0.03, weightDecay := 0.1 })
   checkLargeBatchMean
+  checkBatchNormState
   checkOptimizerReset
   checkAdamEpsilon
   checkAdamCheckpointEpsilon

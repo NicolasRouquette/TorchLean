@@ -1379,7 +1379,7 @@ quantizer. The external Arb adapter is `NN.Floats.Arb.Oracle`.
 
 - Lean FRO,
   [`Float32.Model` source
-  ](https://github.com/leanprover/lean4/blob/v4.34.0/src/Init/Data/Float/Model/Float32.lean).
+  ](https://github.com/leanprover/lean4/blob/v4.35.0/src/Init/Data/Float/Model/Float32.lean).
 - The Lean Language Reference,
   [Floating-Point
   Numbers](https://lean-lang.org/doc/reference/latest/Basic-Types/Floating-Point-Numbers/).

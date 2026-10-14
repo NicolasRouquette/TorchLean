@@ -13,8 +13,8 @@ public import NN.Proofs.Autograd.Tape.Ops.Transformer.PostNorm
 # Post-Norm Decoder Core
 
 This module builds a decoder-core SSA graph with a fixed additive score bias and proves its VJP
-theorem (`decoderCore_backpropVec_eq_adjoint_fderiv_at`), and names the post-norm decoder-block
-composition theorem (`postNormGptDecoderBlock_hasFDerivAt`).
+theorem (`decoderCore_backpropVec_eq_adjoint_fderiv_at`). Map-level composition uses
+`twoSublayerPostNormBlock_hasFDerivAt` from `PostNorm.lean`.
 
 The concrete graph starts with already projected head tensors. Its merge and FFN affine maps
 are fixed arguments, not trainable entries in the differentiated context. The score bias is
@@ -628,16 +628,6 @@ theorem decoderCore_backpropVec_eq_adjoint_fderiv_at
     (decoderCoreGraphFDerivCorrectAt
       (seqLen := seqLen) (dModel := dModel) (numHeads := numHeads) (headDim := headDim)
       (dFF := dFF) merge mergeBias fc1 b1 fc2 b2 c ε₁ ε₂ bias xV hε₁ hε₂)
-
-/--
-Post-norm composition theorem under its decoder alias.
-
-This is `twoSublayerPostNormBlock_hasFDerivAt` with the same supplied-map hypotheses.
-`DirectReshapeAttention.projectedMaskedAttention_hasFDerivAt` can discharge the attention
-map's hypothesis for a fixed-bias core with supplied projection and merge certificates.
-Neither theorem constructs Boolean causal masking or proves executable-model correspondence.
--/
-alias postNormGptDecoderBlock_hasFDerivAt := twoSublayerPostNormBlock_hasFDerivAt
 
 end
 

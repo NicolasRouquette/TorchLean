@@ -234,7 +234,7 @@ def center : Tensor Float [4] :=
   [0.3, -0.2, 0.1, 0.4]
 
 /-- An `eps`-ball around `center`, in the scalar type `α`. -/
-def inputBox {α : Type} [Context α] [Runtime.FromFloat α] (eps : Float) :
+def inputBox {α : Type} [Storage α] [Context α] [Runtime.FromFloat α] (eps : Float) :
     Box α [4] :=
   let center : Tensor α [4] :=
     Tensor.map Runtime.ofFloat center

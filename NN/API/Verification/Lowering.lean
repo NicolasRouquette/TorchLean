@@ -19,6 +19,12 @@ Low-level access to TorchLean's verifier graph. Most applications should import
 `NN.API.Verification`, train with `trainer.train`, then call
 `trained.verify center (radius := r) (norm := .inf)`; import this module only when constructing or
 inspecting graph-level IBP/CROWN workflows directly.
+
+These entry points check the generated graph's structure and shapes, not its numerical equality
+with the source model. Slicing and leading-axis selection currently become one-hot matrix
+products; they can change signed zeros or propagate an unselected NaN or infinity. Multi-sample
+attention uses those slices. Bounds on the resulting graph need a separate source correspondence
+argument before being used as guarantees about the original finite-precision execution.
 -/
 
 @[expose] public section
@@ -29,7 +35,8 @@ export NN.Verification.Builtin (LoweredIR)
 export NN.MLTheory.CROWN (FlatBox)
 export NN.MLTheory.CROWN.Graph (ParamStore AffineCtx FlatAffine FlatAffineBounds)
 
-/-- Lower a sequential model into checked verifier IR with one distinguished input. -/
+/-- Lower a sequential model into structurally checked verifier IR with one distinguished input.
+This does not establish finite-precision source equivalence; see the slicing restriction above. -/
 def lowerForwardToIR {α : Type} [TorchLean.Storage α] [Context α]
     {σ τ : Shape}
     (model : TorchLean.nn.Sequential σ τ)
@@ -41,7 +48,8 @@ def lowerForwardToIR {α : Type} [TorchLean.Storage α] [Context α]
     (TorchLean.nn.forward model (α := α))
     (TorchLean.nn.State.Internal.toTensorPack state)
 
-/-- Lower a custom forward program into checked verifier IR with one distinguished input. -/
+/-- Lower a custom forward program into structurally checked verifier IR with one distinguished
+input. Source equivalence remains separate from graph validation. -/
 def lowerProgramToIR {α : Type} [TorchLean.Storage α] [Context α]
     {paramShapes : List Shape} {σ τ : Shape}
     (forwardProgram : Runtime.Autograd.Model.Program α (paramShapes ++ [σ]) τ)

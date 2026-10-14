@@ -24,6 +24,20 @@ namespace NN.Kernel
 
 open FloatLib.Floats FloatLib.Floats.Formats.BinaryInterchange
 
+/-- Scalar operations in their original evaluation order, without algebraic reassociation. -/
+def Arithmetic.ofOps {α : Type} [Add α] [Sub α] [Mul α] [Div α] [Neg α]
+    [BEq α] [LT α] [LE α] [DecidableLT α] [DecidableLE α] : Arithmetic α where
+  binary
+    | .add, x, y => x + y
+    | .sub, x, y => x - y
+    | .mul, x, y => x * y
+    | .div, x, y => x / y
+  neg := fun x => -x
+  compare
+    | .eq, x, y => x == y
+    | .lt, x, y => x < y
+    | .le, x, y => x ≤ y
+
 /-- Arithmetic representation selected by a scalar type, independently of the execution device. -/
 inductive Precision where
   | native (format : Cuda.Format)
@@ -32,30 +46,36 @@ inductive Precision where
 /-- Complete unsigned encodings and their lossless reconstruction. -/
 class Scalar (α : Type) where
   precision : Precision
+  /-- Operations implemented by the selected GPU representation. -/
+  arithmetic : Arithmetic α
   encode : α → Nat
   decode : Nat → α
   decode_encode : ∀ x, decode (encode x) = x
 
-instance : Scalar Float32 where
+instance instScalarFloat32 : Scalar Float32 where
   precision := .native .binary32
+  arithmetic := Arithmetic.ofOps
   encode x := x.toBits.toNat
   decode n := Float32.ofBits n.toUInt32
   decode_encode x := by
     simpa only [Nat.toUInt32, UInt32.ofNat_toNat, Cuda.Literal.ofValue, Cuda.Literal.value] using
       Cuda.Literal.value_ofValue .binary32 x
 
-instance : Scalar Float where
+instance instScalarFloat : Scalar Float where
   precision := .native .binary64
+  arithmetic := Arithmetic.ofOps
   encode x := x.toBits.toNat
   decode n := Float.ofBits n.toUInt64
   decode_encode x := by
     simpa only [Nat.toUInt64, UInt64.ofNat_toNat, Cuda.Literal.ofValue, Cuda.Literal.value] using
       Cuda.Literal.value_ofValue .binary64 x
 
-instance {format : FloatFormat} {plan : Configured.StoragePlan format} {code : Type}
+instance instScalarConfigured {format : FloatFormat} {plan : Configured.StoragePlan format}
+    {code : Type}
     [ExecFloat.ModelCodec plan (Model format) code] :
     Scalar (ExecFloat (Configured.Family format code plan)) where
   precision := .binary format
+  arithmetic := Arithmetic.ofOps
   encode := ExecFloat.Binary.toNatBits
   decode := ExecFloat.Binary.ofNatBits
   decode_encode := ExecFloat.Binary.ofNatBits_toNatBits

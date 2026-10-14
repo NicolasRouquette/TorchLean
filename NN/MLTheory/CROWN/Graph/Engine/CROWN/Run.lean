@@ -73,6 +73,7 @@ no affine transfer is available. Missing output bounds and input-dimension misma
 @[noinline, nospecialize]
 def outputBoxCROWN? (g : Graph) (ps : ParamStore α) (xB : FlatBox α)
     (inputId outputId inputDim : Nat) : Except String (FlatBox α) := do
+  let ps := ps.seedInputBox inputId xB
   let ibp := runIBP (α := α) g ps
   let ctx : AffineCtx := { inputId := inputId, inputDim := inputDim }
   -- The output API needs only these rows; do not run a backward sweep for every hidden node.

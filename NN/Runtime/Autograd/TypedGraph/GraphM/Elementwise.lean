@@ -428,25 +428,21 @@ def log {α : Type} [TorchLean.Storage α] [Context α]
       (jvp := fun ctx dctx _d =>
         let xval := ctx
         let dx := dctx
-        mulSpec (invSpec (α := α) xval) dx)
+        divSpec dx xval)
       (vjp := fun ctx _d δ =>
         let xval := ctx
         Contributions.single (α := α) (Γ := Γ ++ ss) (s := s) ix
-          (mulSpec (invSpec (α := α) xval) δ))
+          (divSpec δ xval))
   push (α := α) (Δ := Δ) (Γ := Γ) (ss := ss) (s := s) g node
 
 /-- Elementwise reciprocal `x ↦ 1/x`. PyTorch comparison: `torch.reciprocal(x)`.
 
-The JVP and VJP square the reciprocal first, multiply by the seed, then scale by `-1`.
-This fixes the evaluation order for rounded scalars. -/
+The JVP and VJP evaluate `(-seed / x) / x`, avoiding an overflowing intermediate square. -/
 def inv {α : Type} [TorchLean.Storage α] [Context α]
   {Δ : Type} {Γ : List Shape} {s : Shape} (x : Var s) : MWith α Δ Γ (Var s) :=
   Internal.unary x
     { forward := invSpec
-      backward := fun input seed =>
-        let inverse := invSpec input
-        let squared := mulSpec inverse inverse
-        scaleSpec (mulSpec seed squared) (-1 : α) }
+      backward := fun input seed => divSpec (divSpec (negSpec seed) input) input }
 
 /--
 Apply `log(softplus(x) + ε)` elementwise.

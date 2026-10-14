@@ -22,7 +22,6 @@ namespace NN.MLTheory.CROWN.Graph.DirectedBackward
 
 open Spec TorchLean TorchLean.Tensor
 open NN.MLTheory.CROWN
-open NN.MLTheory.CROWN.IntervalLemmas (value_max2)
 open Spec.Pooling.Internal
 
 noncomputable section
@@ -44,22 +43,33 @@ theorem OptionEncloses.getD_zero {lo hi : Option α} {x : Option ℝ}
   | none => simp [LawfulBoundOps.toReal_zero (α := α)]
   | some h => exact h
 
-/-- A selected maximum denotes the maximum of the two scalar values; this is `value_max2` read
-with its arguments swapped. -/
+/-- The unordered-value branch does not require reflexive scalar equality.
+Under the order law, two mutually non-greater values denote the same real number. -/
 theorem value_selectedMax (a b : α) :
-    value (if b > a then b else a) = max (value a) (value b) := by
-  simpa only [BoundOps.max2, Bool.decide_iff, max_comm] using value_max2 b a
+    value (if b > a || (!(a > b) && !(b == b)) then b else a) =
+      max (value a) (value b) := by
+  by_cases hab : b > a
+  · simp only [hab, decide_true, Bool.true_or, ↓reduceIte]
+    exact (max_eq_right (le_of_lt ((LawfulBoundOps.lt_iff a b).mp hab))).symm
+  · by_cases hba : a > b
+    · simp only [hab, hba, decide_false, decide_true, Bool.not_true, Bool.false_and,
+        Bool.false_or]
+      exact (max_eq_left (le_of_lt ((LawfulBoundOps.lt_iff b a).mp hba))).symm
+    · have hle : value a ≤ value b := not_lt.mp fun h => hba ((LawfulBoundOps.lt_iff b a).mpr h)
+      have hge : value b ≤ value a := not_lt.mp fun h => hab ((LawfulBoundOps.lt_iff a b).mpr h)
+      have heq := le_antisymm hle hge
+      split <;> simp [heq]
 
 theorem selectedMax_real (a b : ℝ) :
-    (if b > a then b else a) = max a b :=
-  (max_def_lt a b).symm
+    (if b > a || (!(a > b) && !(b == b)) then b else a) = max a b :=
+  value_selectedMax (α := ℝ) a b
 
 /-- The max-pool fold step, with absent padded candidates skipped. -/
 def poolMaxStep {β : Type} [Context β] (best candidate : Option β) : Option β :=
   match candidate, best with
   | none, _ => best
   | some x, none => some x
-  | some x, some b => if x > b then some x else best
+  | some x, some b => if x > b || (!(b > x) && !(x == x)) then some x else best
 
 theorem OptionEncloses.poolMaxStep {lo hi clo chi : Option α} {x cx : Option ℝ}
     (h : OptionEncloses lo hi x) (hc : OptionEncloses clo chi cx) :
@@ -71,9 +81,9 @@ theorem OptionEncloses.poolMaxStep {lo hi clo chi : Option α} {x cx : Option �
       | none => exact .some hc
       | @some l u z h =>
           change OptionEncloses
-            (if cl > l then Option.some cl else Option.some l)
-            (if cu > u then Option.some cu else Option.some u)
-            (if c > z then Option.some c else Option.some z)
+            (if cl > l || (!(l > cl) && !(cl == cl)) then Option.some cl else Option.some l)
+            (if cu > u || (!(u > cu) && !(cu == cu)) then Option.some cu else Option.some u)
+            (if c > z || (!(z > c) && !(c == c)) then Option.some c else Option.some z)
           rw [← apply_ite Option.some, ← apply_ite Option.some, ← apply_ite Option.some]
           apply OptionEncloses.some
           simp only [value_selectedMax, selectedMax_real]

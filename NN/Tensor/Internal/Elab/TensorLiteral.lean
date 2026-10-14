@@ -100,10 +100,13 @@ def elabTensorLiteral : TermElab := fun stx expectedType? => withRef stx do
           mkApp3 expectedType.getAppFn scalarType innerShape storage
       let listType ← mkAppM ``List #[elementType]
       let values ← elabTermEnsuringType literal listType
+      -- Retain the expected storage even while the scalar's format proofs are pending.
       let result ← if innerShape.isAppOfArity ``List.nil 1 then
-        mkAppM ``TorchLean.Tensor.Internal.Rep.ofList #[values]
+        mkAppOptM ``TorchLean.Tensor.Internal.Rep.ofList
+          #[some scalarType, some storage, some values]
       else
-        mkAppM ``TorchLean.Tensor.Internal.Rep.stackList #[values]
+        mkAppOptM ``TorchLean.Tensor.Internal.Rep.stackList
+          #[some scalarType, some storage, some innerShape, some values]
       return ← ensureHasType (some expectedType) result
   elabTerm literal expectedType?
 

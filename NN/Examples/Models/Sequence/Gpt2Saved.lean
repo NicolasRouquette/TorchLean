@@ -23,7 +23,7 @@ scripts/lake.sh -Kcuda=true exe torchlean gpt2 --device cuda \
   --save-checkpoint data/examples/gpt2_shakespeare.state.json
 ```
 
-2. Load the checkpoint and sample text (no training loop or optimizer state):
+2. Load the checkpoint and sample text without optimizer updates:
 
 ```bash
 scripts/lake.sh -Kcuda=true exe torchlean gpt2_saved --device cuda \
@@ -40,7 +40,8 @@ This example uses the simplest TorchLean checkpoint format:
 - checked against the model's state layout before inference starts.
 
 So save/load is model-agnostic: if we can name the model, TorchLean can compute the expected
-state shapes and reject stale or mismatched checkpoint files.
+state shapes and reject files with incompatible shapes. Matching shapes alone do not identify the
+architecture or parameter meanings.
 
 ## Why This Is A Separate Example
 

@@ -39,7 +39,7 @@ structure TransformerEncoder.Block.Config where
   /--
   Dropout on the attention and feed-forward outputs before their residual additions.
 
-  This retains the original two-site behavior. Set `attentionDropout?` and
+  This controls the two residual-output sites. Set `attentionDropout?` and
   `feedForwardDropout?` as well when all four Transformer dropout sites are wanted.
   -/
   dropout? : Option Float := none

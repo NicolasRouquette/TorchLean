@@ -138,18 +138,38 @@ opaque steps {σ τ : Shape} {trainer : TorchLean.Trainer σ τ}
 
 namespace Internal
 
-/-- Evaluate a lazy sample stream in index order, returning zero for an empty stream. -/
+/-- Evaluate samples in index order and combine their means pairwise.
+
+Weights are cast from exact ratios, so a sample count need not fit in the model's scalar format.
+For IEEE scalars, finite partial means stay within the two child means' range. This prevents a
+large finite sum from overflowing, but does not guarantee accuracy under cancellation.
+-/
 opaque evaluate [Context α] {σ τ : Shape} {trainer : TorchLean.Trainer σ τ}
     (session : Session trainer α)
     (samples : Data.SampleStream (Sample.Supervised α σ τ)) : IO α := do
   if samples.isEmpty then
     pure 0
   else
-    let mut total : α := 0
-    for h : i in [0:samples.size] do
-      have hi : i < samples.size := h.2.1
-      total := total + (← session.lossImpl (samples.get ⟨i, hi⟩))
-    pure (total / (samples.size : α))
+    let rec mean (fuel start count : Nat) : IO α := do
+      match fuel with
+      | 0 => throw <| IO.userError "Trainer.eval: invalid sample range"
+      | fuel + 1 =>
+        if count = 1 then
+          if hi : start < samples.size then
+            return ← session.lossImpl (samples.get ⟨start, hi⟩)
+          else throw <| IO.userError "Trainer.eval: sample index out of bounds"
+        let leftCount := count / 2
+        let left ← mean fuel start leftCount
+        let right ← mean fuel (start + leftCount) (count - leftCount)
+        let leftWeight : α := Rat.cast ((leftCount : Rat) / (count : Rat))
+        let rightWeight : α := Rat.cast (((count - leftCount : Nat) : Rat) / (count : Rat))
+        let result := left * leftWeight + right * rightWeight
+        if TorchLean.Numeric.QuotientArithmetic.supported (α := α) &&
+            decide (TorchLean.Numeric.QuotientArithmetic.depth (α := α) = 0) &&
+            result == result then
+          return min (max left right) (max (min left right) result)
+        return result
+    mean samples.size 0 samples.size
 
 end Internal
 

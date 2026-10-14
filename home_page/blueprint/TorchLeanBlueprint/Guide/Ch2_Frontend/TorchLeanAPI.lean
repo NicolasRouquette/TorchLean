@@ -624,7 +624,7 @@ The `[2]` and `[1]` are the shapes of one input and one output sample. The layer
 against the annotation on `apiModel`. Changing the final layer from `nn.linear 8 1` to
 `nn.linear 7 1` breaks the boundary between the hidden representation and the output layer:
 
-```lean +error (name := apiTypo)
+```lean +error -keep (name := apiTypo)
 -- The hidden layer produces eight entries, so a final layer
 -- expecting seven cannot compose.
 def apiTypo :

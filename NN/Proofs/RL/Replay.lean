@@ -17,6 +17,7 @@ These theorems certify the structural guarantees that make the runtime replay bu
 - zero-capacity buffers remain empty after a push;
 - pushing below capacity increments size;
 - pushing at capacity preserves the configured capacity by evicting the oldest element.
+- the remaining transitions keep their order, and the new transition is last.
 
 This is the proof layer for the "bounded FIFO" invariant used by DQN-style replay.
 -/
@@ -68,6 +69,26 @@ theorem push_size_of_full
     (b.push t).items.size = b.capacity := by
   have hcapNe : b.capacity ≠ 0 := hcap.ne'
   simp [Buffer.push, hcapNe, hfull, Array.size_extract, Array.size_push]
+
+/-- Below capacity, every old transition is retained in order and the new one is appended. -/
+theorem push_contents_of_room
+    (b : Buffer α obsShape nActions) (t : Transition α obsShape nActions)
+    (hroom : b.items.size + 1 ≤ b.capacity) :
+    (b.push t).items.toList = b.items.toList ++ [t] := by
+  have hcap : b.capacity ≠ 0 := by omega
+  simp [Buffer.push, hcap, hroom]
+
+/-- At capacity, exactly the oldest transition is evicted; all successors retain their order. -/
+theorem push_contents_of_full
+    (b : Buffer α obsShape nActions) (t : Transition α obsShape nActions)
+    (hcap : 0 < b.capacity) (hfull : b.items.size = b.capacity) :
+    (b.push t).items.toList = b.items.toList.drop 1 ++ [t] := by
+  have hcapNe : b.capacity ≠ 0 := hcap.ne'
+  have hlength : 1 ≤ b.items.toList.length := by
+    have : b.items.toList.length = b.capacity := by simpa using hfull
+    omega
+  simp [Buffer.push, hcapNe, hfull, hcap, Array.toList_extract,
+    List.drop_append_of_le_length hlength]
 
 end Replay
 end RL

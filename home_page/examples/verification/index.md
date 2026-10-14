@@ -239,8 +239,10 @@ and LayerNorm, then bounds their MSE against a fixed target; `--with-crown` also
 output and loss-objective bounds.
 `torchlean-crown-ops` uses the same graph style but adds forward and backward CROWN-style affine
 passes over softmax and MSE-loss operations. `torchlean-mlp-workflow` trains a classifier and then
-checks robustness with the alpha-beta-CROWN path on the resulting graph. The arithmetic used by
-these commands follows the same `--arithmetic native|ieee` flag as the examples.
+checks robustness through `outputBoxAlphaBetaCROWN?` on the resulting graph. Rounded scalar
+backends use directed CROWN in that API; the affine α/β pass requires exact reassociation.
+The requested input box seeds propagation in either case. The arithmetic used by these commands
+follows the same `--arithmetic native|ieee` flag as the examples.
 
 `digits-train-certify` trains a small
 sklearn-digits classifier with Python, exports weights and test examples, then immediately

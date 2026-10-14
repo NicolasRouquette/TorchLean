@@ -312,7 +312,7 @@ def confusionHtml (labels : Array String) (cm : Runtime.Training.ConfusionMatrix
                 let pred : Nat := colTotals[i]!;
                 let precision := if pred = 0 then "n/a" else
                 s!"{100.0 * Float.ofNat tp / Float.ofNat pred}%";
-                let recall := if sup = 0 then "n/a" else
+                let recallRate := if sup = 0 then "n/a" else
                 s!"{100.0 * Float.ofNat tp / Float.ofNat sup}%";
                 <tr>
                   <td style={json% {"padding": "6px 8px", "border-bottom":
@@ -322,7 +322,7 @@ def confusionHtml (labels : Array String) (cm : Runtime.Training.ConfusionMatrix
                   <td style={json% {"padding": "6px 8px", "border-bottom":
                     "1px solid rgba(127,127,127,0.18)"}}>{monospace precision}</td>
                   <td style={json% {"padding": "6px 8px", "border-bottom":
-                    "1px solid rgba(127,127,127,0.18)"}}>{monospace recall}</td>
+                    "1px solid rgba(127,127,127,0.18)"}}>{monospace recallRate}</td>
                 </tr>)}
             </tbody>
           </table>

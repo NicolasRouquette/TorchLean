@@ -64,18 +64,15 @@ theorem buildFrom_denoteAllFrom_permute
   cases hp : unaryParent? n.parents with
   | none =>
       simp [hp, throw_eq_error] at hBuild
-      try cases hBuild
   | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
               simp [hp, hP, throw_eq_error] at hBuild
-              try cases hBuild
           | ok pNode =>
               simp (config := { failIfUnchanged := false }) [hp, hP] at hBuild
               cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId pNode.outShape with
               | error msg =>
                   simp [hIdx] at hBuild
-                  try cases hBuild
               | ok ip =>
                   simp [hIdx] at hBuild
                   cases hPerm : Spec.Shape.permute? pNode.outShape perm.toList with
@@ -89,7 +86,6 @@ theorem buildFrom_denoteAllFrom_permute
                               (Spec.Shape.rank pNode.outShape) with
                       | error msg =>
                           simp [hSwaps] at hBuild
-                          try cases hBuild
                       | ok swaps =>
                           simp [hSwaps] at hBuild
                           let sFinal : Shape := swapShape pNode.outShape swaps
@@ -163,9 +159,7 @@ theorem buildFrom_denoteAllFrom_permute
                                 (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                                 (τ := n.outShape) (nodeData := nodeData) hTail hEval
                             · simp [hOut] at hBuild
-                              try cases hBuild
                           · simp [sFinal, hFinal, throw_eq_error] at hBuild
-                            try cases hBuild
 
 /-- Semantic preservation for transposing any two axes of a tensor. -/
 theorem buildFrom_denoteAllFrom_transpose
@@ -200,25 +194,21 @@ theorem buildFrom_denoteAllFrom_transpose
   cases hp : unaryParent? n.parents with
   | none =>
       simp [hp, throw_eq_error] at hBuild
-      try cases hBuild
   | some pId =>
           cases hP : g.getNode pId with
           | error msg =>
               simp [hp, hP, throw_eq_error] at hBuild
-              try cases hBuild
           | ok pNode =>
               simp (config := { failIfUnchanged := false }) [hp, hP] at hBuild
               cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId pNode.outShape with
               | error msg =>
                   simp [hIdx] at hBuild
-                  try cases hBuild
               | ok ip =>
                   simp [hIdx] at hBuild
                   cases hTranspose :
                       OpContracts.transposePerm pNode.outShape.rank axis₁ axis₂ with
                   | error msg =>
                       simp [hTranspose, throw_eq_error] at hBuild
-                      try cases hBuild
                   | ok perm =>
                       simp [hTranspose] at hBuild
                       cases hPerm : Spec.Shape.permute? pNode.outShape perm.toList with
@@ -232,7 +222,6 @@ theorem buildFrom_denoteAllFrom_transpose
                                   (Spec.Shape.rank pNode.outShape) with
                           | error msg =>
                               simp [hSwaps] at hBuild
-                              try cases hBuild
                           | ok swaps =>
                               simp [hSwaps] at hBuild
                               let sFinal : Shape := swapShape pNode.outShape swaps
@@ -303,9 +292,7 @@ theorem buildFrom_denoteAllFrom_transpose
                                     (gd := gd) (i := i) (st' := st') (x := x) (hi := hi)
                                     (τ := n.outShape) (nodeData := nodeData) hTail hEval
                                 · simp [hOut] at hBuild
-                                  try cases hBuild
                               · simp [sFinal, hFinal, throw_eq_error] at hBuild
-                                try cases hBuild
 
 end IRExec
 end Autograd

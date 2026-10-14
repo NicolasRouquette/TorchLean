@@ -151,7 +151,7 @@ Unlike `log (softmax x)`, this uses the max-shifted
 /--
  Elementwise natural logarithm.
 
- Forward uses `logSpec`; backward multiplies by `1/x` (pointwise), i.e. `d/dx log(x) = 1/x`
+ Forward uses `logSpec`; backward divides the incoming gradient by `x` (pointwise)
  (on its mathematical domain; this runtime does not model NaNs/Infs explicitly).
 
  PyTorch comparison: `torch.log`.
@@ -174,7 +174,7 @@ Unlike `log (softmax x)`, this uses the max-shifted
       parents := #[xId]
       backward := fun dLdyAny => do
         let dLdy ← requireGrad (α := α) (τ := s) dLdyAny
-        pure #[(xId, Spec.SomeTensor.ofTensor (mulSpec (invSpec (α := α) x) dLdy))]
+        pure #[(xId, Spec.SomeTensor.ofTensor (divSpec dLdy x))]
     }
   pure (t.addNode node)
 
@@ -191,10 +191,8 @@ Unlike `log (softmax x)`, this uses the max-shifted
   unary (α := α) (t := t) (σ := s) (τ := s) "inv" xId
     (forward := fun x => invSpec (α := α) x)
     (backward := fun x dLdy =>
-      -- d/dx (x⁻¹) = -(x⁻¹)²
-      let invx := invSpec (α := α) x
-      let invx2 := mulSpec invx invx
-      scaleSpec (α := α) (s := s) (mulSpec dLdy invx2) (-1 : α))
+      -- Successive divisions avoid overflowing a reciprocal or squaring a large denominator.
+      divSpec (divSpec (negSpec dLdy) x) x)
 
 /--
  Elementwise `log(softplus(x) + ε)`.

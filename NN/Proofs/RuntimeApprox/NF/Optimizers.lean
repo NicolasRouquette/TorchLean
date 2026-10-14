@@ -329,7 +329,7 @@ the scalar budgets or prove the domain premises supplied by the caller.
 -/
 def adamWStepErrorTrace {s : Shape} (stateError : AdamWStateError s)
     (derivedErrors : AdamWDerivedErrors)
-    (parameterError gradientError minimumSecondMoment : ℝ)
+    (parameterError gradientError minimumDenominator : ℝ)
     (runtimeState : Optim.AdamW.State R s)
     (runtimeParameters runtimeGradients : Tensor R s) :
     AdamWStepErrorTrace :=
@@ -382,8 +382,8 @@ def adamWStepErrorTrace {s : Shape} (stateError : AdamWStateError s)
       secondMomentBiasInverse secondMoment)
   let standardDeviation := sqrtSpec correctedSecondMoment
   let standardDeviationError := linfNorm
-    (sqrtPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
-      minimumSecondMoment correctedSecondMomentError correctedSecondMoment)
+    (sqrtBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
+      correctedSecondMomentError correctedSecondMoment)
   let epsilon := Tensor.full s runtimeState.epsilon
   let denominator := addSpec standardDeviation epsilon
   let denominatorError := linfNorm
@@ -393,7 +393,7 @@ def adamWStepErrorTrace {s : Shape} (stateError : AdamWStateError s)
   let adaptiveLearningRate := divSpec learningRate denominator
   let adaptiveLearningRateError := linfNorm
     (divPosBoundTensor (β := β) (fexp := fexp) (rnd := rnd)
-      (Real.sqrt minimumSecondMoment) stateError.learningRate
+      minimumDenominator stateError.learningRate
       denominatorError learningRate denominator)
   let adaptiveUpdate := mulSpec adaptiveLearningRate correctedFirstMoment
   let adaptiveUpdateError := linfNorm
@@ -425,13 +425,12 @@ def adamWStepErrorTrace {s : Shape} (stateError : AdamWStateError s)
     decayedParameters := decayedParametersError
     parameterError := nextParameterError }
 
-/-- One AdamW update is numerically sound on a certified positive second-moment domain.
+/-- One AdamW update is numerically sound with an epsilon-controlled denominator margin.
 
 The derived-scalar hypotheses account for rounding in `1-β`, bias correction, and decoupled decay.
-`η` bounds the exact corrected second moment away from zero. The denominator-error margin is used
-to justify division. The additional corrected-second-moment error margin is retained in the public
-statement but unused by this proof: the square-root rule already handles the rounded input with
-the spec's nonnegative clamp.
+`η` bounds the exact denominator, not the second moment. At a zero-gradient initial step, epsilon
+supplies this margin. The square-root bound admits zero inputs, and the denominator-error margin
+accounts for rounding in both the square root and epsilon before justifying division.
 -/
 theorem approxTensor_adamW_update {s : Shape}
     {stateS : Optim.AdamW.State ℝ s} {stateR : Optim.AdamW.State R s}
@@ -459,23 +458,17 @@ theorem approxTensor_adamW_update {s : Shape}
     (hdecay : abs (toSpec (β := β) (fexp := fexp) (rnd := rnd)
       (stateR.learningRate * stateR.weightDecay) -
       stateS.learningRate * stateS.weightDecay) ≤ derivedErrors.decayScale)
-    (hη : 0 < η)
-    (hEpsilon : 0 ≤ stateS.epsilon)
-    (hMoment2Hat :
+    (hDenominatorLower :
       let nextStepCount := stateS.stepCount + 1
       let moment2 := addSpec (scaleSpec stateS.secondMoment stateS.beta2)
         (scaleSpec (squareSpec gradsS) (1 - stateS.beta2))
+      let corrected := scaleSpec moment2 (1 / (1 - Optim.scalarPowNat stateS.beta2 nextStepCount))
       Tensor.Forall (fun z : ℝ => η ≤ z)
-        (scaleSpec moment2
-          (1 / (1 - Optim.scalarPowNat stateS.beta2 nextStepCount))))
-    (hMoment2Margin :
-      (adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
-        stateError derivedErrors paramsError gradsError η stateR paramsR gradsR
-      ).correctedSecondMoment < η)
+        (addSpec (sqrtSpec corrected) (Tensor.full s stateS.epsilon)))
     (hDenominatorMargin :
       (adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
         stateError derivedErrors paramsError gradsError η stateR paramsR gradsR
-      ).denominator < Real.sqrt η) :
+      ).denominator < η) :
     let trace := adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
       stateError derivedErrors paramsError gradsError η stateR paramsR gradsR
     adamWStateApprox (β := β) (fexp := fexp) (rnd := rnd)
@@ -488,7 +481,6 @@ theorem approxTensor_adamW_update {s : Shape}
         (Optim.AdamW.update stateS paramsS gradsS).parameters
         (Optim.AdamW.update stateR paramsR gradsR).parameters
         trace.parameterError := by
-  have _ := hMoment2Margin
   dsimp only
   rcases hstate with ⟨hlr, hbeta1, hbeta2, hepsilon, hweightDecay, hm, hv, ht⟩
   let mS := addSpec (scaleSpec stateS.firstMoment stateS.beta1)
@@ -528,29 +520,19 @@ theorem approxTensor_adamW_update {s : Shape}
   have hvHat := approxTensor_scale_spec_of_approx
     (β := β) (fexp := fexp) (rnd := rnd) bias2S bias2R hv'
       (by simpa [bias2S, bias2R] using hbias2)
-  have hsqrt := approxTensor_sqrt_spec_of_pos_lb
-    (β := β) (fexp := fexp) (rnd := rnd) η hη hvHat
-      (by simpa [vHatS, vS, bias2S] using hMoment2Hat)
+  have hsqrt := approxTensor_sqrt_spec
+    (β := β) (fexp := fexp) (rnd := rnd) hvHat
   have hepsilonFill := approxTensor_full_const
     (β := β) (fexp := fexp) (rnd := rnd) hepsilon (s := s)
   have hdenominator := approxTensor_add_spec
     (β := β) (fexp := fexp) (rnd := rnd) hsqrt hepsilonFill
-  have hstdLower : Tensor.Forall (fun z : ℝ => Real.sqrt η ≤ z) (sqrtSpec vHatS) := by
-    apply Tensor.forall_map (by simpa [vHatS, vS, bias2S] using hMoment2Hat)
-    intro z hz
-    change Real.sqrt η ≤ Real.sqrt (max z 0)
-    exact Real.sqrt_le_sqrt (le_trans hz (le_max_left z 0))
-  have hepsilonLower : Tensor.Forall (fun z : ℝ => 0 ≤ z) (Tensor.full s stateS.epsilon) :=
-    Tensor.forall_full hEpsilon
-  have hdenominatorLower : Tensor.Forall (fun z : ℝ => Real.sqrt η ≤ z)
+  have hdenominatorLower : Tensor.Forall (fun z : ℝ => η ≤ z)
       (addSpec (sqrtSpec vHatS) (Tensor.full s stateS.epsilon)) := by
-    apply Tensor.forall_map2Spec hstdLower hepsilonLower
-    intro a b ha hb
-    linarith
+    simpa [vHatS, vS, bias2S] using hDenominatorLower
   have hlrFill := approxTensor_full_const
     (β := β) (fexp := fexp) (rnd := rnd) hlr (s := s)
   have hadaptive := approxTensor_div_spec_of_pos_lb
-    (β := β) (fexp := fexp) (rnd := rnd) (Real.sqrt η)
+    (β := β) (fexp := fexp) (rnd := rnd) η
     hlrFill hdenominator hdenominatorLower hDenominatorMargin
   have hadamUpdate := approxTensor_mul_spec
     (β := β) (fexp := fexp) (rnd := rnd) hadaptive hmHat
@@ -577,8 +559,8 @@ theorem approxTensor_adamW_update {s : Shape}
 structure AdamWStepAssumptions where
   /-- Bounds for rounded scalar subexpressions used by bias correction and decay. -/
   derivedErrors : AdamWDerivedErrors
-  /-- Positive lower bound on the exact bias-corrected second moment. -/
-  minimumSecondMoment : ℝ
+  /-- Positive lower bound on `sqrt(max v̂ 0) + epsilon`; epsilon supplies it when `v̂ = 0`. -/
+  minimumDenominator : ℝ
 
 /-- Complete validity predicate for one AdamW contract application. -/
 def adamWAssumptionsHold {s : Shape}
@@ -603,22 +585,16 @@ def adamWAssumptionsHold {s : Shape}
       (stateR.learningRate * stateR.weightDecay) -
       stateS.learningRate * stateS.weightDecay) ≤
     assumptions.derivedErrors.decayScale ∧
-  0 < assumptions.minimumSecondMoment ∧
-  0 ≤ stateS.epsilon ∧
   (let nextStepCount := stateS.stepCount + 1
    let moment2 := addSpec (scaleSpec stateS.secondMoment stateS.beta2)
      (scaleSpec (squareSpec gradsS) (1 - stateS.beta2))
-   Tensor.Forall (fun z : ℝ => assumptions.minimumSecondMoment ≤ z)
-     (scaleSpec moment2
-       (1 / (1 - Optim.scalarPowNat stateS.beta2 nextStepCount)))) ∧
+   let corrected := scaleSpec moment2 (1 / (1 - Optim.scalarPowNat stateS.beta2 nextStepCount))
+   Tensor.Forall (fun z : ℝ => assumptions.minimumDenominator ≤ z)
+     (addSpec (sqrtSpec corrected) (Tensor.full s stateS.epsilon))) ∧
   (adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
       stateError assumptions.derivedErrors paramsError gradsError
-      assumptions.minimumSecondMoment stateR paramsR gradsR).correctedSecondMoment <
-    assumptions.minimumSecondMoment ∧
-  (adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
-      stateError assumptions.derivedErrors paramsError gradsError
-      assumptions.minimumSecondMoment stateR paramsR gradsR).denominator <
-    Real.sqrt assumptions.minimumSecondMoment
+      assumptions.minimumDenominator stateR paramsR gradsR).denominator <
+    assumptions.minimumDenominator
 
 /-- State and parameter error object produced by one AdamW contract step. -/
 def adamWStepError {s : Shape} (stateError : AdamWStateError s)
@@ -627,7 +603,7 @@ def adamWStepError {s : Shape} (stateError : AdamWStateError s)
     StepError AdamWStateError s :=
   let trace := adamWStepErrorTrace (β := β) (fexp := fexp) (rnd := rnd)
     stateError assumptions.derivedErrors paramsError gradsError
-    assumptions.minimumSecondMoment stateR paramsR gradsR
+    assumptions.minimumDenominator stateR paramsR gradsR
   { optimizerStateError :=
       { stateError with
         firstMoment := trace.firstMoment
@@ -659,7 +635,7 @@ def adamWContract : NumericalStepContract R
       ("epsilon", error.epsilon), ("weight decay", error.weightDecay),
       ("first moment", error.firstMoment), ("second moment", error.secondMoment)]
   assumptionReport := fun assumptions =>
-    #[("minimum corrected second moment", assumptions.minimumSecondMoment),
+    #[("minimum denominator", assumptions.minimumDenominator),
       ("1 - beta1", assumptions.derivedErrors.oneMinusBeta1),
       ("1 - beta2", assumptions.derivedErrors.oneMinusBeta2),
       ("first bias inverse", assumptions.derivedErrors.firstMomentBiasInverse),
@@ -669,13 +645,12 @@ def adamWContract : NumericalStepContract R
     intro s stateS stateR stateError paramsS paramsR paramsError gradsS gradsR gradsError
       assumptions hstate hparams hgrads hvalid
     rcases hvalid with
-      ⟨honeMinus1, honeMinus2, hbias1, hbias2, hdecay, hEta, hEpsilon,
-        hMoment2Hat, hMoment2Margin, hDenominatorMargin⟩
+      ⟨honeMinus1, honeMinus2, hbias1, hbias2, hdecay, hDenominatorLower, hDenominatorMargin⟩
     simpa [adamWStepError] using
       (approxTensor_adamW_update (β := β) (fexp := fexp) (rnd := rnd)
         (derivedErrors := assumptions.derivedErrors)
-        hstate hparams hgrads honeMinus1 honeMinus2 hbias1 hbias2 hdecay hEta hEpsilon
-        hMoment2Hat hMoment2Margin hDenominatorMargin)
+        hstate hparams hgrads honeMinus1 honeMinus2 hbias1 hbias2 hdecay hDenominatorLower
+        hDenominatorMargin)
 
 end
 end Proofs.RuntimeApprox.NFBackend.Optimizer

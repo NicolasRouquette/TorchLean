@@ -11,8 +11,9 @@ public import NN.Proofs.Autograd.Tape.Algebra.Gradients
 
 /-!
 Reverse execution over saved node programs uses indexed gradients and deferred uniform updates.
-Its result is proved equal to dense backpropagation without assuming associativity, zero identities,
-or that a VJP maps the zero cotangent to zero.
+The all-seeds pass is proved equal to dense backpropagation without assuming associativity, zero
+identities, or that a VJP maps the zero cotangent to zero. The separate single-output pass omits
+unrelated nodes; these two semantics need not agree for arbitrary user-defined VJPs.
 -/
 
 @[expose] public section
@@ -110,6 +111,53 @@ theorem ofGraph_backpropStored {Δ : Type} {ss : List Shape}
     ((ofGraph graph inputs data).1.backpropStored seed).toPack =
       graph.backpropAllCtx inputs data seed := by
   rw [toPack_backpropStored, ofGraph_backpropDense]
+
+/-- Visit only dependencies of the seeded output when a node has a certified compact support.
+An opaque dense VJP conservatively makes every preceding position reachable. Reachability follows
+the prepared VJP's support: a reached node still runs when its cotangent happens to be zero.
+-/
+def Internal.backpropReachableArray [DecidableEq α] [Zero α] {ss : List Shape}
+    (saved : SavedGraph α Γ ss) (seed : GradientContext α (Γ ++ ss))
+    (reached : Array Bool) : TensorContext α (Γ ++ ss) :=
+  match saved with
+  | .nil => TensorContext.ofPack seed.toPack
+  | .snoc (ss := previousShapes) (τ := shape) previous prepared _ =>
+      let parts := (seed.cast (List.append_assoc Γ previousShapes [shape]).symm).pop
+      let prefixLength := (Γ ++ previousShapes).length
+      let (accumulated, reached) := if reached[prefixLength]? == some true then
+          match prepared.compact? with
+          | some implementation =>
+              let contribution := implementation.val parts.2
+              let reached := if contribution.uniform = 0 then
+                  contribution.support.foldl
+                    (fun reached entry => reached.set! entry.2.i.val true) reached
+                else Array.replicate prefixLength true
+              (parts.1.addContributions contribution, reached)
+          | none =>
+              (parts.1.addDense (prepared.vjp parts.2), Array.replicate prefixLength true)
+        else (parts.1, reached)
+      let gradients := Internal.backpropReachableArray previous accumulated reached
+      (gradients.push parts.2).cast (List.append_assoc Γ previousShapes [shape])
+
+/-- Backpropagate from one output using certified support when storage equality is available.
+
+Storage equality compares carrier encodings, not the scalar's numerical `BEq`; IEEE signed zeros
+and NaNs therefore do not invalidate the support check. Carriers without decidable storage
+equality retain the full dense program. `backpropStored` remains the explicit all-seeds reference.
+Opaque VJPs conservatively visit the full prefix. Custom compact VJPs supply their own support;
+this traversal makes no separate claim that it
+captures the syntactic dependencies of an arbitrary user-defined forward function.
+-/
+def backpropFrom [Zero α] {ss : List Shape} {shape : Shape}
+    (saved : SavedGraph α Γ ss) (output : Idx (Γ ++ ss) shape) (seed : Tensor α shape) :
+    TensorContext α (Γ ++ ss) :=
+  let gradients := TensorPack.single output seed
+  match Storage.decEq? (α := α) with
+  | some equality =>
+      letI := equality
+      let reached := (Array.replicate (Γ ++ ss).length false).set! output.i.val true
+      Internal.backpropReachableArray saved (GradientContext.ofPack gradients) reached
+  | none => saved.backpropStored gradients
 
 /-- Dense inputs-only reference, retaining the original local accumulation order. -/
 def backpropInputsDense {ss : List Shape} (saved : SavedGraph α Γ ss)

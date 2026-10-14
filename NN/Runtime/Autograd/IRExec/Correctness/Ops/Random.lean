@@ -145,7 +145,6 @@ theorem buildFrom_denoteAllFrom_bernoulliMask
           cases hIdx : mkIdx (inShape := inShape) (ss := ss) pId Shape.scalar with
           | error msg =>
               simp [hp, hIdx] at hBuild
-              try cases hBuild
           | ok ip =>
               simp [hp, hIdx] at hBuild
               let key := Spec.Random.keyOf seed i

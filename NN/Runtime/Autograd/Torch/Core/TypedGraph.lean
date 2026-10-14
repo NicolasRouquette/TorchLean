@@ -83,79 +83,48 @@ def jvp {α Δ : Type} [TorchLean.Storage α] {Γ : List Shape} {τ : Shape}
     (c : TypedGraphWithData α Δ Γ τ) (x dx : TorchLean.TensorPack α Γ) (d : Δ) : Tensor α τ :=
   getIdx (Proofs.Autograd.Algebra.GraphData.jvpCtx (g := c.data) x dx d) c.output
 
-/-- Reverse-mode vector-Jacobian product with an explicit output cotangent seed. -/
+/-- Reverse from the selected output, leaving unrelated stored VJPs unevaluated when storage
+equality and certified compact support are available. Opaque VJPs conservatively visit the full
+prefix; carriers without storage equality use the dense reference. -/
 def vjp {α Δ : Type} [TorchLean.Storage α] [Add α] [Zero α]
     {Γ : List Shape} {τ : Shape} (c : TypedGraphWithData α Δ Γ τ)
     (x : TorchLean.TensorPack α Γ) (d : Δ) (seedOut : Tensor α τ) : TorchLean.TensorPack α Γ :=
-  Proofs.Autograd.Algebra.GraphData.backpropCtx
-    (α := α) (Δ := Δ) (Γ := Γ) (g := c.data) x d (TensorPack.single c.output seedOut)
-
-/-- Recover the input pullback from a previously checked forward tape. -/
-def vjpFromTape {α Δ : Type} [Storage α] [Add α] [Zero α]
-    {Γ : List Shape} {τ : Shape} (graph : TypedGraphWithData α Δ Γ τ)
-    (tape : Runtime.Autograd.Tape α) (seed : Tensor α τ) :
-    Runtime.Autograd.Result (TorchLean.TensorPack α Γ) := do
-  let gradients ← Runtime.Autograd.TypedGraph.backwardDenseAllFrom tape graph.output seed
-  TorchLean.TensorPack.ofShapeErasedArray gradients (shapes := Γ)
+  let saved := (SavedGraph.ofGraph c.data x d).1
+  ((saved.backpropFrom c.output seedOut).toPack.split (ss₁ := Γ) (ss₂ := c.nodeShapes)).1
 
 /--
 Evaluate the output and its seeded input pullback, checking every node's runtime domain first.
 
-The returned pair is `(inputGradients, output)`. Auxiliary data is held fixed. The compiled
-implementation uses one checked execution for both values, with a proved replacement of the
-raw Tape specification below.
+The returned pair is `(inputGradients, output)`. Auxiliary data is held fixed. One checked forward
+execution supplies both the output and the saved reverse programs. With storage equality and
+certified compact support, the backward pass visits only the selected output's dependencies,
+avoiding unrelated singular VJPs. Opaque VJPs and carriers without storage equality retain the
+conservative traversal described by `vjp`.
 -/
 def vjpChecked {α Δ : Type} [Storage α] [Add α] [Zero α]
     {Γ : List Shape} {τ : Shape} (graph : TypedGraphWithData α Δ Γ τ)
     (inputs : TorchLean.TensorPack α Γ) (data : Δ) (seed : Tensor α τ) :
     Runtime.Autograd.Result (TorchLean.TensorPack α Γ × Tensor α τ) := do
-  let (tape, context) ← Runtime.Autograd.TypedGraph.lowerToTapeChecked graph.data inputs data
-  let gradients ← graph.vjpFromTape tape seed
-  pure (gradients, getIdx context graph.output)
-
-/-- Execute the checked VJP through indexed primals and saved reverse programs. -/
-def vjpCompiledChecked {α Δ : Type} [Storage α] [Add α] [Zero α]
-    {Γ : List Shape} {τ : Shape} (graph : TypedGraphWithData α Δ Γ τ)
-    (inputs : TorchLean.TensorPack α Γ) (data : Δ) (seed : Tensor α τ) :
-    Runtime.Autograd.Result (TorchLean.TensorPack α Γ × Tensor α τ) := do
   let compiled ← Runtime.Autograd.TypedGraph.compileChecked graph.data inputs data
-  let gradients ← TorchLean.TensorPack.ofShapeErasedArray
-    (compiled.backwardDenseAllFrom graph.output seed) (shapes := Γ)
+  let gradients := ((compiled.saved.backpropFrom graph.output seed).toPack.split
+    (ss₁ := Γ) (ss₂ := graph.nodeShapes)).1
   pure (gradients, compiled.context.lookup.read graph.output)
 
-/-- The maintained checked API compiles to the exact saved-program implementation. -/
-@[csimp] theorem vjpChecked_eq_compiled : @vjpChecked = @vjpCompiledChecked := by
-  funext α Δ storage add zero Γ τ graph inputs data seed
-  have lowered := Runtime.Autograd.TypedGraph.compileChecked_eq_lowerToTapeChecked
-    graph.data inputs data
-  cases checked : Runtime.Autograd.TypedGraph.compileChecked graph.data inputs data with
-  | error message =>
-      simp only [checked, Except.map] at lowered
-      simp only [vjpChecked, vjpCompiledChecked, ← lowered, checked,
-        Bind.bind, Except.bind]
-  | ok compiled =>
-      simp only [checked, Except.map] at lowered
-      have same := Runtime.Autograd.TypedGraph.lowerToTapeChecked_eq
-        graph.data inputs data (compiled.toTape, compiled.context.toPack) lowered.symm
-      have tape := congrArg Prod.fst same
-      have backward := Runtime.Autograd.TypedGraph.compileChecked_backwardDenseFrom_eq_tape
-        graph.data inputs data compiled checked (TensorPack.single graph.output seed)
-      have backward' :
-          Runtime.Autograd.TypedGraph.backwardDenseAllFrom
-            compiled.toTape graph.output seed =
-          .ok (compiled.backwardDenseAllFrom graph.output seed) := by
-        simp only [Runtime.Autograd.TypedGraph.backwardDenseAllFrom,
-          Runtime.Autograd.TypedGraph.Compiled.backwardDenseAllFrom]
-        rw [show compiled.toTape = _ from tape]
-        exact backward.symm
-      simp only [vjpChecked, vjpCompiledChecked, ← lowered, checked,
-        Bind.bind, Except.bind,
-        vjpFromTape, backward']
-      have output := congrArg
-        (fun (reader : TensorLookup α (Γ ++ graph.nodeShapes)) => reader.read graph.output)
-        (TensorContext.lookup_toPack compiled.context)
-      rw [show getIdx compiled.context.toPack graph.output =
-        compiled.context.lookup.read graph.output from output]
+/-- A successful domain check returns the same output and dependency-aware VJP as pure
+evaluation. This does not identify single-output traversal with the all-seeds dense reference. -/
+theorem vjpChecked_eq_of_lowerChecked {α Δ : Type} [Storage α] [Add α] [Zero α]
+    {Γ : List Shape} {τ : Shape} (graph : TypedGraphWithData α Δ Γ τ)
+    (inputs : TorchLean.TensorPack α Γ) (data : Δ) (seed : Tensor α τ)
+    (execution : SavedGraph α Γ graph.nodeShapes × TensorContext α (Γ ++ graph.nodeShapes))
+    (checked : SavedGraph.lowerChecked graph.data inputs data = .ok execution) :
+    graph.vjpChecked inputs data seed = .ok (graph.vjp inputs data seed,
+      graph.forward inputs data) := by
+  have same := SavedGraph.lowerChecked_eq graph.data inputs data execution checked
+  simp only [vjpChecked, Runtime.Autograd.TypedGraph.compileChecked, checked,
+    Except.map, Bind.bind, Except.bind, Pure.pure, Except.pure]
+  rw [same]
+  simp only [vjp, forward, SavedGraph.ofGraph_context_eq, TensorContext.lookup_ofPack,
+    TensorLookup.ofPack]
 
 end TypedGraphWithData
 

@@ -74,16 +74,18 @@ def attention (mask : Option (Tensor Bool [4, 4]) := none) :
     (mask := mask) (batchShape := [1]) (sequenceLength := 4) (modelWidth := 8)
 
 /--
-A full encoder block: attention, residual, LayerNorm, feed-forward, residual, LayerNorm.
+A full encoder block: attention, residual, LayerNorm, ReLU feed-forward, residual, LayerNorm.
 
 Deliberately tiny (one head of width two) so the emitted Python stays readable.
+We choose ReLU explicitly because the verifier IR does not yet lower GELU faithfully.
 -/
 def transformer :
     nn.Builder (nn.Sequential [1, 2, 2] [1, 2, 2]) :=
   nn.transformerEncoderBlock
     { headCount := 1
     , headWidth := 2
-    , feedForwardWidth := 2 }
+    , feedForwardWidth := 2
+    , activation := .relu }
     (batchShape := [1]) (sequenceLength := 2) (modelWidth := 2)
 
 /-! ## CLI parsing -/

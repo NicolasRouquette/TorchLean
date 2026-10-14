@@ -147,16 +147,16 @@ namespace Rollout
 
 namespace Internal
 
-/-- GAE with separate masks for the next-state value and continuation into the next step. -/
+/-- GAE with separate branches for value bootstrapping and continuation into the next step.
+Discarded infinite or NaN values cannot leak across an episode boundary through `0 * value`. -/
 def generalizedAdvantageEstimationWithBoundaries {n : Nat} (gamma lam : α)
     (rewards values nextValues : Tensor α [n])
     (terminated boundaries : Tensor Bool [n]) : Tensor α [n] :=
   let indices : Tensor (Fin n) [n] := Tensor.ofFn id
   Tensor.scanr (fun i nextAdvantage =>
-    let bootstrapMask := Core.continueMask (α := α) terminated[i]
-    let continuationMask := Core.continueMask (α := α) boundaries[i]
-    let delta := rewards[i] + gamma * bootstrapMask * nextValues[i] - values[i]
-    delta + gamma * lam * continuationMask * nextAdvantage) 0 indices
+    let delta := if terminated[i] then rewards[i] - values[i]
+      else rewards[i] + gamma * nextValues[i] - values[i]
+    if boundaries[i] then delta else delta + gamma * lam * nextAdvantage) 0 indices
 
 /-- Using the same mask retains the existing GAE definition, including arithmetic order. -/
 private theorem generalizedAdvantageEstimationWithBoundaries_same {n : Nat} (gamma lam : α)

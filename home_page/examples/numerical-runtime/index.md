@@ -131,8 +131,9 @@ import NN.Proofs.RuntimeApprox.NF.EndToEnd
 #check Proofs.RuntimeApprox.NFBackend.trainingStepTrace
 ```
 
-SGD, momentum SGD, and AdamW use that one optimizer interface. AdamW contributes additional
-step data because square root, bias correction, and division need explicit positivity margins.
+SGD, momentum SGD, and AdamW use that one optimizer interface. AdamW contributes error budgets
+for bias correction and a lower bound for the complete denominator, including epsilon. Its
+square-root estimate remains valid when the second moment is zero.
 `trainingStepTrace` returns forward bounds, backward bounds, the selected parameter-gradient bound,
 the next parameter bound, and optimizer-state bounds.
 

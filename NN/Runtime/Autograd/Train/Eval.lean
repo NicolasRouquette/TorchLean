@@ -96,21 +96,28 @@ end ReportSum
 /--
 Evaluate an array of samples and average their reports.
 
-This is the “for sample in dataset: compute report; take mean” pattern.
+Samples are evaluated in index order. Pairwise summation avoids losing every subsequent unit
+contribution once a narrow floating-point accumulator can no longer represent `sum + 1`.
+It does not guarantee an accurate mean for every input, or prevent overflow of the sum.
 -/
 def evalArray {sample a : Type}
   [Add a] [Div a] [NatCast a]
   (tag : String) (xs : Array sample) (evalSample : sample -> Result (Report a)) :
   Result (Report a) := do
-  match xs[0]? with
-  | none => .error (tagError tag "empty dataset")
-  | some x0 => do
-      let r0 <- evalSample x0
-      let acc0 := ReportSum.ofReport r0
-      let acc <- (xs.drop 1).foldlM (init := acc0) (fun acc x => do
-        let r <- evalSample x
-        ReportSum.add (tag := tag) acc (ReportSum.ofReport r))
-      pure (ReportSum.mean acc)
+  if xs.isEmpty then throw (tagError tag "empty dataset")
+  let rec reduce (fuel start count : Nat) : Result (ReportSum a) := do
+    match fuel with
+    | 0 => throw (tagError tag "invalid evaluation range")
+    | fuel + 1 =>
+      if count = 1 then
+        let some sample := xs[start]?
+          | throw (tagError tag "evaluation index out of bounds")
+        return ReportSum.ofReport (← evalSample sample)
+      let leftCount := count / 2
+      let left ← reduce fuel start leftCount
+      let right ← reduce fuel (start + leftCount) (count - leftCount)
+      ReportSum.add tag left right
+  return ReportSum.mean (← reduce xs.size 0 xs.size)
 
 /-- Evaluate a finite sample stream in index order. -/
 def evalDataset {sample a : Type}

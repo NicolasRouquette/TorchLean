@@ -9,6 +9,7 @@ module
 public import NN.Verification.Cert.AbCrownLeafCert
 public import NN.Verification.Cert.CROWNQuery.Json
 public import NN.Verification.Geometry3D.CLI
+public import NN.Verification.IR
 public import NN.Verification.LiRPA
 public import NN.Verification.PINN.CLI
 public import NN.Verification.PINN.Certificate
@@ -136,7 +137,11 @@ def lirpaTools : List Tool :=
 /-- Tool group: other verification-related utilities. -/
 def otherTools : List Tool :=
   [
-    { name := "camera-box3d-cert"
+    { name := "ir"
+      description := "typed graph checks and optional binary sample comparison (JSON report)"
+      includeInAll := false
+      run := NN.Verification.IR.run }
+  , { name := "camera-box3d-cert"
       description := "3D camera-box projection certificate check"
       defaultArg := some NN.Verification.Geometry3D.CLI.defaultCertPath
       run := fun args =>

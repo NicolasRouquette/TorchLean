@@ -227,7 +227,9 @@ def geluSpec {α : Type} [TorchLean.Storage α] [Context α] (x : α) : α :=
   let pi : α := MathFunctions.pi
   let sqrtTwoOverPi := MathFunctions.sqrt (two / pi)
   let coeff : α := geluTanhCoeff
-  x * ((1 : α) + MathFunctions.tanh (sqrtTwoOverPi * (x + coeff * x * x * x))) / two
+  let gate := ((1 : α) +
+    MathFunctions.tanh (sqrtTwoOverPi * (x + coeff * x * x * x))) / two
+  x * gate
 
 /-- GELU derivative for the tanh-based approximation. -/
 def geluDerivSpec {α : Type} [TorchLean.Storage α] [Context α] (x : α) : α :=
@@ -239,7 +241,8 @@ def geluDerivSpec {α : Type} [TorchLean.Storage α] [Context α] (x : α) : α 
   let tanhTerm := MathFunctions.tanh (sqrtTwoOverPi * (x + coeff * x * x * x))
   let sechTerm := (1 : α) - tanhTerm * tanhTerm
   let innerDeriv := sqrtTwoOverPi * ((1 : α) + three * coeff * x * x)
-  ((1 : α) + tanhTerm + x * sechTerm * innerDeriv) / two
+  let correction := if sechTerm == 0 then 0 else x * sechTerm * innerDeriv
+  ((1 : α) + tanhTerm + correction) / two
 
 /-- Swish / SiLU:
 
@@ -259,6 +262,16 @@ def swishDerivSpec (x : α) : α :=
   let s := sigmoidSpec x
   s + x * s * (1 - s)
 
+/-- `log(1 + x)` with compensation for rounding in the addition.
+When `1 + x` rounds to one, return `x` rather than losing the small term. Equality, not order,
+selects this case so the same formula also works for complex scalars. This is not a
+correct-rounding guarantee for the backend's logarithm. -/
+def log1pSpec (x : α) : α :=
+  let shifted := 1 + x
+  if shifted == 1 then x
+  else if shifted == x then MathFunctions.log shifted
+  else MathFunctions.log shifted * (x / (shifted - 1))
+
 /-- Softplus, evaluated without a large positive exponential:
 
 $\operatorname{softplus}(x)=\log(1+\exp(x))$.
@@ -271,9 +284,9 @@ PyTorch analogy: `torch.nn.functional.softplus`.
 -/
 def softplusSpec (x : α) : α :=
   if x > 0 then
-    x + MathFunctions.log (1 + MathFunctions.exp (-x))
+    x + log1pSpec (MathFunctions.exp (-x))
   else
-    MathFunctions.log (1 + MathFunctions.exp x)
+    log1pSpec (MathFunctions.exp x)
 
 /-- Derivative of softplus:
 
@@ -307,7 +320,12 @@ $\operatorname{smooth\_abs}(x;\varepsilon)=\sqrt{x^2+\varepsilon}$.
 Useful when you want an `abs`-like shape but keep differentiability at `0`.
 -/
 def smoothAbsSpec (x : α) (ε : α := Context.defaultEpsilon) : α :=
-  MathFunctions.sqrt (x * x + ε)
+  let scale := max (MathFunctions.abs x) (MathFunctions.sqrt (MathFunctions.abs ε))
+  if scale == 0 || !(scale / scale == scale / scale) then
+    MathFunctions.sqrt (x * x + ε)
+  else
+    let normalized := x / scale
+    scale * MathFunctions.sqrt (normalized * normalized + (ε / scale) / scale)
 
 /-- Derivative of `smoothAbsSpec`. -/
 def smoothAbsDerivSpec (x : α) (ε : α := Context.defaultEpsilon) : α :=

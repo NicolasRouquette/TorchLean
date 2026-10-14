@@ -876,8 +876,8 @@ at::Tensor selected_sqrt(const at::Tensor& x) {
 }
 
 at::Tensor selected_relu(const at::Tensor& x) {
-  // TorchLean selects zero for NaN as well as for nonpositive inputs.
-  return at::where(at::gt(x, 0.0f), x, 0.0f);
+  // Match reluSpec's ordered maximum: preserve NaN, but normalize both zeros to +0.
+  return at::where(at::le(x, 0.0f), 0.0f, x);
 }
 
 at::Tensor axpy(const at::Tensor& a, const at::Tensor& b, double c) {
@@ -905,9 +905,8 @@ at::Tensor gelu_tanh_term(const at::Tensor& x) {
 
 at::Tensor staged_gelu(const at::Tensor& x) {
   const auto tanh_term = gelu_tanh_term(x);
-  const auto scaled_input = at::mul(x, at::add(tanh_term, 1.0f));
-  // Multiplication by the exactly representable 1/2 has the same rounding as /2.
-  return at::mul(scaled_input, 0.5f);
+  const auto gate = at::mul(at::add(tanh_term, 1.0f), 0.5f);
+  return at::mul(x, gate);
 }
 
 at::Tensor staged_gelu_backward(const at::Tensor& x, const at::Tensor& g) {
@@ -918,7 +917,8 @@ at::Tensor staged_gelu_backward(const at::Tensor& x, const at::Tensor& g) {
   const auto quadratic = at::mul(quadratic0, x);
   const auto inner_deriv = at::mul(at::add(quadratic, 1.0f),
                                   rounded(kSqrtTwoOverPi, x.scalar_type()));
-  const auto derivative_term = at::mul(at::mul(x, sech_term), inner_deriv);
+  const auto derivative_term = at::where(at::eq(sech_term, 0.0f), at::zeros_like(x),
+                                       at::mul(at::mul(x, sech_term), inner_deriv));
   const auto numerator = at::add(at::add(tanh_term, 1.0f), derivative_term);
   return at::mul(at::mul(numerator, 0.5f), g);
 }
@@ -2134,6 +2134,16 @@ static at::Tensor avg_pool_backward(
   return args.unbatched(result, g);
 }
 
+// Widen before subtraction, not before scaling each operand. The latter loses nearby
+// differences; narrow subtraction can instead overflow for opposite-sign finite inputs.
+static at::Tensor smooth_pool_exp(const at::Tensor& values, const at::Tensor& pivot,
+                                  double beta) {
+  const auto dtype = values.scalar_type();
+  if (dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat)
+    return ((values.to(at::kDouble) - pivot.to(at::kDouble)) * beta).exp().to(dtype);
+  return ((values - pivot) * beta).exp();
+}
+
 static std::tuple<at::Tensor, at::Tensor> smooth_pool_statistics(
     const at::Tensor& x, const Geometry& g, double beta) {
   const auto output_shape = with_channels(x.size(0), g.output);
@@ -2152,8 +2162,7 @@ static std::tuple<at::Tensor, at::Tensor> smooth_pool_statistics(
     values.zero_();
     const Window window(g.input, g.output, g, k);
     if (window.elements != 0) window.window_view(values).copy_(window.base_view(x));
-    // Subtract in input space first: beta*x can overflow even for a finite smooth maximum.
-    denominator.add_(((values - pivot) * beta).exp());
+    denominator.add_(smooth_pool_exp(values, pivot, beta));
   }
   return {pivot, denominator};
 }
@@ -2182,8 +2191,8 @@ static at::Tensor smooth_pool_backward(
   for (size_t k = 0; k < g.kernel_volume; ++k) {
     const Window window(g.input, g.output, g, k);
     if (window.elements == 0) continue;
-    const auto numerator = ((window.base_view(x) -
-        window.window_view(std::get<0>(statistics))) * b).exp();
+    const auto numerator = smooth_pool_exp(window.base_view(x),
+        window.window_view(std::get<0>(statistics)), b);
     const auto weight = numerator / window.window_view(std::get<1>(statistics));
     window.base_view(dx).add_(window.window_view(grad) * weight);
   }

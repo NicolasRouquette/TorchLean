@@ -15,13 +15,13 @@ public import NN.Tensor.Internal.Representation.Basic.Reindex
 TorchLean has one shape-indexed tensor representation for proofs and execution:
 `Tensor α shape`.
 
-Every tensor owns one contiguous row-major buffer. The scalar type selects the
-physical buffer through `Storage`: arbitrary proof scalar types such as
-`Real` use `Array`, while executable types with specialized instances use
-packed storage (`FloatArray` for `Float`, `ByteArray` for `UInt8`).
+Every tensor has one row-major buffer. The scalar type selects the physical
+buffer through `Storage`: generic types such as `Real` and `Float32` use
+`Array`, whose entries may be boxed; specialized instances use unboxed
+storage (`FloatArray` for `Float`, `ByteArray` for `UInt8`).
 
 The `scalar` and `dim` functions preserve TorchLean's proof-facing construction
-API. They are smart constructors over packed storage, not physical recursive
+API. They are smart constructors over the flat buffer, not physical recursive
 constructors. Proofs eliminate tensors through typed lookup, `scalarEquiv`,
 `dimEquiv`, and extensionality.
 -/
@@ -34,8 +34,8 @@ namespace TorchLean
 The single tensor representation used by TorchLean proofs and execution.
 
 The public shape is `Spec.Shape`, which is the same type as the shape carried by the buffer, so
-this alias only reorders arguments. The implementation is one certified contiguous row-major buffer
-selected by `Storage`.
+this alias only reorders arguments. The implementation is one certified row-major buffer selected
+by `Storage`; whether scalar values are unboxed depends on that storage instance.
 -/
 abbrev Tensor (α : Type) (shape : Spec.Shape) [Storage α] :=
   Tensor.Internal.Rep α shape

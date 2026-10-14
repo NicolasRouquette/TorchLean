@@ -113,8 +113,8 @@ end Internal
 Build a minimal epsilon-predictor conv net:
 `conv -> relu -> conv -> relu -> conv -> relu -> conv`.
 
-This stays compact enough for the eager CUDA example while giving the CIFAR trainer more denoising
-capacity than a bare two-layer network.
+The first three convolutions use `hiddenChannels`; the last returns `dataChannels` noise values
+at every spatial position.
 -/
 def basic {d : Nat}
     (config : Diffusion.NoisePredictor.Config d) (batchShape : Shape := []) :
@@ -141,18 +141,16 @@ def basic {d : Nat}
       ]
 
 /--
-Build a stronger same-resolution residual epsilon predictor.
+Build a same-resolution residual epsilon predictor.
 
 Architecture:
 
 `stem conv -> relu -> residual block -> relu -> residual block -> relu -> output conv`
 
 Each residual block preserves `hiddenChannels :: spatial` and computes
-$x+\operatorname{conv}(\operatorname{relu}(\operatorname{conv}(x)))$.  This compact residual
-denoiser omits U-Net downsampling, upsampling,
-and multi-scale skip concatenation. It is still a useful compact architecture because
-residual paths make the denoising problem much easier than a plain conv chain while staying within
-the eager CUDA memory envelope used by examples.
+$x+\operatorname{conv}(\operatorname{relu}(\operatorname{conv}(x)))$. The skip adds the block's
+input unchanged, while its branch learns a correction at the same resolution. This constructor
+omits U-Net downsampling, upsampling, and multi-scale skip concatenation.
 -/
 def residual {d : Nat}
     (config : Diffusion.NoisePredictor.Config d)

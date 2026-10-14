@@ -52,8 +52,6 @@ therefore carries only an unboxed bound, counter, and accumulator.
     value
 termination_by length - index.toNat
 decreasing_by
-  have hIndexNat : index.toNat < bound.toNat :=
-    USize.lt_iff_toNat_lt.mp hIndex
   have hNextFits : index.toNat + 1 < USize.size := by
     have hBoundFits := USize.toNat_lt_size bound
     lia

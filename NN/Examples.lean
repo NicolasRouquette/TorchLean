@@ -10,6 +10,7 @@ public import NN.Examples.Quickstart
 public import NN.Examples.Data.Loaders
 public import NN.Examples.Models
 public import NN.Examples.Interop.PyTorch
+public import NN.Examples.Interop.JAX
 public import NN.Examples.DeepDives
 public import NN.Examples.Factorization
 public import NN.Examples.Functional.Transcendentals

@@ -20,24 +20,6 @@ emission, compilation and execution have the separate trust boundary described i
 
 namespace NN.Kernel
 
-/-- Use the scalar type's arithmetic and comparisons, preserving their evaluation order.
-
-No algebraic or order laws are required. Equality uses `BEq`, retaining the scalar representation's
-comparison behavior, including floating-point NaNs.
--/
-def Arithmetic.ofOps {α : Type} [Add α] [Sub α] [Mul α] [Div α] [Neg α]
-    [BEq α] [LT α] [LE α] [DecidableLT α] [DecidableLE α] : Arithmetic α where
-  binary
-    | .add, x, y => x + y
-    | .sub, x, y => x - y
-    | .mul, x, y => x * y
-    | .div, x, y => x / y
-  neg := fun x => -x
-  compare
-    | .eq, x, y => x == y
-    | .lt, x, y => x < y
-    | .le, x, y => x ≤ y
-
 /-- Bind the single free variable to the row-major output index. -/
 def Env.output {α : Type} (index : UInt64) : Env α [.index] :=
   ⟨fun v => match v with | .zero => index | .succ v => nomatch v⟩
@@ -54,6 +36,8 @@ structure Program (α : Type) where
   reference : Reader α → UInt64 → Except Error α
   expression : Expr α [.index] .scalar
   correct : ∀ read index, evaluate arithmetic expression read index = reference read index
+  /-- The source certificate uses the arithmetic selected for device execution. -/
+  native : arithmetic = scalar.arithmetic
 
 /-- An elementwise program whose reference calculation is the supplied scalar function. -/
 structure Elementwise {α : Type} (f : α → α) where

@@ -13,7 +13,7 @@ public import NN.Spec.Core.Tensor.Core
 # Shape-changing tensor operations
 
 Flatten, unflatten, and reshape preserve the row-major scalar sequence. Since
-`TorchLean.Tensor` owns a contiguous certified buffer, these operations are
+`TorchLean.Tensor` has a certified flat buffer, these operations are
 zero-copy changes to the static shape proof.
 -/
 

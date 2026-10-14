@@ -16,8 +16,8 @@ After `lake update`, their license files are available under `.lake/packages/` a
 | Component | Role in TorchLean | Notice |
 | --- | --- | --- |
 | Lean 4, Lake, and Std | Compiler, package manager, and standard library, selected by `lean-toolchain`. | Source project: `leanprover/lean4`. |
-| mimalloc 3.4.4 | Private allocator object for TorchLean's Linux native executables and shared libraries, with a narrow global purge-wakeup repair. The installed Lean compiler allocator is unchanged. | Source project: `microsoft/mimalloc`, MIT licensed. `scripts/lean_allocator.py` pins and checks the source archive and SDK header; the archive includes `LICENSE`. |
-| Mathlib | Formal mathematics used by specifications, proofs, probability, real analysis, tensors, and optimization files. | Source project: `leanprover-community/mathlib4`, pinned to the Lean 4.34 line here. Mathlib is Apache-2.0 licensed. |
+| mimalloc 3.4.5 | Private allocator object for TorchLean's Linux native executables and shared libraries, with a narrow global purge-wakeup repair. The installed Lean compiler allocator is unchanged. | Source project: `microsoft/mimalloc`, MIT licensed. `scripts/lean_allocator.py` pins and checks the source archive and SDK header; the archive includes `LICENSE`. |
+| Mathlib | Formal mathematics used by specifications, proofs, probability, real analysis, tensors, and optimization files. | Source project: `leanprover-community/mathlib4`, pinned to the Lean 4.35 line here. Mathlib is Apache-2.0 licensed. |
 | FloatLib | Configurable executable scalars, reference semantics, generic rounding theory, and arithmetic refinement proofs. | Source project: `lean-dojo/FloatLib`, tracking `main` with the exact revision locked in `lake-manifest.json`. MIT licensed; its license and third-party notices are distributed with the dependency. |
 | Batteries, Aesop, Qq, ProofWidgets, LeanSearchClient, importGraph, plausible, Cli, leansqlite, MD4Lean, BibtexQuery, UnicodeBasic | Lean ecosystem packages pulled directly or transitively for proofs, tactics, widgets, documentation, dependency analysis, and command-line tooling. | Their license files are fetched with the Lake package cache. |
 | doc-gen4 | Generates the API documentation built with `scripts/lake.sh -Kenv=dev build TorchLeanDocs:docs`. | Source project: `leanprover/doc-gen4`, Apache-2.0 licensed. |
@@ -27,6 +27,11 @@ After `lake update`, their license files are available under `.lake/packages/` a
 | LibTorch and ATen | CUDA tensor evaluation and local gradient operations, called by TorchLean's differentiation tape. | External C++ SDK; its bundled dependencies and license notices accompany the selected distribution. |
 | PyTorch and ONNX tooling | Checkpoint exchange, graph capture, and IR import/export. | External systems; TorchLean checks imported JSON/IR artifacts and documents their trust boundaries separately. |
 | Jekyll and Ruby gems | Website build tooling for `home_page/`. | Used to build the public site. |
+
+`csrc/runtime/allocator.cpp` adapts the allocation entry points and thread-local layout from
+Lean 4.35's `src/runtime/mimalloc.cpp` and `src/runtime/alloc_tls.h` (Julia M. Himmel,
+Lean FRO, LLC). This file retains their Apache-2.0 license and attribution; the surrounding
+allocator remains the pinned MIT-licensed mimalloc source.
 
 ## Local Data Policy
 

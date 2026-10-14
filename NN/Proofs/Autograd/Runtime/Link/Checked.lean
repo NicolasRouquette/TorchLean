@@ -13,9 +13,9 @@ public import NN.Proofs.Autograd.Tape.Nodes.Context
 /-!
 # Correctness of checked differentiation
 
-The public autograd transforms run domain validation, lower a graph to a tape, sweep its stored
-reverse rules, and recover the typed input gradients from a heterogeneous array. The theorems here
-connect that complete checked path to the graph semantics and, for analytically correct real
+The public autograd transforms validate and evaluate the graph before sweeping saved reverse
+rules from its selected output. The theorems here connect that checked path to the graph semantics
+and, for analytically correct real
 graphs, to mathlib's Fréchet derivative. Validation remains a separate hypothesis: passing a
 runtime domain check alone is not a derivative-correctness certificate.
 -/
@@ -28,7 +28,8 @@ open Spec TorchLean
 open Proofs.Autograd
 
 /-- Successful validation makes the checked VJP agree with the stored graph reverse rules.
-This preserves the order of additions and requires no algebraic laws on the scalar backend. -/
+This requires no algebraic laws on the scalar backend. The single-output API uses certified
+support when available, rather than claiming equality with an arbitrary dense all-seeds VJP. -/
 theorem vjpChecked_eq {α Δ : Type} [Storage α] [Add α] [Zero α]
     {Γ : List Shape} {τ : Shape}
     (graph : TypedGraphWithData α Δ Γ τ) (inputs : TensorPack α Γ) (data : Δ)
@@ -38,16 +39,13 @@ theorem vjpChecked_eq {α Δ : Type} [Storage α] [Add α] [Zero α]
       .ok result) :
     graph.vjpChecked inputs data seed =
       .ok (graph.vjp inputs data seed, graph.forward inputs data) := by
-  have same := Runtime.Autograd.TypedGraph.lowerToTapeChecked_eq
-    graph.data inputs data result checked
-  have checked' := checked.trans (congrArg Except.ok same)
-  simp only [vjpChecked, checked', Bind.bind, Except.bind, vjpFromTape,
-    Runtime.Autograd.TypedGraph.backwardDenseAllFrom]
-  rw [Algebra.Graph.backwardDenseFrom_lowerGraphDataToTape_eq_backpropAllCtx]
-  simp only [TensorPack.ofShapeErasedArray_toShapeErasedArray_prefix]
-  rw [← Algebra.TensorPack.takeLeft_eq_split, Algebra.GraphData.takeLeft_backpropAllCtx,
-    Algebra.Graph.lowerGraphDataToTape_ctx_eq_eval]
-  rfl
+  cases saved : Algebra.SavedGraph.lowerChecked graph.data inputs data with
+  | error message =>
+      have lowered := Runtime.Autograd.TypedGraph.compileChecked_eq_lowerToTapeChecked
+        graph.data inputs data
+      simp only [Runtime.Autograd.TypedGraph.compileChecked, saved, Except.map, checked] at lowered
+      cases lowered
+  | ok execution => exact vjpChecked_eq_of_lowerChecked graph inputs data seed execution saved
 
 /-- A successful checked reverse pass returns the graph pullback and forward value.
 Validation is required at the input actually executed; no scalar algebraic laws are needed. -/
@@ -57,15 +55,29 @@ theorem eq_of_vjpChecked_ok {α Δ : Type} [Storage α] [Add α] [Zero α]
     (seed : Tensor α τ) (result : TensorPack α Γ × Tensor α τ)
     (checked : graph.vjpChecked inputs data seed = .ok result) :
     result = (graph.vjp inputs data seed, graph.forward inputs data) := by
-  obtain ⟨tape, lowered⟩ : ∃ tape,
-      Runtime.Autograd.TypedGraph.lowerToTapeChecked graph.data inputs data = .ok tape := by
-    cases lowered : Runtime.Autograd.TypedGraph.lowerToTapeChecked graph.data inputs data with
+  obtain ⟨execution, lowered⟩ : ∃ execution,
+      Algebra.SavedGraph.lowerChecked graph.data inputs data = .ok execution := by
+    cases lowered : Algebra.SavedGraph.lowerChecked graph.data inputs data with
     | error message =>
-      simp only [vjpChecked, lowered, Bind.bind, Except.bind] at checked
+      simp only [vjpChecked, Runtime.Autograd.TypedGraph.compileChecked, lowered, Except.map,
+        Bind.bind, Except.bind] at checked
       cases checked
-    | ok tape => exact ⟨tape, rfl⟩
+    | ok execution => exact ⟨execution, rfl⟩
   exact (Except.ok.inj
-    ((vjpChecked_eq graph inputs data seed tape lowered).symm.trans checked)).symm
+    ((vjpChecked_eq_of_lowerChecked graph inputs data seed execution lowered).symm.trans
+      checked)).symm
+
+/-- Without storage equality, single-output differentiation retains the exact dense reference.
+This connects real-valued and symbolic carriers to the existing derivative theorems. -/
+theorem vjp_eq_backpropCtx {α Δ : Type} [Storage α] [Add α] [Zero α]
+    {Γ : List Shape} {τ : Shape} (graph : TypedGraphWithData α Δ Γ τ)
+    (inputs : TorchLean.TensorPack α Γ) (data : Δ) (seed : Tensor α τ)
+    (equality : Storage.decEq? (α := α) = none) :
+    graph.vjp inputs data seed = graph.data.backpropCtx inputs data
+      (Algebra.TensorPack.single graph.output seed) := by
+  simp only [vjp, Algebra.SavedGraph.backpropFrom, equality]
+  rw [Algebra.SavedGraph.ofGraph_backpropStored, ← Algebra.TensorPack.takeLeft_eq_split,
+    Algebra.GraphData.takeLeft_backpropAllCtx]
 
 /-- The selected output has the derivative obtained by projecting the graph derivative. -/
 theorem hasFDerivAt_forward {Δ : Type} {Γ : List Shape} {τ : Shape}
@@ -130,8 +142,7 @@ theorem vjp_adjoint_fderiv {Δ : Type} {Γ : List Shape} {τ : Shape}
       dot_eq_inner_tensorToVec]
   rw [(hasFDerivAt_forward graph proofGraph same inputs data correct).fderiv,
     ContinuousLinearMap.adjoint_comp, ContinuousLinearMap.comp_apply, seed_eq]
-  unfold vjp
-  rw [← same]
+  rw [vjp_eq_backpropCtx graph inputs data seed (by rfl), ← same]
   exact Algebra.Graph.backpropCtx_eq_adjoint_fderiv_at proofGraph data inputs correct _
 
 /--

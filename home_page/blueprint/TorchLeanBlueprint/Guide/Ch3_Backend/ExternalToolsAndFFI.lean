@@ -460,8 +460,7 @@ to the check responsible for it:
     (ffiGood.replace "\"parents\": [0]" "\"parents\": [2]"))
 ```
 ```leanOutput ffiReject (whitespace := lax)
-rejected: PyTorch graph import: unsupported format `torchlean.ir.v2`
-  (expected `torchlean.ir.v1`)
+rejected: IR import: version two uses input_ids, not input_id
 rejected: PyTorch graph import: node[1]: unsupported TorchLean IR op
   kind `sort`
 rejected: IR graph: node 1: outShape mismatch: inferred=[1, 4],
@@ -471,7 +470,8 @@ rejected: PyTorch graph import: node[1]: parent id 2 is not < 1
 
 The errors identify four stages of validation:
 
-- the *format* rejection comes from the schema check, before any node is looked at;
+- the *schema* rejection comes before any node is looked at: changing the version to `v2`
+  also requires changing the singular `input_id` field to `input_ids`;
 - the *op kind* rejection comes from the conservative operator table, which is why adding
   `torch.sort` to the Python side without touching the Lean parser produces an explicit
   unsupported-operation failure rather than a partial import;

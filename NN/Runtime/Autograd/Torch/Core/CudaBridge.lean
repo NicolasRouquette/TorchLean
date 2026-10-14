@@ -29,7 +29,7 @@ open Spec TorchLean
 namespace Internal
 namespace CudaBridge
 
-/-- Upload using the scalar's native dtype, preserving the tensor's shape. -/
+/-- Upload complete configured words or the scalar's native dtype, preserving the tensor's shape. -/
 def toAnyBuffer {α : Type} [TorchLean.Storage α] [TensorTransfer α] {s : Shape}
     (tensor : Tensor α s) : IO Runtime.Autograd.LibTorch.AnyBuffer := do
   if let some scalar := TensorTransfer.encoding? (α := α) then

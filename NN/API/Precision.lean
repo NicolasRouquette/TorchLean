@@ -33,7 +33,7 @@ This import supplies `Context` and the public typed tensor/model operations:
   `nn.TypedGraphModel.jvp`, or `nn.TypedGraphModel.vjp` with typed state and inputs.
   Parameters, outputs, and derivatives retain `α`.
   Checked nested quotient replay is enabled for IEEE encodings; finite-only encodings retain
-   their saturation semantics and do not receive that derivative-replay contract.
+  their saturation semantics and do not receive that derivative-replay contract.
 * Apply `nn.sgdStep model learningRate state stateGradient` to update trainable state with
   coefficients in the selected type. It preserves frozen entries and rejects models with
   buffer-update hooks; it does not silently omit running-statistics updates.

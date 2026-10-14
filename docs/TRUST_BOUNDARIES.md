@@ -100,6 +100,10 @@ Important examples include:
   engine's executable `runIBP` (`runIBP_eq_runIBP?`, `runIBP_encloses_evalGraphRec`). All of these
   are statements over `ℝ`. A new backend-dependent transfer rule must provide its own
   `CrownTransferSound` proof.
+  The executable output-box APIs seed propagation with the requested input region. For rounded
+  scalar backends, `outputBoxAlphaBetaCROWN?` uses directed CROWN rather than reassociating rounded
+  affine coefficients through the exact-real α/β-CROWN rules. An exact-real transfer theorem
+  alone does not justify such reassociation in binary32.
 - `NN.MLTheory.Proofs.UniversalApproximation.FloatIntervalApprox.OpsExact.Sound` packages local
   finite-IEEE32 interval obligations. Addition, multiplication, and ReLU have proved theorems and
   an unconditional instance in `NN/MLTheory/Proofs/Approximation/FloatInterval/Semantics.lean`;
@@ -134,9 +138,10 @@ regressions exercise this boundary, but do not constitute a formal proof of comp
 
 ## Native Host Tensors
 
-The public `TorchLean.Tensor` type has one certified contiguous row-major buffer. `Float` uses
-Lean's unboxed `FloatArray`, `UInt8` uses `ByteArray`, and other scalar types use `Array α`.
-Proofs observe all three through the ordinary `Storage.toArray` laws.
+The public `TorchLean.Tensor` type has one row-major buffer with a certified length. `Float` uses
+Lean's unboxed `FloatArray`, `UInt8` uses `ByteArray`, and other scalar types use `Array α`, whose
+entries may be boxed. A flat buffer therefore does not guarantee contiguous, unboxed scalar values.
+Proofs observe these representations through the ordinary `Storage.toArray` laws.
 
 `csrc/cpu/torchlean_tensor.c` implements selected host operations:
 
@@ -161,7 +166,7 @@ scalar operations but do not authorize reassociation of reductions.
 
 ## Native Host Allocation
 
-On Linux, `scripts/lean_allocator.py` builds a private mimalloc 3.4.4 object for TorchLean's
+On Linux, `scripts/lean_allocator.py` builds a private mimalloc 3.4.5 object for TorchLean's
 native executables and shared libraries. It checks the source archive and Lean SDK header by
 SHA-256, then compiles position-independent code with initial-exec thread-local storage. This
 supports both native link modes without replacing the installed Lean runtime or the allocator
@@ -226,8 +231,9 @@ the existing numerical primitives.
   `log(softplus(x) + epsilon)`. Delegating arithmetic does not authorize replacing those rules
   with the derivative chosen by a similarly named library operation. Piecewise differentiability
   theorems retain their domain and no-tie hypotheses.
-- Max pooling skips padded cells and sends each output cotangent to the first row-major winner,
-  including at ties (`NN/Spec/Layers/Pooling/Spatial.lean`). Average pooling counts padded cells as
+- Max pooling skips padded cells and sends each output cotangent to the first row-major finite
+  maximum at ties. NaNs propagate, with the last encountered NaN selected by both forward and
+  backward (`NN/Spec/Layers/Pooling/Spatial.lean`). Average pooling counts padded cells as
   zero in the whole-window denominator. Implementation-defined accumulation order does not permit
   changing these selection or padding conventions.
 - Seeded random operations must preserve the documented seeded-runtime contract or reject an
@@ -281,6 +287,12 @@ verified by Lean's kernel. The format descriptor, byte transfer, slicing, concat
 allocation are additional native implementation obligations. Encoded buffers cannot be used as
 native optimizer checkpoints or passed to unsupported ATen operations.
 
+`Program.of` accepts only TorchLean's named scalar encodings and checks that the source arithmetic
+agrees with that encoding's operations. Overridden operations and variable scalar dictionaries are
+rejected for GPU compilation. The public `Scalar` constructor is an extension trust boundary:
+manually constructing a `Program` with a forged scalar dictionary does not verify that CUDA
+implements those operations, even if its Lean source-equivalence certificate is valid.
+
 Automatic recording checks the operation recipe against the original function. Scalar branches
 record only the selected path and synchronize to Lean for the decision. Fixed-parameter
 recurrences record their ordered steps. These source equalities do not establish differentiability
@@ -298,7 +310,7 @@ and PyTorch export reject unsupported custom paths. See the
 
 - FloatLib supplies the executable floating-point formats, software arithmetic, rounding theory,
   and interval semantics. `lakefile.lean` tracks its `main` branch; `lake-manifest.json` locks the
-  checked-out revision. Consult that manifest for the exact pin; Lean and mathlib use 4.34.0.
+  checked-out revision. Consult that manifest for the exact pin; Lean and mathlib use 4.35.0.
   TorchLean's runtime and certificate interfaces use `ExecFloat.Binary 8 23` directly.
   The typed tensor/model API supports FloatLib's configured binary family, including custom
   precision with valid widths, bias, and storage plans. This does not supply tensor `Context`
@@ -375,7 +387,10 @@ FFT/FNO paths, scans, and attention advertise implementation-dependent reduction
 the fixed-left graph certificate refuses to reuse its transfer for those accelerated paths. A
 theorem about such a path needs a backend-specific schedule or an applicable order-independent
 enclosure from `NN/Proofs/RuntimeApprox/Reductions/IEEE32.lean`. The latter still requires its
-operation, finiteness, and local-error hypotheses; it does not cover an arbitrary ATen algorithm.
+operation and finiteness hypotheses; generic forms also require explicit local-error bounds.
+The binary32 corollaries use FloatLib's tree-local unit-roundoff result directly. The dot-product
+corollary bounds the sum of rounded products, so multiplication errors remain a separate obligation.
+None of these theorems covers an arbitrary ATen algorithm.
 
 For a checked replay, interval validity proves that each endpoint is finite and ordered. The replay
 also checks every computed entry for finiteness, and `executeIEEE32` returns a
@@ -393,8 +408,15 @@ capsule.
 
 The proof-bearing `RevGraph` path has rounded forward and VJP theorems and erases to executable
 autograd `GraphData`. One optimizer contract carries those gradient bounds through SGD,
-momentum-SGD, and AdamW; AdamW supplies additional positivity and denominator-margin evidence at
+momentum-SGD, and AdamW; AdamW supplies a lower bound and error margin for its complete denominator at
 each step. These are Lean theorems about the `NF` rounded-real scalar model.
+
+The ODE adapters in `NN/Proofs/Verification/ODE/EnclosureBackends.lean` require continuity,
+derivative identities, and corridor inequalities for a real interpretation. A directly decoded
+binary32 trajectory has finite range; `ieee32RealView_eq_of_continuousOn` proves that continuity
+on an interval makes it constant there. Discrete samples therefore need a real-valued interpolant
+before applying the corridor theorem. Sample values and boxes alone do not establish its required
+clamped-ODE derivative identity.
 
 Two different lowerings must not be confused here. The lowering of the proof-layer `Graph` to the
 executable tape (`lowerGraphToTape` in `NN/Proofs/Autograd/Runtime/Link/`) has both forward and

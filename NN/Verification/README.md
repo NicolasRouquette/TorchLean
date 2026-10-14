@@ -77,12 +77,16 @@ payload-backed constants, `linear`, arbitrary-rank no-dilation convolution, eval
 channel-first BatchNorm, arbitrary-rank pooling, suffix-axis LayerNorm, graph input/detach, and scalar MSE formulas used
 by the PyTorch/ONNX path.
 
-The broader `lowerForwardToIR` builder is not covered wholesale by that theorem. Its current
-log-softmax expansion takes the logarithm of computed softmax probabilities, so finite-precision
-underflow can trigger the IR's positive-domain rejection even when stable source log-softmax
-would remain finite. Its slicing expansion uses one-hot matrix multiplication rather than direct
-indexing. A graph passing shape checks does not establish numerical equivalence with these source
-operations.
+The broader `lowerForwardToIR` builder is not covered wholesale by that theorem. It rejects stable
+log-softmax until the IR supports the operation faithfully: taking the logarithm of computed
+softmax probabilities changes rounding even without underflow. Eager and typed-graph execution
+still support stable log-softmax. GELU is also rejected by this lowering until the IR can preserve
+its gate division and cubic association; runtime and typed-graph GELU remain available.
+Slicing uses one-hot matrix multiplication rather than direct indexing, so graph shape checks
+alone do not establish numerical equivalence for that encoding.
+Clamp preserves its source min/max operand order for ordinary numeric contexts. Contexts with
+`stopGradient?` metadata clearing are rejected by this lowering because the IR cannot yet perform
+the conditional clearing required at and outside the clamp bounds.
 
 For payload-backed imported ops, the bridge records both the helper evaluator contract and the
 actual one-step `Graph.evalAt` success path. The

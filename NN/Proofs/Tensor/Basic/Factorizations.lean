@@ -6,6 +6,7 @@ Authors: TorchLean Team
 
 module
 
+import Mathlib.Data.List.GetD
 public import NN.Spec.Core.Tensor.Factorizations
 public import NN.Spec.Core.Context.Real
 public import NN.Proofs.Tensor.Basic.Core -- shake: keep
