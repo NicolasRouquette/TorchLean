@@ -5,34 +5,30 @@ title: Performance
 # Performance
 
 <p class="lede performance-lede">
-  How long does TorchLean take to build and test on its ordinary continuous-integration runner?
+  How long does TorchLean take to build its API documentation, guide, and website?
 </p>
 
-The charts show successful `main`-branch CI runs recorded when we build the website.
-Your browser loads that saved data from the site, so GitHub's API limits won't stop the charts
-from loading. Opening this page does not start another workflow.
-Because GitHub-hosted machines vary,
-these numbers are useful for spotting changes worth investigating, not for comparing hardware or
-making fine-grained runtime claims.
+Recent successful builds, broken down into API documentation, the guide, and website assembly.
+GitHub-hosted runners vary, so these are build timings rather than model runtime benchmarks.
 
 <aside class="performance-provenance">
   The commit-by-commit view is inspired by
   <a href="https://radar.lean-lang.org/about">Lean Radar</a>. This page reports TorchLean's
   existing GitHub Actions timings and labels them accordingly.
-  <a href="https://github.com/lean-dojo/TorchLean/actions/workflows/ci.yml">View the source runs.</a>
+  <a href="https://github.com/lean-dojo/TorchLean/actions/workflows/blueprint.yml">View the source runs.</a>
 </aside>
 
 <div class="performance-dashboard" id="performance-dashboard">
   <div class="performance-notice" id="performance-notice" role="status" aria-live="polite">
-    Loading recent CI runs…
+    Loading build times…
   </div>
 
   <section class="performance-panel" aria-labelledby="performance-latest-title">
     <div class="performance-section-head">
       <div>
-        <h2 id="performance-latest-title">Latest run in selected workflow</h2>
+        <h2 id="performance-latest-title">Latest build</h2>
         <p class="performance-panel-intro">
-          Wall-clock time for the named steps in the workflow selected below.
+          Time spent on each part of the site build.
         </p>
       </div>
       <div class="performance-latest" id="performance-latest"></div>
@@ -45,35 +41,22 @@ making fine-grained runtime claims.
   <section class="performance-panel" aria-labelledby="performance-history-title">
     <div class="performance-chart-head">
       <div>
-        <h2 id="performance-history-title">Recent history</h2>
+        <h2 id="performance-history-title">Recent builds</h2>
         <p class="performance-panel-intro">
           Successful pushes to <code>main</code>, ordered by run start time.
         </p>
       </div>
-      <label for="performance-scope">
-        Workflow
-        <select id="performance-scope">
-          <option value="native">Current workflow</option>
-          <option value="current">Earlier maintained modules build</option>
-          <option value="maintained">Earlier combined build</option>
-          <option value="legacy">Earlier workflow</option>
-        </select>
-      </label>
       <label for="performance-metric">
         Metric
         <select id="performance-metric">
-          <option value="native">Modules and native commands build</option>
-          <option value="current">Earlier maintained modules build</option>
-          <option value="maintained">Earlier combined build</option>
-          <option value="build">Earlier library build</option>
-          <option value="tests">Test suite</option>
-          <option value="broad">Earlier broad CI import</option>
-          <option value="lint">Repository lint</option>
-          <option value="total">Complete CI job</option>
+          <option value="api">API documentation</option>
+          <option value="guide">Verso guide</option>
+          <option value="website">Website assembly</option>
+          <option value="links">Website links and anchors</option>
+          <option value="total">Complete build job</option>
         </select>
       </label>
     </div>
-    <p class="performance-panel-intro" id="performance-scope-description"></p>
     <div class="performance-chart" id="performance-chart">
       <div class="performance-loading">Loading chart…</div>
     </div>
@@ -81,16 +64,16 @@ making fine-grained runtime claims.
   </section>
 
   <section class="performance-panel" aria-labelledby="performance-runs-title">
-    <h2 id="performance-runs-title">Runs</h2>
+    <h2 id="performance-runs-title">Builds</h2>
     <div class="performance-table-wrap">
       <table class="performance-table">
         <thead>
           <tr>
             <th scope="col">Commit</th>
             <th scope="col">Date</th>
-            <th scope="col" id="performance-build-heading">Build step</th>
-            <th scope="col">Lint</th>
-            <th scope="col">Tests</th>
+            <th scope="col">API docs</th>
+            <th scope="col">Guide</th>
+            <th scope="col">Website</th>
             <th scope="col">Complete job</th>
           </tr>
         </thead>
@@ -110,57 +93,12 @@ making fine-grained runtime claims.
   const timingsUrl = {{ '/assets/ci-timings.json' | relative_url | jsonify }};
 
   const metrics = {
-    native: {
-      label: "Modules and native commands build",
-      step: "Build CPU library, CI, examples, tests, and native commands",
-      previousStep: "Build library, CI, examples, tests, and native commands",
-    },
-    current: {
-      label: "Earlier maintained modules build",
-      step: "Build library, CI, examples, and tests",
-    },
-    maintained: {
-      label: "Earlier combined build",
-      step: "Build maintained library, CI, example, and test modules",
-    },
-    build: { label: "Earlier library build", step: "Build curated library surface" },
-    tests: {
-      label: "Test suite",
-      step: "Run curated CPU test suite",
-      previousStep: "Run curated test suite",
-    },
-    broad: { label: "Earlier broad CI import", step: "Build broad CI import surface" },
-    lint: { label: "Repository lint", step: "Repo lint (TorchLean policies)" },
-    total: { label: "Complete CI job", step: null },
+    api: { label: "API documentation", step: "Build project API documentation" },
+    guide: { label: "Verso guide", step: "Build Verso guide from `home_page/blueprint`" },
+    website: { label: "Website assembly", step: "Build website using Jekyll" },
+    links: { label: "Website links and anchors", step: "Check generated links and anchors" },
+    total: { label: "Complete build job", step: null },
   };
-  const scopes = {
-    native: {
-      buildMetric: "native",
-      description: "Current workflow: one build step covers the maintained library, CI, " +
-        "examples, tests, and native commands. Earlier workloads are shown separately.",
-    },
-    current: {
-      buildMetric: "current",
-      description: "Earlier maintained modules build: one step covered the library, CI, " +
-        "examples, and tests, before native commands were added to that build step.",
-    },
-    maintained: {
-      buildMetric: "maintained",
-      description: "Earlier combined build: this workload also included the now-removed " +
-        "timing programs. Its timings are kept separate from the current workload.",
-    },
-    legacy: {
-      buildMetric: "build",
-      description: "Earlier workflow: the library build and broad CI import were separate steps. " +
-        "Select Earlier broad CI import to view that step. Trends stay within this workflow.",
-    },
-  };
-  const recordScope = record => record.scope ||
-    (Number.isFinite(record.durations.native) ? "native" :
-      Number.isFinite(record.durations.current) ? "current" :
-      Number.isFinite(record.durations.maintained) ? "maintained" :
-      (Number.isFinite(record.durations.build) || Number.isFinite(record.durations.broad) ?
-        "legacy" : null));
 
   const notice = document.getElementById("performance-notice");
   const cards = document.getElementById("performance-cards");
@@ -169,10 +107,6 @@ making fine-grained runtime claims.
   const chartCaption = document.getElementById("performance-chart-caption");
   const metricSelect = document.getElementById("performance-metric");
   const runsBody = document.getElementById("performance-runs");
-  const scopeSelect = document.getElementById("performance-scope");
-  const scopeDescription = document.getElementById("performance-scope-description");
-  const buildHeading = document.getElementById("performance-build-heading");
-  let preferredScope = null;
   let currentRecords = [];
 
   const durationSeconds = (start, finish) => {
@@ -182,11 +116,8 @@ making fine-grained runtime claims.
     return (end - begin) / 1000;
   };
 
-  const matchesStep = (step, metric) =>
-    step.name === metric.step || step.name === metric.previousStep;
-
   const stepSeconds = (job, metric) => {
-    const step = (job.steps || []).find(candidate => matchesStep(candidate, metric));
+    const step = (job.steps || []).find(candidate => candidate.name === metric.step);
     return step ? durationSeconds(step.started_at, step.completed_at) : null;
   };
 
@@ -228,20 +159,14 @@ making fine-grained runtime claims.
     const response = await fetch(timingsUrl);
     if (!response.ok) throw new Error(`Timing snapshot returned HTTP ${response.status}`);
     const snapshot = await response.json();
-    if (snapshot.repository !== repository || !Array.isArray(snapshot.runs) ||
+    if (snapshot.repository !== repository || snapshot.workflow !== "blueprint.yml" ||
+        !Array.isArray(snapshot.runs) ||
         !Number.isFinite(Date.parse(snapshot.generatedAt))) {
       throw new Error("Invalid CI timing snapshot");
     }
     const records = snapshot.runs.map(run => {
       const job = run.job;
       if (!job) return null;
-      const completedSteps = job.steps || [];
-      const scope = completedSteps.some(step => matchesStep(step, metrics.native)) ? "native" :
-        completedSteps.some(step => step.name === metrics.current.step) ? "current" :
-        completedSteps.some(step => step.name === metrics.maintained.step) ? "maintained" :
-        completedSteps.some(step =>
-          [metrics.build.step, metrics.broad.step].includes(step.name)) ? "legacy" : null;
-      if (!scope) return null;
       const durations = { total: durationSeconds(job.started_at, job.completed_at) };
       for (const [key, metric] of Object.entries(metrics)) {
         if (metric.step) durations[key] = stepSeconds(job, metric);
@@ -253,7 +178,6 @@ making fine-grained runtime claims.
         url: run.html_url,
         startedAt: job.started_at || run.run_started_at,
         durations,
-        scope,
       };
     });
     return {
@@ -275,11 +199,11 @@ making fine-grained runtime claims.
     };
   };
 
-  const renderCards = (records, buildMetric) => {
+  const renderCards = records => {
     const latest = records.at(-1);
     const previous = records.at(-2);
     cards.replaceChildren();
-    for (const key of [buildMetric, "tests", "lint", "total"]) {
+    for (const key of ["api", "guide", "website", "total"]) {
       const card = document.createElement("div");
       card.className = "performance-card";
 
@@ -403,7 +327,7 @@ making fine-grained runtime claims.
       `${metrics[metricKey].label} wall-clock time. Lower values mean the CI step finished sooner.`;
   };
 
-  const renderTable = (records, buildMetric) => {
+  const renderTable = records => {
     runsBody.replaceChildren();
     for (const record of [...records].reverse()) {
       const row = document.createElement("tr");
@@ -417,9 +341,7 @@ making fine-grained runtime claims.
 
       const values = [
         formatDate(record.startedAt),
-        formatDuration(record.durations[buildMetric]),
-        formatDuration(record.durations.lint),
-        formatDuration(record.durations.tests),
+        ...["api", "guide", "website"].map(key => formatDuration(record.durations[key])),
         formatDuration(record.durations.total),
       ];
       for (const value of values) {
@@ -431,50 +353,23 @@ making fine-grained runtime claims.
     }
   };
 
-  const selectedRecords = () =>
-    currentRecords.filter(record => recordScope(record) === scopeSelect.value);
-
-  const renderSelectedScope = () => {
-    const scope = scopes[scopeSelect.value];
-    const records = selectedRecords();
-    for (const option of metricSelect.options) {
-      option.disabled = ["native", "current", "maintained", "build", "broad"].includes(option.value) &&
-        option.value !== scope.buildMetric &&
-        !(scopeSelect.value === "legacy" && option.value === "broad");
-    }
-    if (metricSelect.selectedOptions[0].disabled) metricSelect.value = scope.buildMetric;
-    scopeDescription.textContent = scope.description;
-    buildHeading.textContent = metrics[scope.buildMetric].label;
-    renderCards(records, scope.buildMetric);
-    renderChart(records, metricSelect.value);
-    renderTable(records, scope.buildMetric);
-  };
-
   const render = records => {
     if (!records.length) throw new Error("No successful main-branch CI runs were found");
     // Check the snapshot before using its records in the chart and run links.
     for (const record of records) {
-      if (!record || !record.durations || !scopes[recordScope(record)] ||
+      if (!record || !record.durations ||
           typeof record.sha !== "string" || typeof record.url !== "string" ||
           !Number.isFinite(Date.parse(record.startedAt))) {
         throw new Error("Invalid CI timing record");
       }
     }
     currentRecords = records;
-    const available = new Set(records.map(recordScope));
-    for (const option of scopeSelect.options) option.disabled = !available.has(option.value);
-    scopeSelect.value = available.has(preferredScope) ? preferredScope :
-      (available.has("native") ? "native" :
-        available.has("current") ? "current" :
-        available.has("maintained") ? "maintained" : "legacy");
-    renderSelectedScope();
+    renderCards(records);
+    renderChart(records, metricSelect.value);
+    renderTable(records);
   };
 
-  scopeSelect.addEventListener("change", () => {
-    preferredScope = scopeSelect.value;
-    renderSelectedScope();
-  });
-  metricSelect.addEventListener("change", () => renderChart(selectedRecords(), metricSelect.value));
+  metricSelect.addEventListener("change", () => renderChart(currentRecords, metricSelect.value));
 
   loadRecords()
     .then(({ records, generatedAt }) => {

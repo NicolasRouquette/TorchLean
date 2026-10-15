@@ -14,6 +14,7 @@ public import NN.IR.Infer
 public import NN.IR.Operator
 public import NN.IR.OpContracts
 public import NN.IR.Pretty
+public import NN.IR.Properties
 public import NN.IR.Reference
 public import NN.IR.Semantics
 public import NN.IR.ShapeSoundness
@@ -24,10 +25,9 @@ public import NN.IR.ShapeSoundness
 Curated umbrella import for TorchLean's op-tagged intermediate representation.
 
 Use this for graph syntax, shape and element-type checks, homogeneous and heterogeneous semantics,
-FloatLib binary conversions and their correctness theorem, shape-soundness results,
-and pretty-printers.
-The individual `NN.IR.*` files
-remain focused implementation modules for internal code that needs a smaller dependency footprint.
+FloatLib binary conversions and their correctness theorem, compositional proof rules,
+shape-soundness results, and pretty-printers. Internal code can import the individual `NN.IR.*`
+modules when it needs a smaller dependency footprint.
 -/
 
 @[expose] public section

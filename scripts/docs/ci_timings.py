@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Save recent CI timings for the static website, without browser-side API requests."""
+"""Save recent website build timings for the performance page."""
 
 import argparse
 from datetime import datetime, timezone
@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 REPOSITORY = "lean-dojo/TorchLean"
 API = f"https://api.github.com/repos/{REPOSITORY}"
+WORKFLOW = "blueprint.yml"
 OUTPUT = Path(__file__).resolve().parents[2] / "home_page/assets/ci-timings.json"
 
 
@@ -31,13 +32,13 @@ def request_json(url: str) -> dict:
 
 def collect() -> dict:
     data = request_json(
-        f"{API}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=8"
+        f"{API}/actions/workflows/{WORKFLOW}/runs?branch=main&event=push&status=success&per_page=8"
     )
     runs = []
     for run in data["workflow_runs"]:
         jobs = request_json(f"{API}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100")
         job = next((job for job in jobs["jobs"]
-                    if job["name"] in {"CPU build and checks", "build_and_test"}
+                    if job["name"] == "Build project"
                     and job["conclusion"] == "success"), None)
         if job is None:
             continue
@@ -57,9 +58,10 @@ def collect() -> dict:
             },
         })
     if not runs:
-        raise ValueError("no successful CPU CI jobs were found")
+        raise ValueError("no successful website build jobs were found")
     return {
         "repository": REPOSITORY,
+        "workflow": WORKFLOW,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "runs": runs,
     }
@@ -72,13 +74,12 @@ def main() -> int:
     try:
         snapshot = collect()
     except (HTTPError, URLError, TimeoutError, ValueError, KeyError) as error:
-        # A network failure must not replace the last usable snapshot with empty data.
         try:
-            previous = json.loads(output.read_text(encoding="utf-8"))
-            if (previous["repository"] == REPOSITORY
-                    and isinstance(previous["runs"], list) and previous["runs"]
-                    and datetime.fromisoformat(previous["generatedAt"])):
-                print(f"CI timings: keeping the saved snapshot ({error}).", file=sys.stderr)
+            saved = json.loads(output.read_text(encoding="utf-8"))
+            if (saved["repository"] == REPOSITORY and saved.get("workflow") == WORKFLOW
+                    and isinstance(saved["runs"], list) and saved["runs"]
+                    and datetime.fromisoformat(saved["generatedAt"])):
+                print(f"Build timings: keeping the saved data ({error}).", file=sys.stderr)
                 return 0
         except (OSError, ValueError, KeyError, TypeError):
             pass

@@ -184,10 +184,7 @@ lean_exe verify where
 lean_exe nn_tests_suite where
   root := `NN.Tests.Suite
 
--- Developer-only cross-runtime regression tools, outside the public NN import surface.
-lean_exe pytorch_export_check where
-  root := `NN.Tests.Interop.PyTorchMain
-
+-- Developer-only arithmetic check, outside the public NN import surface.
 lean_exe native_float32_parity where
   root := `NN.Tests.Floats.NativePrimitiveParityMain
 

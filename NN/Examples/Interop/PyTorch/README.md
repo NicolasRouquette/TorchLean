@@ -28,14 +28,8 @@ required tensor shapes, and require `float32` when dtype metadata is present. Th
 and do not infer the architecture from `meta.format`.
 
 For model-agnostic graph capture, use `NN.Runtime.PyTorch.Export.TorchExport` and
-`NN.Runtime.PyTorch.Import.TorchExport`. The maintained regression suite exercises capture,
-unsupported operators, malformed artifacts, and numerical parity:
-
-```bash
-scripts/lake.sh exe pytorch_export_check
-```
-
-That suite lives in `NN/Tests/Interop/PyTorch.lean`. It compares every captured output against
-PyTorch at absolute tolerance `2e-5`; the round-trip commands above print a Lean prediction without
-asserting cross-framework parity. Graph parsing establishes the importer's shape predicate;
-semantic preservation and native execution require their corresponding library contracts.
+`NN.Runtime.PyTorch.Import.TorchExport`. The
+[graph-import guide](https://lean-dojo.github.io/TorchLean/examples/verify/) explains capture and
+reference comparisons. The round-trip commands above print a Lean prediction without asserting
+cross-framework parity. Graph parsing establishes the importer's shape predicate; semantic
+preservation and native execution require their corresponding library contracts.

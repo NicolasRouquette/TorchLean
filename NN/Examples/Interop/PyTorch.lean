@@ -14,8 +14,7 @@ public import NN.Examples.Interop.PyTorch.Roundtrip
 `Roundtrip` exports MLP, CNN, and transformer models or reads their JSON weights for a Lean
 forward pass. Companion Python scripts produce the reference weights.
 
-The reusable importers and exporters live under `NN.Runtime.PyTorch`. Graph-capture regression
-checks run separately with `scripts/lake.sh exe pytorch_export_check`.
+The reusable importers and exporters live under `NN.Runtime.PyTorch`.
 -/
 
 @[expose] public section

@@ -280,6 +280,21 @@ permutation result. Numerical enclosures and classifier guarantees have their ow
 to an imported network requires the corresponding operation coverage and proofs.
 A manual proof or an agent-assisted proof still needs Lean to check that connection.
 
+We can also work directly with a typed program rather than first connect it to a
+named model specification. `NN.IR.Properties` supplies three composition rules.
+`Interpreter.run_induction` carries an invariant on intermediate tensors and
+conversion flags through a successful run. `Interpreter.run_rel` compares two
+successful runs of the same program, allowing different inputs, parameter
+payloads, or scalar interpreters. `Interpreter.eval_rel` carries a pointwise
+relation through to the returned tensors, in their declared order.
+
+For a norm bound, the local rules would explain how each operation changes the
+bound. For a permutation property, they would explain how each operation acts on
+the permuted inputs. These rules still need mathematical proofs; the common
+traversal argument is now reusable. It does not require an MLP or transformer tag,
+and it does not automatically produce either of those properties for the MLP
+comparison above.
+
 ## Which computations can we import?
 
 The adapter handles static tensor computations built from supported

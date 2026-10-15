@@ -818,35 +818,8 @@ gradients with FloatLib on one trajectory does not prove agreement on every exec
 
 # PyTorch Graph Import
 
-The last lab imports PyTorch models into canonical IR and compares their outputs on deterministic
-inputs:
-
-```terminal
-# Exercise external graph capture, parsing, and numerical
-# comparison on fixed probes.
-scripts/lake.sh exe pytorch_export_check
-```
-
-An abridged recorded transcript of the numerical probes is:
-
-```terminal +output
-== PyTorch nn.Module → TorchLean IR runtime check ==
-generated Python float bit patterns and tiny epsilon: ok
-generated reference code and state-dict round trip: ok
-  numerical parity: ok (TinyMLP)
-  numerical parity: ok (TinyAffineLayerNorm)
-  numerical parity: ok (TinyLayerNormEpsilon)
-  numerical parity: ok (TinyBatchNormEpsilon)
-pytorch_export_check: ok
-```
-
-These four probes cover an MLP, affine LayerNorm, and small-epsilon LayerNorm and BatchNorm.
-The current command also checks supported and rejected capture cases through both export paths,
-and numerical parity for functional and method operators. Generated-reference checks exercise
-scalar expression emission and state-dict naming and orientation. These are selected
-interoperability checks, not an exhaustive importer suite.
-
-The import path is:
+Supported PyTorch graphs enter the same canonical IR used by the Lean evaluators and proof
+tools. The import path is:
 
 ```
 Python/PyTorch producer
@@ -857,19 +830,15 @@ Python/PyTorch producer
 ```
 
 `parseGraph_wellShaped` establishes the structural property of a successful parse. Numerical
-agreement is checked separately: a graph with correct shapes can still compute the wrong function.
-Neither result proves the Python exporter correct or establishes agreement on untested inputs.
+agreement needs a separate comparison or semantic proof: a graph with correct shapes can still
+compute the wrong function. Structural validation does not prove the Python exporter correct.
 Unsupported operations and malformed artifacts must be rejected at the capture or import boundary;
 see {ref "pytorch-roundtrip"}[the round-trip chapter] for the supported schema and its limits.
 
-Source: {src "NN/Tests/Interop/PyTorch.lean"}[`PyTorch.lean`].
-
-The normalization probes were chosen because seemingly small import details change the
-function: an affine scale and bias must retain their orientation, and epsilon belongs in a
-particular place in the normalization denominator. An imported graph can preserve every tensor
-shape while losing one of those details. Comparing deterministic outputs complements structural
-validation by making such semantic changes observable on the selected inputs. A new supported
-operator needs the same kind of account of its attributes, state, and numerical convention.
+The implementation is {src "NN/Runtime/PyTorch/Import/TorchExport.lean"}[`Import.TorchExport`].
+An affine scale and bias must retain their orientation, and epsilon belongs in a particular place
+in the normalization denominator. Each supported operator needs an account of its attributes,
+state, and numerical convention, not only its output shape.
 
 # Building The Example Suite
 

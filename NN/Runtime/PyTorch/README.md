@@ -87,8 +87,8 @@ These reusable adapters are available as `Import.PyTorch.MLP`, `Export.PyTorch.M
 matching CNN/Transformer namespaces.
 
 Runnable examples and small reference artifacts live under `NN/Examples/Interop/PyTorch`.
-`NN/Tests/Interop/PyTorch.lean` contains graph-capture and numerical parity regressions, run with
-`scripts/lake.sh exe pytorch_export_check`.
+The [graph-import guide](https://lean-dojo.github.io/TorchLean/examples/verify/) describes
+capture, validation, and reference comparisons through the shared IR.
 
 ## What Users Can Do Today
 

@@ -175,6 +175,7 @@ Its `--importgraph PAGE` option also handles the import viewer. The guide post-p
 the KaTeX runtime, section anchors and page layout after polishing the generated HTML.
 
 The performance page reads `home_page/assets/ci-timings.json`, refreshed by the site build.
+It shows the API documentation, guide, and website build times from the site workflow.
 For a Markdown-only preview, refresh it with `python3 scripts/docs/ci_timings.py` before Jekyll.
 The updater uses `GITHUB_TOKEN` or `GH_TOKEN` when available and keeps the saved snapshot if
 GitHub cannot be reached. Tokens stay in the build environment; visitors make no GitHub API calls.

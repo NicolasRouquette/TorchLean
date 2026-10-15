@@ -84,7 +84,7 @@ else
 fi
 (cd home_page && "${BUNDLE_CMD[@]}" config set path vendor/bundle && "${BUNDLE_CMD[@]}" install)
 
-echo "==> Refreshing CI timing history"
+echo "==> Refreshing build timing history"
 python3 scripts/docs/ci_timings.py
 
 echo "==> Building Jekyll site"

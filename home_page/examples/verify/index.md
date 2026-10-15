@@ -158,6 +158,14 @@ an input region and a classification specification. This Python entry point does
 not automatically construct those proofs. The shared IR lets us work on the
 computation that was imported rather than maintain a separate hand-written model.
 
+For proofs about a complete typed program, `NN.IR.Properties` provides induction
+over intermediate values and conversion flags, and rules for relating two
+successful executions. The interpreters and inputs can differ; the graph stays
+the same. We supply mathematical rules for the relevant operations, and the
+composition theorem carries them through the program and its returned tensors.
+The [JAX walkthrough](../jaxpr/#prove-a-property-of-the-graph) explains how this
+fits with proofs about an imported computation.
+
 ## Select a checker
 
 The Python API uses the local built `verify` executable. Set `TORCHLEAN_VERIFY` to

@@ -236,40 +236,16 @@ localize structural and finite-value failures before such a theorem is considere
 
 # PyTorch Graph Capture
 
-Run:
-
-```terminal
-# Capture the maintained Python probes and validate their
-# exported IR documents.
-scripts/lake.sh exe pytorch_export_check
-```
-
-The command asks Python and `torch.export` to capture several small `nn.Module`s
-{Informal.citep pytorch2019}[], emits `torchlean.ir.v1` JSON, parses each document in Lean, lowers
-supported values to `NN.IR.Graph`, and runs the graph validators.
-
-The maintained numerical probes cover `TinyMLP`, `TinyAffineLayerNorm`, `TinyLayerNormEpsilon`,
-and `TinyBatchNormEpsilon`. Each captured graph is executed on a deterministic input and compared
-with PyTorch. Generated-reference and state-dict checks run in the same command:
-
-```terminal +output
-== PyTorch nn.Module → TorchLean IR runtime check ==
-generated Python float bit patterns and tiny epsilon: ok
-generated reference code and state-dict round trip: ok
-  numerical parity: ok (TinyMLP)
-  numerical parity: ok (TinyAffineLayerNorm)
-  numerical parity: ok (TinyLayerNormEpsilon)
-  numerical parity: ok (TinyBatchNormEpsilon)
-pytorch_export_check: ok
-```
+The reusable exporter asks Python and `torch.export` or FX to capture a supported `nn.Module`
+{Informal.citep pytorch2019}[] and emit `torchlean.ir.v1` JSON. Lean then parses the document,
+lowers supported values to `NN.IR.Graph`, and runs the graph validators.
 
 The parser's structural theorem is `parseGraph_wellShaped`. The examples below inspect that
-statement and exercise malformed documents directly, independently of these numerical probes.
+statement and exercise malformed documents directly. Numerical agreement is a separate question:
+shape validation cannot detect a missing affine bias or a changed normalization epsilon.
 
-The two epsilon models make small normalization constants observable: a formatter that rounded
-them to zero could change the computation without changing any shape. Generated-source and
-state-dictionary checks exercise separate import paths. Each `ok` records the outcome of its
-named probe, with the supplied parameters and deterministic input.
+The producer is {src "NN/Runtime/PyTorch/Export/TorchExport.lean"}[`Export.TorchExport`], and
+the parser is {src "NN/Runtime/PyTorch/Import/TorchExport.lean"}[`Import.TorchExport`].
 
 # Graph Exchange Format
 

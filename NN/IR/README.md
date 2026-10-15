@@ -32,6 +32,8 @@ smallest `NN.IR.*` dependency they need.
   implementations are explicit; unsupported operations fail.
 - `Binary.lean` and `BinaryProofs.lean`: FloatLib-backed binary execution at each node's precision
   and the theorem relating interpreter casts to FloatLib's directed conversions.
+- `Properties.lean`: induction and relational rules for proving properties through the existing
+  typed interpreter, including its accumulated conversion flags and designated outputs.
 - `Reference.lean`: the same binary arithmetic plus Boolean and arbitrary-width integer storage
   for layout operations, with checked complete-word encoding and a lossless decoding theorem.
 - `OpContracts.lean`: shared shape arithmetic for ops such as concat, matmul, pooling, conv, and
@@ -189,6 +191,30 @@ operator should therefore add three things in the right places:
 
 Adding a tag without these follow-up pieces creates a graph that can be printed but not responsibly
 used for verified claims.
+
+## Proving Properties Across A Program
+
+An imported `Program` already has Lean semantics. A proof can work with those operations directly,
+without first identifying the graph as an MLP, transformer, or another named architecture.
+`NN.IR.Properties` provides the common traversal argument:
+
+- `Interpreter.run_induction` carries a predicate on intermediate values and conversion flags.
+  To establish a bound, prove it for the initial state and show that each successful operation
+  preserves the predicate.
+- `Interpreter.run_rel` relates two executions of the same typed program. The interpreters,
+  arguments, and parameter payloads can differ. A relation can compare exact and rounded values,
+  or inputs related by a permutation, provided its local rules account for every operation.
+- `Interpreter.eval_rel` carries a pointwise relation through to the designated outputs, including
+  repeated outputs and arbitrary return order.
+
+The proof rules use the existing `Tensor` values, `Program`, and interpreter. Numerical relations
+must use that interpreter's actual arithmetic, casts and parameters. The traversal theorem does not
+supply error bounds or invariance rules for an operation whose corresponding proof is missing.
+
+These theorems assume the executions being compared succeed. They do not establish success for
+every input, prove a frontend translation faithful, or verify external kernels. Comparing two
+different graph structures additionally needs a correspondence between those computations; the
+same-program relational rule does not establish arbitrary optimization equivalence.
 
 ## Element Descriptors And Extensions
 

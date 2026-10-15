@@ -140,7 +140,7 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
-      - name: Refresh CI timing history
+      - name: Refresh build timing history
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/docs/ci_timings.py
