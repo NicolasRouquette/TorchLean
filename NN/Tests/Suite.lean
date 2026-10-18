@@ -52,7 +52,12 @@ def usage : String :=
     ]
 
 def run : IO Unit := do
+  -- `TORCHLEAN_REQUIRE_CUDA=1` means a GPU ran this: the bridge on the host does not satisfy it.
+  -- `TORCHLEAN_REQUIRE_NATIVE=1` means the bridge ran this, on whichever device it selected: the
+  -- check for a CPU-only SDK session, which must not pass on the unlinked default backend.
   if (← IO.getEnv "TORCHLEAN_REQUIRE_CUDA") == some "1" then
+    Runtime.Autograd.LibTorch.Buffer.requireCudaDevice
+  if (← IO.getEnv "TORCHLEAN_REQUIRE_NATIVE") == some "1" then
     Runtime.Autograd.LibTorch.Buffer.requireNativeRuntime
   -- Fresh subprocesses isolate native memory accounting and restore allocator limits on exit.
   -- These probes are selected before the ordinary suite to avoid unrelated live GPU owners.

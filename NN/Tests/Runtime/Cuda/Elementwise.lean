@@ -736,7 +736,8 @@ private def checkCustomAutograd : IO Unit := do
   checkRecordingBuffers
 
 /-- On the host a generated operation has no implementation: it must fail through `IO`, naming
-the requirement, before any CUDA call. -/
+the requirement, before any CUDA call. Configured binary arithmetic, which only generated kernels
+compute, is refused when its tensor is uploaded, so a recording fails the same way. -/
 private def checkCustomComputationsOnHost : IO Unit := do
   let input : Tensor Float32 [4] := [1, -2, 3, -4]
   let outcome ← try
@@ -748,6 +749,17 @@ private def checkCustomComputationsOnHost : IO Unit := do
   | some message =>
       unless (message.splitOn "needs a CUDA device").length > 1 do
         throw <| IO.userError s!"custom computation on the host: unexpected error: {message}"
+  let a : WideBinary := Rat.cast (1 + 1 / (2 ^ 100 : Nat) : Rat)
+  let configured : Tensor WideBinary [1] := Tensor.full [1] a
+  let recorded ← try
+    let _ ← (fun (x : WideBinary) => x * x).run configured (device := gpu) (grad := true)
+    pure (none : Option String)
+  catch error => pure (some (toString error))
+  match recorded with
+  | none => throw <| IO.userError "custom computation: configured arithmetic ran on the host"
+  | some message =>
+      unless (message.splitOn "needs a CUDA device").length > 1 do
+        throw <| IO.userError s!"configured arithmetic on the host: unexpected error: {message}"
   IO.println "  custom computations: rejected on the host (generated kernels need a CUDA device)"
 
 /-- Exercise native elementwise VJPs, generated computations, and composed buffer operations. -/
@@ -760,6 +772,11 @@ private def checkCustomComputationsOnHost : IO Unit := do
     checkCustomAutograd
   else
     checkCustomComputationsOnHost
+    -- Native-precision recordings and resident buffers need no generated kernel.
+    checkRecordedRecurrence 0
+    checkRecordedRecurrence 3
+    checkNativeAutograd
+    checkRecordingBuffers
 
   let s : Shape := [5]
   let a : Tensor Float s :=

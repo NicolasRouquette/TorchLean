@@ -78,18 +78,35 @@ private opaque runtimeStatusRaw (token : UInt32) : UInt32
   | 1 => .nativeAvailable
   | _ => .nativeUnavailable
 
-/-- Require the LibTorch bridge, with a device selected, for a user-selected `cuda` session. -/
+/--
+Require the LibTorch bridge with a device selected: a CUDA device, or the host. This is the check
+for a session that needs the bridge whatever its device (the CLI's `cuda` device, a CPU-only SDK
+in CI, `TORCHLEAN_REQUIRE_NATIVE=1` for the test suite); `requireCudaDevice` is the check for a
+session that needs a CUDA device.
+-/
 def requireNativeRuntime : IO Unit :=
   match runtimeStatus with
   | .nativeAvailable => pure ()
   | .notLinked =>
       throw <| IO.userError
-        "CUDA was requested, but this executable was built without LibTorch; \
+        "the LibTorch bridge was requested, but this executable was built without LibTorch; \
           rebuild and run with `-K cuda=true`"
   | .nativeUnavailable =>
       throw <| IO.userError
-        "CUDA was requested and this is a LibTorch build, but no usable CUDA device is visible; \
-          TORCHLEAN_LIBTORCH_DEVICE=cpu selects the host instead"
+        "the LibTorch bridge was requested and this is a LibTorch build, but no usable CUDA \
+          device is visible; TORCHLEAN_LIBTORCH_DEVICE=cpu selects the host instead"
+
+/--
+Require the LibTorch bridge on a CUDA device. `requireNativeRuntime` is satisfied by the host, so a
+check that means "a GPU ran this" has to ask for the device kind as well: this is what
+`TORCHLEAN_REQUIRE_CUDA=1` means to the test suite.
+-/
+def requireCudaDevice : IO Unit := do
+  requireNativeRuntime
+  if (← deviceKind) == .host then
+    throw <| IO.userError
+      "a CUDA device was required, but the LibTorch bridge runs on the host: the SDK is CPU-only, \
+        or TORCHLEAN_LIBTORCH_DEVICE=cpu selected the host"
 
 /-! ### Allocator Telemetry -/
 

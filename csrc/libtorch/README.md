@@ -53,7 +53,7 @@ python3 -m venv venv-cpu
 venv-cpu/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.11.0
 export TORCHLEAN_LIBTORCH_HOME="$PWD/venv-cpu/lib/python3.12/site-packages/torch"
 scripts/lake.sh -Kcuda=true build NN NNCI NNExamples NNTests nn_tests_suite
-scripts/lake.sh -Kcuda=true test
+TORCHLEAN_REQUIRE_NATIVE=1 scripts/lake.sh -Kcuda=true test
 ```
 
 The device is selected once, at the bridge's first call, and `Runtime.Autograd.LibTorch.deviceKind`
@@ -68,6 +68,19 @@ skipped. Results are bit-identical across the two devices only for programs made
 operations, gathers and lookups: ATen's CPU and CUDA transcendental functions (`exp`, `log`,
 `tanh`, ...) come from different libraries and differ at the ulp level, and reductions differ in
 order. The suite's tolerances hold on both.
+
+Two environment variables make a run's expectation explicit. `TORCHLEAN_REQUIRE_NATIVE=1` fails
+the suite unless the bridge is linked and selected a device, CUDA or host, so a CPU-only SDK job
+cannot pass on the unlinked default backend. `TORCHLEAN_REQUIRE_CUDA=1` additionally requires
+that device to be a CUDA device: it fails on the host, so a run that claims GPU coverage was one.
+In the native code, everything that needs the CUDA headers compiles under
+`#if TORCHLEAN_LIBTORCH_CUDA`, and an entry point with no host implementation calls
+`require_cuda("<feature>")` before anything else, so it fails with a message naming the feature
+rather than with a CUDA call on a CPU tensor. Kernels compiled at run time follow both rules:
+NVRTC and the driver API sit under the macro, and `run_kernel` calls `require_cuda` at its entry.
+An encoded buffer, the storage of configured binary arithmetic, is refused on the host where it is
+created: only generated kernels compute on it, and the tape reaches them through pure entry points,
+where an error would end the process instead of returning through `IO`.
 
 ## Tested SDK versions
 

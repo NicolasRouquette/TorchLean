@@ -91,6 +91,18 @@ Selection select_device() {
   return TORCHLEAN_LIBTORCH_CUDA ? Selection::unavailable : Selection::host;
 }
 
+// An entry point with no host implementation calls this before anything else, so that it fails
+// with a message naming the feature rather than with a CUDA call on a CPU tensor. Code that needs
+// the CUDA headers to compile sits under TORCHLEAN_LIBTORCH_CUDA; code that merely needs the CUDA
+// device selected calls this.
+void require_cuda(const char* feature) {
+  TORCH_CHECK(selection != Selection::host, "LibTorch: ", feature,
+              " needs a CUDA device, but the bridge runs on the host (a CPU-only SDK, or "
+              "TORCHLEAN_LIBTORCH_DEVICE=cpu)");
+  TORCH_CHECK(selection == Selection::cuda, "LibTorch: ", feature,
+              " needs a CUDA device, but none is selected");
+}
+
 bool release_data(torchlean_cuda_buffer* buffer) {
   if (!buffer || !buffer->tensor.defined()) return false;
   const size_t size = buffer->size;
@@ -308,8 +320,7 @@ std::shared_ptr<CompiledKernel> compile_kernel(const std::string& source) {
 at::Tensor run_kernel(b_lean_obj_arg source, const std::vector<at::Tensor>& inputs,
                       at::ScalarType scalar, uint64_t count, uint64_t stride = 1) {
   // A generated kernel reads device pointers: the host has no implementation of it.
-  TORCH_CHECK(selection == Selection::cuda,
-              "LibTorch: a runtime-compiled kernel needs a CUDA device, but none is selected");
+  require_cuda("a runtime-compiled kernel");
   TORCH_CHECK(stride > 0 && stride <= INT64_MAX && count <= INT64_MAX / stride,
               "kernel: invalid scalar width or output extent");
   TORCH_CHECK(count <= INT64_MAX, "kernel: output size exceeds signed tensor size range");
@@ -360,8 +371,8 @@ at::Tensor run_kernel(b_lean_obj_arg source, const std::vector<at::Tensor>& inpu
 // A CPU-only SDK has no NVRTC: a runtime-compiled kernel fails at its entry.
 at::Tensor run_kernel(b_lean_obj_arg, const std::vector<at::Tensor>&, at::ScalarType, uint64_t,
                       uint64_t = 1) {
-  TORCH_CHECK(false, "LibTorch: a runtime-compiled kernel needs a CUDA device, but this SDK is "
-                     "CPU-only");
+  require_cuda("a runtime-compiled kernel");
+  TORCH_CHECK(false, "LibTorch: a runtime-compiled kernel needs a CUDA-enabled SDK");
   return at::Tensor();
 }
 #endif
@@ -788,6 +799,9 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_format(b_lean_obj_arg 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_cuda_buffer_of_encoded_io(
     b_lean_obj_arg bytes, b_lean_obj_arg format, uint64_t width) {
   return io([&] {
+    // Only runtime-compiled kernels compute on encoded words, and the tape reaches them through
+    // pure entry points, where an error would end the process: refuse the upload instead.
+    require_cuda("configured binary arithmetic");
     TORCH_CHECK(width && lean_sarray_size(bytes) % width == 0,
                 "encoded buffer: truncated scalar word");
     return torchlean::encoded(upload_bytes(bytes, at::kByte, at::kByte), format, width);
@@ -846,7 +860,7 @@ extern "C" LEAN_EXPORT uint32_t torchlean_libtorch_get_device(uint32_t) {
 
 extern "C" LEAN_EXPORT lean_obj_res torchlean_libtorch_set_device(uint32_t index) {
   return io([&] {
-    TORCH_CHECK(selection == Selection::cuda, "LibTorch: no CUDA device is selected");
+    require_cuda("device selection");
     TORCH_CHECK(index < cuda_device_count(), "LibTorch: selected CUDA device does not exist");
     TORCH_CHECK(wrappers.live.load() == 0,
                 "LibTorch: select the device before creating tensor buffers");
@@ -922,8 +936,7 @@ extern "C" LEAN_EXPORT lean_obj_res torchlean_libtorch_set_memory_fraction(doubl
   return io([&] {
     TORCH_CHECK(std::isfinite(fraction) && fraction > 0.0 && fraction <= 1.0,
                 "LibTorch: memory fraction must be finite and in (0, 1]");
-    TORCH_CHECK(selection == Selection::cuda,
-                "LibTorch: the allocator memory fraction applies to a CUDA device only");
+    require_cuda("the allocator memory fraction");
 #if TORCHLEAN_LIBTORCH_CUDA
     c10::cuda::CUDACachingAllocator::setMemoryFraction(fraction, torchlean::device().index());
 #endif
