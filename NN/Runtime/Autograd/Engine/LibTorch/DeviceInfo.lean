@@ -17,11 +17,19 @@ much device memory there is; this module answers which device.
 
 Every query takes an explicit device index and reads that device's properties through the SDK's
 own per-device cache, so the answer never depends on which device was selected earlier, and a
-multi-GPU host never combines fields from two cards in one record. Without LibTorch linked, every
-query fails through `IO` like the other runtime controls.
+multi-GPU host never combines fields from two cards in one record. The queries describe the
+visible CUDA devices, not the one the bridge selected: a CUDA-enabled SDK answers them even while
+the bridge runs on the host (`TORCHLEAN_LIBTORCH_DEVICE=cpu`). Without LibTorch linked, and on a
+CPU-only SDK, every query fails through `IO` like the other runtime controls.
 
-The SDK's packaged GPU architectures are not reported: ATen's C++ API does not expose the list the
-Python package reads back, and TorchLean compiles no device code of its own.
+Two things this record does not say, which are separate questions. The SDK's packaged GPU
+architectures, the `sm_XY` targets its own kernels were compiled for: ATen's C++ API does not
+expose the list the Python package reads back, and it is a property of the SDK build rather than
+of the device, so whether the packaged kernels cover a device is settled by comparing
+`capability` against that list by other means. And the kernels TorchLean compiles at run time,
+the generated operations of `NN.Kernel`: NVRTC compiles those for the compute capability of the
+device they run on, whatever the SDK was packaged for, so their coverage is a question for NVRTC,
+not for this readback.
 -/
 
 @[expose] public section
