@@ -60,6 +60,10 @@ def run : IO Unit := do
     Runtime.Autograd.LibTorch.Buffer.requireCudaDevice
   if (← IO.getEnv "TORCHLEAN_REQUIRE_NATIVE") == some "1" then
     Runtime.Autograd.LibTorch.Buffer.requireNativeRuntime
+  -- Device switching needs a process with no live buffer wrappers, so it runs on its own.
+  if (← IO.getEnv "TORCHLEAN_LIBTORCH_DEVICE_PROBE") == some "switch" then
+    Tests.Cuda.DeviceInfo.runSwitchProbe
+    return
   -- Fresh subprocesses isolate native memory accounting and restore allocator limits on exit.
   -- These probes are selected before the ordinary suite to avoid unrelated live GPU owners.
   match ← IO.getEnv "TORCHLEAN_LIBTORCH_MEMORY_PROBE" with
@@ -83,6 +87,7 @@ def run : IO Unit := do
     NN.Tests.Tensor.Storage.run
     NN.Tests.Tensor.Stack.run
     Tests.Floats.run
+    Tests.Cuda.DeviceInfo.run
     match Runtime.Autograd.LibTorch.Buffer.runtimeStatus with
     | .notLinked =>
         IO.println "  CUDA kernels: skipped (LibTorch not linked)"
