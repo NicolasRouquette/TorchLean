@@ -19,6 +19,7 @@ public import TorchLeanTest.Verification.CertificateParsing
 public import TorchLeanTest.CUDA.MoE
 public import TorchLeanTest.CUDA.Scheduler
 public import TorchLeanTest.CUDA.KernelGradient
+public import TorchLeanTest.CUDA.KernelIndex
 public import TorchLeanTest.Interop.Suite
 public import TorchLeanTest.CUDA.Suite
 public import TorchLeanTest.Tree.Suite
@@ -95,6 +96,7 @@ def run : IO Unit := do
     TorchLean.Test.Floats.run
     TorchLean.Test.Tree.run
     TorchLean.Test.KernelGradient.run .cpu
+    TorchLean.Test.KernelIndex.run .cpu
     match (← TorchLean.LibTorch.Buffer.RuntimeStatus.query) with
     | .notLinked =>
         -- A build without LibTorch refuses a CUDA session.
@@ -121,7 +123,9 @@ def run : IO Unit := do
         IO.println s!"  LibTorch device: {match kind with | .cuda => "cuda" | .host => "host"}"
         TorchLean.Test.MoE.run .cuda
         TorchLean.Test.Scheduler.run .cuda
-        if kind == .cuda then TorchLean.Test.KernelGradient.run .cuda
+        if kind == .cuda then
+          TorchLean.Test.KernelGradient.run .cuda
+          TorchLean.Test.KernelIndex.run .cuda
         else TorchLean.Test.KernelGradient.checkHostRefusal
         TorchLean.Test.CUDA.run
     | .nativeUnavailable =>
