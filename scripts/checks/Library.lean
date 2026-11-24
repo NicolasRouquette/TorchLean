@@ -225,6 +225,7 @@ import TorchLeanExamples.Verification.RobustMLP
 import TorchLeanTest.CUDA.DeviceInfo
 import TorchLeanTest.CUDA.KernelGradient
 import TorchLeanTest.CUDA.KernelIndex
+import TorchLeanTest.CUDA.KernelStorage
 import TorchLeanTest.CUDA.MoE
 import TorchLeanTest.CUDA.Scheduler
 import TorchLeanTest.CUDA.Suite

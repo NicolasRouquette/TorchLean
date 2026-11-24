@@ -715,6 +715,15 @@ exactly on `[0, 2^64)`. It converts an index with `__ull2float_rn` and `__ull2do
 must round to nearest even as Lean's `UInt64.toFloat32` and `UInt64.toFloat` do. `TorchLeanTest/CUDA/KernelIndex.lean` checks this on
 the device at the values where the rules differ.
 
+`CUDA.emitStored` generates a kernel whose buffers have a storage format other than its arithmetic
+format, such as binary32 buffers with binary64 arithmetic (`Program.runBinary32`).
+`CUDA.denotes_emitStored` covers its signature, bounds checks, body, output guard and final write
+for reads that are bounds-checked loads of converted elements. The two conversions themselves, a
+stored element initializing an arithmetic local and the result assigned to a stored element, are
+C++ conversions outside the theorem, like the device intrinsics: binary32 to binary64 is exact and
+binary64 to binary32 rounds to nearest, ties to even, as `Float32.toFloat` and `Float.toFloat32` do
+in `Program.evalBinary32`.
+
 Configured binary arithmetic uses complete encoded words in CUDA buffers, including saved values
 and gradients on the autograd tape. The generated arithmetic and the conversions between values
 and indices are compared with FloatLib, and Lean's kernel does not verify them. The format descriptor, byte transfer, slicing, concatenation and zero
